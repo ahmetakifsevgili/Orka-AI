@@ -1,0 +1,11 @@
+﻿  Geri y├╝klenecek projeler belirleniyor...
+  Geri y├╝kleme i├ğin t├╝m projeler g├╝ncel.
+  Orka.Core -> D:\Orka\Orka.Core\bin\Debug\net8.0\Orka.Core.dll
+  Orka.Infrastructure -> D:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Infrastructure.dll
+  Orka.API -> D:\Orka\Orka.API\bin\Debug\net8.0\Orka.API.dll
+
+Olu┼şturma ba┼şar─▒l─▒ oldu.
+    0 Uyar─▒
+    0 Hata
+
+Ge├ğen S├╝re 00:00:04.14

@@ -1,0 +1,1 @@
+   1:7>d:\Orka\Orka.Infrastructure\Services\ChatService.cs(264,71): error CS0266: 'System.Guid?' türü örtülü olarak 'System.Guid' türüne dönüştürülemez. Açık bir dönüştürme var (eksik atamanız mı var?) [d:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]

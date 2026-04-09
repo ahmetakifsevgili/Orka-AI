@@ -1,0 +1,17 @@
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.csproj.AssemblyReference.cache
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.AssemblyInfoInputs.cache
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.AssemblyInfo.cs
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.csproj.CoreCompileInputs.cache
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Infrastructure.deps.json
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Infrastructure.runtimeconfig.json
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Infrastructure.dll
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Infrastructure.pdb
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Core.dll
+d:\Orka\Orka.Infrastructure\bin\Debug\net8.0\Orka.Core.pdb
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Inf.C9D1F634.Up2Date
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.dll
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\refint\Orka.Infrastructure.dll
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.pdb
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\Orka.Infrastructure.genruntimeconfig.cache
+d:\Orka\Orka.Infrastructure\obj\Debug\net8.0\ref\Orka.Infrastructure.dll

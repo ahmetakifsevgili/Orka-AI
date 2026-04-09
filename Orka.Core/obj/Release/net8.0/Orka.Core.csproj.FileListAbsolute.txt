@@ -1,0 +1,12 @@
+D:\Orka\Orka.Core\bin\Release\net8.0\Orka.Core.deps.json
+D:\Orka\Orka.Core\bin\Release\net8.0\Orka.Core.dll
+D:\Orka\Orka.Core\bin\Release\net8.0\Orka.Core.pdb
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.csproj.AssemblyReference.cache
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.AssemblyInfoInputs.cache
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.AssemblyInfo.cs
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.csproj.CoreCompileInputs.cache
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.dll
+D:\Orka\Orka.Core\obj\Release\net8.0\refint\Orka.Core.dll
+D:\Orka\Orka.Core\obj\Release\net8.0\Orka.Core.pdb
+D:\Orka\Orka.Core\obj\Release\net8.0\ref\Orka.Core.dll
