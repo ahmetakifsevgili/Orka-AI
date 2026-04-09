@@ -73,7 +73,7 @@ namespace Orka.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SessionId");
+                    b.HasIndex("SessionId", "CreatedAt");
 
                     b.ToTable("Messages");
                 });
@@ -152,7 +152,7 @@ namespace Orka.Infrastructure.Data.Migrations
 
                     b.HasIndex("TopicId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "TopicId");
 
                     b.ToTable("Sessions");
                 });
@@ -251,7 +251,7 @@ namespace Orka.Infrastructure.Data.Migrations
 
                     b.HasIndex("ParentTopicId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "Order");
 
                     b.ToTable("Topics");
                 });

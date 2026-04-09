@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Orka.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1093396d8405ab47a7c43f707b242b134a6123dc")]
 [assembly: System.Reflection.AssemblyProductAttribute("Orka.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Orka.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

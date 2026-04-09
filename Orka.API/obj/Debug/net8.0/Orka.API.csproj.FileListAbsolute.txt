@@ -172,3 +172,4 @@ D:\Orka\Orka.API\bin\Debug\net8.0\Microsoft.IO.RecyclableMemoryStream.dll
 D:\Orka\Orka.API\bin\Debug\net8.0\Polly.Core.dll
 D:\Orka\Orka.API\bin\Debug\net8.0\Polly.Extensions.dll
 D:\Orka\Orka.API\bin\Debug\net8.0\Polly.RateLimiting.dll
+D:\Orka\Orka.API\obj\Debug\net8.0\Orka.API.sourcelink.json

@@ -28,10 +28,10 @@ public class OpenRouterService : IOpenRouterService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage)
-        => ChatCompletionAsync(systemPrompt, userMessage);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => ChatCompletionAsync(systemPrompt, userMessage, ct: ct);
 
-    public async Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null)
+    public async Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
     {
         var targetModel = model ?? _defaultModel;
         const string RequestUrl = "https://openrouter.ai/api/v1/chat/completions";
@@ -59,8 +59,8 @@ public class OpenRouterService : IOpenRouterService
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            var response = await _httpClient.SendAsync(request, ct);
+            var responseString = await response.Content.ReadAsStringAsync(ct);
             AiDebugLogger.LogResponse("OPENROUTER", $"Status: {(int)response.StatusCode}\n{responseString}");
 
             if (response.IsSuccessStatusCode)

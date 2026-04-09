@@ -15,3 +15,4 @@ D:\Orka\Orka.Infrastructure\obj\Release\net8.0\refint\Orka.Infrastructure.dll
 D:\Orka\Orka.Infrastructure\obj\Release\net8.0\Orka.Infrastructure.pdb
 D:\Orka\Orka.Infrastructure\obj\Release\net8.0\Orka.Infrastructure.genruntimeconfig.cache
 D:\Orka\Orka.Infrastructure\obj\Release\net8.0\ref\Orka.Infrastructure.dll
+D:\Orka\Orka.Infrastructure\obj\Release\net8.0\Orka.Infrastructure.sourcelink.json

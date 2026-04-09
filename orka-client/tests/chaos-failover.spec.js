@@ -1,16 +1,15 @@
 /**
  * E2E: Chaos Monkey — Groq Down → Failover (Zero-Downtime Proof)
  *
- * Akış:
- *  1. Login + konu aç ("C# nedir?" → hardcoded options, Groq çağrısı yok)
- *  2. "2" seç → Learning state (hardcoded, Groq yok)
- *  3. "Detay ver" → Learning state → GERÇEK AI çağrısı
+ * Akış (Yeni UX):
+ *  1. Login + "C# nedir?" → Doğal TutorAgent yanıtı (Seçenek menüsü YOK)
+ *  2. "Detay ver" → Learning state → GERÇEK AI çağrısı
  *     Playwright bu isteğe X-Chaos-Fail: Groq enjekte eder.
  *     Backend: GroqService exception fırlatır → AIServiceChain fallback chain devreye girer.
  *
  * Assertions:
  *   A. HTTP 200 (not 500)
- *   B. Yeni AI bubble görünür, hata metni yok, gerçek içerik var
+ *   B. Yeni AI bubble görünür, hata metni yok, gerçek içerik var (> 50 kar)
  */
 
 import { test, expect, request as apiRequest } from '@playwright/test';
@@ -58,18 +57,19 @@ test.describe('Chaos Monkey — Groq Failover', () => {
     const textarea = page.locator('.chat-panel textarea');
     await expect(textarea).toBeEnabled({ timeout: 10_000 });
 
-    // ── B. MESAJ 1: Yeni konu aç → options welcome (Groq çağrısı yok) ────────
+    // ── B. MESAJ 1: Yeni konu aç → doğal TutorAgent yanıtı ──────────────────
     await textarea.fill('C# nedir?');
     await page.locator('.send-btn').click();
-    await expect(page.locator('.ai-bubble').last()).toContainText('Seçenek', { timeout: 30_000 });
 
-    // ── C. MESAJ 2: "2" seç → Learning state (hardcoded yanıt) ──────────────
-    await expect(textarea).toBeEnabled({ timeout: 10_000 });
-    await textarea.fill('2');
-    await page.locator('.send-btn').click();
-    await expect(page.locator('.ai-bubble').last()).toContainText('sohbet', { timeout: 30_000 });
+    // Doğal yanıt bekleniyor — hata içermemeli
+    const firstBubble = page.locator('.ai-bubble').last();
+    await expect(firstBubble).toBeVisible({ timeout: 30_000 });
+    await expect(firstBubble).not.toContainText('hata oluştu');
+    const firstText = (await firstBubble.textContent()) ?? '';
+    expect(firstText.trim().length).toBeGreaterThan(20);
+    console.log(`[TEST] İlk yanıt (ilk 80 kar): "${firstText.slice(0, 80)}"`);
 
-    // ── D. CHAOS ROUTE: Bir sonraki /api/Chat/message isteğine header enjekte ─
+    // ── C. CHAOS ROUTE: Bir sonraki /api/Chat/message isteğine header enjekte ─
     let chaosActivated = false;
     await page.route('**/api/Chat/message', async (route) => {
       if (!chaosActivated) {
@@ -86,10 +86,9 @@ test.describe('Chaos Monkey — Groq Failover', () => {
       }
     });
 
-    // ── E. MESAJ 3: GERÇEK AI çağrısı — Groq kaos altında, fallback devreye ──
+    // ── D. MESAJ 2: GERÇEK AI çağrısı — Groq kaos altında, fallback devreye ──
     const bubblesBefore = await page.locator('.ai-bubble').count();
 
-    // waitForResponse + click paralel: response gelene kadar bekle
     const [chatResponse] = await Promise.all([
       page.waitForResponse(
         r => r.url().includes('/api/Chat/message'),

@@ -10,3 +10,4 @@ d:\Orka\Orka.Core\obj\Debug\net8.0\refint\Orka.Core.dll
 d:\Orka\Orka.Core\obj\Debug\net8.0\Orka.Core.pdb
 d:\Orka\Orka.Core\obj\Debug\net8.0\ref\Orka.Core.dll
 d:\Orka\Orka.Core\obj\Debug\net8.0\Orka.Core.csproj.AssemblyReference.cache
+D:\Orka\Orka.Core\obj\Debug\net8.0\Orka.Core.sourcelink.json

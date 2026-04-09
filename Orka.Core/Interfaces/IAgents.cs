@@ -25,8 +25,9 @@ public interface ITutorAgent
     /// <summary>
     /// Deep Plan'ın ilk alt konusunun anlatımını üretir.
     /// Session geçmişine bağlı değildir; doğrudan konu başlığından ders üretir.
+    /// curriculumTitles geçilirse AI müfredat dışı başlık üretmez (hallucination guard).
     /// </summary>
-    Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle);
+    Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle, IReadOnlyList<string>? curriculumTitles = null);
 
     /// <summary>
     /// Konu başlığına uygun, kısa ve net bir sınav sorusu üretir.

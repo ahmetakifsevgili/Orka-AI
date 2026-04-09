@@ -57,24 +57,34 @@ test.describe('Quiz Feedback Loop — Konu Geçişi', () => {
 
     const textarea = page.locator('.chat-panel textarea');
 
-    // ── B. DEEP PLAN AKIŞI ───────────────────────────────────────────────────
+    // ── B. DEEP PLAN AKIŞI (Yeni UX: doğal sohbet → /plan → evet) ──────────
     await expect(textarea).toBeEnabled({ timeout: 10_000 });
     await textarea.fill('C# Generics çalışmak istiyorum');
     await page.locator('.send-btn').click();
 
-    // Options welcome (hardcoded — hızlı)
-    await expect(page.locator('.ai-bubble').last()).toContainText('Seçenek', { timeout: 30_000 });
+    // Doğal TutorAgent yanıtı bekleniyor (artık "Seçenek" menüsü yok)
+    await expect(page.locator('.ai-bubble').last()).toBeVisible({ timeout: 60_000 });
 
+    // /plan komutu ile müfredat teklif et
     await expect(textarea).toBeEnabled({ timeout: 10_000 });
-    await textarea.fill('1');
+    await textarea.fill('/plan');
+    await page.locator('.send-btn').click();
+
+    // "Plan yapalım mı?" onay sorusu
+    await expect(page.locator('.ai-bubble').last()).toContainText('Plan', { timeout: 30_000 });
+
+    // Onayla
+    await expect(textarea).toBeEnabled({ timeout: 10_000 });
+    await textarea.fill('evet');
     await page.locator('.send-btn').click();
 
     // Deep Plan + İlk Ders: "Bilgi haritası güncellendi" toast'ını bekle
-    // Groq rate-limit failover zinciri uzun sürebilir, overall test timeout (300s) içinde bekle
     await expect(page.getByText('Bilgi haritası güncellendi')).toBeVisible({ timeout: 240_000 });
 
-    // İlk ders yüklendi — sidebar'da 5 konu olmalı (parent + 4 sub)
-    await expect(page.locator('.sidebar-topics .topic-item')).toHaveCount(5, { timeout: 20_000 });
+    // İlk ders yüklendi — sidebar'da parent + alt başlıklar (dinamik sayı, en az 3)
+    await expect(page.locator('.sidebar-topics .topic-item').first()).toBeVisible({ timeout: 20_000 });
+    const sidebarCount = await page.locator('.sidebar-topics .topic-item').count();
+    expect(sidebarCount).toBeGreaterThanOrEqual(3);
 
     // Şu an seçili konunun adını kaydet (birinci alt başlık)
     const activeTitleBefore = await page.locator('.sidebar-topics .topic-item.active .topic-name')

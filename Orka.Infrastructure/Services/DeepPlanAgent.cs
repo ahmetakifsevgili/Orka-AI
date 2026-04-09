@@ -48,9 +48,11 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         var systemPrompt = """
             Sen bir eğitim müfredatı planlayıcısısın.
-            Verilen konuyu öğrenmek için EN MANTIKLI 4 alt başlığı belirle.
+            Verilen konunun pedagojik yapısına göre alt başlıkları özgürce belirle.
+            Başlık sayısı konunun doğasına bağlıdır: 2 ile 10 arasında olabilir.
+            Basit konular için az başlık, karmaşık konular için daha fazla başlık üret.
             SADECE şu JSON formatında yanıt ver, açıklama ekleme:
-            ["Alt Başlık 1","Alt Başlık 2","Alt Başlık 3","Alt Başlık 4"]
+            ["Alt Başlık 1","Alt Başlık 2","Alt Başlık 3"]
             """;
 
         string raw;
@@ -87,10 +89,10 @@ public class DeepPlanAgent : IDeepPlanAgent
                             .Select(el => el.GetString())
                             .Where(t => !string.IsNullOrWhiteSpace(t))
                             .Select(t => t!)
-                            .Take(4)
+                            .Take(10)        // Maksimum 10 başlık
                             .ToList();
 
-            if (titles.Count == 4) return titles;
+            if (titles.Count >= 2) return titles;  // En az 2 başlık yeterli
         }
         catch { /* fallback'e düş */ }
 

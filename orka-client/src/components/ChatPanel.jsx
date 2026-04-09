@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo, memo } from 'react';
 import { ArrowUp, Paperclip, Mic, HelpCircle, Users, BookOpen, BarChart2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -53,12 +53,14 @@ function QuizCard({ quiz, onAnswer, disabled }) {
   };
 
   return (
-    <div style={{
-      background: 'var(--surface2)',
-      border: '1px solid var(--border)',
-      borderRadius: '10px',
+    <div className="quiz-card" style={{
+      background: 'var(--glass-bg2)',
+      border: '1px solid var(--glass-border)',
+      borderRadius: '12px',
       padding: '14px 16px',
       marginTop: '10px',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
     }}>
       <div style={{
         fontSize: '13.5px',
@@ -76,19 +78,17 @@ function QuizCard({ quiz, onAnswer, disabled }) {
           const isWrong    = answered && selected === idx && idx !== quiz.correctIndex;
 
           let borderColor = 'var(--border)';
-          let bg = 'var(--surface)';
+          let bg = 'var(--glass-bg)';
           let color = 'var(--text2)';
 
           if (isCorrect && answered) {
-            borderColor = 'var(--green)';
-            bg = 'rgba(34,197,94,0.1)';
-            color = 'var(--green)';
+            borderColor = 'rgba(6,182,212,0.45)';
+            bg = 'rgba(6,182,212,0.08)';
+            color = 'var(--amber-light)';
           } else if (isWrong) {
             borderColor = 'var(--red)';
             bg = 'rgba(239,68,68,0.08)';
             color = 'var(--red)';
-          } else if (!answered) {
-            // hover state via style tag is limited; we use opacity change on active
           }
 
           return (
@@ -96,27 +96,28 @@ function QuizCard({ quiz, onAnswer, disabled }) {
               key={idx}
               onClick={() => handleSelect(opt, idx)}
               disabled={answered || disabled}
+              className={`quiz-option${isCorrect && answered ? ' correct-glow' : ''}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '9px',
                 padding: '8px 12px',
-                borderRadius: '7px',
+                borderRadius: '8px',
                 border: `1px solid ${borderColor}`,
                 background: bg,
                 color: color,
                 fontSize: '13px',
                 textAlign: 'left',
                 cursor: answered || disabled ? 'default' : 'pointer',
-                transition: 'all 0.15s',
                 opacity: answered && !isSelected && !isCorrect ? 0.5 : 1,
+                animationDelay: `${idx * 75}ms`,
               }}
             >
               <span style={{
                 width: '22px',
                 height: '22px',
                 borderRadius: '50%',
-                background: isCorrect ? 'var(--green)' : isWrong ? 'var(--red)' : 'var(--surface3)',
+                background: isCorrect ? 'linear-gradient(135deg, #06B6D4, #14B8A6)' : isWrong ? 'var(--red)' : 'var(--surface3)',
                 color: isCorrect || isWrong ? '#fff' : 'var(--text2)',
                 fontSize: '11px',
                 fontWeight: '600',
@@ -124,6 +125,7 @@ function QuizCard({ quiz, onAnswer, disabled }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
+                boxShadow: isCorrect ? '0 0 8px rgba(6,182,212,0.5)' : 'none',
               }}>
                 {isCorrect ? '✓' : isWrong ? '✗' : String.fromCharCode(65 + idx)}
               </span>
@@ -137,8 +139,9 @@ function QuizCard({ quiz, onAnswer, disabled }) {
 }
 
 // ── AI bubble content renderer ────────────────────────────────────────────────
-function AiBubbleContent({ content, onSend, sending }) {
-  const parsed = parseQuizBlock(content);
+const AiBubbleContent = memo(function AiBubbleContent({ content, onSend, sending }) {
+  // content değişmediği sürece parseQuizBlock yeniden çalıştırılmaz
+  const parsed = useMemo(() => parseQuizBlock(content), [content]);
 
   if (!parsed) {
     return <ReactMarkdown>{content}</ReactMarkdown>;
@@ -153,7 +156,32 @@ function AiBubbleContent({ content, onSend, sending }) {
       <QuizCard quiz={quiz} onAnswer={onSend} disabled={sending} />
     </>
   );
-}
+});
+
+// ── Message row — memo ile yalnızca değişen satır re-render alır ─────────────
+const MessageRow = memo(function MessageRow({ msg, initials, onSend, sending }) {
+  return (
+    <div className={`msg-row ${msg.role === 'user' ? 'user-msg' : ''}`}>
+      <div className={`msg-avatar ${msg.role === 'user' ? 'user-av' : 'ai-av'}`}>
+        {msg.role === 'user' ? initials : '◎'}
+      </div>
+      <div className="msg-content">
+        <div className="msg-meta">
+          {msg.role !== 'user' && (
+            <span className="model-chip">{msg.modelUsed || 'Orka AI'}</span>
+          )}
+          <span>{msg.role === 'user' ? 'Sen' : (msg.messageType || 'Yanıt')}</span>
+        </div>
+        <div className={`bubble ${msg.role === 'user' ? 'user-bubble' : 'ai-bubble'}`}>
+          {msg.role === 'user'
+            ? msg.content
+            : <AiBubbleContent content={msg.content} onSend={onSend} sending={sending} />
+          }
+        </div>
+      </div>
+    </div>
+  );
+});
 
 // ── Main ChatPanel ────────────────────────────────────────────────────────────
 export default function ChatPanel({ topic, messages, onSend, sending, user }) {
@@ -243,25 +271,13 @@ export default function ChatPanel({ topic, messages, onSend, sending, user }) {
           const EMPTY_GUID = '00000000-0000-0000-0000-000000000000';
           const safeKey = msg.id && msg.id !== EMPTY_GUID ? msg.id : `msg-${idx}-${msg.role}`;
           return (
-            <div key={safeKey} className={`msg-row ${msg.role === 'user' ? 'user-msg' : ''}`}>
-              <div className={`msg-avatar ${msg.role === 'user' ? 'user-av' : 'ai-av'}`}>
-                {msg.role === 'user' ? getInitials() : '◎'}
-              </div>
-              <div className="msg-content">
-                <div className="msg-meta">
-                  {msg.role !== 'user' && (
-                    <span className="model-chip">{msg.modelUsed || 'Orka AI'}</span>
-                  )}
-                  <span>{msg.role === 'user' ? 'Sen' : (msg.messageType || 'Yanıt')}</span>
-                </div>
-                <div className={`bubble ${msg.role === 'user' ? 'user-bubble' : 'ai-bubble'}`}>
-                  {msg.role === 'user'
-                    ? msg.content
-                    : <AiBubbleContent content={msg.content} onSend={onSend} sending={sending} />
-                  }
-                </div>
-              </div>
-            </div>
+            <MessageRow
+              key={safeKey}
+              msg={msg}
+              initials={getInitials()}
+              onSend={onSend}
+              sending={sending}
+            />
           );
         })}
 

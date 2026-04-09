@@ -30,8 +30,8 @@ public class MistralService : IMistralService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage)
-        => CallMistralApiAsync(userMessage, systemPrompt);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => CallMistralApiAsync(userMessage, systemPrompt, ct);
 
     public async Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel öğrenme", string level = "orta")
     {
@@ -43,7 +43,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         return await CallMistralApiAsync(prompt, "Sen bir eğitim planlayıcısısın.");
     }
 
-    public async Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt)
+    public async Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default)
     {
         var messages = new List<object>
         {
@@ -56,7 +56,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             messages.Add(new { role, content = msg.Content });
         }
 
-        return await CallMistralChatApiAsync(messages);
+        return await CallMistralChatApiAsync(messages, ct);
     }
 
     public async Task<string> SummarizeSessionAsync(IEnumerable<Message> messages)
@@ -94,17 +94,17 @@ Ders İçeriği:
         return await CallMistralApiAsync(prompt, "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.");
     }
 
-    private async Task<string> CallMistralApiAsync(string prompt, string systemRole)
+    private async Task<string> CallMistralApiAsync(string prompt, string systemRole, CancellationToken ct = default)
     {
         var messages = new List<object>
         {
             new { role = "system", content = string.IsNullOrWhiteSpace(systemRole) ? "Sen yardımcı bir asistansın." : systemRole },
             new { role = "user", content = prompt }
         };
-        return await CallMistralChatApiAsync(messages);
+        return await CallMistralChatApiAsync(messages, ct);
     }
 
-    private async Task<string> CallMistralChatApiAsync(object messages)
+    private async Task<string> CallMistralChatApiAsync(object messages, CancellationToken ct = default)
     {
         const string RequestUrl = "https://api.mistral.ai/v1/chat/completions";
 
@@ -127,8 +127,8 @@ Ders İçeriği:
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            var response = await _httpClient.SendAsync(request, ct);
+            var responseString = await response.Content.ReadAsStringAsync(ct);
             AiDebugLogger.LogResponse("MISTRAL", $"Status: {(int)response.StatusCode}\n{responseString}");
 
             if (!response.IsSuccessStatusCode)

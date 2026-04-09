@@ -39,7 +39,11 @@
       "Bash(taskkill /F /IM \"Orka.API.exe\")",
       "Bash(taskkill /F /PID 2892)",
       "Bash(powershell -Command \"Get-Process -Name 'Orka.API','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(python -m json.tool)",
+      "Bash(powershell -Command \"Get-Process -Name 'Orka.API','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force\" sleep 1 cd D:/Orka)",
+      "Bash(start cmd:*)",
+      "Bash(netstat -ano)"
     ]
   }
 }

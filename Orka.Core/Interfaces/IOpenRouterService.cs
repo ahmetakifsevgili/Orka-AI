@@ -8,5 +8,5 @@ public interface IOpenRouterService : IAIService
     /// OpenRouter üzerinden chat completion çağrısı yapar.
     /// interview ve quiz modları için kullanılır.
     /// </summary>
-    Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null);
+    Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default);
 }

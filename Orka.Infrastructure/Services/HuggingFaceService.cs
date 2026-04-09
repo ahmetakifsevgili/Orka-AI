@@ -37,10 +37,10 @@ public class HuggingFaceService : IHuggingFaceService
         _logger     = logger;
     }
 
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage)
-        => CallChatApiAsync(systemPrompt, userMessage);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => CallChatApiAsync(systemPrompt, userMessage, ct);
 
-    private async Task<string> CallChatApiAsync(string systemPrompt, string userMessage)
+    private async Task<string> CallChatApiAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
     {
         var endpoint = $"{_baseUrl.TrimEnd('/')}/chat/completions";
 
@@ -67,8 +67,8 @@ public class HuggingFaceService : IHuggingFaceService
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
-            var respStr  = await response.Content.ReadAsStringAsync();
+            var response = await _httpClient.SendAsync(request, ct);
+            var respStr  = await response.Content.ReadAsStringAsync(ct);
             AiDebugLogger.LogResponse("HUGGINGFACE", $"Status: {(int)response.StatusCode}\n{respStr}");
 
             if (!response.IsSuccessStatusCode)

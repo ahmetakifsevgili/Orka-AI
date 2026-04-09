@@ -23,6 +23,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IDeepPlanAgent _deepPlanAgent;
     private readonly IMediator _mediator;
     private readonly ITopicService _topicService;
+    private readonly IWikiService _wikiService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
@@ -33,6 +34,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IDeepPlanAgent deepPlanAgent,
         IMediator mediator,
         ITopicService topicService,
+        IWikiService wikiService,
         IServiceScopeFactory scopeFactory,
         ILogger<AgentOrchestratorService> logger)
     {
@@ -42,6 +44,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _deepPlanAgent = deepPlanAgent;
         _mediator = mediator;
         _topicService = topicService;
+        _wikiService = wikiService;
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
@@ -63,20 +66,57 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (sessionId.HasValue)
         {
             session = await _db.Sessions
-                .Include(s => s.Messages)
-                .FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+                .Where(s => s.Id == sessionId && s.UserId == userId)
+                .FirstOrDefaultAsync();
+            if (session != null)
+            {
+                // Son 20 mesajı yükle — tüm geçmişi çekme
+                session.Messages = await _db.Messages
+                    .Where(m => m.SessionId == session.Id)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(20)
+                    .OrderBy(m => m.CreatedAt)
+                    .ToListAsync();
+            }
         }
 
         if (session == null && topicId.HasValue)
         {
             session = await _db.Sessions
-                .Include(s => s.Messages)
                 .Where(s => s.TopicId == topicId && s.UserId == userId)
                 .OrderByDescending(s => s.CreatedAt)
                 .FirstOrDefaultAsync();
+            if (session != null)
+            {
+                session.Messages = await _db.Messages
+                    .Where(m => m.SessionId == session.Id)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(20)
+                    .OrderBy(m => m.CreatedAt)
+                    .ToListAsync();
+            }
         }
 
         bool isNewTopic = false;
+
+        // ── Small Talk Guard ───────────────────────────────────────────────
+        // Selamlama veya çok kısa mesajlar için ASLA yeni Topic/Session açma.
+        if (session == null && IsSmallTalk(content))
+        {
+            _logger.LogInformation("[SMALL-TALK] Selamlama tespit edildi, topic oluşturulmadı: \"{Content}\"", content);
+            return new ChatMessageResponse
+            {
+                MessageId   = Guid.NewGuid(),
+                SessionId   = Guid.Empty,
+                TopicId     = Guid.Empty,
+                Content     = "Merhaba! 👋 Bugün ne öğrenmek istersin? Bir konu yaz, hemen başlayalım.",
+                Role        = "assistant",
+                CreatedAt   = DateTime.UtcNow,
+                ModelUsed   = "Orka-SmallTalkGuard",
+                WikiUpdated = false,
+            };
+        }
+        // ──────────────────────────────────────────────────────────────────
 
         if (session == null)
         {
@@ -84,13 +124,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
             string title = content.Length > 40 ? content[..40] : content;
             var (topic, newSession) = await _topicService.CreateDiscoveryTopicAsync(userId, title);
             session = await _db.Sessions
-                .Include(s => s.Messages)
                 .FirstOrDefaultAsync(s => s.Id == newSession.Id);
+            if (session != null)
+                session.Messages = new List<Message>();
 
             if (session == null) throw new Exception("Oturum oluşturulamadı.");
             isNewTopic = true;
-            
-            session.CurrentState = SessionState.AwaitingChoice;
+
+            // Yeni konu: doğrudan Learning moduna gir — zorla seçim menüsü YOK
+            session.CurrentState = SessionState.Learning;
             await _db.SaveChangesAsync();
         }
 
@@ -116,7 +158,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         if (isNewTopic)
         {
-            aiResponse = await _tutorAgent.GetOptionsWelcomeAsync(userId, content, session);
+            // İlk mesaj: doğal TutorAgent yanıtı + ince plan teklifi ipucu
+            aiResponse = await _tutorAgent.GetResponseAsync(userId, content, session, false);
+            aiResponse += "\n\n---\n*İstersen `/plan` yazarak bu konu için yapılandırılmış bir müfredat planı da oluşturabilirim.*";
         }
         else if (session.CurrentState == SessionState.AwaitingChoice)
         {
@@ -158,43 +202,33 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.Messages.Add(aiMsg);
         await _db.SaveChangesAsync();
 
-        // 4. AUTO-WIKI: Yanıtı asenkron WikiPage.Content'e yaz
+        // 4. AUTO-WIKI: WikiService.AutoUpdateWikiAsync ile WikiBlock olarak kaydet
+        // WikiPanel.jsx blokları render eder — page.Content değil WikiBlock listesi.
+        // wikiUpdated: Ders geçişi (skipAutoWiki=true) dışındaki durumlarda async tamamlanmadan
+        // flag set edemeyiz. Çözüm: WikiPage'de aktif sayfa varsa önceden true set et.
         if (!skipAutoWiki && session.TopicId.HasValue && !string.IsNullOrWhiteSpace(aiResponse))
         {
-            var sId = session.Id;
-            var tId = session.TopicId.Value;
-            var responseSnapshot = aiResponse;
+            var tId          = session.TopicId.Value;
+            var snapshot     = aiResponse;
+            var userQuestion = content;
+
+            // WikiPage mevcutsa frontend'e önceden güncelleme sinyali ver
+            var hasActivePage = await _db.WikiPages
+                .AnyAsync(p => p.TopicId == tId && (p.Status == "pending" || p.Status == "learning"));
+            if (hasActivePage)
+                wikiUpdated = true;
 
             _ = Task.Run(async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 try
                 {
-                    var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-
-                    // İlk boş (Content == null) WikiPage'i bul
-                    var page = await db.WikiPages
-                        .Where(p => p.TopicId == tId && p.Content == null)
-                        .OrderBy(p => p.OrderIndex)
-                        .FirstOrDefaultAsync();
-
-                    if (page == null) return;
-
-                    // Markdown özet üret (OpenRouter)
-                    var openRouter = scope.ServiceProvider.GetRequiredService<IOpenRouterService>();
-                    var summary    = await openRouter.ChatCompletionAsync(
-                        "Sen bir Wiki yazarısın. Verilen öğretici metni kısa ve anlaşılır Markdown formatında özetle. " +
-                        "Başlık (#), madde (- ) ve kod bloğu (```) kullanabilirsin. Maksimum 300 kelime.",
-                        $"Özetle:\n\n{responseSnapshot[..Math.Min(responseSnapshot.Length, 3000)]}");
-
-                    page.Content   = summary;
-                    page.Status    = "generated";
-                    page.UpdatedAt = DateTime.UtcNow;
-                    await db.SaveChangesAsync();
+                    var wiki = scope.ServiceProvider.GetRequiredService<IWikiService>();
+                    await wiki.AutoUpdateWikiAsync(tId, snapshot, userQuestion, "tutor-agent");
                 }
                 catch (Exception ex)
                 {
-                    AiDebugLogger.LogError("AUTO-WIKI", $"WikiPage güncellenemedi. SessionId={sId} — {ex.Message}");
+                    AiDebugLogger.LogError("AUTO-WIKI", $"WikiService.AutoUpdateWikiAsync başarısız. TopicId={tId} — {ex.Message}");
                 }
             });
         }
@@ -246,9 +280,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
     private async Task<(string Response, bool WikiUpdated)> HandleAwaitingChoiceStateAsync(Guid userId, string content, Session session)
     {
+        // AwaitingChoice artık plan onayı için kullanılıyor
         var lowerContent = content.ToLowerInvariant();
-        bool wantsDeepPlan = lowerContent.Contains("1") || lowerContent.Contains("plan") || lowerContent.Contains("ilk");
-        bool wantsChat = lowerContent.Contains("2") || lowerContent.Contains("sohbet") || lowerContent.Contains("ikinci");
+        bool wantsDeepPlan = lowerContent.Contains("1")       || lowerContent.Contains("plan")   ||
+                             lowerContent.Contains("evet")    || lowerContent.Contains("yes")     ||
+                             lowerContent.Contains("yapalım") || lowerContent.Contains("olur")    ||
+                             lowerContent.Contains("tamam");
+        bool wantsChat    = lowerContent.Contains("2")        || lowerContent.Contains("hayır")   ||
+                             lowerContent.Contains("devam")   || lowerContent.Contains("sohbet")  ||
+                             lowerContent.Contains("gerek yok");
 
         if (wantsDeepPlan)
         {
@@ -277,10 +317,11 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
                     // CONTEXT INJECTION: GetFirstLessonAsync, session geçmişine bağlı değil.
                     // Doğrudan konu başlığından ders üretir — Race Condition ve Stale Data riski yok.
+                    // Hallucination Guard: müfredat başlıkları geçiliyor
                     string firstLessonContent;
                     try
                     {
-                        firstLessonContent = await _tutorAgent.GetFirstLessonAsync(topic.Title, firstChild.Title);
+                        firstLessonContent = await _tutorAgent.GetFirstLessonAsync(topic.Title, firstChild.Title, titles);
                     }
                     catch (Exception ex)
                     {
@@ -302,14 +343,37 @@ public class AgentOrchestratorService : IAgentOrchestrator
         {
             session.CurrentState = SessionState.Learning;
             await _db.SaveChangesAsync();
-            return ("Harika! O zaman plan dertlerine girmeden organik sohbetimize başlayalım. Bu konu hakkında öncelikle neyi merak ediyorsun?", false);
+            return ("Anlaştık! Sohbet üzerinden devam edelim. Ne merak ediyorsun, sormak istediğin bir şey var mı?", false);
         }
 
-        return ("Lütfen '1' (Derinlemesine Plan) veya '2' (Hızlı Sohbet) seçeneklerinden birini belirterek ilerle.", false);
+        // Belirsiz yanıt — Learning'e dön, doğal sohbete devam et
+        session.CurrentState = SessionState.Learning;
+        await _db.SaveChangesAsync();
+        return (await _tutorAgent.GetResponseAsync(userId, content, session, false), false);
     }
 
     private async Task<string> HandleLearningStateAsync(Guid userId, string content, Session session)
     {
+        // ── /plan komutu: müfredat planı teklifi ────────────────────────────────
+        bool wantsPlan = content.Trim().Equals("/plan", StringComparison.OrdinalIgnoreCase) ||
+                         content.Contains("plan yap", StringComparison.OrdinalIgnoreCase)   ||
+                         content.Contains("müfredat", StringComparison.OrdinalIgnoreCase);
+
+        if (wantsPlan)
+        {
+            session.CurrentState = SessionState.AwaitingChoice;
+            await _db.SaveChangesAsync();
+            return """
+                Bu konuyu çok güzel yakaladın! 🎯
+
+                İstersen bu konu için yapılandırılmış bir müfredat planı (Bilgi Haritası) hazırlayayım. Plan, konuyu pedagojik sıraya göre alt başlıklara böler ve Wiki'ne işler.
+
+                **Plan yapalım mı, yoksa sohbet üzerinden mi devam edelim?**
+                → `evet` / `1` — Plan oluştur
+                → `hayır` / `2` — Sohbete devam et
+                """;
+        }
+
         // ── "Anladım" / "Konuyu Geç" tespiti ───────────────────────────────────
         bool wantsToAdvance =
             content.Contains("anladım", StringComparison.OrdinalIgnoreCase) ||
@@ -357,9 +421,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private async Task<(string Response, bool WikiUpdated)> HandleQuizModeAsync(
         Guid userId, string content, Session session)
     {
-        var isPlaywright = content.Contains("[PLAYWRIGHT_PASS_QUIZ]", StringComparison.Ordinal);
-        if (isPlaywright)
+#if DEBUG
+        if (content.Contains("[PLAYWRIGHT_PASS_QUIZ]", StringComparison.Ordinal))
             _logger.LogInformation("[QUIZ] PLAYWRIGHT_PASS_QUIZ backdoor — cevap otomatik DOĞRU.");
+#endif
 
         bool isCorrect = await _tutorAgent.EvaluateQuizAnswerAsync(
             session.PendingQuiz ?? "", content);
@@ -373,6 +438,45 @@ public class AgentOrchestratorService : IAgentOrchestrator
         // Doğru cevap → konu geçişi
         _logger.LogInformation("[QUIZ] Doğru cevap! Konu geçişi başlıyor.");
         return await TransitionToNextTopicAsync(userId, session);
+    }
+
+    /// <summary>
+    /// Mesajın selamlama / small talk olup olmadığını tespit eder.
+    /// Yaygın yazım hatalarını (merha, slm, nbr vb.) Contains ile yakalar.
+    /// Yeni Topic oluşturulmasını engellemek için kullanılır.
+    /// </summary>
+    private static bool IsSmallTalk(string content)
+    {
+        var t = content.Trim().ToLowerInvariant();
+
+        // 1. Çok kısa mesaj (15 karakter altı) → muhtemelen small talk
+        if (t.Length < 15) return true;
+
+        // 2. Bilinen selamlama kalıpları (kısmen yazım hatalı versiyonlar dahil)
+        // StartsWith: mesajın selamlama ile başlaması
+        // Contains: selamlama başka kelimelerle birleşmiş olabilir ("merha nasılsın")
+        var prefixes = new[]
+        {
+            "merhaba", "merha",   // "merha nasılsın" → typo guard
+            "selam", "slm",
+            "hey", "heyy",
+            "naber", "nbr", "ne haber",
+            "nasılsın", "nasilsin", "nasılsnız",
+            "iyi misin", "iyimisin",
+            "günaydın", "gunaydin",
+            "iyi günler", "iyi akşamlar", "iyi geceler",
+            "ne var ne yok", "ne var",
+            "hello", "hi ", "hi,", "hey!",
+        };
+
+        foreach (var p in prefixes)
+        {
+            if (t.StartsWith(p, StringComparison.Ordinal)) return true;
+            // Sadece bu kelimeden ibaret tam mesaj
+            if (t == p.Trim()) return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -448,9 +552,12 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         _logger.LogInformation("[TRANSITION] {From} → {To}", currentTopic.Title, nextTopic.Title);
 
+        // Hallucination Guard: AI sadece DB'deki başlıkları kullanabilir
+        var curriculumTitles = siblings.Select(t => t.Title).ToList();
+
         var congratsMsg = $"✅ **Mükemmel cevap!** {currentTopic.Title} konusunu geçtik.\n\n---";
         var nextLesson = await _tutorAgent.GetFirstLessonAsync(
-            parentTopic?.Title ?? nextTopic.Title, nextTopic.Title);
+            parentTopic?.Title ?? nextTopic.Title, nextTopic.Title, curriculumTitles);
 
         return ($"{congratsMsg}\n\n**Sıradaki Konumuz: {nextTopic.Title}**\n\n{nextLesson}", true);
     }

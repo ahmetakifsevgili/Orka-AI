@@ -172,3 +172,4 @@ D:\Orka\Orka.API\obj\Release\net8.0\refint\Orka.API.dll
 D:\Orka\Orka.API\obj\Release\net8.0\Orka.API.pdb
 D:\Orka\Orka.API\obj\Release\net8.0\Orka.API.genruntimeconfig.cache
 D:\Orka\Orka.API\obj\Release\net8.0\ref\Orka.API.dll
+D:\Orka\Orka.API\obj\Release\net8.0\Orka.API.sourcelink.json

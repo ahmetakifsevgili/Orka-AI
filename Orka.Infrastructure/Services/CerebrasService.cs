@@ -23,6 +23,6 @@ public class CerebrasService : OpenAICompatibleService, ICerebrasService
             logger     : logger)
     { }
 
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage)
-        => CallChatAsync(systemPrompt, userMessage);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => CallChatAsync(systemPrompt, userMessage, ct: ct);
 }

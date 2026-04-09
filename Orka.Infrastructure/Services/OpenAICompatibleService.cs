@@ -38,7 +38,8 @@ public abstract class OpenAICompatibleService
         string systemPrompt,
         string userMessage,
         int maxTokens = 2048,
-        double temperature = 0.7)
+        double temperature = 0.7,
+        CancellationToken ct = default)
     {
         var messages = new[]
         {
@@ -48,11 +49,11 @@ public abstract class OpenAICompatibleService
                 ? "Merhaba." : userMessage }
         };
 
-        return await CallChatWithMessagesAsync(messages, maxTokens, temperature);
+        return await CallChatWithMessagesAsync(messages, maxTokens, temperature, ct);
     }
 
     protected async Task<string> CallChatWithMessagesAsync(
-        object messages, int maxTokens = 2048, double temperature = 0.7)
+        object messages, int maxTokens = 2048, double temperature = 0.7, CancellationToken ct = default)
     {
         var requestBody = new { model = Model, messages, max_tokens = maxTokens, temperature };
         var jsonBody    = JsonSerializer.Serialize(requestBody, JsonOptions);
@@ -66,8 +67,8 @@ public abstract class OpenAICompatibleService
 
         try
         {
-            var response = await HttpClient.SendAsync(request);
-            var body     = await response.Content.ReadAsStringAsync();
+            var response = await HttpClient.SendAsync(request, ct);
+            var body     = await response.Content.ReadAsStringAsync(ct);
             AiDebugLogger.LogResponse(providerTag, $"Status: {(int)response.StatusCode}\n{body}");
 
             if (!response.IsSuccessStatusCode)

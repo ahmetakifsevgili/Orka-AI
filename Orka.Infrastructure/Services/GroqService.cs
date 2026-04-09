@@ -38,8 +38,8 @@ public class GroqService : IGroqService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage)
-        => CallGroqApiAsync(userMessage, systemPrompt);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => CallGroqApiAsync(userMessage, systemPrompt, ct);
 
     public async Task<RoutingResult> SemanticRouteAsync(string message, string? currentPhase = "Discovery")
     {
@@ -103,7 +103,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         return await CallGroqApiAsync(prompt, "Sen bir eğitim planlayıcısısın.");
     }
 
-    public async Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt)
+    public async Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default)
     {
         var messages = new List<object>
         {
@@ -116,7 +116,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             messages.Add(new { role, content = msg.Content });
         }
 
-        return await CallGroqChatApiAsync(messages);
+        return await CallGroqChatApiAsync(messages, ct: ct);
     }
 
     public async Task<string> SummarizeSessionAsync(IEnumerable<Message> messages)
@@ -142,17 +142,17 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         return await CallGroqChatApiAsync(messages, depth == "deep" ? 4096 : 2048);
     }
 
-    private async Task<string> CallGroqApiAsync(string prompt, string systemRole)
+    private async Task<string> CallGroqApiAsync(string prompt, string systemRole, CancellationToken ct = default)
     {
         var messages = new List<object>
         {
             new { role = "system", content = string.IsNullOrWhiteSpace(systemRole) ? "Sen yardımcı bir asistansın." : systemRole },
             new { role = "user", content = prompt }
         };
-        return await CallGroqChatApiAsync(messages);
+        return await CallGroqChatApiAsync(messages, ct: ct);
     }
 
-    private async Task<string> CallGroqChatApiAsync(object messages, int maxTokens = 2048)
+    private async Task<string> CallGroqChatApiAsync(object messages, int maxTokens = 2048, CancellationToken ct = default)
     {
         // ── CHAOS MONKEY ────────────────────────────────────────────────────────
         // X-Chaos-Fail: Groq header değeri ChaosContext üzerinden gelir
@@ -184,8 +184,8 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
 
         try
         {
-            var response = await _httpClient.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            var response = await _httpClient.SendAsync(request, ct);
+            var responseString = await response.Content.ReadAsStringAsync(ct);
             AiDebugLogger.LogResponse("GROQ", $"Status: {(int)response.StatusCode}\n{responseString}");
 
             if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)

@@ -23,12 +23,13 @@ public class TutorAgent : ITutorAgent
         var systemPrompt = $"""
             Sen Orka AI'nın profesyonel eğitmenisin.
             Kullanıcı yeni bir öğrenme yolculuğu başlatıyor.
-            Onun için şu 4 adımlı plan hazırlandı ve Wiki'ye işlendi:
+            Onun için aşağıdaki plan hazırlandı ve Wiki'ye işlendi:
 
             {numberedPlan}
 
             Kullanıcıyı sıcak karşıla, planı kısaca tanıt ve ilk adımla başlamaya davet et.
             Yanıtın samimi, motive edici ve 3-4 cümle olsun.
+            [KESİN KURAL]: Yukarıdaki planda olmayan hiçbir konu başlığını asla ekleme veya önermeme.
             """;
 
         var contextMessages = await _contextBuilder.BuildConversationContextAsync(session);
@@ -48,20 +49,30 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return Task.FromResult(response);
     }
 
-    public async Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle)
+    public async Task<string> GetFirstLessonAsync(
+        string parentTopicTitle,
+        string lessonTitle,
+        IReadOnlyList<string>? curriculumTitles = null)
     {
+        // Hallucination Guard: müfredat listesi geçilmişse AI sadece bu başlıklara bağlı kalır
+        var curriculumNote = curriculumTitles?.Count > 0
+            ? $"\n\n[MÜFREDAT KISITI — KESİN KURAL]: Bu derste yalnızca aşağıdaki müfredat başlıklarından bahsedebilirsin. " +
+              $"Bu listede olmayan hiçbir konu adını önermemeli, bahsetmemelisin:\n" +
+              string.Join("\n", curriculumTitles.Select((t, i) => $"  {i + 1}. {t}"))
+            : "";
+
         var systemPrompt = $"""
             Sen Orka AI'nın profesyonel eğitmenisin.
 
             Kullanıcı "{parentTopicTitle}" konusunu Derinlemesine Plan ile öğrenmeye başladı.
-            Plan başarıyla oluşturuldu ve Wiki'ye işlendi. Şimdi ilk alt konunun anlatımını yapıyorsun.
+            Plan başarıyla oluşturuldu ve Wiki'ye işlendi. Şimdi "{lessonTitle}" alt konusunu anlatıyorsun.
 
-            [GÖREV]: "{lessonTitle}" başlığını temel kavramlardan başlayarak, sıfır bilgiyle anlayan
-            biri için açık ve anlaşılır biçimde anlat.
+            [GÖREV]: Konuyu temel kavramlardan başlayarak, sıfır bilgiyle anlayan biri için öğret.
             - Türkçe yaz
-            - Somut örnekler ve analogiler kullan
-            - 3-4 paragraf yaz
-            - Sonunda kullanıcıyı soru sormaya veya devam etmeye teşvik et
+            - Şu yapıyı kullan: (1) Net tanım, (2) 1 somut örnek, (3) 1 pratik kullanım senaryosu
+            - Toplam 250-350 kelime — gereksiz laf kalabalığından kaçın
+            - Sonunda 1 açık uçlu soru sor (kullanıcıyı düşündür, cevabı bekleme)
+            {curriculumNote}
             """;
 
         return await _chain.GetResponseWithFallbackAsync(new List<Message>(), systemPrompt);
@@ -89,11 +100,14 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
     public async Task<bool> EvaluateQuizAnswerAsync(string question, string answer)
     {
-        // ── PLAYWRIGHT BACKDOOR ──────────────────────────────────────────────
+#if DEBUG
+        // ── PLAYWRIGHT BACKDOOR (yalnızca DEBUG build'de aktif) ──────────────
         // E2E testlerde AI değerlendirmesini bypass etmek için kullanılır.
+        // Release build'de bu blok derlenmez → production'da sıfır risk.
         if (answer.Contains("[PLAYWRIGHT_PASS_QUIZ]", StringComparison.Ordinal))
             return true;
         // ────────────────────────────────────────────────────────────────────
+#endif
 
         var systemPrompt = """
             Sen bir öğretmensin. Öğrencinin cevabını değerlendir.
@@ -121,7 +135,13 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             3. En uygun pedagojik yaklaşımı seç (örnek, analoji, adım adım açıklama).
             4. Kısa ve öz, ancak eksiksiz bir yanıt hazırla.
 
-            [KURAL]: Hiçbir zaman boş veya "Anlıyorum" gibi içeriksiz yanıt verme. Her yanıt öğretime katkı sağlamalıdır.
+            [YOĞUNLUK KURALI]:
+            - Yanıt uzunluğunu sorunun karmaşıklığına göre ayarla.
+            - Teknik bir kavramı 1 örnekle açıklayabiliyorsan 3 örnekle açıklama.
+            - Kullanıcı selamlama veya çok kısa bir mesaj gönderirse kısa, samimi yanıt ver — yeni konu başlatma, laf kalabalığı yapma.
+            - Kullanıcı açıkça "daha fazla anlat" demeden içerik genişletme.
+
+            [KESİN KURAL]: Hiçbir zaman boş veya "Anlıyorum" gibi içeriksiz yanıt verme. Her yanıt öğretime katkı sağlamalıdır.
             """;
 
         if (isQuizPending)

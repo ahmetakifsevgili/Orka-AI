@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, BookOpen } from 'lucide-react';
 import { UserAPI, TopicsAPI, ChatAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 import AppTopBar    from '../components/AppTopBar';
 import TopicSidebar from '../components/TopicSidebar';
 import ChatPanel    from '../components/ChatPanel';
-import WikiPanel    from '../components/WikiPanel';
+import WikiDrawer   from '../components/WikiDrawer';
 import InfoPanel    from '../components/InfoPanel';
 import TopicModal   from '../components/TopicModal';
 
@@ -15,15 +14,22 @@ export default function AppDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [topics, setTopics] = useState([]);
-  const [selectedTopic, setSelectedTopic] = useState(null);
+
+  // Global chat — ASLA sıfırlanmaz, tüm mesajlar birikir
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+
+  // Sidebar aktif (highlight) — chat context değil, sadece sidebar işaretçi
+  const [activeSidebarTopic, setActiveSidebarTopic] = useState(null);
+
+  // Wiki sağ panel — sidebar tıklaması ile açılır, chat'e dokunmaz
+  const [wikiTopic, setWikiTopic] = useState(null);
+  const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
+
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('chat');
   const [isModalOpen, setModalOpen] = useState(false);
   const [isTopicCreating, setTopicCreating] = useState(false);
-  const [sessionId, setSessionId] = useState(null);
-  const [wikiRefreshKey, setWikiRefreshKey] = useState(0);
 
   useEffect(() => { fetchInitialData(); }, []);
 
@@ -37,22 +43,14 @@ export default function AppDashboard() {
       setUser(userRes.data);
       const list = topicsRes.data || [];
       setTopics(list);
-      if (list.length > 0) await loadTopic(list[0]);
+      // Sidebar'daki ilk konuyu varsayılan olarak işaretle (chat mesajlarına dokunma)
+      if (list.length > 0) {
+        setActiveSidebarTopic(list[0]);
+      }
     } catch {
       toast.error('Veriler yüklenemedi.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadTopic = async (topicMeta) => {
-    try {
-      const res = await TopicsAPI.getTopic(topicMeta.id);
-      setSelectedTopic(res.data.topic);
-      setMessages([]);
-      setSessionId(null);
-    } catch {
-      toast.error('Konu yüklenemedi.');
     }
   };
 
@@ -63,16 +61,21 @@ export default function AppDashboard() {
     navigate('/login');
   };
 
+  // Sidebar tıklaması: wiki panelini aç, CHAT DOKUNULMAZ
+  const handleTopicSelect = (topic) => {
+    setActiveSidebarTopic(topic);
+    setWikiTopic(topic);         // Wiki drawer açılır
+  };
+
   const handleSendMessage = async (content) => {
     if (!content.trim() || sending) return;
 
-    // Optimistic UI
     setMessages(prev => [...prev, { role: 'user', content, id: Date.now() }]);
     setSending(true);
 
     try {
       const res = await ChatAPI.sendMessage({
-        topicId: selectedTopic?.id,
+        topicId: activeSidebarTopic?.id,
         sessionId: sessionId ?? undefined,
         content,
       });
@@ -80,6 +83,7 @@ export default function AppDashboard() {
 
       if (data.sessionId) setSessionId(data.sessionId);
 
+      // Global chat — mesajı sonuna ekle, asla temizleme
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.content,
@@ -88,45 +92,32 @@ export default function AppDashboard() {
         id: data.messageId || Date.now() + 1,
       }]);
 
-      // Refresh topic to update phase / progress
-      if (data.topicId) {
-        try {
-          const topicRes = await TopicsAPI.getTopic(data.topicId);
-          const updated = topicRes.data.topic;
-          setSelectedTopic(updated);
-          setTopics(prev =>
-            prev.map(t => t.id === updated.id
-              ? { ...t, currentPhase: updated.currentPhase, completedSections: updated.completedSections, totalSections: updated.totalSections }
-              : t
-            )
-          );
-        } catch { /* non-critical */ }
-      }
-
       if (data.wikiUpdated) {
         toast.success('Bilgi haritası güncellendi', { duration: 2500 });
         setWikiRefreshKey(prev => prev + 1);
-        // Refresh topics list completely to get new subtopics structure in sidebar
+
+        // Topic listesini yenile ve sidebar aktif topici güncelle
         try {
           const topicsRes = await TopicsAPI.getTopics();
           const latestTopics = topicsRes.data || [];
           setTopics(latestTopics);
 
           if (data.topicId) {
-            const newCurrentTopic = latestTopics.find(t => t.id === data.topicId);
-            if (newCurrentTopic) {
-              await loadTopic(newCurrentTopic);
-              
-              setSessionId(data.sessionId);
-              setMessages([{
-                  role: 'assistant',
-                  content: data.content,
-                  modelUsed: data.modelUsed,
-                  messageType: data.messageType,
-                  id: data.messageId || Date.now() + 1,
-              }]);
+            // Sidebar'da aktif topic'i güncelle (mesajlara dokunma)
+            const newTopic = latestTopics.find(t => t.id === data.topicId);
+            if (newTopic) {
+              // Tam topic datasını al (parentTopicId dahil)
+              const topicRes = await TopicsAPI.getTopic(newTopic.id);
+              const fullTopic = topicRes.data?.topic ?? newTopic;
+              setActiveSidebarTopic(fullTopic);
             }
           }
+        } catch { /* non-critical */ }
+      } else if (data.topicId) {
+        // Topic değişti ama wiki güncellemedi — sadece sidebar highlight güncelle
+        try {
+          const updated = topics.find(t => t.id === data.topicId);
+          if (updated) setActiveSidebarTopic(updated);
         } catch { /* ignore */ }
       }
 
@@ -137,7 +128,6 @@ export default function AppDashboard() {
       } else {
         toast.error('Mesaj gönderilemedi.');
       }
-      // Remove optimistic user message
       setMessages(prev => prev.slice(0, -1));
     } finally {
       setSending(false);
@@ -154,7 +144,10 @@ export default function AppDashboard() {
       });
       const newTopic = res.data;
       setTopics(prev => [newTopic, ...prev]);
-      await loadTopic(newTopic);
+      setActiveSidebarTopic(newTopic);
+      // Global chat'i temizle sadece kullanıcı manuel yeni konu oluşturursa
+      setMessages([]);
+      setSessionId(null);
       setModalOpen(false);
       toast.success('Yeni konu oluşturuldu!');
     } catch (err) {
@@ -175,54 +168,47 @@ export default function AppDashboard() {
 
   return (
     <div className="app-shell">
+      {/* Ambient AI background — purely visual, pointer-events: none */}
+      <div className="ambient-layer">
+        <div className="ambient-orb ambient-orb-1" />
+        <div className="ambient-orb ambient-orb-2" />
+        <div className="ambient-orb ambient-orb-3" />
+      </div>
+
       <AppTopBar user={user} onLogout={handleLogout} />
 
       <div className="app-body">
         <TopicSidebar
           topics={topics}
-          selectedTopic={selectedTopic}
-          onSelect={loadTopic}
+          selectedTopic={activeSidebarTopic}
+          onSelect={handleTopicSelect}
           onNew={() => setModalOpen(true)}
         />
 
         <div className="app-main">
-          <div className="main-tabs">
-            <button
-              className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chat')}
-            >
-              <MessageSquare size={13} strokeWidth={2.5} />
-              Sohbet
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'wiki' ? 'active' : ''}`}
-              onClick={() => setActiveTab('wiki')}
-            >
-              <BookOpen size={13} strokeWidth={2.5} />
-              Bilgi Haritam
-            </button>
-          </div>
+          {/* Global Chat — her zaman görünür, hiç kaybolmaz */}
+          <div className="chat-layout">
+            <ChatPanel
+              topic={activeSidebarTopic}
+              messages={messages}
+              onSend={handleSendMessage}
+              sending={sending}
+              user={user}
+            />
 
-          {/* Chat view */}
-          <div className={`view-content ${activeTab === 'chat' ? 'active' : ''}`}>
-            <div className="chat-layout">
-              <ChatPanel
-                topic={selectedTopic}
-                messages={messages}
-                onSend={handleSendMessage}
-                sending={sending}
-                user={user}
+            {/* Sağ panel: Wiki Drawer (topic tıklanınca) veya InfoPanel */}
+            {wikiTopic ? (
+              <WikiDrawer
+                topic={wikiTopic}
+                onClose={() => setWikiTopic(null)}
+                refreshKey={wikiRefreshKey}
               />
+            ) : (
               <InfoPanel
-                topic={selectedTopic}
+                topic={activeSidebarTopic}
                 onSendCommand={handleSendMessage}
               />
-            </div>
-          </div>
-
-          {/* Wiki view */}
-          <div className={`view-content ${activeTab === 'wiki' ? 'active' : ''}`}>
-            <WikiPanel topicId={selectedTopic?.id} refreshKey={wikiRefreshKey} />
+            )}
           </div>
         </div>
       </div>

@@ -69,7 +69,13 @@ builder.Services.AddMediatR(cfg => {
 
 // ── Named HttpClients + Microsoft.Extensions.Http.Resilience ──────────────────
 // AddStandardResilienceHandler → retry (exp backoff) + circuit breaker + timeout
-builder.Services.AddHttpClient("Groq", c => c.Timeout = TimeSpan.FromSeconds(90))
+// PooledConnectionLifetime = 2 dk → DNS değişikliklerini yakalar, Socket Exhaustion'ı önler.
+// HttpClient timeout'ları AIServiceChain'deki 10s WaitAsync ile tutarlı: 15s yeterli.
+builder.Services.AddHttpClient("Groq", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 3;
@@ -77,7 +83,11 @@ builder.Services.AddHttpClient("Groq", c => c.Timeout = TimeSpan.FromSeconds(90)
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
-builder.Services.AddHttpClient("SambaNova", c => c.Timeout = TimeSpan.FromSeconds(90))
+builder.Services.AddHttpClient("SambaNova", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 2;
@@ -85,7 +95,11 @@ builder.Services.AddHttpClient("SambaNova", c => c.Timeout = TimeSpan.FromSecond
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
-builder.Services.AddHttpClient("Cerebras", c => c.Timeout = TimeSpan.FromSeconds(60))
+builder.Services.AddHttpClient("Cerebras", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 2;
@@ -94,6 +108,10 @@ builder.Services.AddHttpClient("Cerebras", c => c.Timeout = TimeSpan.FromSeconds
     });
 
 builder.Services.AddHttpClient("OpenRouter", c => c.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 1;
@@ -101,8 +119,25 @@ builder.Services.AddHttpClient("OpenRouter", c => c.Timeout = TimeSpan.FromSecon
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
+// Google Gemini — Primary Smart Router
+builder.Services.AddHttpClient("Gemini", c => c.Timeout = TimeSpan.FromSeconds(12))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.MaxRetryAttempts          = 1;
+        o.Retry.Delay                     = TimeSpan.FromMilliseconds(200);
+        o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(20);
+    });
+
 // Cohere — kurumsal içerik üretimi (4. halka)
 builder.Services.AddHttpClient("Cohere", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 1;
@@ -112,6 +147,10 @@ builder.Services.AddHttpClient("Cohere", c => c.Timeout = TimeSpan.FromSeconds(1
 
 // HuggingFace Router — dinamik yük dengeleme (5. halka)
 builder.Services.AddHttpClient("HuggingFace", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 1;
@@ -119,7 +158,11 @@ builder.Services.AddHttpClient("HuggingFace", c => c.Timeout = TimeSpan.FromSeco
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
-builder.Services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(90))
+builder.Services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts          = 2;
@@ -127,6 +170,7 @@ builder.Services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
+builder.Services.AddScoped<IGeminiService, GeminiService>(); // Primary Smart Router
 builder.Services.AddScoped<IGroqService, GroqService>();
 builder.Services.AddScoped<ISambaNovaService, SambaNovaService>();
 builder.Services.AddScoped<ICerebrasService, CerebrasService>();

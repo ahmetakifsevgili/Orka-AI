@@ -83,5 +83,24 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<Message>()
             .Property(m => m.CostUSD)
             .HasPrecision(10, 6);
+
+        // ── Performance Indexes ───────────────────────────────────────────────
+        // Topic: sidebar tree + quiz order sorguları
+        modelBuilder.Entity<Topic>()
+            .HasIndex(t => t.ParentTopicId);
+        modelBuilder.Entity<Topic>()
+            .HasIndex(t => new { t.UserId, t.Order });
+
+        // Session: kullanıcı + konu bazlı oturum arama
+        modelBuilder.Entity<Session>()
+            .HasIndex(s => new { s.UserId, s.TopicId });
+
+        // Message: oturum mesaj listesi + sıralama
+        modelBuilder.Entity<Message>()
+            .HasIndex(m => new { m.SessionId, m.CreatedAt });
+
+        // WikiPage: konu bazlı wiki içerik yükleme
+        modelBuilder.Entity<WikiPage>()
+            .HasIndex(w => w.TopicId);
     }
 }
