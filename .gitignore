@@ -1,0 +1,37 @@
+# ── .NET ──────────────────────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.DotSettings.user
+
+# User Secrets — asla commit'lenmez
+# Windows: %APPDATA%\Microsoft\UserSecrets\
+# Bu satır sembolik; user-secrets zaten repo dışında saklanır.
+
+# Local appsettings overrides — production anahtarı içerebilir
+appsettings.*.json
+!appsettings.json
+
+# EF Core migrations snapshot geçici dosyalar
+*.migration.cs.bak
+
+# ── Node / Frontend ────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+Orka-Front/dist/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.DS_Store
+Thumbs.db
+
+# ── Ortam değişkenleri ────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
