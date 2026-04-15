@@ -16,22 +16,19 @@ public class ChatController : ControllerBase
 {
     private readonly IAgentOrchestrator _agentOrchestrator;
     private readonly IGroqService _groqService;
-    private readonly IOpenRouterService _openRouterService;
-    private readonly IMistralService _mistralService;
     private readonly IChaosContext _chaos;
+    private readonly ILogger<ChatController> _logger;
 
     public ChatController(
         IAgentOrchestrator agentOrchestrator,
         IGroqService groqService,
-        IOpenRouterService openRouterService,
-        IMistralService mistralService,
-        IChaosContext chaos)
+        IChaosContext chaos,
+        ILogger<ChatController> logger)
     {
         _agentOrchestrator = agentOrchestrator;
         _groqService = groqService;
-        _openRouterService = openRouterService;
-        _mistralService = mistralService;
         _chaos = chaos;
+        _logger = logger;
     }
 
     [AllowAnonymous]
@@ -40,43 +37,11 @@ public class ChatController : ControllerBase
     {
         try
         {
-            var results = new List<object>();
+            var groqResponse = await _groqService.GetResponseAsync(
+                new List<Core.Entities.Message>(),
+                "Sen bir test asistanısın. Sadece 'OK' de.");
 
-            // Test Groq
-            try
-            {
-                var groqResponse = await _groqService.GetResponseAsync(new List<Core.Entities.Message>(), "Sen bir test asistanısın. Sadece 'OK' de.");
-                results.Add(new { Service = "Groq", Status = groqResponse.Trim() });
-            }
-            catch (Exception ex)
-            {
-                results.Add(new { Service = "Groq", Status = $"HATA: {ex.Message}" });
-            }
-
-            // Test OpenRouter
-            try
-            {
-                var orResponse = await _openRouterService.ChatCompletionAsync("Sen bir test asistanısın.", "BAĞLANTI TESTİ. Bana sadece 'OK' de.");
-                results.Add(new { Service = "OpenRouter", Status = orResponse.Trim() });
-            }
-            catch (Exception ex)
-            {
-                results.Add(new { Service = "OpenRouter", Status = $"HATA: {ex.Message}" });
-            }
-
-            // Test Mistral
-            try
-            {
-                // MistralService normally implements GetChatCompletionAsync
-                var mistralResponse = await _mistralService.GetResponseAsync(new List<Core.Entities.Message>(), "Sen bir test asistanısın. Sadece 'OK' de.");
-                results.Add(new { Service = "Mistral", Status = mistralResponse.Trim() });
-            }
-            catch (Exception ex)
-            {
-                results.Add(new { Service = "Mistral", Status = $"HATA: {ex.Message}" });
-            }
-
-            return Ok(new { status = "Complete", results = results });
+            return Ok(new { status = "Complete", results = new[] { new { Service = "Groq", Status = groqResponse.Trim() } } });
         }
         catch (Exception ex)
         {
@@ -101,13 +66,84 @@ public class ChatController : ControllerBase
                 userId,
                 request.Content,
                 request.TopicId,
-                request.SessionId);
+                request.SessionId,
+                request.IsPlanMode);
 
             return Ok(response);
         }
         catch (Exception ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("stream")]
+    public async Task StreamMessage([FromBody] SendMessageRequest request)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        
+        Guid sid;
+        Guid? createdTopicId = null;
+        try
+        {
+            var session = await _agentOrchestrator.GetOrCreateSessionAsync(userId, request.TopicId, request.SessionId, request.Content);
+            if (session == null) throw new Exception("Oturum başlatılamadı.");
+            
+            sid = session.Id;
+            createdTopicId = session.TopicId;
+
+            Response.ContentType = "text/event-stream";
+            Response.Headers.Append("Cache-Control", "no-cache");
+            Response.Headers.Append("Connection", "keep-alive");
+            Response.Headers.Append("X-Orka-SessionId", sid.ToString());
+            if (createdTopicId.HasValue) {
+                Response.Headers.Append("X-Orka-TopicId", createdTopicId.Value.ToString());
+            }
+
+            // CORS için header'ları dışarı aç
+            Response.Headers.Append("Access-Control-Expose-Headers", "X-Orka-SessionId, X-Orka-TopicId");
+
+            // Initial heartbeat — forces headers to be flushed to client immediately.
+            // Without this, GetResponse() blocks until the first AI chunk (up to 90s if primary model retries).
+            await Response.WriteAsync(": connected\n\n");
+            await Response.Body.FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Stream initialization failed");
+            Response.StatusCode = 500;
+            return;
+        }
+
+        try
+        {
+            await foreach (var chunk in _agentOrchestrator.ProcessMessageStreamAsync(
+                userId,
+                request.Content,
+                request.TopicId,
+                sid,
+                request.IsPlanMode))
+            {
+                // SSE format requires each line to be prefixed with "data: "
+                var lines = chunk.Split('\n');
+                foreach (var line in lines)
+                {
+                    await Response.WriteAsync($"data: {line}\n");
+                }
+                await Response.WriteAsync("\n");
+                await Response.Body.FlushAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "StreamMessage akışı kesildi.");
+            try
+            {
+                await Response.WriteAsync($"data: [ERROR]: Mesaj akışı kesildi\n");
+                await Response.WriteAsync("\n");
+                await Response.Body.FlushAsync();
+            }
+            catch { /* Response zaten kapatılmış olabilir */ }
         }
     }
 

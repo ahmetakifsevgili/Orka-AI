@@ -21,4 +21,23 @@ public class User
 
     public ICollection<Topic> Topics { get; set; } = new List<Topic>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+
+    // ── Settings ────────────────────────────────────────────────────────────
+    public string Theme { get; set; } = "Dark";
+    public string Language { get; set; } = "English";
+    public string FontSize { get; set; } = "Medium";
+    
+    // Notifications
+    public bool QuizReminders { get; set; } = true;
+    public bool WeeklyReport { get; set; } = true;
+    public bool NewContentAlerts { get; set; } = false;
+    public bool SoundsEnabled { get; set; } = true;
+
+    // ── Gamification ────────────────────────────────────────────────────────
+    /// <summary>Kullanıcının toplam XP puanı (doğru quiz cevabı başına +20).</summary>
+    public int TotalXP { get; set; } = 0;
+    /// <summary>Ardışık günlük aktif gün sayısı.</summary>
+    public int CurrentStreak { get; set; } = 0;
+    /// <summary>Son aktivite tarihi; streak hesabında kullanılır.</summary>
+    public DateTime? LastActiveDate { get; set; }
 }

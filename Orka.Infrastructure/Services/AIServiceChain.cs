@@ -7,155 +7,94 @@ namespace Orka.Infrastructure.Services;
 /// <summary>
 /// Smart Router + Yük Devretme Zinciri
 ///
-/// Katman 0 — Google Gemini (Primary Smart Router):
-///   systemPrompt içeriğine göre görev tespiti yapar ve uygun model/config seçer.
-///   Hata veya timeout → Katman 1'e geçer.
+/// Katman 0 — Groq (Primary)
+/// Katman 1 — Gemini (Fallback)
 ///
-/// Katman 1 — Altılı Yedek Zinciri:
-///   Groq → SambaNova → Cerebras → Cohere → HuggingFace → Mistral
-///
-/// Her sağlayıcıya 10 saniyelik katı zaman aşımı uygulanır.
+/// Her sağlayıcıya 25 saniyelik katı zaman aşımı uygulanır.
 /// IsUsableResponse() bilinen hata string'lerini filtreler.
 /// </summary>
 public class AIServiceChain : IAIServiceChain
 {
-    private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(20);
 
-    private readonly IGeminiService      _gemini;
     private readonly IGroqService        _groq;
-    private readonly ISambaNovaService   _sambaNova;
-    private readonly ICerebrasService    _cerebras;
-    private readonly ICohereService      _cohere;
-    private readonly IHuggingFaceService _huggingFace;
-    private readonly IMistralService     _mistral;
+    private readonly IGeminiService      _gemini;
     private readonly ILogger<AIServiceChain> _logger;
 
     public AIServiceChain(
-        IGeminiService       gemini,
         IGroqService         groq,
-        ISambaNovaService    sambaNova,
-        ICerebrasService     cerebras,
-        ICohereService       cohere,
-        IHuggingFaceService  huggingFace,
-        IMistralService      mistral,
+        IGeminiService       gemini,
         ILogger<AIServiceChain> logger)
     {
-        _gemini      = gemini;
-        _groq        = groq;
-        _sambaNova   = sambaNova;
-        _cerebras    = cerebras;
-        _cohere      = cohere;
-        _huggingFace = huggingFace;
-        _mistral     = mistral;
-        _logger      = logger;
+        _groq   = groq;
+        _gemini = gemini;
+        _logger = logger;
     }
 
     public async Task<string> GenerateWithFallbackAsync(string systemPrompt, string userMessage)
     {
-        // ── Katman 0: Google Gemini Smart Router ──────────────────────────────
+        // ── Katman 0: Groq Smart Router ──────────────────────────────
         using (var cts0 = new CancellationTokenSource(ProviderTimeout))
         {
             try
             {
-                _logger.LogDebug("[AIChain] Gemini (Smart Router) deneniyor...");
-                var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts0.Token)
+                _logger.LogDebug("[AIChain] Groq (Smart Router) deneniyor...");
+                var primaryResult = await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts0.Token)
                                                .WaitAsync(cts0.Token);
+                if (IsUsableResponse(primaryResult))
+                {
+                    _logger.LogInformation("[AIChain] Groq başarılı.");
+                    return primaryResult;
+                }
+                _logger.LogWarning("[AIChain] Groq hatalı yanıt, fallback zincirine geçiliyor.");
+            }
+            catch (OperationCanceledException) when (cts0.IsCancellationRequested)
+            {
+                _logger.LogWarning("[AIChain] Groq 20s timeout, fallback zincirine geçiliyor.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[AIChain] Groq başarısız, fallback zincirine geçiliyor. Sebep: {Msg}", ex.Message);
+            }
+        }
+
+        // ── Katman 1: Gemini Fallback ─────────────────────────────────────────
+        using (var cts1 = new CancellationTokenSource(ProviderTimeout))
+        {
+            try
+            {
+                _logger.LogDebug("[AIChain] Gemini (Fallback) deneniyor...");
+                var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts1.Token)
+                                               .WaitAsync(cts1.Token);
                 if (IsUsableResponse(geminiResult))
                 {
                     _logger.LogInformation("[AIChain] Gemini başarılı.");
                     return geminiResult;
                 }
-                _logger.LogWarning("[AIChain] Gemini hatalı yanıt, fallback zincirine geçiliyor.");
+                _logger.LogWarning("[AIChain] Gemini hatalı yanıt döndü.");
             }
-            catch (OperationCanceledException) when (cts0.IsCancellationRequested)
+            catch (OperationCanceledException) when (cts1.IsCancellationRequested)
             {
-                _logger.LogWarning("[AIChain] Gemini 10s timeout, fallback zincirine geçiliyor.");
+                _logger.LogWarning("[AIChain] Gemini timeout aşıldı.");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[AIChain] Gemini başarısız, fallback zincirine geçiliyor. Sebep: {Msg}", ex.Message);
+                _logger.LogWarning(ex, "[AIChain] Gemini başarısız. Sebep: {Msg}", ex.Message);
             }
         }
 
-        // ── Katman 1: Altılı Yedek Zinciri ────────────────────────────────────
-        var chain = new (string Name, Func<CancellationToken, Task<string>> Call)[]
-        {
-            ("Groq",        ct => _groq.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-            ("SambaNova",   ct => _sambaNova.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-            ("Cerebras",    ct => _cerebras.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-            ("Cohere",      ct => _cohere.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-            ("HuggingFace", ct => _huggingFace.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-            ("Mistral",     ct => _mistral.GenerateResponseAsync(systemPrompt, userMessage, ct)),
-        };
-
-        Exception? lastEx = null;
-
-        foreach (var (name, call) in chain)
-        {
-            using var cts = new CancellationTokenSource(ProviderTimeout);
-            try
-            {
-                _logger.LogDebug("[AIChain] {Provider} deneniyor...", name);
-                var result = await call(cts.Token).WaitAsync(cts.Token);
-
-                if (IsUsableResponse(result))
-                {
-                    _logger.LogInformation("[AIChain] {Provider} başarılı.", name);
-                    return result;
-                }
-
-                _logger.LogWarning("[AIChain] {Provider} hatalı yanıt döndü, sonraki deneniyor. İçerik: {R}",
-                    name, result?.Length > 80 ? result[..80] : result);
-            }
-            catch (OperationCanceledException) when (cts.IsCancellationRequested)
-            {
-                _logger.LogWarning("[AIChain] {Provider} 10 saniyelik timeout aşıldı, sonraki deneniyor.", name);
-            }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                _logger.LogWarning(ex, "[AIChain] {Provider} başarısız, sonraki provider'a geçiliyor.", name);
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Tüm AI sağlayıcıları başarısız oldu. Lütfen daha sonra tekrar deneyin.",
-            lastEx);
+        throw new InvalidOperationException("Tüm AI sağlayıcıları başarısız oldu. Lütfen daha sonra tekrar deneyin.");
     }
 
     /// <summary>
-    /// Context-aware failover: önce Gemini'yi dener, sonra Groq (context-native),
+    /// Context-aware failover: önce Groq (context-native),
     /// ardından kalan zincir.
     /// </summary>
     public async Task<string> GetResponseWithFallbackAsync(IEnumerable<Message> context, string systemPrompt)
     {
-        // 1. Gemini Smart Router — context özeti ile
         var contextSummary = BuildContextSummary(context);
-        using (var cts0 = new CancellationTokenSource(ProviderTimeout))
-        {
-            try
-            {
-                _logger.LogDebug("[AIChain] Gemini (context-aware) deneniyor...");
-                var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, contextSummary, cts0.Token)
-                                               .WaitAsync(cts0.Token);
-                if (IsUsableResponse(geminiResult))
-                {
-                    _logger.LogInformation("[AIChain] Gemini başarılı (context).");
-                    return geminiResult;
-                }
-                _logger.LogWarning("[AIChain] Gemini boş/hatalı yanıt, Groq fallback'e geçiliyor.");
-            }
-            catch (OperationCanceledException) when (cts0.IsCancellationRequested)
-            {
-                _logger.LogWarning("[AIChain] Gemini (context) 10s timeout, Groq'a geçiliyor.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[AIChain] Gemini failed, falling back to next provider. Sebep: {Msg}", ex.Message);
-            }
-        }
-
-        // 2. Groq — tam context desteği
+        
+        // 1. Groq — tam context desteği
         using (var cts1 = new CancellationTokenSource(ProviderTimeout))
         {
             try
@@ -171,7 +110,7 @@ public class AIServiceChain : IAIServiceChain
             }
             catch (OperationCanceledException) when (cts1.IsCancellationRequested)
             {
-                _logger.LogWarning("[AIChain] Groq (context) 10s timeout aşıldı, failover başlıyor.");
+                _logger.LogWarning("[AIChain] Groq (context) 20s timeout aşıldı, failover başlıyor.");
             }
             catch (Exception ex)
             {
@@ -179,8 +118,89 @@ public class AIServiceChain : IAIServiceChain
             }
         }
 
-        // 3. Kalan zincir: context'i metin olarak geçir
+    // 3. Kalan zincir: context'i metin olarak geçir
         return await GenerateWithFallbackAsync(systemPrompt, contextSummary);
+    }
+
+    public async IAsyncEnumerable<string> GetResponseStreamWithFallbackAsync(IEnumerable<Message> context, string systemPrompt, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // 1. Groq — Stream desteği, 10s ilk token timeout
+        bool started = false;
+        IAsyncEnumerator<string>? groqEnum = null;
+
+        using (var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            probeCts.CancelAfter(ProviderTimeout);
+            try
+            {
+                groqEnum = _groq.GetResponseStreamAsync(context, systemPrompt, probeCts.Token)
+                                 .GetAsyncEnumerator(probeCts.Token);
+                if (await groqEnum.MoveNextAsync() && IsUsableResponse(groqEnum.Current))
+                {
+                    started = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[AIChain] Groq Stream başarısız/timeout: {Msg}", ex.Message);
+            }
+        }
+
+        if (started && groqEnum != null)
+        {
+            yield return groqEnum.Current;
+            while (await groqEnum.MoveNextAsync())
+                yield return groqEnum.Current;
+            await groqEnum.DisposeAsync();
+            yield break;
+        }
+
+        if (groqEnum != null) await groqEnum.DisposeAsync();
+
+        // 2. Fallback: Normal zinciri çağır ve sonucu tek parça stream et
+        _logger.LogWarning("[AIChain] Groq Stream başarısız, normal fallback zincirine geçiliyor.");
+        var fallbackResult = await GetResponseWithFallbackAsync(context, systemPrompt);
+        yield return fallbackResult;
+    }
+
+    public async IAsyncEnumerable<string> GenerateStreamWithFallbackAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Groq — 10s ilk token timeout
+        bool started = false;
+        IAsyncEnumerator<string>? groqEnum = null;
+
+        using (var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            probeCts.CancelAfter(ProviderTimeout);
+            try
+            {
+                groqEnum = _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, probeCts.Token)
+                                 .GetAsyncEnumerator(probeCts.Token);
+                if (await groqEnum.MoveNextAsync() && IsUsableResponse(groqEnum.Current))
+                {
+                    started = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[AIChain] Groq Stream (simple) başarısız/timeout: {Msg}", ex.Message);
+            }
+        }
+
+        if (started && groqEnum != null)
+        {
+            yield return groqEnum.Current;
+            while (await groqEnum.MoveNextAsync())
+                yield return groqEnum.Current;
+            await groqEnum.DisposeAsync();
+            yield break;
+        }
+
+        if (groqEnum != null) await groqEnum.DisposeAsync();
+
+        _logger.LogWarning("[AIChain] Groq Stream (simple) başarısız, normal fallback zincirine geçiliyor.");
+        var fallbackResult = await GenerateWithFallbackAsync(systemPrompt, userMessage);
+        yield return fallbackResult;
     }
 
     /// <summary>
@@ -193,13 +213,9 @@ public class AIServiceChain : IAIServiceChain
 
         var lower = result.ToLowerInvariant();
         if (lower.Contains("api hatası"))               return false;
-        if (lower.Contains("zihnim biraz karıştı"))     return false;
         if (lower.Contains("kota doldu"))               return false;
-        if (lower.Contains("fikirlerimi toparlamakta")) return false;
         if (lower.Contains("servis şu an meşgul"))      return false;
-        if (lower.Contains("bir sorun oluştu"))         return false;
-        if (lower.Contains("ai yanıtı işlenirken"))     return false;
-
+        
         return true;
     }
 

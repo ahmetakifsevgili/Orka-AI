@@ -78,6 +78,50 @@ namespace Orka.Infrastructure.Data.Migrations
                     b.ToTable("Messages");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.QuizAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Explanation")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Question")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UserAnswer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("QuizAttempts");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -219,6 +263,9 @@ namespace Orka.Infrastructure.Data.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsMastered")
+                        .HasColumnType("bit");
+
                     b.Property<string>("LanguageLevel")
                         .HasColumnType("nvarchar(max)");
 
@@ -236,6 +283,12 @@ namespace Orka.Infrastructure.Data.Migrations
 
                     b.Property<string>("PhaseMetadata")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<double>("ProgressPercentage")
+                        .HasColumnType("float");
+
+                    b.Property<int>("SuccessScore")
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -279,12 +332,23 @@ namespace Orka.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FontSize")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("NewContentAlerts")
+                        .HasColumnType("bit");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -294,11 +358,33 @@ namespace Orka.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("QuizReminders")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SoundsEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<double>("StorageLimitMB")
                         .HasColumnType("float");
 
                     b.Property<double>("StorageUsedMB")
                         .HasColumnType("float");
+
+                    b.Property<string>("Theme")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("WeeklyReport")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("TotalXP")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CurrentStreak")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastActiveDate")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
@@ -398,6 +484,33 @@ namespace Orka.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.QuizAttempt", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.Session", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.RefreshToken", b =>

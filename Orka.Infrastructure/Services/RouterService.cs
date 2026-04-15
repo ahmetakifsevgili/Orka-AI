@@ -49,15 +49,15 @@ public class RouterService : IRouterService
     // MessageType → model adı eşlemesi
     private static readonly Dictionary<MessageType, string> ModelMap = new()
     {
-        [MessageType.Research]   = "Groq/llama-3.3-70b",
-        [MessageType.Interview]  = "OpenRouter/claude-3-5-haiku",
-        [MessageType.Quiz]       = "OpenRouter/qwen-2.5-72b",
-        [MessageType.Summarize]  = "OpenRouter/claude-3-5-haiku",
-        [MessageType.Plan]       = "Groq/llama-3.3-70b",
-        [MessageType.Explain]    = "Groq/llama-3.3-70b",
-        [MessageType.General]    = "Groq/llama-3.3-70b",
-        [MessageType.Greeting]   = "Groq/llama-3.3-70b",
-        [MessageType.NewTopic]   = "Groq/llama-3.3-70b",
+        [MessageType.Research]   = "OpenRouter/qwen3-next-80b-a3b",   // Wiki / Derin Araştırma
+        [MessageType.Interview]  = "OpenRouter/nemotron-nano-9b-v2",  // Analiz / Hızlı yanıt
+        [MessageType.Quiz]       = "OpenRouter/nemotron-nano-9b-v2",  // Quiz değerlendirmesi
+        [MessageType.Summarize]  = "OpenRouter/gpt-oss-20b",          // Özetleme
+        [MessageType.Plan]       = "OpenRouter/gpt-oss-120b",         // DeepPlan
+        [MessageType.Explain]    = "OpenRouter/llama-3.3-70b",        // Tutor
+        [MessageType.General]    = "OpenRouter/llama-3.3-70b",        // Tutor
+        [MessageType.Greeting]   = "OpenRouter/llama-3.3-70b",        // Tutor
+        [MessageType.NewTopic]   = "OpenRouter/gpt-oss-120b",         // Yeni konu DeepPlan
     };
 
     public RouterService(IGroqService groqService, ILogger<RouterService> logger)

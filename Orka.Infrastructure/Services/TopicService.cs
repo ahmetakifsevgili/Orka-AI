@@ -30,10 +30,11 @@ public class TopicService : ITopicService
             .ToListAsync();
     }
 
-    public async Task<(Topic Topic, Session Session)> CreateDiscoveryTopicAsync(Guid userId, string title)
+    public async Task<(Topic Topic, Session Session)> CreateDiscoveryTopicAsync(Guid userId, string title, string? routeCategory = null)
     {
         var emoji = GuessEmoji(title);
-        var category = GuessCategory(title);
+        // Fallback: Eğer routeCategory Chat ise Chat olarak kalır, değilse eski GuessCategory mantığına devredilmez, Plan olur.
+        var category = !string.IsNullOrEmpty(routeCategory) ? routeCategory : "Plan";
 
         var topic = new Topic
         {
@@ -54,6 +55,9 @@ public class TopicService : ITopicService
             TopicId = topic.Id,
             UserId = userId,
             SessionNumber = 1,
+            CurrentState = SessionState.Learning,
+            TotalTokensUsed = 0,
+            TotalCostUSD = 0m,
             CreatedAt = DateTime.UtcNow
         };
         _dbContext.Sessions.Add(session);
@@ -146,6 +150,24 @@ public class TopicService : ITopicService
         var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId && t.UserId == userId);
         if (topic == null) return;
 
+        // 1. Alt konuları sil (self-referencing, NO_ACTION FK)
+        var subTopics = await _dbContext.Topics.Where(t => t.ParentTopicId == topicId).ToListAsync();
+        _dbContext.Topics.RemoveRange(subTopics);
+
+        // 2. Session'ların mesajlarını sil (NO_ACTION FK — manuel cascade)
+        var sessions = await _dbContext.Sessions
+            .Include(s => s.Messages)
+            .Where(s => s.TopicId == topicId)
+            .ToListAsync();
+        foreach (var session in sessions)
+            _dbContext.Messages.RemoveRange(session.Messages);
+        _dbContext.Sessions.RemoveRange(sessions);
+
+        // 3. QuizAttempts sil (NO_ACTION FK — manuel cascade)
+        var quizAttempts = await _dbContext.QuizAttempts.Where(q => q.TopicId == topicId).ToListAsync();
+        _dbContext.QuizAttempts.RemoveRange(quizAttempts);
+
+        // 4. Konuyu sil (WikiPages + WikiBlocks DB CASCADE ile silinir)
         _dbContext.Topics.Remove(topic);
         await _dbContext.SaveChangesAsync();
     }
@@ -163,7 +185,7 @@ public class TopicService : ITopicService
     // ITopicService uyumluluğu için
     public async Task<Topic> CreateTopicAsync(Guid userId, string title, string? emoji, string? category)
     {
-        var (topic, _, _) = await CreateTopicWithPlanAsync(userId, title);
+        var (topic, _) = await CreateDiscoveryTopicAsync(userId, title, category);
         return topic;
     }
 

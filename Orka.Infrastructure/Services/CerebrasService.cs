@@ -25,4 +25,7 @@ public class CerebrasService : OpenAICompatibleService, ICerebrasService
 
     public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
         => CallChatAsync(systemPrompt, userMessage, ct: ct);
+
+    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => CallChatStreamAsync(systemPrompt, userMessage, ct: ct);
 }

@@ -14,9 +14,15 @@ public interface IAIServiceChain
     /// </summary>
     Task<string> GenerateWithFallbackAsync(string systemPrompt, string userMessage);
 
-    /// <summary>
-    /// Konuşma geçmişi (context) ile birlikte zinciri dener.
-    /// Groq context-aware çağrı yapar; diğer sağlayıcılar context'i text'e serialize eder.
-    /// </summary>
     Task<string> GetResponseWithFallbackAsync(IEnumerable<Message> context, string systemPrompt);
+
+    /// <summary>
+    /// Zinciri sırayla dener ve ilk başarılı stream'i döner.
+    /// </summary>
+    IAsyncEnumerable<string> GenerateStreamWithFallbackAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+
+    /// <summary>
+    /// Konuşma geçmişi ile birlikte stream yanıtı döner.
+    /// </summary>
+    IAsyncEnumerable<string> GetResponseStreamWithFallbackAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default);
 }

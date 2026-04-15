@@ -63,6 +63,13 @@ public class GeminiService : IGeminiService
         return CallGeminiAsync(systemPrompt, userMessage, model, temperature, maxTokens, topP, topK, stopSequences, ct);
     }
 
+    public Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default)
+    {
+        _logger.LogInformation("[GEMINI DIRECT MODEL] Görev → Model={Model}", model);
+        // Arka plan işlerinde daha deterministik ve uzun çıktılar istenir (maxTokens:4096, temp:0.3)
+        return CallGeminiAsync(systemPrompt, userMessage, model, 0.3, 4096, 0.85, 40, null, ct);
+    }
+
     // ── Görev tespiti — Öncelik: Quiz > DeepPlan > Tutor ─────────────────────
     private (string TaskType, string Model, double Temperature, int MaxTokens, double TopP, int TopK, string[]? StopSequences) DetectTask(string systemPrompt)
     {
@@ -118,7 +125,7 @@ public class GeminiService : IGeminiService
             generationConfig = new
             {
                 temperature,
-                maxOutputTokens  = maxTokens,
+                
                 topP,
                 topK,
                 candidateCount   = 1,
@@ -160,6 +167,75 @@ public class GeminiService : IGeminiService
             AiDebugLogger.LogError("GEMINI", ex.Message);
             _logger.LogError(ex, "Gemini API çağrısı başarısız.");
             throw new HttpRequestException($"Gemini servis hatası: {ex.Message}", ex);
+        }
+    }
+
+    public async IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var (taskType, model, temperature, maxTokens, topP, topK, stopSequences) = DetectTask(systemPrompt);
+        _logger.LogInformation("[GEMINI STREAM] Görev={Task} → Model={Model}", taskType, model);
+
+        var endpoint = $"{_baseUrl.TrimEnd('/')}/{model}:streamGenerateContent?alt=sse&key={_apiKey}";
+
+        var requestBody = new
+        {
+            systemInstruction = new
+            {
+                parts = new[] { new { text = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt } }
+            },
+            contents = new[]
+            {
+                new { role = "user", parts = new[] { new { text = userMessage } } }
+            },
+            generationConfig = new
+            {
+                temperature,
+                
+                topP,
+                topK,
+                candidateCount = 1,
+                responseMimeType = "text/plain",
+                stopSequences = stopSequences ?? Array.Empty<string>()
+            }
+        };
+
+        var json = JsonSerializer.Serialize(requestBody, _jsonOpts);
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Gemini Stream error: {response.StatusCode} - {err}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                using var doc = JsonDocument.Parse(data);
+                
+                // Gemini stream response pattern is slightly different
+                var text = doc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString();
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    yield return text;
+                }
+            }
         }
     }
 }

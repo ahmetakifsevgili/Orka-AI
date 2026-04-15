@@ -28,21 +28,30 @@ public class SessionService
     public async Task<object?> GetLatestSessionAsync(Guid topicId, Guid userId)
     {
         var session = await _dbContext.Sessions
+            .Include(s => s.Messages)
             .Where(s => s.TopicId == topicId && s.UserId == userId)
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 
         if (session == null) return null;
 
-        var lastMessage = await _dbContext.Messages
-            .Where(m => m.SessionId == session.Id && m.Role == "assistant")
+        var lastMessage = session.Messages
+            .Where(m => m.Role == "assistant")
             .OrderByDescending(m => m.CreatedAt)
-            .FirstOrDefaultAsync();
+            .FirstOrDefault();
 
         var nextPage = await _dbContext.WikiPages
             .Where(w => w.TopicId == topicId && (w.Status == "pending" || w.Status == "learning"))
             .OrderBy(w => w.OrderIndex)
             .FirstOrDefaultAsync();
+
+        var mappedMessages = session.Messages.OrderBy(m => m.CreatedAt).Select(m => new {
+            id = m.Id,
+            role = m.Role,
+            messageType = m.MessageType.ToString().ToLowerInvariant(),
+            content = m.Content,
+            createdAt = m.CreatedAt
+        }).ToList();
 
         return new
         {
@@ -52,7 +61,8 @@ public class SessionService
             lastMessage = lastMessage?.Content?[..Math.Min(200, lastMessage.Content.Length)],
             nextSuggestedTopic = nextPage?.Title,
             totalTokensUsed = session.TotalTokensUsed,
-            totalCostUsd = session.TotalCostUSD
+            totalCostUsd = session.TotalCostUSD,
+            messages = mappedMessages
         };
     }
 }

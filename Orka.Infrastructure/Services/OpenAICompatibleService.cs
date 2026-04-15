@@ -55,7 +55,7 @@ public abstract class OpenAICompatibleService
     protected async Task<string> CallChatWithMessagesAsync(
         object messages, int maxTokens = 2048, double temperature = 0.7, CancellationToken ct = default)
     {
-        var requestBody = new { model = Model, messages, max_tokens = maxTokens, temperature };
+        var requestBody = new { model = Model, messages,  temperature };
         var jsonBody    = JsonSerializer.Serialize(requestBody, JsonOptions);
         var providerTag = GetType().Name.Replace("Service", "").ToUpperInvariant();
 
@@ -90,6 +90,58 @@ public abstract class OpenAICompatibleService
             AiDebugLogger.LogError(providerTag, ex.Message);
             Logger.LogError(ex, "[{Provider}] İstek başarısız.", providerTag);
             throw new HttpRequestException($"{providerTag} isteği başarısız: {ex.Message}", ex);
+        }
+    }
+
+    protected async IAsyncEnumerable<string> CallChatStreamAsync(
+        string systemPrompt,
+        string userMessage,
+        int maxTokens = 2048,
+        double temperature = 0.7,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var messages = new[]
+        {
+            new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt },
+            new { role = "user", content = string.IsNullOrWhiteSpace(userMessage) ? "Merhaba." : userMessage }
+        };
+
+        var requestBody = new { model = Model, messages,  temperature, stream = true };
+        var jsonBody = JsonSerializer.Serialize(requestBody, JsonOptions);
+        var providerTag = GetType().Name.Replace("Service", "").ToUpperInvariant();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, BaseUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+        request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+        using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"{providerTag} Stream error: {response.StatusCode} - {body}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                if (data == "[DONE]") break;
+
+                using var doc = JsonDocument.Parse(data);
+                var content = doc.RootElement
+                                 .GetProperty("choices")[0]
+                                 .GetProperty("delta")
+                                 .TryGetProperty("content", out var textProp) ? textProp.GetString() : null;
+
+                if (!string.IsNullOrEmpty(content))
+                    yield return content;
+            }
         }
     }
 }

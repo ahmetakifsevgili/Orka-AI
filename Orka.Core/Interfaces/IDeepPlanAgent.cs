@@ -18,5 +18,9 @@ public interface IDeepPlanAgent
     Task<List<Topic>> GenerateAndSaveDeepPlanAsync(
         Guid parentTopicId,
         string topicTitle,
-        Guid userId);
+        Guid userId,
+        string userLevel = "Bilinmiyor",
+        string? researchContext = null);
+
+    Task<string> GenerateBaselineQuizAsync(string topicTitle);
 }

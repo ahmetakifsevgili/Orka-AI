@@ -43,4 +43,6 @@ public class RoutingResult
     /// Routing yöntemi: "slash" (slash command), "semantic" (LLM), "fallback"
     /// </summary>
     public string Method { get; set; } = "semantic";
+
+    public string Category { get; set; } = "Chat"; // Plan veya Chat
 }

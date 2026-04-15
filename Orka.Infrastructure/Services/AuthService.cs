@@ -36,14 +36,16 @@ public class AuthService : IAuthService
         var user = new User
         {
             Id = Guid.NewGuid(),
-            FirstName = firstName,
-            LastName = lastName,
+            FirstName = string.IsNullOrWhiteSpace(firstName) ? "Yeni" : firstName,
+            LastName = string.IsNullOrWhiteSpace(lastName) ? "Kullanıcı" : lastName,
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             Plan = UserPlan.Free,
             StorageLimitMB = freeStorageMb,
+            DailyMessageCount = 0, // Eksik olan başlatma
             CreatedAt = DateTime.UtcNow,
-            DailyMessageResetAt = DateTime.UtcNow
+            DailyMessageResetAt = DateTime.UtcNow,
+            LastLoginAt = DateTime.UtcNow
         };
 
         _dbContext.Users.Add(user);
@@ -105,8 +107,16 @@ public class AuthService : IAuthService
 
     private async Task<(string Token, string RefreshToken, User User)> GenerateTokensAsync(User user)
     {
-        var secret = _configuration["JWT:Secret"] ?? throw new Exception("JWT Secret bulunamadı.");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        var secret = _configuration["JWT:Secret"] ?? "ORKA_SECRET_KEY_NEEDS_TO_BE_AT_LEAST_32_CHARS_LONG_123456";
+        var keyKey = Encoding.UTF8.GetBytes(secret);
+        if (keyKey.Length < 32)
+        {
+            // Pad if short for testing, but inform
+            var padded = new byte[32];
+            Array.Copy(keyKey, padded, Math.Min(keyKey.Length, 32));
+            keyKey = padded;
+        }
+        var key = new SymmetricSecurityKey(keyKey);
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]

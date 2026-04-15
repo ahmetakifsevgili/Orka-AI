@@ -13,7 +13,12 @@ public class ChatMessageResponse
     public bool WikiUpdated { get; set; }
     public Guid? WikiPageId { get; set; }
     public bool IsNewTopic { get; set; }
+    public bool PlanCreated { get; set; }
     public string? TopicTitle { get; set; }
     public string Role { get; set; } = "assistant";
     public DateTime CreatedAt { get; set; }
+
+    // Analytics
+    public int? TokensUsed { get; set; }
+    public decimal? TotalCostUSD { get; set; }
 }

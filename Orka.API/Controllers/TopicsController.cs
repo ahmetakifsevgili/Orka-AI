@@ -4,7 +4,9 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
 
 namespace Orka.API.Controllers;
@@ -16,11 +18,13 @@ public class TopicsController : ControllerBase
 {
     private readonly ITopicService _topicService;
     private readonly SessionService _sessionService;
+    private readonly OrkaDbContext _db;
 
-    public TopicsController(ITopicService topicService, SessionService sessionService)
+    public TopicsController(ITopicService topicService, SessionService sessionService, OrkaDbContext db)
     {
         _topicService = topicService;
         _sessionService = sessionService;
+        _db = db;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -34,12 +38,14 @@ public class TopicsController : ControllerBase
         {
             id                = t.Id,
             title             = t.Title,
-            emoji             = t.Emoji,
-            category          = t.Category,
+            emoji             = t.Emoji ?? "📚",
+            category          = t.Category ?? "Genel",
             parentTopicId     = t.ParentTopicId,
             order             = t.Order,
             currentPhase      = t.CurrentPhase.ToString(),
-            progress          = t.TotalSections > 0 ? (double)t.CompletedSections / t.TotalSections * 100 : 0,
+            progressPercentage = t.ProgressPercentage,
+            successScore      = t.SuccessScore,
+            isMastered        = t.IsMastered,
             totalSections     = t.TotalSections,
             completedSections = t.CompletedSections,
             lastAccessedAt    = t.LastAccessedAt
@@ -56,7 +62,20 @@ public class TopicsController : ControllerBase
 
         return Ok(new
         {
-            topic = new { topic.Id, topic.Title, topic.Emoji, topic.Category, topic.ParentTopicId, topic.Order, topic.CurrentPhase, topic.CreatedAt, topic.LastAccessedAt },
+            topic = new { 
+                topic.Id, 
+                topic.Title, 
+                topic.Emoji, 
+                topic.Category, 
+                topic.ParentTopicId, 
+                topic.Order, 
+                topic.CurrentPhase, 
+                topic.CreatedAt, 
+                topic.LastAccessedAt,
+                progressPercentage = topic.ProgressPercentage,
+                successScore = topic.SuccessScore,
+                isMastered = topic.IsMastered
+            },
             sessions = topic.Sessions?.Select(s => new { s.Id, s.SessionNumber, s.Summary, s.CreatedAt, s.EndedAt }),
             wikiPages = topic.WikiPages?.Select(w => new { w.Id, w.Title, w.Status, w.OrderIndex })
         });
@@ -115,6 +134,74 @@ public class TopicsController : ControllerBase
         var result = await _sessionService.GetLatestSessionAsync(id, userId);
         if (result == null) return NotFound(new { message = "Oturum bulunamadı." });
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Alt konuları (müfredat konu listesi) döner — DeepPlan ile oluşturulan alt başlıklar.
+    /// </summary>
+    [HttpGet("{id}/subtopics")]
+    public async Task<IActionResult> GetSubtopics(Guid id)
+    {
+        var userId = GetUserId();
+        var parent = await _topicService.GetTopicByIdAsync(id, userId);
+        if (parent == null) return NotFound(new { message = "Ana konu bulunamadı." });
+
+        var subtopics = await _db.Topics
+            .Where(t => t.ParentTopicId == id && t.UserId == userId)
+            .OrderBy(t => t.Order)
+            .Select(t => new
+            {
+                id                 = t.Id,
+                title              = t.Title,
+                order              = t.Order,
+                progressPercentage = t.ProgressPercentage,
+                successScore       = t.SuccessScore,
+                isMastered         = t.IsMastered,
+                completedSections  = t.CompletedSections,
+                totalSections      = t.TotalSections
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            parentId    = id,
+            parentTitle = parent.Title,
+            count       = subtopics.Count,
+            subtopics
+        });
+    }
+
+    /// <summary>
+    /// Konunun ilerleme özetini döner — XP, tamamlanma yüzdesi, quiz başarı oranı.
+    /// </summary>
+    [HttpGet("{id}/progress")]
+    public async Task<IActionResult> GetProgress(Guid id)
+    {
+        var userId = GetUserId();
+        var topic = await _topicService.GetTopicByIdAsync(id, userId);
+        if (topic == null) return NotFound(new { message = "Konu bulunamadı." });
+
+        var quizAttempts = await _db.QuizAttempts
+            .Where(qa => qa.TopicId == id && qa.UserId == userId)
+            .ToListAsync();
+
+        var totalAttempts   = quizAttempts.Count;
+        var correctAttempts = quizAttempts.Count(qa => qa.IsCorrect);
+        var quizAccuracy    = totalAttempts > 0 ? Math.Round((double)correctAttempts / totalAttempts * 100, 1) : 0.0;
+
+        return Ok(new
+        {
+            topicId            = id,
+            title              = topic.Title,
+            progressPercentage = topic.ProgressPercentage,
+            successScore       = topic.SuccessScore,
+            isMastered         = topic.IsMastered,
+            completedSections  = topic.CompletedSections,
+            totalSections      = topic.TotalSections,
+            quizAttempts       = totalAttempts,
+            quizCorrect        = correctAttempts,
+            quizAccuracy
+        });
     }
 }
 

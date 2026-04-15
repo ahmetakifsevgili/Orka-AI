@@ -6,6 +6,6 @@ namespace Orka.Core.Interfaces;
 
 public interface IChatService
 {
-    Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId);
+    Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false);
     Task EndSessionAsync(Guid sessionId, Guid userId);
 }

@@ -8,13 +8,16 @@ namespace Orka.Core.Interfaces;
 
 public interface IAgentOrchestrator
 {
-    Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId);
+    Task<Session?> GetOrCreateSessionAsync(Guid userId, Guid? topicId, Guid? sessionId, string content);
+    Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false);
+    IAsyncEnumerable<string> ProcessMessageStreamAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false);
     Task EndSessionAsync(Guid sessionId, Guid userId);
 }
 
 public interface ITutorAgent
 {
     Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending);
+    IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, CancellationToken ct = default);
 
     /// <summary>
     /// Yeni konu açıldığında Deep Plan başlıklarını kullanıcıya bildiren ilk yanıtı üretir.
@@ -31,8 +34,9 @@ public interface ITutorAgent
 
     /// <summary>
     /// Konu başlığına uygun, kısa ve net bir sınav sorusu üretir.
+    /// Albert araştırmasından gelen taze bilgiler (context) varsa sınav daha nitelikli olur.
     /// </summary>
-    Task<string> GenerateQuizQuestionAsync(string topicTitle);
+    Task<string> GenerateQuizQuestionAsync(string topicTitle, string? researchContext = null);
 
     /// <summary>
     /// Öğrencinin cevabını değerlendirir.

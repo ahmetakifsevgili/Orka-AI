@@ -6,6 +6,7 @@ namespace Orka.Core.Interfaces;
 public interface IAIService
 {
     Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -16,6 +17,12 @@ public interface IGeminiService
 {
     /// <summary>Görev tipini otomatik tespit ederek uygun Gemini modelini seçer.</summary>
     Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+    
+    /// <summary>Spesifik olarak belirli bir modeli (örn. gemma-4-26b-a4b-it) kullanarak içerik üretir.</summary>
+    Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default);
+
+    /// <summary>Gemini üzerinden streaming (akış) desteği sunar.</summary>
+    IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
 }
 
 /// <summary>Cohere — kurumsal düzeyde içerik üretimi ve özetleme.</summary>

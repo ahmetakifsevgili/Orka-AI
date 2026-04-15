@@ -1,6 +1,7 @@
 # ── .NET ──────────────────────────────────────────────────────────────────────
 bin/
 obj/
+publish/
 *.user
 *.suo
 *.userosscache
@@ -30,6 +31,9 @@ Orka-Front/dist/
 *.swp
 *.DS_Store
 Thumbs.db
+
+# ── Geliştirici scratch / geçici dosyalar ────────────────────────────────────
+scratch/
 
 # ── Ortam değişkenleri ────────────────────────────────────────────────────────
 .env

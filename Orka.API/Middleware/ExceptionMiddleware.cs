@@ -43,7 +43,9 @@ public class ExceptionMiddleware
             NotFoundException => (404, exception.Message),
             UnauthorizedException => (401, exception.Message),
             ArgumentException => (400, exception.Message),
-            _ => (500, "Sunucu hatası oluştu. Lütfen tekrar deneyin.")
+            TimeoutException => (504, "İşlem zaman aşımına uğradı. Yapay zeka servisleri şu an yoğun olabilir."),
+            System.Text.Json.JsonException => (422, "Veri işleme hatası. Yapay zeka yanıtı beklenmedik bir formatta döndü."),
+            _ => (500, "Şu an bağlantı kurulamıyor. Lütfen internetinizi kontrol edin veya az sonra tekrar deneyin.")
         };
 
         context.Response.StatusCode = statusCode;

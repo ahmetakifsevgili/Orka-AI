@@ -21,6 +21,12 @@ public class Topic
     
     public int TotalSections { get; set; }
     public int CompletedSections { get; set; }
+    
+    // YENİ: Başarı ve İlerleme Takibi (Mastery Mode)
+    public int SuccessScore { get; set; }         // 0-100 arası başarı puanı
+    public double ProgressPercentage { get; set; } // %0-100 arası ilerleme
+    public bool IsMastered { get; set; }          // Konu tam öğrenildi mi?
+    
     public DateTime LastAccessedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsArchived { get; set; }

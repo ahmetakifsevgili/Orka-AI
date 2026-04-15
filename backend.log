@@ -1,0 +1,65 @@
+Orka.API\Properties\launchSettings.json içindeki başlatma ayarları kullanılıyor...
+Derleniyor...
+D:\Orka\Orka.Core\Interfaces\IOpenRouterService.cs(21,30): warning CS0108: 'IOpenRouterService.GenerateResponseStreamAsync(string, string, CancellationToken)', 'IAIService.GenerateResponseStreamAsync(string, string, CancellationToken)' devralınan üyesini gizler. Gizleme isteniyorsa yeni anahtar sözcük kullanın. [D:\Orka\Orka.Core\Orka.Core.csproj]
+D:\Orka\Orka.Infrastructure\Services\AgentOrchestratorService.cs(102,13): warning CS8602: Olası bir null başvurunun başvurma işlemi. [D:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]
+D:\Orka\Orka.Infrastructure\Services\AgentOrchestratorService.cs(849,44): warning CS8602: Olası bir null başvurunun başvurma işlemi. [D:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]
+D:\Orka\Orka.Infrastructure\Services\AgentOrchestratorService.cs(861,28): warning CS8602: Olası bir null başvurunun başvurma işlemi. [D:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (10ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (7ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT OBJECT_ID(N'[__EFMigrationsHistory]');
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT OBJECT_ID(N'[__EFMigrationsHistory]');
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT [MigrationId], [ProductVersion]
+      FROM [__EFMigrationsHistory]
+      ORDER BY [MigrationId];
+info: Microsoft.EntityFrameworkCore.Migrations[20405]
+      No migrations were applied. The database is already up to date.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5065
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: D:\Orka\Orka.API
+warn: LuckyPennySoftware.MediatR.License[0]
+      You do not have a valid license key for the Lucky Penny software MediatR. This is allowed for development and testing scenarios. If you are running in production you are required to have a licensed version. Please visit https://luckypennysoftware.com to obtain a valid license.
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[100]
+      Start processing HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[100]
+      Sending HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[101]
+      Received HTTP response headers after 232.1502ms - 200
+info: Polly[3]
+      Execution attempt. Source: 'Groq-standard//Standard-Retry', Operation Key: '', Result: '200', Handled: 'False', Attempt: '0', Execution Time: 244,8245ms
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[101]
+      End processing HTTP request after 269.8146ms - 200
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[100]
+      Start processing HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[100]
+      Sending HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[101]
+      Received HTTP response headers after 390.1304ms - 200
+info: Polly[3]
+      Execution attempt. Source: 'Groq-standard//Standard-Retry', Operation Key: '', Result: '200', Handled: 'False', Attempt: '0', Execution Time: 390,406ms
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[101]
+      End processing HTTP request after 390.7761ms - 200
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[100]
+      Start processing HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[100]
+      Sending HTTP request POST https://api.groq.com/openai/v1/chat/completions
+info: System.Net.Http.HttpClient.Groq.ClientHandler[101]
+      Received HTTP response headers after 176.089ms - 200
+info: Polly[3]
+      Execution attempt. Source: 'Groq-standard//Standard-Retry', Operation Key: '', Result: '200', Handled: 'False', Attempt: '0', Execution Time: 176,2001ms
+info: System.Net.Http.HttpClient.Groq.LogicalHandler[101]
+      End processing HTTP request after 176.4172ms - 200

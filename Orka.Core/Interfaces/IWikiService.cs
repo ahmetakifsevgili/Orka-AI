@@ -13,4 +13,5 @@ public interface IWikiService
     Task UpdateWikiBlockAsync(Guid blockId, Guid userId, string? title, string? content);
     Task DeleteWikiBlockAsync(Guid blockId, Guid userId);
     Task AutoUpdateWikiAsync(Guid topicId, string aiContent, string userQuestion, string modelUsed);
+    Task<string> GetWikiFullContentAsync(Guid topicId, Guid userId);
 }

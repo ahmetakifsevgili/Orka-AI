@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const SCREENSHOTS = path.join(__dirname, 'screenshots');
-const FRONTEND = 'http://localhost:5173';
+const FRONTEND = 'http://localhost:3000';
 
 let browser, page;
 const results = [];

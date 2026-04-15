@@ -8,6 +8,7 @@ namespace Orka.Core.Interfaces;
 public interface IGroqService : IAIService
 {
     Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default);
+    IAsyncEnumerable<string> GetResponseStreamAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default);
     Task<string> SummarizeSessionAsync(IEnumerable<Message> messages);
     Task<RoutingResult> SemanticRouteAsync(string message, string? currentPhase = "Discovery");
     Task<string> ResearchAsync(string topic, string depth = "normal");

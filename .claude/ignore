@@ -1,0 +1,60 @@
+# Orka AI — Claude Tarama Dışı Klasörler
+# Bu dosyada listelenen yollar token israfını önlemek için taranmaz.
+
+# .NET build çıktıları
+Orka.API/bin/
+Orka.API/obj/
+Orka.Core/bin/
+Orka.Core/obj/
+Orka.Infrastructure/bin/
+Orka.Infrastructure/obj/
+
+# EF Core migration snapshot (doğrudan düzenlenmez)
+Orka.Infrastructure/Data/Migrations/
+
+# Frontend build ve bağımlılıklar
+Orka-Front/node_modules/
+Orka-Front/dist/
+Orka-Front/.vite/
+
+# Kök seviye node_modules (legacy)
+node_modules/
+
+# Log dosyaları
+*.log
+backend.log
+build.log
+msbuild.log
+debug_log.txt
+debug_log_utf8.txt
+out.txt
+
+# Test ve geçici dosyalar
+scratch/
+tmp/
+testux/
+screenshots/
+AntiGravityDebugText/
+Claude/
+
+# Git
+.git/
+
+# Raporlar ve walkthrough'lar (kaynak kodu değil)
+OrkaAI_System_Report.md
+OrkaAI_Teslim_Raporu.md
+UX_UI_Arastirma_Raporu.md
+report_implementation_plan.md
+walkthrough.md
+README.md
+
+# Test script'leri (kök dizindeki)
+test_apis.ps1
+test_chat.ps1
+test_chat_fixed.ps1
+test_runner.js
+orka-test.js
+
+# package-lock (içeriği okunmaz, yalnızca npm tarafından yönetilir)
+package-lock.json
+Orka-Front/package-lock.json

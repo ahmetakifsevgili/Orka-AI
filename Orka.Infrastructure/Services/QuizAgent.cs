@@ -2,17 +2,20 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using System.Linq;
+using System.Threading.Tasks;
+using System;
 
 namespace Orka.Infrastructure.Services;
 
 public class QuizAgent : IQuizAgent
 {
-    private readonly IOpenRouterService _openRouterService;
+    private readonly IGroqService _groq;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public QuizAgent(IOpenRouterService openRouterService, IServiceScopeFactory scopeFactory)
+    public QuizAgent(IGroqService groq, IServiceScopeFactory scopeFactory)
     {
-        _openRouterService = openRouterService;
+        _groq = groq;
         _scopeFactory = scopeFactory;
     }
 
@@ -28,14 +31,26 @@ public class QuizAgent : IQuizAgent
             ? session.Summary
             : string.Join("\n", session.Messages.TakeLast(5).Select(m => $"{m.Role}: {m.Content}"));
 
-        var systemPrompt = "Sen bir sınav hazırlayıcısısın. Verilen özete veya metne göre 3-4 adet düşündürücü pekiştirme sorusu hazırla. Sorular kısa ve öz olmalı.";
-        var userPrompt = $"Bu içerik için sorular hazırla:\n\n{context}";
+        try
+        {
+            var prompt = $@"Aşağıdaki ders içeriğine dayanarak 3-5 adet pekiştirme sorusu hazırla.
+Sorular kısa ve net cevaplı olmalı. Sadece soruları maddeler halinde dön.
 
-        var questions = await _openRouterService.ChatCompletionAsync(systemPrompt, userPrompt, "qwen/qwen-2.5-72b-instruct:free");
+Ders İçeriği:
+{context}";
 
-        session.PendingQuiz = questions;
-        session.CurrentState = Orka.Core.Enums.SessionState.QuizPending;
+            var questions = await _groq.GenerateResponseAsync(
+                "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.",
+                prompt);
 
-        await db.SaveChangesAsync();
+            session.PendingQuiz = questions;
+            session.CurrentState = Orka.Core.Enums.SessionState.QuizPending;
+
+            await db.SaveChangesAsync();
+        }
+        catch
+        {
+            // Fail safe, do not crash main process
+        }
     }
 }

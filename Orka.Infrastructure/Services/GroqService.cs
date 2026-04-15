@@ -41,6 +41,20 @@ public class GroqService : IGroqService
     public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
         => CallGroqApiAsync(userMessage, systemPrompt, ct);
 
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var messages = new List<object>
+        {
+            new { role = "system", content = systemPrompt },
+            new { role = "user", content = userMessage }
+        };
+
+        await foreach (var chunk in CallGroqChatStreamApiAsync(messages, ct: ct))
+        {
+            yield return chunk;
+        }
+    }
+
     public async Task<RoutingResult> SemanticRouteAsync(string message, string? currentPhase = "Discovery")
     {
         var cleaned = "";
@@ -53,12 +67,13 @@ Mevcut Öğrenme Fazı: {currentPhase ?? "Discovery"}
 
 KURALLAR:
 1. ""intent"" SADECE şunlardan biri: greeting | new_topic | interview | plan | explain | research | quiz | summary | general
-2. ""extractedTopic"": SADECE TEK bir konu adı. Hibrit konular yasaktır.
-3. ""requiresNewPlan"": Yeni konu başlıyorsa true.
-4. ""understoodConcept"": Kullanıcı kavramı anladığını belirtiyorsa true.
+2. ""extractedTopic"": SADECE TEK bir konu adı. Konu bir sohbet (""Nasılsın"", ""Gündem"", ""Sohbet"") ise kısa bir sohbet etiketi yaz.
+3. ""requiresNewPlan"": Eğer kullanıcı gerçekten yeni ve KAPSAMLI bir müfredat (Örn: C#, Felsefe) istiyorsa true dön. Sadece selam verdiyse veya sohbet ettiyse false dön.
+4. ""category"": Eğer öğrenmeye/müfredata yönelik detaylı bir alansa ""Plan"" dön. Eğer sadece sıradan bir sohbete niyetlendiyse (Nasılsın vs) veya requiresNewPlan false ise ""Chat"" dön.
+5. ""understoodConcept"": Kullanıcı kavramı anladığını belirtiyorsa true.
 
 SADECE bu JSON formatında yanıt ver:
-{{""intent"": ""greeting"", ""extractedTopic"": null, ""requiresNewPlan"": false, ""understoodConcept"": false}}";
+{{""intent"": ""greeting"", ""extractedTopic"": ""Genel Sohbet"", ""requiresNewPlan"": false, ""category"": ""Chat"", ""understoodConcept"": false}}";
 
             var result = await GetResponseAsync(new List<Message>(), prompt);
             cleaned = result.Trim();
@@ -78,6 +93,7 @@ SADECE bu JSON formatında yanıt ver:
                 Intent = root.TryGetProperty("intent", out var intentProp) ? intentProp.GetString()?.ToLower() ?? "general" : "general",
                 ExtractedTopic = root.TryGetProperty("extractedTopic", out var topicProp) && topicProp.ValueKind != JsonValueKind.Null ? topicProp.GetString() : null,
                 RequiresNewPlan = root.TryGetProperty("requiresNewPlan", out var planProp) && planProp.ValueKind == JsonValueKind.True,
+                Category = root.TryGetProperty("category", out var catProp) && catProp.ValueKind != JsonValueKind.Null ? (catProp.GetString() ?? "Chat") : "Chat",
                 UnderstoodConcept = root.TryGetProperty("understoodConcept", out var underProp) && underProp.ValueKind == JsonValueKind.True,
                 Method = "semantic"
             };
@@ -105,6 +121,21 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
 
     public async Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default)
     {
+        var messages = PrepareMessages(context, systemPrompt);
+        return await CallGroqChatApiAsync(messages, ct: ct);
+    }
+
+    public async IAsyncEnumerable<string> GetResponseStreamAsync(IEnumerable<Message> context, string systemPrompt, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var messages = PrepareMessages(context, systemPrompt);
+        await foreach (var chunk in CallGroqChatStreamApiAsync(messages, ct: ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    private List<object> PrepareMessages(IEnumerable<Message> context, string systemPrompt)
+    {
         var messages = new List<object>
         {
             new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt }
@@ -116,7 +147,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             messages.Add(new { role, content = msg.Content });
         }
 
-        return await CallGroqChatApiAsync(messages, ct: ct);
+        return messages;
     }
 
     public async Task<string> SummarizeSessionAsync(IEnumerable<Message> messages)
@@ -170,7 +201,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             model = _model,
             messages,
             temperature = 0.7,
-            max_tokens = maxTokens
+            
         };
 
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
@@ -214,6 +245,63 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             AiDebugLogger.LogError("GROQ", $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             _logger.LogError(ex, "Groq API çağrısı başarısız. Tip: {ExType}", ex.GetType().Name);
             return "Zihnim biraz karıştı, hemen kendime geliyorum. Lütfen tekrar sor.";
+        }
+    }
+
+    private async IAsyncEnumerable<string> CallGroqChatStreamApiAsync(object messages, int maxTokens = 2048, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (_chaos.IsProviderFailing("Groq"))
+        {
+            _logger.LogWarning("[CHAOS MONKEY] 🐒 Groq stream failure simulated!");
+            yield return "Hata: [CHAOS MONKEY] Groq is down!";
+            yield break;
+        }
+
+        const string RequestUrl = "https://api.groq.com/openai/v1/chat/completions";
+
+        var requestBody = new
+        {
+            model = _model,
+            messages,
+            temperature = 0.7,
+            
+            stream = true
+        };
+
+        var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
+        var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, RequestUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        request.Content = content;
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError("Groq Stream API Hatası: {Status} - {Error}", response.StatusCode, err);
+            yield return "Bir hata oluştu, lütfen tekrar deneyin.";
+            yield break;
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                if (data == "[DONE]") break;
+
+                using var doc = JsonDocument.Parse(data);
+                if (doc.RootElement.TryGetProperty("choices", out var choices) && choices[0].TryGetProperty("delta", out var delta) && delta.TryGetProperty("content", out var contentProp))
+                {
+                    yield return contentProp.GetString() ?? "";
+                }
+            }
         }
     }
 }

@@ -29,11 +29,20 @@ public class OpenRouterService : IOpenRouterService
 
     // IAIService
     public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => ChatCompletionAsync(systemPrompt, userMessage, ct: ct);
+        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
 
-    public async Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
+    public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
+        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model, apiKey: null, ct: ct);
+
+    /// <summary>
+    /// Belirli bir model ve API key ile OpenRouter çağrısı yapar.
+    /// apiKey null ise varsayılan (appsettings) key kullanılır.
+    /// model null ise varsayılan model kullanılır.
+    /// </summary>
+    public async Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default)
     {
         var targetModel = model ?? _defaultModel;
+        var targetKey = apiKey ?? _apiKey;
         const string RequestUrl = "https://openrouter.ai/api/v1/chat/completions";
 
         var requestBody = new
@@ -44,7 +53,7 @@ public class OpenRouterService : IOpenRouterService
                 new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt },
                 new { role = "user", content = string.IsNullOrWhiteSpace(userMessage) ? "Merhaba." : userMessage }
             },
-            max_tokens = 2048,
+            
             temperature = 0.7
         };
 
@@ -53,7 +62,7 @@ public class OpenRouterService : IOpenRouterService
 
         using var request = new HttpRequestMessage(HttpMethod.Post, RequestUrl);
         request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-        request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        request.Headers.Add("Authorization", $"Bearer {targetKey}");
         request.Headers.Add("HTTP-Referer", "https://orka.app");
         request.Headers.Add("X-Title", "Orka AI");
 
@@ -76,11 +85,11 @@ public class OpenRouterService : IOpenRouterService
             _logger.LogWarning("OpenRouter API Hatası. Status: {Status}, Model: {Model}, Error: {Error}",
                 response.StatusCode, targetModel, responseString);
 
-            // Fallback: Haiku üzerinden dene
+            // Fallback: Haiku üzerinden dene (sadece varsayılan key ile)
             if (targetModel != "anthropic/claude-3-5-haiku")
             {
                 _logger.LogInformation("Claude Haiku fallback'e geçiliyor...");
-                return await ChatCompletionAsync(systemPrompt, userMessage, "anthropic/claude-3-5-haiku");
+                return await ChatCompletionWithKeyAsync(systemPrompt, userMessage, "anthropic/claude-3-5-haiku", null);
             }
 
             throw new HttpRequestException($"OpenRouter API hatası: {response.StatusCode} — {responseString}");
@@ -94,6 +103,60 @@ public class OpenRouterService : IOpenRouterService
             AiDebugLogger.LogError("OPENROUTER", ex.Message);
             _logger.LogError(ex, "OpenRouter çağrısı başarısız. Model: {Model}", targetModel);
             throw new HttpRequestException($"OpenRouter isteği başarısız: {ex.Message}", ex);
+        }
+    }
+
+    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        => GenerateResponseStreamWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
+
+    public async IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var targetModel = model ?? _defaultModel;
+        var targetKey = apiKey ?? _apiKey;
+        const string RequestUrl = "https://openrouter.ai/api/v1/chat/completions";
+        var messages = new[]
+        {
+            new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt },
+            new { role = "user", content = userMessage }
+        };
+
+        var requestBody = new { model = targetModel, messages, temperature = 0.7,  stream = true };
+        var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, RequestUrl);
+        request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+        request.Headers.Add("Authorization", $"Bearer {targetKey}");
+        request.Headers.Add("HTTP-Referer", "https://orka.app");
+        request.Headers.Add("X-Title", "Orka AI");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"OpenRouter Stream error: {response.StatusCode} - {err}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                if (data == "[DONE]") break;
+
+                using var doc = JsonDocument.Parse(data);
+                var content = doc.RootElement
+                                 .GetProperty("choices")[0]
+                                 .GetProperty("delta")
+                                 .TryGetProperty("content", out var textProp) ? textProp.GetString() : null;
+
+                if (!string.IsNullOrEmpty(content))
+                    yield return content;
+            }
         }
     }
 }

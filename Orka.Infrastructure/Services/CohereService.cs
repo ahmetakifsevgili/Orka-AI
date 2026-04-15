@@ -55,7 +55,7 @@ public class CohereService : ICohereService
             model       = _model,
             messages,
             temperature = 0.5,
-            max_tokens  = 2048
+            
         };
 
         var json = JsonSerializer.Serialize(body, _jsonOpts);
@@ -90,6 +90,53 @@ public class CohereService : ICohereService
             AiDebugLogger.LogError("COHERE", ex.Message);
             _logger.LogError(ex, "Cohere API çağrısı başarısız.");
             throw new HttpRequestException($"Cohere servis hatası: {ex.Message}", ex);
+        }
+    }
+
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var endpoint = $"{_baseUrl.TrimEnd('/')}/chat/completions";
+        var messages = new[]
+        {
+            new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt },
+            new { role = "user",   content = userMessage }
+        };
+
+        var requestBody = new { model = _model, messages, temperature = 0.5,  stream = true };
+        var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOpts);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"Cohere Stream error: {response.StatusCode} - {err}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                if (data == "[DONE]") break;
+
+                using var doc = JsonDocument.Parse(data);
+                var content = doc.RootElement
+                                 .GetProperty("choices")[0]
+                                 .GetProperty("delta")
+                                 .TryGetProperty("content", out var textProp) ? textProp.GetString() : null;
+
+                if (!string.IsNullOrEmpty(content))
+                    yield return content;
+            }
         }
     }
 }

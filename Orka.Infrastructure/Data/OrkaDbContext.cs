@@ -18,6 +18,7 @@ public class OrkaDbContext : DbContext
     public DbSet<WikiPage> WikiPages { get; set; } = null!;
     public DbSet<WikiBlock> WikiBlocks { get; set; } = null!;
     public DbSet<Source> Sources { get; set; } = null!;
+    public DbSet<QuizAttempt> QuizAttempts { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,12 @@ public class OrkaDbContext : DbContext
             .HasOne(w => w.User)
             .WithMany()
             .HasForeignKey(w => w.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuizAttempt>()
+            .HasOne(qa => qa.User)
+            .WithMany()
+            .HasForeignKey(qa => qa.UserId)
             .OnDelete(DeleteBehavior.NoAction);
 
         // Topic self-referential hiyerarşi (Deep Plan)

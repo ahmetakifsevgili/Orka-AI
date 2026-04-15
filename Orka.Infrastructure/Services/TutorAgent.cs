@@ -1,5 +1,11 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.Services;
@@ -8,11 +14,28 @@ public class TutorAgent : ITutorAgent
 {
     private readonly IAIServiceChain _chain;
     private readonly IContextBuilder _contextBuilder;
+    private readonly IAIAgentFactory _factory;
+    private readonly ILogger<TutorAgent> _logger;
 
-    public TutorAgent(IAIServiceChain chain, IContextBuilder contextBuilder)
+    public TutorAgent(
+        IAIServiceChain chain,
+        IContextBuilder contextBuilder,
+        IAIAgentFactory factory,
+        ILogger<TutorAgent> logger)
     {
         _chain = chain;
         _contextBuilder = contextBuilder;
+        _factory = factory;
+        _logger = logger;
+    }
+
+    public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
+    {
+        var contextMessages = await _contextBuilder.BuildConversationContextAsync(session);
+        var systemPrompt = BuildTutorSystemPrompt(isQuizPending);
+        var userMessage = BuildContextSummary(contextMessages);
+
+        return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
     }
 
     public async Task<string> GetDeepPlanWelcomeAsync(
@@ -33,7 +56,9 @@ public class TutorAgent : ITutorAgent
             """;
 
         var contextMessages = await _contextBuilder.BuildConversationContextAsync(session);
-        return await _chain.GetResponseWithFallbackAsync(contextMessages, systemPrompt);
+        var userMessage = BuildContextSummary(contextMessages);
+        
+        return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
     }
 
     public Task<string> GetOptionsWelcomeAsync(Guid userId, string content, Session session)
@@ -62,37 +87,55 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             : "";
 
         var systemPrompt = $"""
-            Sen Orka AI'nın profesyonel eğitmenisin.
+            Sen Orka AI'nın profesyonel, bilge ve kişisel eğitmenisin.
 
-            Kullanıcı "{parentTopicTitle}" konusunu Derinlemesine Plan ile öğrenmeye başladı.
-            Plan başarıyla oluşturuldu ve Wiki'ye işlendi. Şimdi "{lessonTitle}" alt konusunu anlatıyorsun.
+            Kullanıcı "{parentTopicTitle}" konusunu yapılandırılmış Plan Modu ile öğrenmeye başladı.
+            Planını başarıyla oluşturduk ve şimdi "{lessonTitle}" alt konusunu anlatıyorsun.
 
-            [GÖREV]: Konuyu temel kavramlardan başlayarak, sıfır bilgiyle anlayan biri için öğret.
-            - Türkçe yaz
-            - Şu yapıyı kullan: (1) Net tanım, (2) 1 somut örnek, (3) 1 pratik kullanım senaryosu
-            - Toplam 250-350 kelime — gereksiz laf kalabalığından kaçın
-            - Sonunda 1 açık uçlu soru sor (kullanıcıyı düşündür, cevabı bekleme)
+            [GÖREV KAPSAMI]: Bu dersi kullanıcının öğrenme potansiyelini zirveye taşıyacak şekilde anlat. 
+            - Adım 1: "Neden bu konu önemli?" (Kısa ve ilgi çekici bir giriş).
+            - Adım 2: Teknik terimleri basite indirgeyerek ve benzetmeler (analoji) kullanarak açıkla.
+            - Adım 3: Gerçek dünyadan somut bir senaryo veya kod örneği ver.
+            - Dil: İçten, Türkçe ve akademik standartlardan şaşmayan bir dil kullan. Konuyu boğucu şekilde uzatma (300-400 kelime civarı tut).
             {curriculumNote}
             """;
 
-        return await _chain.GetResponseWithFallbackAsync(new List<Message>(), systemPrompt);
+        return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, $"Konu: {lessonTitle}");
     }
 
-    public async Task<string> GenerateQuizQuestionAsync(string topicTitle)
+    public async Task<string> GenerateQuizQuestionAsync(string topicTitle, string? researchContext = null)
     {
-        var systemPrompt = """
-            Sen sınav yapan bir eğitmenisin.
-            Verilen konu başlığı için şu adımları izle:
+        var contextInfo = string.IsNullOrWhiteSpace(researchContext) 
+            ? "" 
+            : $"\n\n[ARAŞTIRMA VERİLERİ (GÜNCEL BİLGİ KAYNAĞI)]:\n{researchContext}\n\nLütfen yukarıdaki araştırma verilerini kullanarak konuyu daha güncel ve teknik bir seviyede sorgula.";
 
-            1. Türkçe 1-2 kısa giriş cümlesi yaz (ör. "Hızlı bir soru sormak istiyorum:").
-            2. Yanıtın SONUNA aşağıdaki formatı kullan — 4 seçenekli çoktan seçmeli soru,
-               doğru seçeneğin 0-tabanlı indeksi (correctIndex):
+        var systemPrompt = $$"""
+            Sen akademik düzeyde bir 'Eğitim Değerlendiricisi (Educational Assessor)' botusun.
+            Görevin: Kullanıcının verilen konudaki kavramsal anlayışını tek bir soru ile ölçmek.
 
-            ```quiz
-            {"question":"Soru metni buraya","options":["A) Seçenek 1","B) Seçenek 2","C) Seçenek 3","D) Seçenek 4"],"correctIndex":1}
-            ```
+            {{contextInfo}}
 
-            KURAL: JSON bloğu DİĞER metinden AYRI olmalı. Türkçe yaz. Açıklama ekleme.
+            SORU TİPİ KURALI (KESİNLİKLE UYULACAK):
+            - Mantık sorgulayan, geniş açılı bir çoktan seçmeli soru hazırla.
+            - AŞIRI SPESİFİK API isimleri, versiyon numaraları veya ezber gerektiren detaylara ASLA girme.
+            - Doğru cevap, konuya hakim biri tarafından mantıkla çıkarılabilir olmalı.
+
+            ÇIKTI KURALI (KESİNLİKLE UYULACAK):
+            - SADECE aşağıdaki JSON nesnesini döndür. Giriş metni, açıklama veya markdown EKLEME.
+            - "text" alanlarına A), B), C) gibi ön ek EKLEME — sadece seçenek metnini yaz.
+
+            {
+              "question": "Net, düşünmeye sevk eden soru metni",
+              "options": [
+                { "text": "Seçenek metni (çeldirici)", "isCorrect": false },
+                { "text": "Seçenek metni (doğru)", "isCorrect": true },
+                { "text": "Seçenek metni (çeldirici)", "isCorrect": false },
+                { "text": "Seçenek metni (çeldirici)", "isCorrect": false }
+              ],
+              "explanation": "Neden bu cevabın doğru olduğunun kısa ve net açıklaması."
+            }
+
+            DİL: Türkçe.
             """;
 
         return await _chain.GenerateWithFallbackAsync(systemPrompt, $"Konu: \"{topicTitle}\"");
@@ -122,38 +165,63 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return result.Contains("DOĞRU", StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
+    public async IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var contextMessages = await _contextBuilder.BuildConversationContextAsync(session);
+        var systemPrompt    = BuildTutorSystemPrompt(isQuizPending);
+        var userMessage     = BuildContextSummary(contextMessages);
 
-        var systemPrompt = $"""
-            Sen Orka AI'nın profesyonel ve dostane eğitmenisin. Görevin kullanıcıya konuyu en açık ve derinlikli şekilde öğretmektir.
+        // AIAgentFactory: GitHub Models → Groq → Gemini (otomatik failover)
+        await foreach (var chunk in _factory.StreamChatAsync(AgentRole.Tutor, systemPrompt, userMessage, ct))
+        {
+            yield return chunk;
+        }
+    }
 
-            [DÜŞÜNCE PROTOKOLÜ — Her yanıt öncesi bu adımları uygula]:
-            1. Kullanıcının mevcut anlama seviyesini sohbet geçmişinden analiz et.
-            2. Hangi kavramın eksik, belirsiz veya yanlış anlaşıldığını tespit et.
-            3. En uygun pedagojik yaklaşımı seç (örnek, analoji, adım adım açıklama).
-            4. Kısa ve öz, ancak eksiksiz bir yanıt hazırla.
+    private static string BuildContextSummary(IEnumerable<Message> context)
+    {
+        var msgs = context.TakeLast(8).ToList();
+        if (msgs.Count == 0) return "(Yeni konuşma)";
+        return string.Join("\n", msgs.Select(m => $"{(m.Role?.ToLower() == "user" ? "Kullanıcı" : "Asistan")}: {m.Content}"));
+    }
 
-            [YOĞUNLUK KURALI]:
-            - Yanıt uzunluğunu sorunun karmaşıklığına göre ayarla.
-            - Teknik bir kavramı 1 örnekle açıklayabiliyorsan 3 örnekle açıklama.
-            - Kullanıcı selamlama veya çok kısa bir mesaj gönderirse kısa, samimi yanıt ver — yeni konu başlatma, laf kalabalığı yapma.
-            - Kullanıcı açıkça "daha fazla anlat" demeden içerik genişletme.
+    private string BuildTutorSystemPrompt(bool isQuizPending)
+    {
+        var prompt = """
+            Sen Orka AI — Kullanıcının özel öğretmeni ve bilge bir mentorusun.
 
-            [KESİN KURAL]: Hiçbir zaman boş veya "Anlıyorum" gibi içeriksiz yanıt verme. Her yanıt öğretime katkı sağlamalıdır.
+            [TEMEL KURAL — SOHBET TARZI]:
+            Chat ekranında ASLA uzun, maddeli, ansiklopedik yanıtlar verme.
+            Özel ders hocası gibi davran: kısa cümleler kur, merak uyandır, öğrencinin düşünmesini sağla.
+            Teknik bilgileri Wiki'ye bırak; sen sadece öğrenciye özel, samimi, konuşmalı anlatım yap.
+            Yanıtların 3-6 cümle olsun. Anlatan değil, sorgulatan ol.
+
+            [KİMLİK VE TON]:
+            1. Samimi, cesaretlendirici, sabırlı bir mentor gibi konuş.
+            2. Öğrencinin merakını kıvılcımla. Bir konsept anlattıktan sonra "Peki sence neden böyle?" veya "Bunu bir deneyelim mi?" gibi sorularla sürükle.
+            3. Emoji kullanımı: tutumlu ama etkili (📌 🔥 💡 gibi).
+
+            [ANLATIM KURALLARI]:
+            - Konuyu anlatmak için 3-6 cümle yeterli. Özet geç, detayı öğrenci sorunca ver.
+            - Kod örneği vereceksen kısa bir parçacık ver (5-10 satır), uzun bloklar verme.
+            - "Bu konuyu tam anlamak için şunu da bilmek lazım..." gibi köprüler kur.
+            - Kullanıcı selamlama yaparsa: sıcak, kısa karşılık ver ve bir konuya davet et.
+
+            [SOHBET ÖRNEKLERİ]:
+            - Kullanıcı: "nasılsın" → Sen: "Harikayım! Bugün ne öğrenmek istersin? 🚀"
+            - Kullanıcı: "JavaScript'te promise nedir?" → Sen: "Promise, JavaScript'in 'söz verme' mekanizması. Asenkron işleminiz bitince sonucu teslim etmeyi taahhüt ediyor. Peki neden ihtiyaç duyuldu sence? 🤔"
+            - Kullanıcı: "anladım" → Sen: "Harika! Pekiştirmek için küçük bir soru sorsam olur mu?"
             """;
 
         if (isQuizPending)
         {
-            systemPrompt += """
+            prompt += """
 
-                [SİSTEM BİLDİRİMİ]: Arka planda konu özeti Wiki'ye kaydedildi ve test soruları hazırlandı.
-                Kullanıcıya konunun tamamlandığını ve bilgilerin kayıt altına alındığını bildir.
-                Şimdi hazırlanmış pekiştirme testini çözmek isteyip istemediğini sor.
+                [SİSTEM BİLDİRİMİ]: Konu özeti Wiki'ye kaydedildi.
+                Kullanıcıya konuyu tamamladığını bildir ve kısa bir pekiştirme testi çözmek isteyip istemediğini sor.
                 """;
         }
 
-        return await _chain.GetResponseWithFallbackAsync(contextMessages, systemPrompt);
+        return prompt;
     }
 }

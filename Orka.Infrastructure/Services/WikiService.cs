@@ -18,15 +18,15 @@ public class WikiService : IWikiService
 {
     // [HATA-6 DÜZELTMESİ]: IServiceScopeFactory — her metot kendi scope'unu açar (thread-safe)
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly Orka.Core.Interfaces.IMistralService _mistralService;
+    private readonly IGroqService _groq;
     private readonly ILogger<WikiService> _logger;
 
     public WikiService(IServiceScopeFactory scopeFactory,
-        Orka.Core.Interfaces.IMistralService mistralService,
+        IGroqService groq,
         ILogger<WikiService> logger)
     {
         _scopeFactory = scopeFactory;
-        _mistralService = mistralService;
+        _groq = groq;
         _logger = logger;
     }
 
@@ -34,10 +34,30 @@ public class WikiService : IWikiService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-        return await db.WikiPages
+
+        // Önce kullanıcının kendi sayfalarını bul
+        var pages = await db.WikiPages
+            .Include(w => w.Blocks)
             .Where(w => w.TopicId == topicId && w.UserId == userId)
             .OrderBy(w => w.OrderIndex)
             .ToListAsync();
+
+        if (pages.Count > 0) return pages;
+
+        // Fallback: Sayfa Topic'e ait ama UserId farklı kaydedilmişse,
+        // Topic sahibini kontrol et ve doğruysa döndür
+        var topic = await db.Topics.FindAsync(topicId);
+        if (topic != null && topic.UserId == userId)
+        {
+            // UserId eşleşmemiş olabilir (eski kayıtlar / Albert flow) — erişim ver
+            pages = await db.WikiPages
+                .Include(w => w.Blocks)
+                .Where(w => w.TopicId == topicId)
+                .OrderBy(w => w.OrderIndex)
+                .ToListAsync();
+        }
+
+        return pages;
     }
 
     public async Task<WikiPage?> GetWikiPageAsync(Guid pageId, Guid userId)
@@ -129,8 +149,27 @@ public class WikiService : IWikiService
 
         if (page == null)
         {
-            _logger.LogDebug("[WIKI] Aktif wiki sayfası bulunamadı, topicId={TopicId}", topicId);
-            return;
+            var topic = await db.Topics.FindAsync(topicId);
+
+            if (topic == null) return;
+
+            // UserId: topic'ten al (en güvenilir kaynak)
+            var resolvedUserId = topic.UserId;
+
+            _logger.LogDebug("[WIKI] Aktif wiki sayfası bulunamadı, topicId={TopicId}. Yeni wiki sayfası oluşturuluyor.", topicId);
+
+            page = new WikiPage
+            {
+                Id = Guid.NewGuid(),
+                TopicId = topicId,
+                UserId = resolvedUserId,
+                Title = topic.Title,
+                Status = "learning",
+                OrderIndex = 1,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.WikiPages.Add(page);
         }
 
         if (page.Status == "pending")
@@ -149,7 +188,7 @@ public class WikiService : IWikiService
             WikiPageId = page.Id,
             BlockType = WikiBlockType.Concept,
             Title = TruncateTitle(userQuestion, 60),
-            Content = aiContent,
+            Content = EnsureMarkdownIntegrity(aiContent), // Format onarıcı eklendi
             Source = modelUsed,
             OrderIndex = maxOrder + 1,
             CreatedAt = DateTime.UtcNow,
@@ -158,10 +197,19 @@ public class WikiService : IWikiService
 
         db.WikiBlocks.Add(block);
 
-        // [ANAYASA MANDATE 3]: Her ders sonu QuizBlock eklenir — Mistral (Curator) ajanı
+        // QuizBlock: Her wiki güncellenmesinde Groq ile pekiştirme soruları üretilir
         try
         {
-            var questions = await _mistralService.GenerateReinforcementQuestionsAsync(aiContent);
+            var prompt = $@"Aşağıdaki ders içeriğine dayanarak 3-5 adet pekiştirme sorusu hazırla.
+Sorular kısa ve net cevaplı olmalı. Sadece soruları maddeler halinde dön.
+
+Ders İçeriği:
+{aiContent}";
+
+            var questions = await _groq.GenerateResponseAsync(
+                "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.",
+                prompt);
+
             var quizBlock = new WikiBlock
             {
                 Id = Guid.NewGuid(),
@@ -169,7 +217,7 @@ public class WikiService : IWikiService
                 BlockType = WikiBlockType.Quiz,
                 Title = "💡 Pekiştirme Soruları",
                 Content = questions,
-                Source = "mistral-curator",
+                Source = "groq-curator",
                 OrderIndex = maxOrder + 2,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -182,6 +230,58 @@ public class WikiService : IWikiService
         }
 
         await db.SaveChangesAsync();
+    }
+
+    public async Task<string> GetWikiFullContentAsync(Guid topicId, Guid userId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
+        var pages = await db.WikiPages
+            .Include(p => p.Blocks)
+            .Where(p => p.TopicId == topicId && p.UserId == userId)
+            .OrderBy(p => p.OrderIndex)
+            .ToListAsync();
+
+        if (!pages.Any()) return string.Empty;
+
+        var fullText = new System.Text.StringBuilder();
+        foreach (var page in pages)
+        {
+            fullText.AppendLine($"# {page.Title}");
+            foreach (var block in page.Blocks.OrderBy(b => b.OrderIndex))
+            {
+                if (!string.IsNullOrEmpty(block.Title)) fullText.AppendLine($"## {block.Title}");
+                fullText.AppendLine(block.Content);
+                fullText.AppendLine();
+            }
+        }
+
+        return fullText.ToString();
+    }
+
+    private static string EnsureMarkdownIntegrity(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return content;
+
+        // 1. Açık kalan kod bloklarını (```) kapat
+        int codeBlockCount = 0;
+        int lastIdx = 0;
+        while ((lastIdx = content.IndexOf("```", lastIdx)) != -1)
+        {
+            codeBlockCount++;
+            lastIdx += 3;
+        }
+
+        if (codeBlockCount % 2 != 0)
+        {
+            content += "\n```"; // Eksik bloğu kapat
+        }
+
+        // 2. Basit HTML/Tablo tag koruması (isteğe bağlı genişletilebilir)
+        // Şimdilik sadece Markdown hiyerarşisine odaklanıyoruz.
+
+        return content;
     }
 
     private static string TruncateTitle(string text, int maxLength)
