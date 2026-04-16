@@ -42,7 +42,10 @@ interface ChatPanelProps {
   defaultMode?: "plan" | "chat";
   /** IDE'den gelen mesaj — mount sonrası otomatik gönderilir ve sıfırlanır. */
   pendingMessage?: string | null;
+  /** pendingMessage tüketildikten sonra parent'i bilgilendirir */
   onPendingMessageConsumed?: () => void;
+  /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar */
+  onOpenIDE?: () => void;
 }
 
 export default function ChatPanel({
@@ -59,6 +62,7 @@ export default function ChatPanel({
   defaultMode = "chat",
   pendingMessage,
   onPendingMessageConsumed,
+  onOpenIDE,
 }: ChatPanelProps) {
   const [, navigate] = useLocation();
   const [input, setInput] = useState("");
@@ -246,6 +250,15 @@ export default function ChatPanel({
 
                   setMessages((prev) => 
                     prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
+                  );
+                  continue;
+                }
+
+                if (data.includes("[IDE_OPEN]")) {
+                  currentContent += data.replace("[IDE_OPEN]", "");
+                  if (onOpenIDE) onOpenIDE();
+                  setMessages((prev) =>
+                    prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
                   );
                   continue;
                 }

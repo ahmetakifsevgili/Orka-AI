@@ -8,11 +8,13 @@ import {
   ArrowRight,
   ChevronRight,
   Activity,
-  Award
+  Award,
+  Cpu,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI } from "@/services/api";
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
+import SystemHealthHUD from "@/components/SystemHealthHUD";
 
 interface DashboardPanelProps {
   topics: ApiTopic[];
@@ -75,6 +77,7 @@ function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] 
 
 export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
+  const [activeTab, setActiveTab] = useState<"karne" | "hud">("karne");
   const [stats, setStats] = useState<ApiGlobalStats | null>(null);
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
@@ -115,6 +118,38 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
 
   return (
     <div className="flex-1 flex flex-col bg-[#0a0a0a] h-full overflow-hidden">
+
+      {/* Tab Switcher */}
+      <div className="flex-shrink-0 flex items-center gap-1 px-8 pt-6 pb-0">
+        <button
+          onClick={() => setActiveTab("karne")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "karne"
+              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
+              : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          Öğrenme Karnesi
+        </button>
+        <button
+          onClick={() => setActiveTab("hud")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "hud"
+              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
+              : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          Sistem Analitiği
+          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "hud" ? (
+        <SystemHealthHUD />
+      ) : (
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto w-full px-8 py-10">
           
@@ -286,6 +321,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

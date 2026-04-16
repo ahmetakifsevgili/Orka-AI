@@ -459,6 +459,16 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             - Kullanıcı: "nasılsın" → Sen: "Harikayım! Bugün ne öğrenmek istersin? 🚀"
             - Kullanıcı: "JavaScript'te promise nedir?" → Sen: "Promise, JavaScript'in 'söz verme' mekanizması. Asenkron işleminiz bitince sonucu teslim etmeyi taahhüt ediyor. Peki neden ihtiyaç duyuldu sence? 🤔"
             - Kullanıcı: "anladım" → Sen: "Harika! Pekiştirmek için küçük bir soru sorsam olur mu?"
+
+            [KODLAMA VE ALGORİTMA GÖREVLERİ (KRİTİK KURAL)]:
+            Eğer kullanıcı pratik bir kodlama, algoritma problemi veya hands-on bir görev adımındaysa:
+            1. Yanıtının herhangi bir yerinde tam olarak şu gizli etiketi kullan: `[IDE_OPEN]` (Bu, kullanıcının kod editörünü otomatik açacaktır).
+            2. Görevi şu formatta ver:
+               ## GÖREV
+               (Görev açıklaması)
+               ## BEKLENEN ÇIKTI
+               (Beklenen sonuç)
+               Ardından küçük bir başlangıç kodu (boilerplate) sağla.
             """;
 
         if (isQuizPending)

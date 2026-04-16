@@ -53,4 +53,22 @@ public interface IRedisMemoryService
     /// TutorAgent bunları few-shot olarak system prompt'a enjekte eder.
     /// </summary>
     Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2);
+
+    // ── HUD: Gerçek Zamanlı Ajan Telemetrisi ────────────────────────────────
+
+    /// <summary>
+    /// Bir ajanın tamamladığı istek için gerçek gecikme (ms) ve başarı/hata durumunu Redis'e yazar.
+    /// Key: "orka:metrics:{agentRole}" | Max 100 kayıt (LTRIM) | TTL: 24 saat.
+    /// </summary>
+    Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null);
+
+    /// <summary>
+    /// Tüm ajanlar için Redis'ten ortalama latency, çağrı sayısı ve hata oranı döner.
+    /// </summary>
+    Task<IEnumerable<AgentMetricSummary>> GetSystemMetricsAsync();
+
+    /// <summary>
+    /// Session bazında EvaluatorAgent'ın verdiği ham puanların genelini döner (Dashboard LLMOps Log).
+    /// </summary>
+    Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20);
 }

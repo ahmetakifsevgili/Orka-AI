@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public class AIAgentFactory : IAIAgentFactory
     private readonly IGitHubModelsService _github;
     private readonly IGroqService _groq;
     private readonly IGeminiService _gemini;
+    private readonly IRedisMemoryService _redis;
     private readonly ILogger<AIAgentFactory> _logger;
     private readonly Dictionary<AgentRole, string> _modelMap;
 
@@ -29,12 +31,14 @@ public class AIAgentFactory : IAIAgentFactory
         IGitHubModelsService github,
         IGroqService groq,
         IGeminiService gemini,
+        IRedisMemoryService redis,
         IConfiguration configuration,
         ILogger<AIAgentFactory> logger)
     {
         _github = github;
         _groq   = groq;
         _gemini = gemini;
+        _redis  = redis;
         _logger = logger;
 
         _modelMap = new Dictionary<AgentRole, string>
@@ -63,7 +67,9 @@ public class AIAgentFactory : IAIAgentFactory
         string userMessage,
         CancellationToken ct = default)
     {
-        var model = GetModel(role);
+        var model    = GetModel(role);
+        var roleName = role.ToString();
+        var sw       = Stopwatch.StartNew();
 
         // 1. GitHub Models — 10s timeout
         using (var cts1 = CancellationTokenSource.CreateLinkedTokenSource(ct))
@@ -72,11 +78,16 @@ public class AIAgentFactory : IAIAgentFactory
             try
             {
                 _logger.LogDebug("[AIAgentFactory] {Role} → GitHub Models ({Model})", role, model);
-                return await _github.ChatAsync(systemPrompt, userMessage, model, cts1.Token);
+                var result = await _github.ChatAsync(systemPrompt, userMessage, model, cts1.Token);
+                sw.Stop();
+                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "GitHub");
+                return result;
             }
             catch (Exception ex) when (IsTransient(ex) || cts1.IsCancellationRequested)
             {
                 _logger.LogWarning("[AIAgentFactory] {Role} GitHub başarısız/timeout ({Msg}), Groq fallback.", role, ex.Message);
+                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, false, "GitHub");
+                sw.Restart();
             }
         }
 
@@ -86,18 +97,26 @@ public class AIAgentFactory : IAIAgentFactory
             cts2.CancelAfter(AgentTimeout);
             try
             {
-                return await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts2.Token);
+                var result = await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts2.Token);
+                sw.Stop();
+                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "Groq");
+                return result;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("[AIAgentFactory] {Role} Groq başarısız/timeout ({Msg}), Gemini fallback.", role, ex.Message);
+                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, false, "Groq");
+                sw.Restart();
             }
         }
 
         // 3. Gemini fallback — 10s timeout
         using var cts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts3.CancelAfter(AgentTimeout);
-        return await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts3.Token);
+        var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts3.Token);
+        sw.Stop();
+        _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "Gemini");
+        return geminiResult;
     }
 
     /// <inheritdoc/>

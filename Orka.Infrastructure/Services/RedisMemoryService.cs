@@ -211,4 +211,134 @@ public class RedisMemoryService : IRedisMemoryService
             return Enumerable.Empty<GoldExample>();
         }
     }
+
+    // ── HUD: Gerçek Zamanlı Ajan Telemetrisi ────────────────────────────────
+
+    private static readonly string[] AllAgentRoles =
+        ["Tutor", "Evaluator", "Supervisor", "Summarizer", "Korteks", "Grader", "DeepPlan"];
+
+    public async Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null)
+    {
+        try
+        {
+            var key = $"orka:metrics:{agentRole}";
+            var payload = JsonSerializer.Serialize(new AgentCallRecord(
+                LatencyMs:  latencyMs,
+                IsSuccess:  isSuccess,
+                Provider:   provider ?? "Unknown",
+                RecordedAt: DateTime.UtcNow.ToString("O")
+            ));
+
+            await _db.ListLeftPushAsync(key, payload);
+            await _db.ListTrimAsync(key, 0, 99);       // Max 100 kayıt
+            await _db.KeyExpireAsync(key, TimeSpan.FromHours(24));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Ajan metriği kaydedilirken hata oluştu. Role={Role}", agentRole);
+        }
+    }
+
+    public async Task<IEnumerable<AgentMetricSummary>> GetSystemMetricsAsync()
+    {
+        var result = new List<AgentMetricSummary>();
+
+        foreach (var role in AllAgentRoles)
+        {
+            try
+            {
+                var key   = $"orka:metrics:{role}";
+                var items = await _db.ListRangeAsync(key, 0, 99);
+
+                if (items.Length == 0)
+                {
+                    result.Add(new AgentMetricSummary(role, 0, 0, 0, 0, "—", "—"));
+                    continue;
+                }
+
+                var records = items
+                    .Select(x =>
+                    {
+                        try { return JsonSerializer.Deserialize<AgentCallRecord>(x.ToString()); }
+                        catch { return null; }
+                    })
+                    .Where(r => r != null)
+                    .Select(r => r!)
+                    .ToList();
+
+                var totalCalls  = records.Count;
+                var errorCount  = records.Count(r => !r.IsSuccess);
+                var avgLatency  = records.Average(r => (double)r.LatencyMs);
+                var lastRecord  = records.First(); // LPUSH → ilk eleman en yeni
+
+                result.Add(new AgentMetricSummary(
+                    AgentRole:    role,
+                    AvgLatencyMs: Math.Round(avgLatency, 0),
+                    TotalCalls:   totalCalls,
+                    ErrorCount:   errorCount,
+                    ErrorRatePct: Math.Round(errorCount / (double)totalCalls * 100, 1),
+                    LastProvider: lastRecord.Provider,
+                    LastCallAt:   lastRecord.RecordedAt
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Redis] Sistem metrikleri okunurken hata oluştu. Role={Role}", role);
+                result.Add(new AgentMetricSummary(role, 0, 0, 0, 0, "—", "—"));
+            }
+        }
+
+        return result;
+    }
+
+    public async Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20)
+    {
+        try
+        {
+            // Tüm feedback key'lerini tarar — "orka:feedback:*"
+            var server = _redis.GetServer(_redis.GetEndPoints().First());
+            var keys   = server.Keys(pattern: "orka:feedback:*").ToArray();
+
+            if (keys.Length == 0) return Enumerable.Empty<EvaluatorLogEntry>();
+
+            var allEntries = new List<EvaluatorLogEntry>();
+
+            foreach (var key in keys.Take(50)) // Max 50 session tara
+            {
+                var items = await _db.ListRangeAsync(key, 0, 9); // Her session'dan max 10 al
+                foreach (var item in items)
+                {
+                    // Format: "[HH:mm:ss] Puan: {score} - Not: {feedback}"
+                    var raw = item.ToString();
+                    var timeEnd = raw.IndexOf(']');
+                    var recordedAt = timeEnd > 0 ? raw[1..timeEnd] : "—";
+
+                    var scoreIdx = raw.IndexOf("Puan: ");
+                    var noteIdx  = raw.IndexOf(" - Not: ");
+
+                    if (scoreIdx < 0) continue;
+
+                    var scoreStr = noteIdx > scoreIdx
+                        ? raw[(scoreIdx + 6)..noteIdx]
+                        : raw[(scoreIdx + 6)..];
+
+                    var feedback = noteIdx > 0 ? raw[(noteIdx + 8)..] : "";
+
+                    if (int.TryParse(scoreStr.Trim(), out var score))
+                    {
+                        allEntries.Add(new EvaluatorLogEntry(score, feedback.Trim(), recordedAt));
+                    }
+                }
+            }
+
+            return allEntries
+                .OrderByDescending(e => e.RecordedAt)
+                .Take(count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Evaluator logları okunurken hata oluştu.");
+            return Enumerable.Empty<EvaluatorLogEntry>();
+        }
+    }
 }

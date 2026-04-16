@@ -252,6 +252,7 @@ export const ChatAPI = {
 export const DashboardAPI = {
   getStats: () => api.get("/dashboard/stats"),
   getRecentActivity: () => api.get("/dashboard/recent-activity"),
+  getSystemHealth: () => api.get("/dashboard/system-health"),
 };
 
 export const WikiAPI = {

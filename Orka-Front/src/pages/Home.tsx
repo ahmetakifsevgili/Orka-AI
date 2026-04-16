@@ -17,6 +17,7 @@ import WikiMainPanel from "@/components/WikiMainPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import DashboardPanel from "@/components/DashboardPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
+import SplitPane from "@/components/SplitPane";
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -206,15 +207,13 @@ export default function Home() {
   // IDE'den gelen kodu TutorAgent'a gönderir: chat view'a geçip mesajı tetikler
   const handleIDESendToChat = useCallback((message: string) => {
     setPendingIDEMessage(message);
-    setActiveView("chat");
+    // Split-pane modundayken ide view'dan çıkmasına gerek yok, chat ve ide yan yana!
   }, []);
 
   const renderMain = () => {
     switch (activeView) {
       case "dashboard":
-        return (
-          <DashboardPanel topics={topics} onViewChange={handleViewChange} />
-        );
+        return <DashboardPanel topics={topics} onViewChange={handleViewChange} />;
       case "settings":
         return <SettingsPanel />;
       case "wiki":
@@ -225,13 +224,36 @@ export default function Home() {
             Bir ders seçilmedi.
           </div>
         );
-      case "ide":
+      case "ide": {
         return (
-          <InteractiveIDE
-            topicTitle={activeTopic?.title}
-            onSendToChat={handleIDESendToChat}
+          <SplitPane
+            left={
+              <ChatPanel
+                activeTopic={activeTopic}
+                sessionId={sessionId}
+                onSessionStart={setSessionId}
+                messages={messages}
+                setMessages={setMessages}
+                sessionLoading={sessionLoading}
+                onOpenWiki={handleOpenWiki}
+                onTopicsRefresh={handleTopicsRefresh}
+                onTopicAutoCreated={handleTopicAutoCreated}
+                currentSubtopic={currentSubtopic}
+                defaultMode={defaultChatMode}
+                pendingMessage={pendingIDEMessage}
+                onPendingMessageConsumed={() => setPendingIDEMessage(null)}
+                onOpenIDE={() => setActiveView("ide")}
+              />
+            }
+            right={
+              <InteractiveIDE
+                topicTitle={activeTopic?.title}
+                onSendToChat={handleIDESendToChat}
+              />
+            }
           />
         );
+      }
       default:
         return (
           <ChatPanel
@@ -248,6 +270,7 @@ export default function Home() {
             defaultMode={defaultChatMode}
             pendingMessage={pendingIDEMessage}
             onPendingMessageConsumed={() => setPendingIDEMessage(null)}
+            onOpenIDE={() => setActiveView("ide")}
           />
         );
     }
