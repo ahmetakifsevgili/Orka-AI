@@ -267,9 +267,9 @@ export default function LeftSidebar({
               t.parentTopicId === null && 
               (t.category || '').toLowerCase() === 'plan'
             ).map((parentChat) => {
-               const children = topics.filter(t => t.parentTopicId === parentChat.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0));
-             const isExpanded = expandedPlans[parentChat.id] !== false; // default expanded
-             const hasChildren = children.length > 0;
+              const modules = topics.filter(t => t.parentTopicId === parentChat.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0));
+              const isExpanded = expandedPlans[parentChat.id] !== false; // default expanded
+              const hasModules = modules.length > 0;
 
              return (
               <div key={parentChat.id} className="mb-1">
@@ -281,29 +281,29 @@ export default function LeftSidebar({
                      <div 
                         className="flex items-center gap-2 overflow-hidden flex-1"
                         onClick={(e) => {
-                             if (hasChildren) {
-                                 e.stopPropagation();
+                             // Her zaman sohbeti aç (Sorun 3 Fix)
+                             onTopicClick(parentChat, "chat");
+                             // Eğer alt modüller varsa, dropdown'u da aç/kapat senkronize olarak
+                             if (hasModules) {
                                  togglePlanExpansion(parentChat.id);
-                             } else {
-                               onTopicClick(parentChat);
                              }
                         }}
                      >
                          <div 
                            className="w-4 h-4 flex items-center justify-center cursor-pointer text-zinc-500 hover:text-zinc-300"
                            onClick={(e) => {
-                              if (hasChildren) {
+                              if (hasModules) {
                                   e.stopPropagation();
                                   togglePlanExpansion(parentChat.id);
                               }
                            }}
                          >
-                           {hasChildren ? (isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />) : <MessageSquare className={`w-3 h-3 flex-shrink-0 ${activeTopic?.id === parentChat.id ? "text-zinc-300" : ""}`} />}
+                           {hasModules ? (isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />) : <MessageSquare className={`w-3 h-3 flex-shrink-0 ${activeTopic?.id === parentChat.id ? "text-zinc-300" : ""}`} />}
                          </div>
                          <span className="text-[12px] truncate">{parentChat.title}</span>
                      </div>
                      
-                     {hasChildren && (
+                     {hasModules && (
                       <div className="flex items-center gap-1.5 opacity-0 group-hover/cat:opacity-100 transition-opacity">
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-[9px] text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded-full border border-zinc-700/30">
@@ -321,77 +321,96 @@ export default function LeftSidebar({
                   </div>
                   
                   <AnimatePresence>
-                  {hasChildren && isExpanded && (
+                  {hasModules && isExpanded && (
                      <motion.div 
                         initial={{ height: 0, opacity: 0 }} 
                         animate={{ height: "auto", opacity: 1 }} 
                         exit={{ height: 0, opacity: 0 }} 
-                        className="pl-[19px] mt-1 space-y-0.5 border-l border-zinc-800/50 ml-4 relative"
+                        className="pl-[19px] mt-1 space-y-2 border-l border-zinc-800/50 ml-4 relative pb-1"
                      >
-                       {children.map((topic) => {
-                          const isActive = activeTopic?.id === topic.id;
-                          const isCompleted = topic.isMastered || topic.progressPercentage === 100;
-                          return (
-                            <button
-                               key={topic.id}
-                               onClick={() => onTopicClick(topic)}
-                             className={`flex flex-col items-stretch w-full px-3 py-1.5 rounded-md text-left transition-all duration-150 relative group ${
-                                 isActive
-                                   ? "text-zinc-100 font-medium bg-white/5 border border-white/10 shadow-sm"
-                                   : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30"
-                               } ${isCompleted ? 'border-l-2 border-zinc-600/40 bg-zinc-800/30' : ''}`}
-                             >
-                               {/* Tree connector lines */}
-                               <div className="absolute left-[-11px] top-0 bottom-1/2 w-px bg-zinc-800/60"></div>
-                               <div className="absolute left-[-11px] top-1/2 w-4 h-px bg-zinc-800/60"></div>
-                               
-                               <div className="flex items-center gap-2.5 w-full relative">
-                                 {isCompleted ? (
-                                    <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-                                      <Check className="w-2.5 h-2.5 text-emerald-400 stroke-[2.5]" />
-                                    </div>
-                                 ) : isActive ? (
-                                    <div className="w-4 h-4 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shadow-sm shadow-white/10 flex-shrink-0">
-                                      <ChevronRight className="w-2.5 h-2.5 text-white" />
-                                    </div>
-                                 ) : (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 flex-shrink-0 ml-1"></div>
-                                 )}
-                                 <span className={`text-[12px] truncate flex-1 ${isCompleted ? 'text-zinc-400 font-medium' : isActive ? 'text-white font-medium' : 'text-zinc-500'}`}>
-                                   {topic.title}
-                                 </span>
-
-                                 {/* Mastery Score Badge */}
-                                 {topic.successScore && topic.successScore > 0 && (
-                                   <span className="text-[8px] text-emerald-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                                      {topic.successScore}%
-                                   </span>
-                                 )}
-
-                                 <button
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     onEnterChat(topic);
-                                   }}
-                                   title="Derse Başla"
-                                   className={`opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[9px] font-medium transition-all duration-200 ${
-                                     isActive ? "bg-white text-zinc-900" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
-                                   }`}
+                       {modules.map((mod) => {
+                          // 2. Seviye: Modül veya Eski Sistem Ders
+                          const lessons = topics.filter(t => t.parentTopicId === mod.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0));
+                          const isLegacyLesson = lessons.length === 0;
+                          
+                          // Ders (Lesson) render fonksiyonu
+                          const renderLesson = (topicToRender: ApiTopic) => {
+                              const isActive = activeTopic?.id === topicToRender.id;
+                              const isCompleted = topicToRender.isMastered || topicToRender.progressPercentage === 100;
+                              return (
+                                <button
+                                   key={topicToRender.id}
+                                   onClick={() => onTopicClick(topicToRender)}
+                                 className={`flex flex-col items-stretch w-full px-3 py-1.5 rounded-md text-left transition-all duration-150 relative group ${
+                                     isActive
+                                       ? "text-zinc-100 font-medium bg-white/5 border border-white/10 shadow-sm"
+                                       : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30"
+                                   } ${isCompleted ? 'border-l-2 border-zinc-600/40 bg-zinc-800/30' : ''}`}
                                  >
-                                   {isActive ? "Derse Git" : "Devam Et"}
+                                   <div className="absolute left-[-11px] top-0 bottom-1/2 w-px bg-zinc-800/60"></div>
+                                   <div className="absolute left-[-11px] top-1/2 w-4 h-px bg-zinc-800/60"></div>
+                                   <div className="flex items-center gap-2.5 w-full relative">
+                                     {isCompleted ? (
+                                        <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                                          <Check className="w-2.5 h-2.5 text-emerald-400 stroke-[2.5]" />
+                                        </div>
+                                     ) : isActive ? (
+                                        <div className="w-4 h-4 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shadow-sm shadow-white/10 flex-shrink-0">
+                                          <ChevronRight className="w-2.5 h-2.5 text-white" />
+                                        </div>
+                                     ) : (
+                                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 flex-shrink-0 ml-1"></div>
+                                     )}
+                                     <span className={`text-[12px] truncate flex-1 ${isCompleted ? 'text-zinc-400 font-medium' : isActive ? 'text-white font-medium' : 'text-zinc-500'}`}>
+                                       {topicToRender.title}
+                                     </span>
+                                     <button
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         onEnterChat(topicToRender);
+                                       }}
+                                       title="Derse Başla"
+                                       className={`opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[9px] font-medium transition-all duration-200 ${
+                                         isActive ? "bg-white text-zinc-900" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
+                                       }`}
+                                     >
+                                       {isActive ? "Derse Git" : "Devam Et"}
+                                     </button>
+                                   </div>
+                                    {/* İlerleme Çubuğu */}
+                                    {!isCompleted && (topicToRender.progressPercentage ?? 0) > 0 && (
+                                     <div className="mt-1 ml-4 w-full h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+                                       <div 
+                                         className="h-full bg-zinc-400 transition-all duration-500" 
+                                         style={{ width: `${topicToRender.progressPercentage}%` }}
+                                       />
+                                     </div>
+                                   )}
                                  </button>
-                               </div>
+                              );
+                          };
 
-                               {/* Progress line for ongoing topics */}
-                               {!isCompleted && (topic.progressPercentage ?? 0) > 0 && (
-                                 <div className="mt-1 ml-4 w-full h-0.5 bg-zinc-800 rounded-full overflow-hidden">
-                                   <div 
-                                     className="h-full bg-zinc-400 transition-all duration-500" 
-                                     style={{ width: `${topic.progressPercentage}%` }}
-                                   />
-                                 </div>
-                               )}
-                             </button>
+                          if (isLegacyLesson) {
+                             return <div key={mod.id} className="relative">{renderLesson(mod)}</div>;
+                          }
+
+                          return (
+                            <div key={mod.id} className="relative">
+                                {/* Modül Başlığı */}
+                                <div className="flex items-center gap-2 mb-1 mt-1 -ml-2 text-zinc-400 group">
+                                    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-zinc-900 border border-zinc-800/80 text-[10px]">
+                                        {mod.emoji || "📦"}
+                                    </div>
+                                    <span className="text-[11px] font-medium tracking-wide truncate group-hover:text-zinc-300 transition-colors">
+                                        {mod.title}
+                                    </span>
+                                </div>
+                                
+                                {/* 3. Seviye: Dersler */}
+                                <div className="space-y-0.5 relative">
+                                    {lessons.map((lesson) => renderLesson(lesson))}
+                                </div>
+                            </div>
                           );
                        })}
                      </motion.div>
@@ -420,7 +439,10 @@ export default function LeftSidebar({
                 <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="space-y-0.5">
+         <div className="space-y-0.5">
+            {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').length === 0 && (
+              <p className="text-[11px] text-zinc-600 px-2 py-3 italic">Henüz sohbet yok</p>
+            )}
             {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').map((chatTopic) => (
               <button
                 key={chatTopic.id}

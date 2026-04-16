@@ -17,15 +17,18 @@ public class SummarizerAgent : ISummarizerAgent
         = new ConcurrentDictionary<string, byte>();
 
     private readonly IAIAgentFactory _factory;
+    private readonly IGraderAgent _grader;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SummarizerAgent> _logger;
 
     public SummarizerAgent(
         IAIAgentFactory factory,
+        IGraderAgent grader,
         IServiceScopeFactory scopeFactory,
         ILogger<SummarizerAgent> logger)
     {
         _factory      = factory;
+        _grader       = grader;
         _scopeFactory = scopeFactory;
         _logger       = logger;
     }
@@ -75,48 +78,53 @@ public class SummarizerAgent : ISummarizerAgent
         var history = string.Join("\n", session.Messages.OrderBy(m => m.CreatedAt).Select(m => $"{m.Role}: {m.Content}"));
 
         var systemPrompt = $$"""
-            Sen Orka AI'nın en üst düzey 'Bilgi Mimarı ve Müfredat Küratörü (Deep Knowledge Architect)' botusun.
-            Görevin: Verilen ham sohbet geçmişini, sadece bir özet olarak değil, "Master Content" niteliğinde profesyonel bir Wiki dokümanına dönüştürmek.
+            Sen Orka AI'nın 'Bilgi Özetleyici ve İçerik Hazırlayıcı'sın.
+            Görev: Sohbet geçmişini, İLKOKUL'dan LİSE'ye kadar HER kesimden öğrencinin anlayabileceği,
+            sade Türkçeyle ve görsel açıdan zengin bir Wiki sayfasına dönüştür.
 
-            İşleyeceğin Konu: {{topicTitle}}
+            Konu: {{topicTitle}}
 
-            KALİTE VE FORMAT STANDARTLARI:
-            - **Derinlik**: Kavramları sadece listeleme; her birinin 'neden' ve 'nasıl'ını açıkla. Teknik terimleri profesyonelce tanımla.
-            - **Görsel Düzen (Markdown)**: 
-                - Önemli karşılaştırmalar için mutlaka **Tablo** kullan.
-                - Kritik uyarılar için blok alıntılar (Blockquotes) veya listeler kullan.
-                - Kod örneklerini açıklayıcı yorum satırlarıyla zenginleştir.
-                - Önemli terimleri **kalın** veya *italik* yaparak vurgula.
-            - **Dil**: Akademik bir ciddiyetle, ancak öğretici (pedagogical) bir tonda yaz.
+            HEDEF KİTLE & DİL:
+            - Akademik değil, öğretici ve samimi bir dil kullan.
+            - Teknik terimleri mutlaka Türkçe açıklamayla ver: "Algoritma (adım adım çözüm yolu)"
+            - Karmaşık cümleler kurma; kısa, net ve akıcı paragraflar yaz.
+            - Yaş grubuna göre anlayışlı örnekler ver (günlük hayattan benzetmeler iyi olur).
 
             WIKI SAYFA YAPISI:
-            # 📚 {{topicTitle}}: Teknik İnceleme ve Uygulama Rehberi
+            # {{topicTitle}} 📖
 
-            ## 1. 🔍 Kavramsal Temeller
-            (Konuya derinlemesine giriş, tarihsel veya teknik bağlam, ana hedefler.)
-
-            ---
-
-            ## 2. 🧠 Mimari ve Teknik Detaylar
-            (Seansta geçen teorik bilgilerin profesyonel sentezi. Bu bölümün en az 2-3 paragraf detaylı olmasını ve teknik tablolar içermesini sağla.)
+            ## 🎯 Bu Konuda Ne Öğrendik?
+            (Konuyu hiç bilmeyen birine 3-4 cümleyle, sade bir dille anlat.)
 
             ---
 
-            ## 3. 🛠️ Uygulama Örnekleri ve Analiz
-            (Eğer kod veya pratik akış varsa: Kod bloğu + Satır bazlı teknik analiz.)
+            ## 🧠 Temel Kavramlar
+            (Konunun önemli kavramlarını her biri için 2-3 cümle, basit dil, mümkünse 🔹 gibi emojilerle listele.)
 
             ---
 
-            ## 4. 💡 Kritik Stratejiler ve 'Best Practices'
-            (Kaçınılması gereken hatalar, performans ipuçları ve endüstri standartları.)
+            ## 💡 Gerçek Hayattan Örnekler
+            (Soyut kavramları somutlaştır. "Örneğin..." ile başla, günlük hayattan benzetmeler kullan.)
 
             ---
 
-            ## 5. 🏁 Sentez ve İleri Adımlar
-            (Konu bütünlüğünü sağlayan güçlü bir kapanış paragrafı.)
+            ## 🚀 Pratik Uygulama
+            (Eğer konuda kod, formül veya adım adım süreç varsa burada ver. Kod bloğu kullan ama tek satırlık açıklama ekle.)
 
-            [UYARI]: Sadece Markdown formatında yanıt ver. Gereksiz giriş/çıkış cümleleri kullanma.
+            ---
+
+            ## ✅ Kısaca Hatırla
+            (3-5 maddelik sade özet. Öğrenci bunu okuyunca konunun özünü anlasın.)
+
+            ---
+
+            UYARI:
+            - Sadece Markdown formatında yaz.
+            - Gereksiz giriş/kapanış cümleleri yok.
+            - Emoji kullan ama aşırıya kaçma.
+            - Basit dil her şeyin önünde.
             """;
+
 
         var userPrompt = $"Sohbet Geçmişi:\n\n{history}";
 
@@ -127,8 +135,28 @@ public class SummarizerAgent : ISummarizerAgent
 
             var summary = await _factory.CompleteChatAsync(Orka.Core.Enums.AgentRole.Summarizer, systemPrompt, userPrompt);
 
+            // ── PEER REVIEW: Grader Öğrenci Dostu Dil Denetimi ──────────────────
+            _logger.LogInformation("[WikiCurator] Grader dil kalite denetimi başlatıldı.");
+            bool isApproved = await _grader.IsContextRelevantAsync(
+                $"{topicTitle} konusu için öğrenci dostu wiki sayfası",
+                summary);
+
+            if (!isApproved)
+            {
+                _logger.LogWarning("[WikiCurator] Grader wiki'yi reddetti. Daha sade versiyon üretiliyor (Self-Refining).");
+
+                var fallbackPrompt = $"""
+                    Konu: {topicTitle}
+                    Bu konuyu 7. sınıf düzeyinde, çok basit ve kısa Markdown formatında anlat.
+                    5-7 maddeden oluşan kısa bir "Konu Özeti" yaz.
+                    Sıradan Markdown kullan, tablo vs. gerekmez.
+                    """;
+                summary = await _factory.CompleteChatAsync(Orka.Core.Enums.AgentRole.Summarizer, fallbackPrompt, userPrompt);
+                _logger.LogInformation("[WikiCurator] Sade yedek wiki üretildi.");
+            }
+
             session.Summary = summary;
-            await wikiService.AutoUpdateWikiAsync(topicId, summary, "Otomatik Oluşturulan Kapsamlı Wiki", "GitHubModels-WikiArchitect");
+            await wikiService.AutoUpdateWikiAsync(topicId, summary, "Otomatik Oluşturulan Öğrenci Dostu Wiki", "GitHubModels-WikiArchitect");
             await db.SaveChangesAsync();
 
             _logger.LogInformation("[WikiCurator] Başarıyla Wiki'ye aktarıldı. Topic={Topic}", topicTitle);

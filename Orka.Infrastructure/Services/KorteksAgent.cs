@@ -126,47 +126,39 @@ public class KorteksAgent : IKorteksAgent
 
         var systemPrompt = $"""
             Sen Orka AI'nın "Korteks" modülüsün — Perplexity benzeri bir derin araştırma motorusun.
+            Kullanıcının verdiği konuyu o kadar derinlemesine, akademik ve çok boyutlu işle ki, çıkan sonuç bir ansiklopedi maddesi kadar doyurucu olsun.
 
             ARAŞTIRMA SÜRECİ (bu sırayı takip et):
             1. WebSearch-SearchWebDeep ile konuyu 3 farklı açıdan paralel ara.
-               Sorgular: ana kavram / teknik detaylar / son gelişmeler/örnekler
-            2. Wikipedia-SearchWikipedia ile temel kavramı doğrula.
-               Bulunan Wikipedia makalesini Wikipedia-GetWikipediaArticle ile çek.
-            3. Toplanan bilgileri karşılaştır — çelişen bilgileri not et.
-            4. Aşağıdaki formatta kapsamlı raporu yaz.
+               Sorgular: [Ana kavramın detayları] / [Pratik kullanım, teknik örnekler] / [Son gelişmeler, endüstri standartları]
+            2. Wikipedia-SearchWikipedia ile makaleyi bulup çek.
+            3. Toplanan bilgileri karşılaştır.
+            4. En az 6-8 paragraf uzunluğunda, son derece doyurucu ve derinlemesine yapılandırılmış bir rapor yaz.
 
             ZORUNLU ÇIKTI FORMATI:
 
-            ## 📌 Genel Bakış
-            Konunun ne olduğunu ve neden önemli olduğunu 3-4 cümleyle açıkla.
-            Wikipedia kaynağını burada kullan — en güvenilir temel tanım oradadır.
+            ## 📌 Genel Bakış ve Kapsam
+            Konunun ne olduğunu tarihsel veya güncel bağlamıyla derinlemesine açıkla (Wikipedia'dan yararlan).
 
-            ## 🔬 Temel Bulgular
-            Web aramasından elde ettiğin en önemli 5-7 bulguyu maddeler halinde yaz.
-            **Her maddenin sonuna kaynak göster: ([Kaynak başlığı](URL))**
-            Örnek: Python, 1991'de Guido van Rossum tarafından geliştirilmiştir. ([Wikipedia](https://tr.wikipedia.org/wiki/Python))
+            ## 🔬 Teknik Detaylar ve Bulgular (EN ÖNEMLİ BÖLÜM)
+            Web aramasından elde ettiğin tüm kritik teknik bilgileri, kod/uygulama standartlarını veya sektörel pratikleri madde madde ve paragraflar halinde yaz. Yüzeysel geçme.
+            **Her önemli iddianın sonuna kaynak göster: ([Kaynak başlığı](URL))**
 
-            ## ⚠️ Doğrulanamayan / Çelişen Bilgiler
-            Kaynaklar arasında tutarsızlık varsa veya doğrulayamadığın bir bilgi varsa burada belirt.
-            Eğer yoksa: "Tüm bulgular çapraz kaynaklarla doğrulandı." yaz.
+            ## ⚠️ Doğrulanamayan / Kısıtlı Bilgiler
+            Kaynaklar arasında çelişki varsa belirt. Yoksa tümünün doğrulandığını yaz.
 
-            ## 📚 Kaynaklar
-            Kullandığın tüm kaynakları listele:
-            - [Başlık](URL) — ne tür bilgi sağladı (tek satır açıklama)
+            ## 📚 Kaynakça
+            - [Başlık](URL) — ne tür bilgi sağladı (açıklama)
 
-            ## 💡 Özet
-            2-3 cümlede araştırmanın ana bulgusunu özetle.
-            Öğrenmek isteyenler için önerilen sonraki adım nedir?
+            ## 💡 Sentez ve Sonuç
+            Tüm araştırmayı bağlayan akademik bir kapanış.
 
-            HALLUCİNASYON ÖNLEME KURALLARI (KESİNLİKLE UYULACAK):
-            - Herhangi bir bilgiyi yazmadan önce kaynağını bul. Kaynak yoksa yazma.
-            - "Bilindiği kadarıyla", "genellikle" gibi belirsiz ifadeler kullanırsan kaynağını da ekle.
-            - Rakam, tarih, isim gibi spesifik bilgilerde kaynak zorunlu. Kaynak yoksa "Doğrulanamadı" yaz.
-            - Wikipedia ile web aramasından çelişen bilgi gelirse her ikisini de yaz, hangisinin güncel olduğunu belirt.
-            - Tavily aramasının "raw_content" kısmını temel al — snippet yanıltıcı olabilir.
+            HALLUCİNASYON ÖNLEME KURALLARI:
+            - Kaynağı olmayan bilgiyi ekleme.
+            - Tavily raw_content kısmını temel al. Yeterli veri yoksa "Bulunamadı" de.
 
             DİL: Türkçe. Teknik terimlerin İngilizce karşılığını parantez içinde ver.
-            FORMAT: Markdown. Bölüm başlıkları, maddeler, kalın terimler.
+            FORMAT: Markdown.
             {topicContext}{fileSection}
             """;
 
@@ -200,6 +192,60 @@ public class KorteksAgent : IKorteksAgent
 
         yield return "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         yield return "✅ Araştırma tamamlandı. Tüm bilgiler kaynaklara dayalıdır.\n";
+
+        // Araştırma sonucunu Wiki'ye kaydet (topicId varsa)
+        bool wikiSaved = false;
+        bool wikiError = false;
+
+        string? guardrailMessage = null;
+        if (topicId.HasValue && fullResponse.Length > 0)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var grader = scope.ServiceProvider.GetRequiredService<IGraderAgent>();
+                var wikiService = scope.ServiceProvider.GetRequiredService<IWikiService>();
+
+                guardrailMessage = "\n\n🛡️ [Güvenlik Kalkanı]: Elde edilen bilgiler 'Halüsinasyon' ve 'Konu Sapması' testinden geçiriliyor...\n";
+                
+                bool isValid = await grader.IsContextRelevantAsync(topic, fullResponse.ToString(), ct);
+
+                if (isValid)
+                {
+                    await wikiService.AutoUpdateWikiAsync(
+                        topicId.Value,
+                        fullResponse.ToString(),
+                        $"Korteks derin araştırması: {topic}",
+                        "korteks-agent");
+                    wikiSaved = true;
+
+                    // Faz 11: TutorAgent'a "bu konu için taze araştırma var" sinyali
+                    var redisService = scope.ServiceProvider.GetService<IRedisMemoryService>();
+                    if (redisService != null)
+                        await redisService.SetWikiReadyAsync(topicId.Value);
+                }
+                else
+                {
+                    wikiError = true;
+                    guardrailMessage += "\n⚠️ [UYARI]: Grader Ajanı bu içeriğin konuyla örtüşmediğini veya tutarsız bilgiler taşıdığını tespit etti! (Wiki'ye işlenmedi)\n";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Korteks] Wiki/Grader doğrulama hatası. TopicId={TopicId}", topicId);
+                wikiError = true;
+            }
+        }
+
+        if (guardrailMessage != null)
+            yield return guardrailMessage;
+
+        if (wikiSaved)
+            yield return "\n📖 **Araştırma sonuçları Wiki'nize başarıyla kaydedildi.** Detaylara Wiki panelinden erişebilirsiniz.\n";
+        else if (wikiError && !wikiSaved)
+            yield return "\n⚠️ Kayıt yapılamadı. Araştırma içeriği güvenlik denetiminden geçememiş veya ağ hatası oluşmuş olabilir.\n";
+        else if (!topicId.HasValue)
+            yield return "\n💡 **İpucu:** Bir müfredat konusu seçili iken Korteks araştırması yaparsanız, sonuçlar otomatik olarak Wiki'nize kaydedilir.\n";
 
         _logger.LogInformation("[Korteks] Tamamlandı. Çıktı: {Len} karakter", fullResponse.Length);
     }

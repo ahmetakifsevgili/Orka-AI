@@ -15,4 +15,5 @@ public interface ITopicService
     Task UpdateTopicAsync(Guid topicId, Guid userId, string? title, string? emoji, bool? isArchived);
     Task DeleteTopicAsync(Guid topicId, Guid userId);
     Task UpdateLastAccessedAsync(Guid topicId);
+    Task<List<Topic>> GetSubTopicsAsync(Guid parentTopicId);
 }

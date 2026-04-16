@@ -9,5 +9,8 @@ public enum AgentRole
     DeepPlan,
     Analyzer,
     Summarizer,
-    Korteks
+    Korteks,
+    Supervisor,
+    Grader,
+    Evaluator
 }

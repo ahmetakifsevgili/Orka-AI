@@ -27,6 +27,13 @@ class Program
     }
 }`;
 
+/** Orka dil değeri → Monaco Editor dil ID eşlemesi (farklı olanlar) */
+const MONACO_LANG: Record<string, string> = {
+  csharp: "csharp",
+  bash:   "shell",
+  r:      "r",
+};
+
 const LANGUAGE_OPTIONS = [
   { value: "csharp",     label: "C#" },
   { value: "python",     label: "Python" },
@@ -36,6 +43,14 @@ const LANGUAGE_OPTIONS = [
   { value: "rust",       label: "Rust" },
   { value: "go",         label: "Go" },
   { value: "cpp",        label: "C++" },
+  { value: "c",          label: "C" },
+  { value: "kotlin",     label: "Kotlin" },
+  { value: "swift",      label: "Swift" },
+  { value: "php",        label: "PHP" },
+  { value: "ruby",       label: "Ruby" },
+  { value: "scala",      label: "Scala" },
+  { value: "r",          label: "R" },
+  { value: "bash",       label: "Bash" },
 ];
 
 const STARTER_CODE: Record<string, string> = {
@@ -47,6 +62,14 @@ const STARTER_CODE: Record<string, string> = {
   rust: `fn main() {\n    println!("Merhaba, Orka!");\n}`,
   go: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Merhaba, Orka!")\n}`,
   cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Merhaba, Orka!" << endl;\n    return 0;\n}`,
+  c: `#include <stdio.h>\n\nint main() {\n    printf("Merhaba, Orka!\\n");\n    return 0;\n}`,
+  kotlin: `fun main() {\n    println("Merhaba, Orka!")\n}`,
+  swift: `print("Merhaba, Orka!")`,
+  php: `<?php\necho "Merhaba, Orka!\\n";\n?>`,
+  ruby: `puts "Merhaba, Orka!"`,
+  scala: `object Main extends App {\n    println("Merhaba, Orka!")\n}`,
+  r: `cat("Merhaba, Orka!\\n")`,
+  bash: `echo "Merhaba, Orka!"`,
 };
 
 export default function InteractiveIDE({ onSendToChat, topicTitle }: InteractiveIDEProps) {
@@ -80,9 +103,12 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
       setStderr(result.stderr || null);
       setSuccess(result.success);
       setOutputOpen(true);
-    } catch {
-      setStderr("Sunucuya bağlanılamadı. Lütfen tekrar deneyin.");
+    } catch (err: any) {
+      // API'den gelen hata mesajını al (PistonService graceful response dönüyor)
+      const apiMessage = err?.response?.data?.stderr || err?.response?.data?.error;
+      setStderr(apiMessage || "Kod çalıştırma servisine bağlanılamadı. Lütfen tekrar deneyin.");
       setSuccess(false);
+      setOutputOpen(true);
     } finally {
       setRunning(false);
     }
@@ -176,7 +202,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
         <Editor
           height="100%"
           defaultLanguage="csharp"
-          language={language === "csharp" ? "csharp" : language}
+          language={MONACO_LANG[language] ?? language}
           value={code}
           onChange={(val) => setCode(val ?? "")}
           onMount={(editor) => { editorRef.current = editor; }}

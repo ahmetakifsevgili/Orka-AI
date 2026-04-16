@@ -45,7 +45,25 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<OrkaDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Redis (Muhabbir) Entegrasyonu
+string redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
+    StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnection));
+
+// ── Observability: Correlation ID (Faz 10) ───────────────────────────────────
+// Scoped: her HTTP request kendi CorrelationId taşıyıcısını alır.
+// Background task'larda ID dışarıda capture edilmeli (Task.Run scope güvenliği).
+builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
+
+// ── Health Checks (Faz 10) ────────────────────────────────────────────────────
+// "ready" tag'li check'ler /health/ready endpoint'inde raporlanır.
+builder.Services.AddHealthChecks()
+    .AddRedis(redisConnection, name: "redis", tags: new[] { "ready" },
+              timeout: TimeSpan.FromSeconds(3))
+    .AddDbContextCheck<OrkaDbContext>(name: "sql-server", tags: new[] { "ready" });
+
 // Services
+builder.Services.AddScoped<IRedisMemoryService, RedisMemoryService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IContextBuilder, ContextBuilder>();
@@ -65,6 +83,11 @@ builder.Services.AddScoped<IQuizAgent, QuizAgent>();
 builder.Services.AddScoped<IDeepPlanAgent, DeepPlanAgent>();
 builder.Services.AddScoped<IWikiAgent, WikiAgent>();
 builder.Services.AddScoped<IKorteksAgent, KorteksAgent>();
+builder.Services.AddScoped<ISupervisorAgent, SupervisorAgent>();
+builder.Services.AddScoped<IGraderAgent, GraderAgent>();
+builder.Services.AddScoped<IEvaluatorAgent, EvaluatorAgent>();
+builder.Services.AddScoped<ISkillMasteryService, SkillMasteryService>();
+builder.Services.AddScoped<IIntentClassifierAgent, IntentClassifierAgent>();
 
 // Semantic Kernel Plugins (DI için register ediyoruz)
 builder.Services.AddScoped<WikiPlugin>();
@@ -153,11 +176,15 @@ builder.Services.AddHttpClient("Wikipedia", c =>
         PooledConnectionLifetime = TimeSpan.FromMinutes(2)
     });
 
-// Piston — Sandbox kod çalıştırma (public API, token gerekmez)
+// Judge0 CE — Sandbox kod çalıştırma (public instance, token gerekmez)
+// emkc.org/piston 15 Şubat 2026'dan itibaren whitelist-only oldu; Judge0 CE'ye geçildi.
+// Public instance: https://ce.judge0.com
 builder.Services.AddHttpClient("Piston", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
     c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+    // Judge0 CE gerektiriyorsa X-Auth-Token buraya eklenir:
+    // c.DefaultRequestHeaders.Add("X-Auth-Token", builder.Configuration["Judge0:ApiKey"] ?? "");
 })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
@@ -249,6 +276,8 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// CorrelationId ilk sıraya gelmeli — tüm sonraki middleware'ler ID'yi kullanabilsin
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())

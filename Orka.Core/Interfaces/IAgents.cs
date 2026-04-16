@@ -45,9 +45,11 @@ public interface ITutorAgent
     Task<bool> EvaluateQuizAnswerAsync(string question, string answer);
 }
 
+public record AnalyzerResult(bool IsComplete, string Reasoning);
+
 public interface IAnalyzerAgent
 {
-    Task<bool> AnalyzeCompletionAsync(IEnumerable<Message> messages);
+    Task<AnalyzerResult> AnalyzeCompletionAsync(IEnumerable<Message> messages);
 }
 
 public interface ISummarizerAgent
@@ -58,4 +60,24 @@ public interface ISummarizerAgent
 public interface IQuizAgent
 {
     Task GeneratePendingQuizAsync(Guid sessionId, Guid topicId, Guid userId);
+}
+
+/// <summary>
+/// Kullanıcının son N mesajını okuyarak niyet kategorisi ve güvenilirlik skoru üretir.
+/// Bu çıktı hem AnalyzerAgent (IsComplete kararı) hem SupervisorAgent (Route kararı) tarafından kullanılır.
+/// Tek LLM çağrısıyla iki ayrı ajan için karar üretilmesi maliyeti düşürür.
+/// </summary>
+public record IntentResult(
+    string   Intent,     // UNDERSTOOD | CONFUSED | CHANGE_TOPIC | QUIZ_REQUEST | CONTINUE
+    double   Confidence, // 0.0 - 1.0
+    string   Reasoning   // Karar gerekçesi
+);
+
+public interface IIntentClassifierAgent
+{
+    /// <summary>
+    /// Son 6 mesajı analiz edip kullanıcının niyetini sınıflandırır.
+    /// Confidence 0.65 altındaysa sistem kararı belirsiz kabul eder.
+    /// </summary>
+    Task<IntentResult> ClassifyAsync(IEnumerable<Message> recentMessages, CancellationToken ct = default);
 }

@@ -215,6 +215,14 @@ public class TopicService : ITopicService
         await _dbContext.SaveChangesAsync();
     }
 
+    public async Task<List<Topic>> GetSubTopicsAsync(Guid parentTopicId)
+    {
+        return await _dbContext.Topics
+            .Where(t => t.ParentTopicId == parentTopicId)
+            .OrderBy(t => t.Order)
+            .ToListAsync();
+    }
+
     private static List<string> ParsePlanJson(string json)
     {
         // JSON bloğunu temizle (```json ... ``` gibi markdown varsa)

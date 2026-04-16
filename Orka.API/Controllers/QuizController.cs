@@ -25,23 +25,30 @@ public class QuizController : ControllerBase
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
-        var attempt = new Orka.Core.Entities.QuizAttempt
+        try
         {
-            Id = Guid.NewGuid(),
-            SessionId = request.SessionId ?? Guid.Empty,
-            TopicId = request.TopicId ?? Guid.Empty,
-            UserId = userId,
-            Question = request.Question ?? "",
-            UserAnswer = request.SelectedOptionId ?? "",
-            IsCorrect = request.IsCorrect,
-            Explanation = request.Explanation ?? "",
-            CreatedAt = DateTime.UtcNow
-        };
+            var attempt = new Orka.Core.Entities.QuizAttempt
+            {
+                Id = Guid.NewGuid(),
+                SessionId = (request.SessionId.HasValue && request.SessionId.Value != Guid.Empty) ? request.SessionId.Value : null,
+                TopicId = (request.TopicId.HasValue && request.TopicId.Value != Guid.Empty) ? request.TopicId.Value : null,
+                UserId = userId,
+                Question = request.Question ?? "",
+                UserAnswer = request.SelectedOptionId ?? "",
+                IsCorrect = request.IsCorrect,
+                Explanation = request.Explanation ?? "",
+                CreatedAt = DateTime.UtcNow
+            };
 
-        _db.QuizAttempts.Add(attempt);
-        await _db.SaveChangesAsync();
+            _db.QuizAttempts.Add(attempt);
+            await _db.SaveChangesAsync();
 
-        return Ok(new { attempt.Id });
+            return Ok(new { attempt.Id });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Quiz sonucu kaydedilemedi.", detail = ex.Message });
+        }
     }
 
     [HttpGet("history/{topicId}")]

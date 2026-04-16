@@ -44,6 +44,9 @@ public class AIAgentFactory : IAIAgentFactory
             [AgentRole.Analyzer]   = configuration["AI:GitHubModels:Agents:Analyzer:Model"]   ?? "gpt-4o-mini",
             [AgentRole.Summarizer] = configuration["AI:GitHubModels:Agents:Summarizer:Model"] ?? "gpt-4o-mini",
             [AgentRole.Korteks]    = configuration["AI:GitHubModels:Agents:Korteks:Model"]    ?? "Meta-Llama-3.1-405B-Instruct",
+            [AgentRole.Supervisor] = configuration["AI:GitHubModels:Agents:Supervisor:Model"]  ?? "gpt-4o-mini",
+            [AgentRole.Grader]     = configuration["AI:GitHubModels:Agents:Grader:Model"]      ?? "gpt-4o-mini",
+            [AgentRole.Evaluator]  = configuration["AI:GitHubModels:Agents:Evaluator:Model"]   ?? "gpt-4o-mini",
         };
     }
 

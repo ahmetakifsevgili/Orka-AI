@@ -29,6 +29,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly ITopicService _topicService;
     private readonly IWikiService _wikiService;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISupervisorAgent _supervisor;
+    private readonly ICorrelationContext _correlationContext;
+    private readonly ISkillMasteryService _skillMastery;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -40,6 +43,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITopicService topicService,
         IWikiService wikiService,
         IServiceScopeFactory scopeFactory,
+        ISupervisorAgent supervisor,
+        ICorrelationContext correlationContext,
+        ISkillMasteryService skillMastery,
         ILogger<AgentOrchestratorService> logger)
     {
         _db = db;
@@ -50,6 +56,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _topicService = topicService;
         _wikiService = wikiService;
         _scopeFactory = scopeFactory;
+        _supervisor = supervisor;
+        _correlationContext = correlationContext;
+        _skillMastery = skillMastery;
         _logger = logger;
     }
 
@@ -136,38 +145,38 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 yield return "[THINKING: Kisisel ogrenme plani derleniyor...]";
 
             string syncResponse;
+            Guid syncMsgId = Guid.Empty;
             try
             {
-                // 1. Önce session state'e göre routing (state machine öncelikli)
                 if (session.CurrentState == SessionState.BaselineQuizMode)
                 {
                     var result = await HandleBaselineQuizModeAsync(userId, content, session);
                     syncResponse = result.Response;
-                    await SaveAiMessage(session, userId, syncResponse);
+                    syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
                 else if (session.CurrentState == SessionState.QuizMode)
                 {
                     var result = await HandleQuizModeAsync(userId, content, session);
                     syncResponse = result.Response;
-                    await SaveAiMessage(session, userId, syncResponse);
+                    syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
                 else if (session.CurrentState == SessionState.AwaitingChoice)
                 {
                     var result = await HandleAwaitingChoiceStateAsync(userId, content, session);
                     syncResponse = result.Response;
-                    await SaveAiMessage(session, userId, syncResponse);
+                    syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
                 // 2. isPlanMode veya /plan komutu → DeepPlan
                 else if (isPlanMode || content.Contains("/plan", StringComparison.OrdinalIgnoreCase))
                 {
                     var result = await TriggerBaselineQuizForPlanAsync(userId, content, session);
                     syncResponse = result.Response;
-                    await SaveAiMessage(session, userId, syncResponse);
+                    syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
                 else // QuizPending
                 {
                     syncResponse = await HandleLearningStateAsync(userId, content, session);
-                    await SaveAiMessage(session, userId, syncResponse);
+                    syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
             }
             catch (Exception ex)
@@ -176,17 +185,29 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 syncResponse = "Bir hata oluştu. Lütfen tekrar deneyin.";
             }
 
-            if (!string.IsNullOrEmpty(syncResponse))
+            if (!string.IsNullOrEmpty(syncResponse) && syncMsgId != Guid.Empty)
             {
-                TriggerBackgroundTasks(session, userId, content, syncResponse);
+                TriggerBackgroundTasks(session, userId, content, syncResponse, syncMsgId);
             }
 
             yield return syncResponse;
             yield break;
         }
 
+        // 2B. Dinamik Yönlendirme (Supervisor Intent Check)
+        var actionRoute = await _supervisor.DetermineActionRouteAsync(content);
+        _logger.LogInformation("[Orchestrator] Supervisor Route Kararı: {Route}", actionRoute);
+
+        if (actionRoute == "QUIZ" && session.CurrentState == SessionState.Learning)
+        {
+            _logger.LogInformation("[Orchestrator] Kullanıcı organik olarak quiz talep etti. Durum QuizPending'e çekiliyor.");
+            session.CurrentState = SessionState.QuizPending;
+            // Veri kaydedilir ancak akış Tutor'un pekiştirme veya soru hazırlama mesajına devredilir (Aşağıda isQuizPending = true olarak algılar)
+        }
+
         // Varsayılan: Normal ders anlatımı — gerçek zamanlı STREAM
-        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, content, session, false))
+        bool isQuizPending = session.CurrentState == SessionState.QuizPending;
+        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, content, session, isQuizPending))
         {
             fullResponse += chunk;
             yield return chunk;
@@ -195,32 +216,141 @@ public class AgentOrchestratorService : IAgentOrchestrator
         // 3. POST-STREAM: SAVE TO DB & BACKGROUND TASKS
         if (!string.IsNullOrEmpty(fullResponse))
         {
-            await SaveAiMessage(session, userId, fullResponse);
-            TriggerBackgroundTasks(session, userId, content, fullResponse);
+            var msgId = await SaveAiMessage(session, userId, fullResponse);
+            TriggerBackgroundTasks(session, userId, content, fullResponse, msgId);
         }
     }
 
-    private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse)
+    private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId)
     {
-        var capturedTopicId = session.TopicId;
-        var capturedSessionId = session.Id;
+        var capturedTopicId      = session.TopicId;
+        var capturedSessionId    = session.Id;
+        // ICorrelationContext Scoped'dır — Task.Run dışında capture edilmeli (scope güvenliği)
+        var capturedCorrelationId = _correlationContext.CorrelationId;
 
         _ = Task.Run(async () => {
             using var scope = _scopeFactory.CreateScope();
             var summarizer = scope.ServiceProvider.GetRequiredService<ISummarizerAgent>();
-            var analyzer = scope.ServiceProvider.GetRequiredService<IAnalyzerAgent>();
-            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var analyzer   = scope.ServiceProvider.GetRequiredService<IAnalyzerAgent>();
+            var evaluator  = scope.ServiceProvider.GetRequiredService<IEvaluatorAgent>();
+            var db         = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
+            _logger.LogInformation(
+                "[Background] EvaluatorAgent başladı. Session={SessionId} Correlation={CorrelationId}",
+                capturedSessionId, capturedCorrelationId);
 
             try
             {
-                // Konu anlatımı tamamlandıysa wiki üret — wiki yalnızca sohbet bittikten sonra oluşturulur
-                var msgs = await db.Messages.Where(m => m.SessionId == capturedSessionId).OrderBy(m => m.CreatedAt).ToListAsync();
-                var isComplete = await analyzer.AnalyzeCompletionAsync(msgs);
-                if (isComplete) await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, capturedTopicId ?? Guid.Empty, userId);
+                // 1. LLMOps Evaluator — TutorAgent yanıtını değerlendir
+                //    topicId geçilir: puan >= 9 ise Altın Örnek kaydedilir (Faz 12)
+                var (score, feedback) = await evaluator.EvaluateInteractionAsync(
+                    capturedSessionId, content, aiResponse, "TutorAgent",
+                    topicId: capturedTopicId);
+
+                var eval = new AgentEvaluation
+                {
+                    SessionId         = capturedSessionId,
+                    UserId            = userId,
+                    MessageId         = aiMessageId,
+                    AgentRole         = "TutorAgent",
+                    UserInput         = content,
+                    AgentResponse     = aiResponse,
+                    EvaluationScore   = score,
+                    EvaluatorFeedback = feedback,
+                    CreatedAt         = DateTime.UtcNow
+                };
+                db.AgentEvaluations.Add(eval);
+                await db.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "[Background] EvaluatorAgent tamamlandı. Puan={Score}/10 Correlation={CorrelationId}",
+                    score, capturedCorrelationId);
+
+                // 2. Konu anlatımı tamamlandıysa wiki üret
+                _logger.LogInformation(
+                    "[Background] AnalyzerAgent başladı. Session={SessionId} Correlation={CorrelationId}",
+                    capturedSessionId, capturedCorrelationId);
+
+                var msgs           = await db.Messages.Where(m => m.SessionId == capturedSessionId).OrderBy(m => m.CreatedAt).ToListAsync();
+                var analyzerResult = await analyzer.AnalyzeCompletionAsync(msgs);
+
+                _logger.LogInformation(
+                    "[Background] AnalyzerAgent tamamlandı. IsComplete={IsComplete} Reasoning={Reasoning} Correlation={CorrelationId}",
+                    analyzerResult.IsComplete, analyzerResult.Reasoning, capturedCorrelationId);
+
+                if (analyzerResult.IsComplete && capturedTopicId.HasValue)
+                {
+                    _logger.LogInformation(
+                        "[Background] SummarizerAgent başladı. TopicId={TopicId} Correlation={CorrelationId}",
+                        capturedTopicId, capturedCorrelationId);
+
+                    await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, capturedTopicId.Value, userId);
+
+                    _logger.LogInformation(
+                        "[Background] SummarizerAgent tamamlandı. TopicId={TopicId} Correlation={CorrelationId}",
+                        capturedTopicId, capturedCorrelationId);
+
+                    // Faz 13 Adım 13.4: Otomatik Ders Geçişi
+                    var topicService = scope.ServiceProvider.GetRequiredService<ITopicService>();
+                    var tutorAgentScoped = scope.ServiceProvider.GetRequiredService<ITutorAgent>();
+                    var mediatorScoped = scope.ServiceProvider.GetRequiredService<IMediator>();
+
+                    await HandleTopicProgressionAsync(
+                        capturedSessionId, capturedTopicId.Value, userId, db, topicService, tutorAgentScoped, mediatorScoped);
+
+                    // Faz 12: SummarizerAgent çıktısını da değerlendir (wiki kalitesi)
+                    // Wiki içeriğini geri okuyarak EvaluatorAgent'a gönder — DB'ye kaydeder, gold example değil
+                    try
+                    {
+                        var wikiService   = scope.ServiceProvider.GetRequiredService<IWikiService>();
+                        var wikiContent   = await wikiService.GetWikiFullContentAsync(capturedTopicId.Value, userId);
+                        var topicEntity   = await db.Topics.FindAsync(capturedTopicId.Value);
+                        var topicTitle    = topicEntity?.Title ?? "Konu";
+
+                        if (!string.IsNullOrWhiteSpace(wikiContent))
+                        {
+                            var (wikiScore, wikiFeedback) = await evaluator.EvaluateInteractionAsync(
+                                capturedSessionId, topicTitle, wikiContent, "SummarizerAgent");
+
+                            db.AgentEvaluations.Add(new AgentEvaluation
+                            {
+                                SessionId         = capturedSessionId,
+                                UserId            = userId,
+                                MessageId         = aiMessageId,
+                                AgentRole         = "SummarizerAgent",
+                                UserInput         = topicTitle,
+                                AgentResponse     = wikiContent.Length > 500 ? wikiContent[..500] + "..." : wikiContent,
+                                EvaluationScore   = wikiScore,
+                                EvaluatorFeedback = wikiFeedback,
+                                CreatedAt         = DateTime.UtcNow
+                            });
+                            await db.SaveChangesAsync();
+
+                            _logger.LogInformation(
+                                "[Background] SummarizerAgent kalite puanı: {Score}/10 Correlation={CorrelationId}",
+                                wikiScore, capturedCorrelationId);
+                        }
+                    }
+                    catch (Exception wikiEvalEx)
+                    {
+                        _logger.LogWarning(wikiEvalEx,
+                            "[Background] SummarizerAgent değerlendirmesi başarısız — ana akış etkilenmedi. Correlation={CorrelationId}",
+                            capturedCorrelationId);
+                    }
+                }
+                else if (analyzerResult.IsComplete && !capturedTopicId.HasValue)
+                {
+                    _logger.LogWarning(
+                        "[Background] IsComplete=true ama TopicId null — SummarizerAgent atlandı. Correlation={CorrelationId}",
+                        capturedCorrelationId);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[TriggerBackgroundTasks] Wiki üretimi başarısız. SessionId={SessionId} TopicId={TopicId}", capturedSessionId, capturedTopicId);
+                _logger.LogError(ex,
+                    "[Background] HATA. Session={SessionId} TopicId={TopicId} Correlation={CorrelationId}",
+                    capturedSessionId, capturedTopicId, capturedCorrelationId);
+
                 // Wiki üretimi başarısız olursa ilgili WikiPage'i "failed" olarak işaretle
                 try
                 {
@@ -237,14 +367,16 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 }
                 catch (Exception dbEx)
                 {
-                    _logger.LogError(dbEx, "[TriggerBackgroundTasks] WikiPage 'failed' işaretlenemedi.");
+                    _logger.LogError(dbEx,
+                        "[Background] WikiPage 'failed' işaretlenemedi. Correlation={CorrelationId}",
+                        capturedCorrelationId);
                 }
             }
         });
     }
 
     // ── Yardımcı: AI mesajını DB'ye kaydet ──────────────────────────────────
-    private async Task SaveAiMessage(Session session, Guid userId, string content)
+    private async Task<Guid> SaveAiMessage(Session session, Guid userId, string content)
     {
         var aiMsg = new Message
         {
@@ -259,6 +391,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _db.Messages.Add(aiMsg);
         session.Messages.Add(aiMsg);
         await _db.SaveChangesAsync();
+        return aiMsg.Id;
     }
 
     public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false)
@@ -398,16 +531,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 try
                 {
                     var msgs = await db.Messages.Where(m => m.SessionId == sId).OrderBy(m => m.CreatedAt).ToListAsync();
-                    var isCompleted = await analyzer.AnalyzeCompletionAsync(msgs);
+                    var analyzerRes = await analyzer.AnalyzeCompletionAsync(msgs);
                     
-                    if (isCompleted)
+                    if (analyzerRes.IsComplete && tId.HasValue)
                     {
-                        await mediator.Publish(new Orka.Core.Events.TopicCompletedEvent
-                        {
-                            SessionId = sId,
-                            TopicId = tId ?? Guid.Empty,
-                            UserId = userId
-                        });
+                        var topicService = scope.ServiceProvider.GetRequiredService<ITopicService>();
+                        var tutorAgentScoped = scope.ServiceProvider.GetRequiredService<ITutorAgent>();
+                        
+                        await HandleTopicProgressionAsync(
+                            sId, tId.Value, userId, db, topicService, tutorAgentScoped, mediator);
                     }
                 }
                 catch (Exception ex)
@@ -451,20 +583,22 @@ public class AgentOrchestratorService : IAgentOrchestrator
             var topic = await _db.Topics.FindAsync(session.TopicId);
             if (topic != null)
             {
-                // DeepPlan: Seviye Tespiti (Baseline Quiz) başlat
                 _logger.LogInformation("[DeepPlan] Müfredat için seviye tespiti başlatılıyor: {Topic}", topic.Title);
-
                 topic.Category = "Plan";
                 await _db.SaveChangesAsync();
 
-                var quizResponse = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+                var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+                var firstQuizJson = ExtractNthQuizFromArray(allQuizJson, 0);
                 
-                session.PendingQuiz = ExtractQuizQuestionText(quizResponse);
+                session.BaselineQuizData = allQuizJson;
+                session.BaselineQuizIndex = 0;
+                session.BaselineCorrectCount = 0;
+                session.PendingQuiz = ExtractQuizQuestionText(firstQuizJson);
                 session.CurrentState = SessionState.BaselineQuizMode;
                 await _db.SaveChangesAsync();
 
-                var responseText = $"Şimdi senin için en uygun öğrenme yolunu çizebilmem için seviyeni ölçmeliyim.\n\n" +
-                                   $"Lütfen şu soruya yanıt ver:\n\n{quizResponse}";
+                var responseText = $"Senin için en uygun öğrenme yolunu çizebilmem için **5 soruluk** bir seviye testi yapacağım. 🎯\n\n" +
+                                   $"**Soru 1/5:**\n\n{firstQuizJson}";
 
                 return (responseText, false);
             }
@@ -633,6 +767,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 activeSubTopic.ProgressPercentage = 100; // Alt konu tamamlandığı için %100
                 activeSubTopic.IsMastered = true;        // Alt konu bazında mastered (Yeşil sidebar)
 
+                // Faz 13: Skill Mastery kaydı
+                await _skillMastery.RecordMasteryAsync(
+                    userId,
+                    activeSubTopic.Id,
+                    activeSubTopic.Title,
+                    activeSubTopic.SuccessScore);
+
                 // Alt konu tamamlandı — wiki üretimini arka planda başlat
                 var completedSubtopicId = activeSubTopic.Id;
                 var capturedSessionId = session.Id;
@@ -679,87 +820,150 @@ public class AgentOrchestratorService : IAgentOrchestrator
         return await TransitionToNextTopicAsync(userId, session);
     }
 
-    // ── Baseline Quiz değerlendirme + Deep Research Planlama ──────────────────────────────
+    // ── Baseline Quiz değerlendirme (Multi-Round: 5 Soru) ──────────────────────────────
     private async Task<(string Response, bool WikiUpdated, bool PlanCreated)> HandleBaselineQuizModeAsync(
         Guid userId, string content, Session session)
     {
         bool isCorrect = await _tutorAgent.EvaluateQuizAnswerAsync(session.PendingQuiz ?? "", content);
         
-        // ── SAVE QUIZ ATTEMPT (Baseline) ───────────────────────────────────
+        // ── SAVE QUIZ ATTEMPT ───────────────────────────────────────────────
         var attempt = new QuizAttempt
         {
             Id = Guid.NewGuid(),
             SessionId = session.Id,
-            TopicId = session.TopicId ?? Guid.Empty,
+            TopicId = session.TopicId,
             UserId = userId,
             Question = session.PendingQuiz ?? "Baseline Evaluation",
             UserAnswer = content,
             IsCorrect = isCorrect,
-            Explanation = isCorrect ? "Kullanıcı temellere sahip." : "Kullanıcı başlangıç seviyesinde.",
+            Explanation = isCorrect ? "Doğru cevap." : "Yanlış cevap.",
             CreatedAt = DateTime.UtcNow
         };
         _db.QuizAttempts.Add(attempt);
         // ──────────────────────────────────────────────────────────────────
 
-        string userLevel = isCorrect ? "İleri (Temelleri biliyor)" : "Başlangıç (Sıfırdan)";
+        // Skoru güncelle
+        if (isCorrect) session.BaselineCorrectCount++;
+        session.BaselineQuizIndex++;
 
-        _logger.LogInformation("[BASELINE QUIZ] Kullanıcı değerlendirmesi: {Level}", userLevel);
+        var currentIndex = session.BaselineQuizIndex;
+        var totalQuestions = 5;
+        var correctEmoji = isCorrect ? "✅" : "❌";
+        var feedbackLine = isCorrect ? "Doğru!" : "Yanlış.";
 
+        _logger.LogInformation("[BASELINE QUIZ] Soru {Index}/{Total}, Doğru: {Correct}",
+            currentIndex, totalQuestions, session.BaselineCorrectCount);
+
+        // ── Henüz sorular bitmedi: sıradaki soruyu gönder ───────────────
+        if (currentIndex < totalQuestions)
+        {
+            var nextQuizJson = ExtractNthQuizFromArray(session.BaselineQuizData ?? "[]", currentIndex);
+            session.PendingQuiz = ExtractQuizQuestionText(nextQuizJson);
+            await _db.SaveChangesAsync();
+
+            return ($"{correctEmoji} {feedbackLine}\n\n" +
+                    $"**Soru {currentIndex + 1}/{totalQuestions}:**\n\n{nextQuizJson}", false, false);
+        }
+
+        // ── 5 soru da bitti → Seviye hesapla → Müfredat oluştur ──────────
+        var correctCount = session.BaselineCorrectCount;
+        string userLevel;
+        string levelEmoji;
+        string levelLabel;
+        if (correctCount <= 1)
+        {
+            userLevel = "Başlangıç (Sıfırdan)";
+            levelEmoji = "🌱";
+            levelLabel = "Başlangıç";
+        }
+        else if (correctCount <= 3)
+        {
+            userLevel = "Orta (Temelleri biliyor)";
+            levelEmoji = "⚡";
+            levelLabel = "Orta";
+        }
+        else
+        {
+            userLevel = "İleri (Konuya hakim)";
+            levelEmoji = "🚀";
+            levelLabel = "İleri";
+        }
+
+        _logger.LogInformation("[BASELINE QUIZ] Sonuç: {Correct}/{Total} → {Level}",
+            correctCount, totalQuestions, userLevel);
+
+        // State temizle
         session.CurrentState = SessionState.Learning;
         session.PendingQuiz = null;
+        session.BaselineQuizData = null;
+        session.BaselineQuizIndex = 0;
+        session.BaselineCorrectCount = 0;
         await _db.SaveChangesAsync();
 
         var topic = await _db.Topics.FindAsync(session.TopicId);
         if (topic == null) return ("Konu bulunamadı.", false, false);
 
-        var subTopics = await _deepPlanAgent.GenerateAndSaveDeepPlanAsync(
-            topic.Id, 
-            topic.Title, 
-            userId, 
-            userLevel, 
-            topic.PhaseMetadata);
+        // ── Müfredat oluştur (Hiyerarşik Modüler) ───────────────────────
+        var allLessons = await _deepPlanAgent.GenerateAndSaveDeepPlanAsync(
+            topic.Id, topic.Title, userId, userLevel, topic.PhaseMetadata);
         await _db.Entry(topic).ReloadAsync();
 
-        var titles = subTopics.Select(t => t.Title).ToList();
-        var planWelcomeText = await _tutorAgent.GetDeepPlanWelcomeAsync(userId, content, session, titles);
+        // Modül → Ders hiyerarşisini veritabanından çek
+        var modules = await _db.Topics
+            .Where(t => t.ParentTopicId == topic.Id)
+            .OrderBy(t => t.Order)
+            .ToListAsync();
 
-        if (subTopics.Any())
+        // Her modülün altındaki dersleri çek
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var lessonsByModule = await _db.Topics
+            .Where(t => t.ParentTopicId != null && moduleIds.Contains(t.ParentTopicId.Value))
+            .OrderBy(t => t.Order)
+            .ToListAsync();
+
+        // Müfredat render — modül/ders hiyerarşisi
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{correctEmoji} {feedbackLine}\n");
+        sb.AppendLine($"### 📊 Seviye Testi Sonucu: **{correctCount}/{totalQuestions}** — {levelEmoji} {levelLabel}\n");
+
+        if (correctCount <= 1)
+            sb.AppendLine("Bu konuyu sıfırdan, adım adım ve sana özel bir müfredatla öğreteceğim.\n");
+        else if (correctCount <= 3)
+            sb.AppendLine("Temelleri biliyorsun! Gereksiz tekrarları atlayıp pratik ve uygulamaya ağırlık veren bir müfredat hazırladım.\n");
+        else
+            sb.AppendLine("Harika bir skor! İleri düzey konulara odaklanan yoğun bir müfredat hazırladım.\n");
+
+        sb.AppendLine($"---\n\n### 📚 Müfredat ({allLessons.Count} Ders, {modules.Count} Modül)\n");
+
+        foreach (var mod in modules)
         {
-            var firstChild = subTopics.First();
-            // session.TopicId ana konuda kalmaya devam ediyor (DEĞİŞTİRMİYORUZ)
-            topic.TotalSections = subTopics.Count;
-            topic.CompletedSections = 0;
-            await _db.SaveChangesAsync();
+            var lessons = lessonsByModule.Where(l => l.ParentTopicId == mod.Id).ToList();
+            sb.AppendLine($"\n**{mod.Emoji} {mod.Title}** ({lessons.Count} ders)");
+            foreach (var lesson in lessons)
+            {
+                sb.AppendLine($"  - {lesson.Title}");
+            }
+        }
 
-            var levelLabel = isCorrect ? "İleri Seviye" : "Temel Seviye";
-            var prefix = isCorrect 
-                ? "Harika, temellerin sağlam görünüyor! Gereksiz tekrarları atlayıp doğrudan ileri konulara odaklanan bir müfredat hazırladım." 
-                : "Güzel deneme! Bu konuyu sıfırdan, adım adım ve sana özel bir yolla öğreteceğim.";
-
-            // Müfredat listesini numaralandırılmış Markdown olarak hazırla
-            var planListMarkdown = string.Join("\n", titles.Select((t, i) =>
-                $"{i + 1}. {(i == 0 ? $"**{t}** ← _Buradan başlıyoruz_" : t)}"));
-
+        // İlk ders içeriğini üret
+        var firstLesson = allLessons.FirstOrDefault();
+        if (firstLesson != null)
+        {
+            var allTitles = allLessons.Select(t => t.Title).ToList();
             string firstLessonContent;
             try
             {
-                firstLessonContent = await _tutorAgent.GetFirstLessonAsync(topic.Title, firstChild.Title, titles);
+                firstLessonContent = await _tutorAgent.GetFirstLessonAsync(topic.Title, firstLesson.Title, allTitles);
             }
             catch
             {
-                firstLessonContent = $"**{firstChild.Title}** konusuna hoş geldin! Derse başlamak için hazır mısın?";
+                firstLessonContent = $"**{firstLesson.Title}** konusuna hoş geldin! Derse başlamak için hazır mısın?";
             }
 
-            var fullResponse = prefix + "\n\n" + planWelcomeText +
-                "\n\n---\n\n### Musfredat (" + titles.Count + " Konu)\n\n" +
-                planListMarkdown +
-                "\n\n---\n\n**Ilk Konumuz: " + firstChild.Title + "**\n\n" +
-                firstLessonContent;
-
-            return (fullResponse + " [PLAN_READY]", true, true);
+            sb.AppendLine($"\n---\n\n**İlk Dersimiz: {firstLesson.Title}**\n\n{firstLessonContent}");
         }
 
-        return (planWelcomeText, true, true);
+        return (sb.ToString() + " [PLAN_READY]", true, true);
     }
 
     /// <summary>
@@ -809,13 +1013,20 @@ public class AgentOrchestratorService : IAgentOrchestrator
     {
         try
         {
+            // Eğer direkt JSON object ise (markdown bloğu yok)
+            var trimmed = response.Trim();
+            if (trimmed.StartsWith("{"))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+                return doc.RootElement.GetProperty("question").GetString() ?? response;
+            }
+
             const string markerJson = "```json";
             const string markerQuiz = "```quiz";
             int idx = response.IndexOf(markerQuiz, StringComparison.Ordinal);
             if (idx < 0) idx = response.IndexOf(markerJson, StringComparison.Ordinal);
             if (idx < 0) return response;
 
-            // Satır sonunu bul (```json\n veya ```quiz\n)
             var nIdx = response.IndexOf('\n', idx);
             if (nIdx < 0) nIdx = idx + 7;
 
@@ -824,10 +1035,39 @@ public class AgentOrchestratorService : IAgentOrchestrator
             if (endIdx < 0) return response;
 
             var jsonStr = after[..endIdx].Trim();
-            using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
-            return doc.RootElement.GetProperty("question").GetString() ?? response;
+            using var doc2 = System.Text.Json.JsonDocument.Parse(jsonStr);
+            return doc2.RootElement.GetProperty("question").GetString() ?? response;
         }
         catch { return response; }
+    }
+
+    /// <summary>
+    /// 5 soruluk JSON array'den N'inci soruyu (0-tabanlı) tek JSON nesnesi olarak döndürür.
+    /// Frontend'in quiz kartı olarak render edebilmesi için ```quiz ``` bloğu ile sarılır.
+    /// </summary>
+    private static string ExtractNthQuizFromArray(string allQuizJson, int index)
+    {
+        try
+        {
+            var cleaned = allQuizJson.Trim();
+            if (cleaned.StartsWith("```"))
+                cleaned = cleaned.Replace("```json", "").Replace("```", "").Trim();
+
+            var s = cleaned.IndexOf('[');
+            var e = cleaned.LastIndexOf(']');
+            if (s >= 0 && e > s) cleaned = cleaned[s..(e + 1)];
+
+            using var doc = System.Text.Json.JsonDocument.Parse(cleaned);
+            var arr = doc.RootElement.EnumerateArray().ToList();
+            if (index < arr.Count)
+            {
+                return arr[index].GetRawText();
+            }
+        }
+        catch { /* fallback */ }
+
+        // Fallback: boş soru
+        return """{"question": "Bu soru yüklenemedi.", "options": [{"text": "Devam et", "isCorrect": true}], "explanation": "Teknik bir sorun oluştu."}""";
     }
 
     // ── Bir sonraki alt başlığa geç ──────────────────────────────────────────
@@ -979,7 +1219,6 @@ public class AgentOrchestratorService : IAgentOrchestrator
         var topic = await _db.Topics.FindAsync(session.TopicId);
         if (topic == null) return ("Hata: Konu bulunamadı.", false);
 
-        // Kullanıcının /plan ile açık bir niyeti (intent) varsa Topic'i override et
         string intent = content.Replace("/plan", "", StringComparison.OrdinalIgnoreCase).Trim();
         if (!string.IsNullOrWhiteSpace(intent) && !intent.Equals("1") && intent.Length > 2)
         {
@@ -989,18 +1228,21 @@ public class AgentOrchestratorService : IAgentOrchestrator
         topic.Category = "Plan";
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("[DeepPlan] Müfredat planı seviye tespiti (Baseline Quiz) başlatılıyor: {Topic}", topic.Title);
+        _logger.LogInformation("[DeepPlan] Müfredat planı seviye tespiti başlatılıyor: {Topic}", topic.Title);
 
-        // Albert Service yerine doğrudan DeepPlanAgent'i kullanıyoruz.
-        var quizResponse = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+        var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+        var firstQuizJson = ExtractNthQuizFromArray(allQuizJson, 0);
         
-        session.PendingQuiz = ExtractQuizQuestionText(quizResponse);
+        session.BaselineQuizData = allQuizJson;
+        session.BaselineQuizIndex = 0;
+        session.BaselineCorrectCount = 0;
+        session.PendingQuiz = ExtractQuizQuestionText(firstQuizJson);
         session.CurrentState = SessionState.BaselineQuizMode;
         await _db.SaveChangesAsync();
 
         var responseText = $"Harika! **{topic.Title}** konusu için detaylı bir akademik planlama süreci başlatıyorum. 🚀\n\n" + 
-                            "Öncelikle senin için en uygun öğrenme müfredatını çizebilmem için genel bilgi seviyeni ölçmeliyim.\n\n" +
-                            $"Lütfen başlangıç niteliğindeki şu soruyu dikkatlice yanıtla:\n\n{quizResponse}";
+                            "Öncelikle senin için en uygun öğrenme müfredatını çizebilmem için **5 soruluk** bir seviye testi yapacağım.\n\n" +
+                            $"Lütfen başlangıç niteliğindeki şu soruyu dikkatlice yanıtla:\n\n**Soru 1/5:**\n\n{firstQuizJson}";
 
         return (responseText, false);
     }
@@ -1069,12 +1311,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         string titlePreview = content.Length > 40 ? content[..40] : content;
         
-        string resolvedCategory = "Plan";
+        string resolvedCategory = "Genel";
         using (var scope = _scopeFactory.CreateScope())
         {
             var groq = scope.ServiceProvider.GetRequiredService<IGroqService>();
             var route = await groq.SemanticRouteAsync(content);
-            resolvedCategory = !string.IsNullOrEmpty(route.Category) ? route.Category : "Plan";
+            // Sadece açıkça "Plan" olarak tanımlanan kategorileri Plan yap, geri kalanı Genel sohbet
+            resolvedCategory = string.Equals(route.Category, "Plan", StringComparison.OrdinalIgnoreCase) ? "Plan" : "Genel";
         }
 
         var (topic, newSession) = await _topicService.CreateDiscoveryTopicAsync(userId, titlePreview, resolvedCategory);
@@ -1116,5 +1359,58 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         return session;
+    }
+
+    private async Task HandleTopicProgressionAsync(
+        Guid sessionId, 
+        Guid topicId, 
+        Guid userId, 
+        OrkaDbContext db, 
+        ITopicService topicService, 
+        ITutorAgent tutorAgent, 
+        IMediator mediator)
+    {
+        var topic = await db.Topics.FindAsync(topicId);
+        if (topic == null) return;
+
+        topic.CompletedSections += 1;
+        await db.SaveChangesAsync();
+
+        var subTopics = await topicService.GetSubTopicsAsync(topicId);
+        if (topic.CompletedSections < subTopics.Count)
+        {
+            var nextTopic = subTopics[topic.CompletedSections];
+            _logger.LogInformation("[Auto-Progression] Otomatik ders geçişi. Yeni konu: {Topic}", nextTopic.Title);
+
+            var autoLesson = await tutorAgent.GetFirstLessonAsync(topic.Title, nextTopic.Title);
+            
+            var session = await db.Sessions.FindAsync(sessionId);
+            if (session != null)
+            {
+                var autoMsg = new Message
+                {
+                    Id = Guid.NewGuid(),
+                    SessionId = sessionId,
+                    UserId = userId,
+                    Role = "assistant",
+                    Content = autoLesson,
+                    CreatedAt = DateTime.UtcNow,
+                    MessageType = MessageType.General
+                };
+                db.Messages.Add(autoMsg);
+                await db.SaveChangesAsync();
+                _logger.LogInformation("[Auto-Progression] Otomatik AI dersi veritabanına eklendi.");
+            }
+        }
+        else
+        {
+            _logger.LogInformation("[Auto-Progression] Tüm alt konular bitti, TopicCompletedEvent fırlatılıyor.");
+            await mediator.Publish(new Orka.Core.Events.TopicCompletedEvent
+            {
+                SessionId = sessionId,
+                TopicId = topicId,
+                UserId = userId
+            });
+        }
     }
 }

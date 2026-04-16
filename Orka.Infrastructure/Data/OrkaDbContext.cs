@@ -19,6 +19,8 @@ public class OrkaDbContext : DbContext
     public DbSet<WikiBlock> WikiBlocks { get; set; } = null!;
     public DbSet<Source> Sources { get; set; } = null!;
     public DbSet<QuizAttempt> QuizAttempts { get; set; } = null!;
+    public DbSet<AgentEvaluation> AgentEvaluations { get; set; } = null!;
+    public DbSet<SkillMastery> SkillMasteries { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +72,40 @@ public class OrkaDbContext : DbContext
             .HasForeignKey(qa => qa.UserId)
             .OnDelete(DeleteBehavior.NoAction);
 
+        // QuizAttempt FK ilişkileri — nullable (serbest sohbette SessionId/TopicId null olabilir)
+        modelBuilder.Entity<QuizAttempt>()
+            .HasOne(qa => qa.Session)
+            .WithMany()
+            .HasForeignKey(qa => qa.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuizAttempt>()
+            .HasOne(qa => qa.Topic)
+            .WithMany()
+            .HasForeignKey(qa => qa.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        // AgentEvaluation FK ilişkileri -> NoAction (döngü engelleme)
+        modelBuilder.Entity<AgentEvaluation>()
+            .HasOne(ae => ae.User)
+            .WithMany()
+            .HasForeignKey(ae => ae.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AgentEvaluation>()
+            .HasOne(ae => ae.Session)
+            .WithMany()
+            .HasForeignKey(ae => ae.SessionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AgentEvaluation>()
+            .HasOne(ae => ae.Message)
+            .WithMany()
+            .HasForeignKey(ae => ae.MessageId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         // Topic self-referential hiyerarşi (Deep Plan)
         // SQL Server: cascade cycle'ı önlemek için NoAction (silme uygulama katmanında yönetilir)
         modelBuilder.Entity<Topic>()
@@ -77,6 +113,23 @@ public class OrkaDbContext : DbContext
             .WithMany(t => t.SubTopics)
             .HasForeignKey(t => t.ParentTopicId)
             .OnDelete(DeleteBehavior.NoAction);
+
+        // SkillMastery FK ilişkileri — NoAction (cascade cycle engelleme)
+        modelBuilder.Entity<SkillMastery>()
+            .HasOne(sm => sm.User)
+            .WithMany()
+            .HasForeignKey(sm => sm.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SkillMastery>()
+            .HasOne(sm => sm.Topic)
+            .WithMany()
+            .HasForeignKey(sm => sm.TopicId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        // SkillMastery: kullanıcı + konu bazlı mastery sorguları
+        modelBuilder.Entity<SkillMastery>()
+            .HasIndex(sm => new { sm.UserId, sm.TopicId });
 
         // WikiPage.Content → nvarchar(max) açık eşleme
         modelBuilder.Entity<WikiPage>()
