@@ -124,13 +124,8 @@ public class ChatController : ControllerBase
                 sid,
                 request.IsPlanMode))
             {
-                // SSE format requires each line to be prefixed with "data: "
-                var lines = chunk.Split('\n');
-                foreach (var line in lines)
-                {
-                    await Response.WriteAsync($"data: {line}\n");
-                }
-                await Response.WriteAsync("\n");
+                var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
+                await Response.WriteAsync($"data: {safeChunk}\n\n");
                 await Response.Body.FlushAsync();
             }
         }
@@ -139,8 +134,8 @@ public class ChatController : ControllerBase
             _logger.LogError(ex, "StreamMessage akışı kesildi.");
             try
             {
-                await Response.WriteAsync($"data: [ERROR]: Mesaj akışı kesildi\n");
-                await Response.WriteAsync("\n");
+                var cleanSuffix = ex.Message.Replace("\n", " ").Replace("\r", " ");
+                await Response.WriteAsync($"data: [ERROR]: AI Bağlantı Kesintisi: {cleanSuffix}\n\n");
                 await Response.Body.FlushAsync();
             }
             catch { /* Response zaten kapatılmış olabilir */ }

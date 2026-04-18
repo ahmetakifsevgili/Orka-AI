@@ -1,2 +1,0 @@
-   3:6>d:\Orka\Orka.Infrastructure\Services\TopicDetectorService.cs(33,22): error CS0246: 'IGeminiService' türü veya ad alanı adı bulunamadı (bir using yönergeniz veya derleme başvurunuz mu eksik?) [d:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]
-   3:6>d:\Orka\Orka.Infrastructure\Services\TopicDetectorService.cs(35,33): error CS0246: 'IGeminiService' türü veya ad alanı adı bulunamadı (bir using yönergeniz veya derleme başvurunuz mu eksik?) [d:\Orka\Orka.Infrastructure\Orka.Infrastructure.csproj]

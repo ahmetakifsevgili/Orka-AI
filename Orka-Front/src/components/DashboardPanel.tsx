@@ -12,7 +12,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
-import { QuizAPI, DashboardAPI, UserAPI } from "@/services/api";
+import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 
@@ -77,6 +77,8 @@ function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] 
 
 export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
+  // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
+  const isAdmin = storage.getUser()?.isAdmin === true;
   const [activeTab, setActiveTab] = useState<"karne" | "hud">("karne");
   const [stats, setStats] = useState<ApiGlobalStats | null>(null);
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
@@ -132,22 +134,28 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           <Award className="w-3.5 h-3.5" />
           Öğrenme Karnesi
         </button>
-        <button
-          onClick={() => setActiveTab("hud")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "hud"
-              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-              : "text-zinc-500 hover:text-zinc-300 border border-transparent"
-          }`}
-        >
-          <Cpu className="w-3.5 h-3.5" />
-          Sistem Analitiği
-          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab("hud")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === "hud"
+                ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
+                : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+            }`}
+            title="Admin paneli — LLMOps İzleme"
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            Sistem Analitiği
+            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-amber-400/80 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded">
+              Admin
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
-      {activeTab === "hud" ? (
+      {activeTab === "hud" && isAdmin ? (
         <SystemHealthHUD />
       ) : (
       <div className="flex-1 overflow-y-auto">
@@ -209,12 +217,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
             </div>
 
             {/* Stat Item: Streak (gerçek DB verisi) */}
-            <div className="p-5 rounded-2xl bg-orange-500/5 border border-orange-500/10 hover:border-orange-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center mb-4">
-                <Flame className="w-4 h-4 text-orange-500/70" />
+            <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/10 hover:border-amber-500/20 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center mb-4">
+                <Flame className="w-4 h-4 text-amber-500/70" />
               </div>
-              <p className="text-2xl font-bold text-orange-400">{loading ? "—" : activeStreak}</p>
-              <p className="text-[11px] font-medium text-orange-600/80 uppercase mt-1">
+              <p className="text-2xl font-bold text-amber-400">{loading ? "—" : activeStreak}</p>
+              <p className="text-[11px] font-medium text-amber-600/80 uppercase mt-1">
                 {activeStreak > 1 ? `${activeStreak} Günlük Seri` : "Öğrenme Serisi"}
               </p>
             </div>
@@ -285,7 +293,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
               <div className="grid grid-cols-1 gap-3">
                 <button
                   onClick={() => onViewChange("chat")}
-                  className="p-5 rounded-2xl bg-gradient-to-br from-zinc-800/40 to-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
+                  className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                   <div className="flex flex-col">
                     <span className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors">Öğrenmeye Devam</span>

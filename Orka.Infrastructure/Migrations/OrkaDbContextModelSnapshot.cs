@@ -427,6 +427,9 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsAdmin")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Language")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

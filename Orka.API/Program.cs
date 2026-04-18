@@ -89,6 +89,9 @@ builder.Services.AddScoped<IEvaluatorAgent, EvaluatorAgent>();
 builder.Services.AddScoped<ISkillMasteryService, SkillMasteryService>();
 builder.Services.AddScoped<IIntentClassifierAgent, IntentClassifierAgent>();
 
+// LLMOps: Token/Cost Estimator (Dashboard maliyet verisi için)
+builder.Services.AddSingleton<ITokenCostEstimator, TokenCostEstimator>();
+
 // Semantic Kernel Plugins (DI için register ediyoruz)
 builder.Services.AddScoped<WikiPlugin>();
 builder.Services.AddScoped<TopicPlugin>();

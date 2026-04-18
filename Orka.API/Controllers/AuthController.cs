@@ -35,7 +35,8 @@ public class AuthController : ControllerBase
                     Email = result.User.Email,
                     Plan = result.User.Plan.ToString(),
                     DailyMessageCount = result.User.DailyMessageCount,
-                    DailyLimit = freeLimit
+                    DailyLimit = freeLimit,
+                    IsAdmin = result.User.IsAdmin
                 }
             });
         }
@@ -61,7 +62,8 @@ public class AuthController : ControllerBase
                     Email = result.User.Email,
                     Plan = result.User.Plan.ToString(),
                     DailyMessageCount = result.User.DailyMessageCount,
-                    DailyLimit = result.User.Plan.ToString() == "Pro" ? 500 : 50
+                    DailyLimit = result.User.Plan.ToString() == "Pro" ? 500 : 50,
+                    IsAdmin = result.User.IsAdmin
                 }
             });
         }

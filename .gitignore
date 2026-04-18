@@ -39,3 +39,15 @@ scratch/
 .env
 .env.local
 .env.*.local
+
+# ── Claude Code ───────────────────────────────────────────────────────────────
+# Kişisel tercihler & geçici notlar (asla commit'lenmez)
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/local/
+
+# ── Test & denetim çıktıları ──────────────────────────────────────────────────
+scripts/reports/
+scripts/llm-eval/output/
+*.log
+!.claude/*.log

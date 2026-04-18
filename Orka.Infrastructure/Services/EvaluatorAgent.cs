@@ -8,6 +8,22 @@ using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.Services;
 
+/// <summary>
+/// Orka LLMOps Değerlendiricisi — multi-dimensional scoring.
+///
+/// Klasik tek puan (1-10) yerine 3 boyut + overall modeli:
+///   Pedagoji  (1-5): Açıklama ne kadar öğretici/seviyeye uygun?
+///   Faktual   (1-5): Bilgi doğru mu? (Düşükse hallucination riski)
+///   Bağlam    (1-5): Öğrenci sorusuna gerçekten cevap veriyor mu?
+/// Overall = normalize((pedagoji + faktual + bağlam) * 2/3 → 1-10).
+///
+/// Modern LLMOps pattern: RAG-triad (faithfulness/answer-relevance/context-precision)
+/// esintili. Hallucination flag ise Faktual &lt; 3 ile tetiklenir.
+///
+/// Geriye uyumluluk: EvaluateInteractionAsync() tuple (score, feedback) imzası korunur;
+/// sub-skorlar feedback string'inin başına "[F:x P:y C:z]" olarak gömülür — böylece Dashboard
+/// migration yapmadan görebilir, ileride nullable kolonlar eklenerek SQL tablo zenginleştirilebilir.
+/// </summary>
 public class EvaluatorAgent : IEvaluatorAgent
 {
     private readonly IAIAgentFactory _factory;
@@ -31,51 +47,71 @@ public class EvaluatorAgent : IEvaluatorAgent
         CancellationToken ct = default)
     {
         var prompt = $$"""
-            Sen Orka AI için Kalite Kontrol (LLMOps Değerlendiricisi) ajanısın.
-            Görev: Sistemin bir kullanıcının mesajına (Role: {{agentRole}}) verdiği cevabı kalite, akıcılık ve yardımseverlik açısından 1 ile 10 arasında puanla.
-            Not: Modelin Orka karakterine sadık kalması, saygılı olması ve aşırı uzun gevezelik etmemesi puanını artırır. Eğer verilen cevap ile kullanıcı sorusu tamamen uyumsuzsa düşük puan ver.
+            Sen Orka AI için LLMOps Kalite Kontrol ajanısın. Bir ajanın ({{agentRole}}) cevabını
+            üç boyutta değerlendir:
 
-            Öğrencinin Sorusu/Mesajı:
+              1) pedagogy  (1-5): Açıklama öğretici mi, seviyeye uygun mu, gereksiz gevezelik var mı?
+              2) factual   (1-5): İçerik doğru mu, uydurma bilgi/hallucination var mı?
+              3) context   (1-5): Kullanıcının sorusuyla gerçekten alakalı mı, konuyu kaçırmış mı?
+
+            Her boyut için kısa gerekçeyi zihninde tut, sonra 1-10 arası "overall" (genel) puan
+            üret. Eğer factual < 3 ise hallucinationRisk=true işaretle.
+
+            Öğrencinin Mesajı:
             "{{userMessage}}"
 
-            AI'ın Verdiği Cevap:
+            AI Cevabı:
             "{{agentResponse}}"
 
-            LÜTFEN SADECE AŞAĞIDAKİ JSON FORMATINDA CEVAP DÖNDÜR, BAŞKA METİN EKLEME:
+            YALNIZCA AŞAĞIDAKİ JSON ŞEMASINDA CEVAP VER, BAŞKA METİN EKLEME:
             {
-               "score": 8,
-               "feedback": "Kısa ve net bir cevap olmuş, öğrenciye saygılı."
+              "pedagogy": 4,
+              "factual": 5,
+              "context": 4,
+              "overall": 8,
+              "hallucinationRisk": false,
+              "feedback": "Kısa, net ve doğru bir açıklama."
             }
             """;
 
         try
         {
-            // Evaluator kendi model rotasını kullanır (AgentRole.Grader'dan ayrıldı — Faz 10)
             var response = await _factory.CompleteChatAsync(AgentRole.Evaluator, prompt, "Değerlendir.", ct);
-
             response = response.Replace("```json", "").Replace("```", "").Trim();
 
-            var result = JsonSerializer.Deserialize<EvaluationResult>(response)
-                         ?? new EvaluationResult { score = 5, feedback = "Parse edilemedi" };
+            var detail = ParseDetail(response);
+            var combinedFeedback = BuildCombinedFeedback(detail);
 
             // Hatalar Defteri'ne yaz (tüm ajanlar için)
             if (sessionId != Guid.Empty)
-                await _redisService.RecordEvaluationAsync(sessionId, result.score, result.feedback);
+                await _redisService.RecordEvaluationAsync(sessionId, detail.Overall, combinedFeedback);
+
+            // Faz 14: Topic-level kümülatif puanlama (session değişse de korunur)
+            if (topicId.HasValue)
+                await _redisService.RecordTopicScoreAsync(topicId.Value, detail.Overall, combinedFeedback);
 
             // Faz 12: 9-10 puan → Altın Örnek olarak kaydet (sadece TutorAgent diyalogları için)
-            if (result.score >= 9 && topicId.HasValue && agentRole == "TutorAgent")
+            // Not: Hallucination riski varsa altın örneğe kaydetmeyiz (yanlış bilgi pekiştirmeyelim).
+            if (detail.Overall >= 9 && !detail.HallucinationRisk && topicId.HasValue && agentRole == "TutorAgent")
             {
-                await _redisService.SaveGoldExampleAsync(topicId.Value, userMessage, agentResponse, result.score);
+                await _redisService.SaveGoldExampleAsync(topicId.Value, userMessage, agentResponse, detail.Overall);
                 _logger.LogInformation(
                     "[EvaluatorAgent] Altın örnek kaydedildi. TopicId={TopicId} Puan={Score}",
-                    topicId.Value, result.score);
+                    topicId.Value, detail.Overall);
+            }
+
+            if (detail.HallucinationRisk)
+            {
+                _logger.LogWarning(
+                    "[EvaluatorAgent] Hallucination riski tespit edildi. Role={Role} Factual={Factual}/5 Overall={Overall}",
+                    agentRole, detail.Factual, detail.Overall);
             }
 
             _logger.LogInformation(
-                "[EvaluatorAgent] Değerlendirme tamamlandı. Rol={Role} Puan={Score}/10",
-                agentRole, result.score);
+                "[EvaluatorAgent] Değerlendirme tamamlandı. Rol={Role} Puan={Score}/10 F={F} P={P} C={C}",
+                agentRole, detail.Overall, detail.Factual, detail.Pedagogy, detail.Context);
 
-            return (result.score, result.feedback);
+            return (detail.Overall, combinedFeedback);
         }
         catch (Exception ex)
         {
@@ -84,9 +120,58 @@ public class EvaluatorAgent : IEvaluatorAgent
         }
     }
 
-    private class EvaluationResult
+    // ── Parsing & composition ────────────────────────────────────────────────
+
+    private static EvaluationDetail ParseDetail(string response)
     {
-        public int score { get; set; }
-        public string feedback { get; set; } = string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(response);
+            var root = doc.RootElement;
+
+            int Read(string prop, int min, int max, int fallback)
+            {
+                if (!root.TryGetProperty(prop, out var el) || el.ValueKind != JsonValueKind.Number) return fallback;
+                var v = el.GetInt32();
+                return Math.Clamp(v, min, max);
+            }
+
+            var pedagogy = Read("pedagogy", 1, 5, 3);
+            var factual  = Read("factual",  1, 5, 3);
+            var ctx      = Read("context",  1, 5, 3);
+            var overall  = Read("overall",  1, 10, NormalizeOverall(pedagogy, factual, ctx));
+
+            var halluc = root.TryGetProperty("hallucinationRisk", out var hr) && hr.ValueKind == JsonValueKind.True;
+            // Fallback inference: factual<3 ise riski zorla
+            if (factual < 3) halluc = true;
+
+            var feedback = root.TryGetProperty("feedback", out var fb) && fb.ValueKind == JsonValueKind.String
+                ? fb.GetString() ?? string.Empty
+                : string.Empty;
+
+            return new EvaluationDetail(pedagogy, factual, ctx, overall, halluc, feedback);
+        }
+        catch
+        {
+            return new EvaluationDetail(3, 3, 3, 5, false, "Parse edilemedi");
+        }
     }
+
+    // Sub-skorları 1-10 scale'ine normalize eder (basit ortalama × 2/3 ≈ 10 tavan)
+    private static int NormalizeOverall(int pedagogy, int factual, int ctx)
+        => Math.Clamp((int)Math.Round((pedagogy + factual + ctx) / 15.0 * 10.0), 1, 10);
+
+    private static string BuildCombinedFeedback(EvaluationDetail d)
+    {
+        var prefix = d.HallucinationRisk ? "[HALL] " : string.Empty;
+        return $"{prefix}[F:{d.Factual} P:{d.Pedagogy} C:{d.Context}] {d.Feedback}".Trim();
+    }
+
+    private sealed record EvaluationDetail(
+        int Pedagogy,
+        int Factual,
+        int Context,
+        int Overall,
+        bool HallucinationRisk,
+        string Feedback);
 }

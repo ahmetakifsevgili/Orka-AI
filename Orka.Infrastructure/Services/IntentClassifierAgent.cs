@@ -58,40 +58,31 @@ public class IntentClassifierAgent : IIntentClassifierAgent
         var conversationContext = string.Join("\n---\n", lastSix);
 
         var systemPrompt = """
-            Sen Orka AI'nın Niyet Analizcisisin (Intent Classifier).
-            Sana verilen öğrenci-ajan diyaloğunu okuyarak kullanıcının SON niyetini tespit et.
+            Sen Orka AI'nın Öğrenci Profil Geliştiricisi ve Niyet Analizcisisin (Intent Classifier & Student Profiler).
+            Sana verilen öğrenci-ajan diyaloğunu okuyarak kullanıcının SON niyetini ve genel anlama seviyesini tespit et.
 
-            SINIFLANDIRMA KATEGORİLERİ:
+            SINIFLANDIRMA KATEGORİLERİ (Intent):
             - UNDERSTOOD   : Kullanıcı konuyu kavradı, ilerlemek istiyor.
-            - CONFUSED     : Kullanıcı anlamadı, sinyal zayıf veya güçlü förk etmez (soru işaretleri, sessizlik, kısa olumsuz yanıtlar).
+            - CONFUSED     : Kullanıcı anlamadı (soru işaretleri, sessizlik, kısa olumsuz yanıtlar).
             - CHANGE_TOPIC : Kullanıcı tamamen farklı bir konuya geçmek istiyor.
             - QUIZ_REQUEST : Kullanıcı test veya sınav istiyor.
-            - CONTINUE     : Belirsiz, ne ileri ne geri. Pasif devam.
+            - CONTINUE     : Belirsiz, pasif devam.
 
-            GÜVEN SKORU KURALLARI:
-            - 0.90 - 1.00 : Tek mesajda net niyet ("Anladım geçelim", "Sen soru sor")
-            - 0.70 - 0.89 : Genel eğilim var ama kesin değil
-            - 0.50 - 0.69 : Belirsiz sinyal. CONTINUE tercih edebilirsin.
+            GÜVEN SKORU KURALLARI (Confidence):
+            - 0.90 - 1.00 : Tek mesajda net niyet
             - 0.50 altı   : Sistem kararı erteledi.
 
-            KRİTİK KURAL: Belirsiz kısa semboller veya tek harfler CONFUSED'dur, CONTINUE değeil.
-            '???' üç soru işareti güçlü CONFUSED sinyalidir. Minimum 0.80 confidence at.
-            '!!!' veya 'ne' veya 'haa' veya 'anlamadım' da CONFUSED, en az 0.75 confidence.
-            'hmm' veya '...' belirsizdir — CONTINUE veya düşük-confidence CONFUSED olabilir.
-
-            FEW-SHOT ÖRNEKLER (bunu base al):
-            Mesaj: "Anladım, geçelim"  → {"intent": "UNDERSTOOD", "confidence": 0.95, "reasoning": "Net geçiş ifadesi."}
-            Mesaj: "???"               → {"intent": "CONFUSED",   "confidence": 0.88, "reasoning": "Üç soru işareti güçlü anlamaılık sinyali."}
-            Mesaj: "anlamadım"        → {"intent": "CONFUSED",   "confidence": 0.92, "reasoning": "Doğrudan anlayamama bildirimi."}
-            Mesaj: "hmm"              → {"intent": "CONTINUE",   "confidence": 0.55, "reasoning": "Belirsiz; pasif devam."}
-            Mesaj: "soru sor bana"    → {"intent": "QUIZ_REQUEST","confidence": 0.91, "reasoning": "Açık quiz talebi."}
-            Mesaj: "tamam peki"       → {"intent": "UNDERSTOOD",  "confidence": 0.70, "reasoning": "Kabul var ama kesin değil."}
+            ÖĞRENCİ PROFİLİ (Yaşayan Organizasyon):
+            - 'understandingScore' (1-10): Öğrencinin konuyu ne kadar kavradığı. 1=Hiç anlamadı, 10=Tamamen kavradı.
+            - 'weaknesses': Öğrencinin zorlandığı veya yanlış anladığı tespit edilen spesifik kavramlar (string). Yoksa boş bırak.
 
             SADECE ŞU JSON FORMATINDA DÖN:
             {
               "intent": "CONFUSED",
               "confidence": 0.87,
-              "reasoning": "Kullanıcı '???' yazdı, bu güçlü CONFUSED sinyali."
+              "reasoning": "Kullanıcı '???' yazdı.",
+              "understandingScore": 3,
+              "weaknesses": "For döngüsünün syntax'ını ve ne zaman duracağını (şart bloğunu) anlamadı."
             }
             """;
 
@@ -107,32 +98,36 @@ public class IntentClassifierAgent : IIntentClassifierAgent
             if (parsed != null && ValidIntents.Contains(parsed.intent))
             {
                 var result = new IntentResult(
-                    Intent:     parsed.intent.ToUpper(),
-                    Confidence: Math.Clamp(parsed.confidence, 0.0, 1.0),
-                    Reasoning:  parsed.reasoning
+                    Intent:             parsed.intent.ToUpper(),
+                    Confidence:         Math.Clamp(parsed.confidence, 0.0, 1.0),
+                    Reasoning:          parsed.reasoning,
+                    UnderstandingScore: Math.Clamp(parsed.understandingScore, 1, 10),
+                    Weaknesses:         parsed.weaknesses ?? string.Empty
                 );
 
                 _logger.LogInformation(
-                    "[IntentClassifier] Intent: {Intent} | Confidence: {Confidence:P0} | Sebep: {Reason}",
-                    result.Intent, result.Confidence, result.Reasoning);
+                    "[IntentClassifier] Intent: {Intent} | Conf: {Confidence:P0} | Score: {Score}/10 | Weaknesses: {Weaknesses}",
+                    result.Intent, result.Confidence, result.UnderstandingScore, result.Weaknesses);
 
                 return result;
             }
 
             _logger.LogWarning("[IntentClassifier] Geçersiz intent değeri. Fail-safe CONTINUE döndürülüyor.");
-            return new IntentResult("CONTINUE", 0.0, "Parse hatası — fail-safe.");
+            return new IntentResult("CONTINUE", 0.0, "Parse hatası — fail-safe.", 5, "");
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[IntentClassifier] LLM hatası. Fail-safe CONTINUE döndürülüyor.");
-            return new IntentResult("CONTINUE", 0.0, "LLM hatası — fail-safe.");
+            return new IntentResult("CONTINUE", 0.0, "LLM hatası — fail-safe.", 5, "");
         }
     }
 
     private class IntentJsonFormat
     {
-        public string intent     { get; set; } = "CONTINUE";
-        public double confidence { get; set; } = 0.5;
-        public string reasoning  { get; set; } = string.Empty;
+        public string intent             { get; set; } = "CONTINUE";
+        public double confidence         { get; set; } = 0.5;
+        public string reasoning          { get; set; } = string.Empty;
+        public int understandingScore    { get; set; } = 5;
+        public string weaknesses         { get; set; } = string.Empty;
     }
 }

@@ -15,6 +15,10 @@ interface InteractiveIDEProps {
   onSendToChat?: (message: string) => void;
   /** Aktif konu adı — editör başlığında gösterilir */
   topicTitle?: string;
+  /** Algoritmik quiz sorusu — editör başlığında görev olarak gösterilir */
+  quizQuestion?: string;
+  /** IDE kapanma callback'i — quiz gönderildikten sonra çağrılır */
+  onClose?: () => void;
 }
 
 const DEFAULT_CODE = `using System;
@@ -72,7 +76,7 @@ const STARTER_CODE: Record<string, string> = {
   bash: `echo "Merhaba, Orka!"`,
 };
 
-export default function InteractiveIDE({ onSendToChat, topicTitle }: InteractiveIDEProps) {
+export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion, onClose }: InteractiveIDEProps) {
   const [code, setCode]         = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState("csharp");
   const [running, setRunning]   = useState(false);
@@ -114,13 +118,34 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
     }
   }, [code, language, running]);
 
+  const hasOutput = stdout !== null || stderr !== null;
+  const langLabel = LANGUAGE_OPTIONS.find(l => l.value === language)?.label ?? language;
+
   const handleSendToChat = useCallback(() => {
     if (!onSendToChat) return;
+
+    const questionContext = quizQuestion
+      ? `**Quiz Sorusu:** ${quizQuestion}\n\n`
+      : "";
+
+    if (!hasOutput) {
+       const message = [
+         `${questionContext}İşte yazdığım ${langLabel} kodu:`,
+         "```" + language,
+         code,
+         "```",
+         "",
+         "Kodu incele ve yazdığım kadar bana geri bildirim ver veya soruya cevabımı değerlendir."
+       ].join("\n");
+       onSendToChat(message);
+       onClose?.();
+       return;
+    }
+
     const output = stdout || stderr || "(çıktı yok)";
     const status = success ? "başarıyla çalıştı" : "hata verdi";
-    const langLabel = LANGUAGE_OPTIONS.find(l => l.value === language)?.label ?? language;
     const message = [
-      `Aşağıdaki ${langLabel} kodu ${status}:`,
+      `${questionContext}Aşağıdaki ${langLabel} kodu ${status}:`,
       "```" + language,
       code,
       "```",
@@ -131,15 +156,13 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
       "```",
       "",
       success
-        ? "Bu kodu incele ve iyileştirme önerilerinde bulun."
-        : "Bu hatayı açıkla ve nasıl düzelteceğimi göster.",
+        ? "Bu kodu incele ve soruya verdiğim cevabı doğru olup olmadığına göre değerlendir."
+        : "Bu hatayı açıkla ve nasıl düzelteceğimi göster."
     ].join("\n");
 
     onSendToChat(message);
-  }, [code, stdout, stderr, success, language, onSendToChat]);
-
-  const hasOutput = stdout !== null || stderr !== null;
-  const langLabel = LANGUAGE_OPTIONS.find(l => l.value === language)?.label ?? language;
+    onClose?.();
+  }, [code, stdout, stderr, success, language, onSendToChat, hasOutput, langLabel, quizQuestion, onClose]);
 
   return (
     <div className="flex-1 flex flex-col bg-zinc-900 h-full overflow-hidden">
@@ -191,11 +214,31 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
           >
             {running
               ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Çalışıyor...</span></>
-              : <><Play className="w-3.5 h-3.5" /><span>Kodu Çalıştır</span></>
+              : <><Play className="w-3.5 h-3.5" /><span>Çalıştır</span></>
             }
           </button>
+          
+          {onSendToChat && (
+            <button
+              onClick={handleSendToChat}
+              disabled={running || !code.trim()}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-900/40 border border-amber-700/50 text-amber-200 hover:bg-amber-800/50 hover:text-amber-100 shadow-sm shadow-amber-900/20 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Kodu değerlendirmesi için eğitmene gönder"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Hocaya Gönder</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Quiz Sorusu Banner'ı */}
+      {quizQuestion && (
+        <div className="flex-shrink-0 px-6 py-3 bg-amber-950/25 border-b border-amber-900/30">
+          <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-1">Çözmen Gereken Soru</p>
+          <p className="text-sm text-zinc-200 leading-relaxed">{quizQuestion}</p>
+        </div>
+      )}
 
       {/* Editor area */}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -239,7 +282,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
             {/* Output header */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/60">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${success ? "bg-emerald-500" : "bg-red-500"}`} />
+                <div className={`w-2 h-2 rounded-full ${success ? "bg-emerald-500" : "bg-amber-500"}`} />
                 <span className="text-[11px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
                   {success ? "Çıktı" : "Hata"} — {langLabel}
                 </span>
@@ -275,7 +318,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle }: Interactive
                 >
                   <pre
                     className={`px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap
-                      ${success ? "text-emerald-400" : "text-red-400"}`}
+                      ${success ? "text-emerald-400" : "text-amber-400"}`}
                   >
                     {stdout || stderr || "(boş çıktı)"}
                   </pre>

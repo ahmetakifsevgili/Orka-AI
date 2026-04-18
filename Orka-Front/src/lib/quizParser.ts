@@ -6,7 +6,7 @@ import type { QuizData } from "./types";
  *   1. Direkt JSON string  →  { question, options:[{id,text,isCorrect}], explanation }
  *   2. Markdown code block →  ```json { ... } ```
  */
-export function tryParseQuiz(content: string): QuizData | null {
+export function tryParseQuiz(content: string): QuizData | QuizData[] | null {
   const candidates: string[] = [content.trim()];
 
   // ```json ... ``` veya ```quiz ... ``` bloklarını dene
@@ -23,12 +23,30 @@ export function tryParseQuiz(content: string): QuizData | null {
   for (const raw of candidates) {
     try {
       const parsed = JSON.parse(raw);
-      if (
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Evaluate if it's an array of quizzes (coding type has empty options)
+        if (
+          typeof parsed[0]?.question === "string" &&
+          Array.isArray(parsed[0]?.options)
+        ) {
+          return parsed.map((q: any, qi: number) => ({
+            question: q.question,
+            options: q.options.map((o: any, i: number) => ({
+              id: o.id ?? `opt-${qi}-${i}`,
+              text: o.text.replace(/^[A-F]\)\s*/i, "").trim(),
+              isCorrect: Boolean(o.isCorrect),
+            })),
+            explanation: q.explanation ?? "",
+            topic: q.topic,
+            type: q.type === "coding" ? "coding" : "multiple_choice",
+          }));
+        }
+      } else if (
         typeof parsed?.question === "string" &&
-        Array.isArray(parsed?.options) &&
-        parsed.options.length > 0
+        Array.isArray(parsed?.options)
       ) {
         // options dizisini normalize et: isCorrect boolean garantisi
+        // coding type için options boş olabilir
         const normalized: QuizData = {
           question: parsed.question,
           options: parsed.options.map(
@@ -40,6 +58,7 @@ export function tryParseQuiz(content: string): QuizData | null {
           ),
           explanation: parsed.explanation ?? "",
           topic: parsed.topic,
+          type: parsed.type === "coding" ? "coding" : "multiple_choice",
         };
         return normalized;
       }

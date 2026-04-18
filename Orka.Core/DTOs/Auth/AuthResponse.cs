@@ -14,4 +14,5 @@ public class UserDto
     public string Plan { get; set; } = string.Empty;
     public int DailyMessageCount { get; set; }
     public int DailyLimit { get; set; }
+    public bool IsAdmin { get; set; }
 }

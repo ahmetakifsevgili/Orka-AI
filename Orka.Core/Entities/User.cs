@@ -19,6 +19,13 @@ public class User
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 
+    /// <summary>
+    /// Sistem izleme paneli (System Health HUD, LLMOps dashboard, denetim scriptleri)
+    /// yalnızca admin=true hesaplara açıktır. Normal kullanıcılar yalnızca kendi
+    /// öğrenme karnesini görür — LLMOps verisi iş süreci sayılır ve gizli tutulur.
+    /// </summary>
+    public bool IsAdmin { get; set; } = false;
+
     public ICollection<Topic> Topics { get; set; } = new List<Topic>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 

@@ -46,9 +46,8 @@ export default function Login() {
         const { data } = await AuthAPI.login({ email, password });
         storage.save(data);
       } else {
-        const parts = name.trim().split(/\s+/);
-        const firstName = parts[0] || "Yeni";
-        const lastName = parts.length > 1 ? parts.slice(1).join(" ") : "Kullanıcı";
+        const firstName = name.trim() || "Yeni";
+        const lastName = "";
         
         const { data } = await AuthAPI.register({ 
           firstName, 

@@ -44,8 +44,8 @@ interface ChatPanelProps {
   pendingMessage?: string | null;
   /** pendingMessage tüketildikten sonra parent'i bilgilendirir */
   onPendingMessageConsumed?: () => void;
-  /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar */
-  onOpenIDE?: () => void;
+  /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar; quiz sorusu opsiyonel iletilir */
+  onOpenIDE?: (question?: string) => void;
 }
 
 export default function ChatPanel({
@@ -112,15 +112,36 @@ export default function ChatPanel({
     return () => clearInterval(id);
   }, [isThinking, isPlanMode]);
 
-  // ── Auto-scroll ────────────────────────────────────────────────────────
-  const scrollToBottom = useCallback(() => {
-    if (scrollRef.current)
+  // ── Auto-scroll (only if user is near bottom) ───────────────────────────
+  const isNearBottomRef = useRef(true);
+  const isInitialLoadRef = useRef(true);
+  
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
+  }, []);
+
+  const scrollToBottom = useCallback((force = false) => {
+    if (scrollRef.current && (force || isNearBottomRef.current))
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, []);
 
+  // Force scroll to bottom when messages first load (history) or new message added
   useEffect(() => {
+    if (messages.length > 0 && isInitialLoadRef.current) {
+      // Initial load — force to bottom with a slight delay for DOM to render
+      isInitialLoadRef.current = false;
+      requestAnimationFrame(() => scrollToBottom(true));
+      return;
+    }
     scrollToBottom();
-  }, [messages, isThinking, scrollToBottom]);
+  }, [messages.length, isThinking, scrollToBottom]);
+
+  // Reset initial load flag when topic changes
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+  }, [activeTopic?.id]);
 
   const resetTextarea = () => {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -215,22 +236,19 @@ export default function ChatPanel({
                   continue;
                 }
                 
+                // First append the decoded chunk to our content buffer
+                currentContent += data.replaceAll("[NEWLINE]", "\n");
+
                 // Konu tamamlanma sinyali — frontend'e wiki kısayol butonu göstermek için
-                if (data.includes("[TOPIC_COMPLETE:")) {
-                  const match = data.match(/\[TOPIC_COMPLETE:([^\]]+)\]/i);
-                  if (match) completedTopicId = match[1];
-                  const cleanedData = data.replace(/\[TOPIC_COMPLETE:[^\]]*\]/, "");
-                  currentContent += cleanedData;
-                  setMessages((prev) =>
-                    prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
-                  );
-                  continue;
+                const topicMatch = currentContent.match(/\[TOPIC_COMPLETE:([^\]]+)\]/i);
+                if (topicMatch) {
+                  completedTopicId = topicMatch[1];
+                  currentContent = currentContent.replace(/\[TOPIC_COMPLETE:[^\]]*\]/gi, "");
                 }
 
                 // Plan_ready detector
-                if (data.includes("[PLAN_READY]")) {
-                  const cleanedData = data.replace("[PLAN_READY]", "");
-                  currentContent += cleanedData;
+                if (currentContent.includes("[PLAN_READY]")) {
+                  currentContent = currentContent.replace(/\[PLAN_READY\]/g, "");
 
                   // Play sound if enabled
                   const userStr = localStorage.getItem("orka_user");
@@ -247,23 +265,14 @@ export default function ChatPanel({
                     duration: 5000,
                     icon: "📚"
                   });
-
-                  setMessages((prev) => 
-                    prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
-                  );
-                  continue;
                 }
 
-                if (data.includes("[IDE_OPEN]")) {
-                  currentContent += data.replace("[IDE_OPEN]", "");
+                // IDE Open Detector (Robust)
+                if (/\[IDE_OPEN\]/i.test(currentContent)) {
+                  currentContent = currentContent.replace(/\[IDE_OPEN\]/gi, "");
                   if (onOpenIDE) onOpenIDE();
-                  setMessages((prev) =>
-                    prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
-                  );
-                  continue;
                 }
 
-                currentContent += data;
                 setMessages((prev) => 
                   prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
                 );
@@ -522,22 +531,6 @@ export default function ChatPanel({
             </button>
           )}
 
-          {/* User profile section */}
-          <div className="flex items-center gap-3 pl-3 border-l border-zinc-800/60">
-            <button
-              className="relative text-zinc-500 hover:text-zinc-300 transition-colors"
-              title="Bildirimler"
-            >
-              <Bell className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => navigate("/profile")}
-              className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden hover:border-zinc-500 transition-colors flex items-center justify-center"
-              title={userName}
-            >
-              <span className="text-xs font-semibold text-zinc-300">{userInitial}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -575,7 +568,7 @@ export default function ChatPanel({
       </AnimatePresence>
       
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto relative">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
         <div className="max-w-3xl mx-auto w-full px-6 py-8">
           {messages.length === 0 ? (
             <WelcomeState onPromptClick={(p) => handleSend(p)} />
@@ -585,9 +578,11 @@ export default function ChatPanel({
                 <ChatMessageComponent
                   key={msg.id}
                   message={msg}
-                  onSubmitAnswer={handleQuizAnswer}
-                  userName={userName}
+                  onSubmitAnswer={(answer) => {
+                    sendMessage(answer);
+                  }}
                   onOpenWiki={onOpenWiki}
+                  onOpenIDE={onOpenIDE}
                 />
               ))}
             </div>

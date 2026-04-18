@@ -18,17 +18,20 @@ public class SummarizerAgent : ISummarizerAgent
 
     private readonly IAIAgentFactory _factory;
     private readonly IGraderAgent _grader;
+    private readonly IRedisMemoryService _redis;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SummarizerAgent> _logger;
 
     public SummarizerAgent(
         IAIAgentFactory factory,
         IGraderAgent grader,
+        IRedisMemoryService redis,
         IServiceScopeFactory scopeFactory,
         ILogger<SummarizerAgent> logger)
     {
         _factory      = factory;
         _grader       = grader;
+        _redis        = redis;
         _scopeFactory = scopeFactory;
         _logger       = logger;
     }
@@ -59,14 +62,26 @@ public class SummarizerAgent : ISummarizerAgent
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
         var wikiService = scope.ServiceProvider.GetRequiredService<IWikiService>();
 
-        // ── DB-level idempotency: wiki zaten üretildiyse yeniden üretme ─────
-        var alreadyGenerated = await db.WikiBlocks
-            .AnyAsync(b => b.WikiPage.TopicId == topicId
-                        && (b.Source == "Qwen-Wiki-Architect" || b.Source == "Groq-Curator"));
-        if (alreadyGenerated)
+        // ── DB-level idempotency: Son üretilmiş wiki block'undan bu yana 
+        // yeni mesaj gelmişse yeniden üretebilir ─────
+        var lastWikiBlock = await db.WikiBlocks
+            .Where(b => b.WikiPage.TopicId == topicId
+                        && (b.Source == "Qwen-Wiki-Architect" || b.Source == "GitHubModels-WikiArchitect" || b.Source == "Groq-Curator"))
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefaultAsync();
+        
+        if (lastWikiBlock != null)
         {
-            _logger.LogInformation("[WikiCurator] Wiki zaten mevcut — yeniden üretim atlandı. TopicId={TopicId}", topicId);
-            return;
+            // Son wiki üretiminden sonra yeni mesaj geldi mi kontrol et
+            var newMsgsCount = await db.Messages
+                .Where(m => m.SessionId == sessionId && m.CreatedAt > lastWikiBlock.CreatedAt)
+                .CountAsync();
+            
+            if (newMsgsCount < 5)
+            {
+                _logger.LogInformation("[WikiCurator] Son wiki üretiminden sonra yeterli yeni mesaj yok ({Count}). Atlanıyor.", newMsgsCount);
+                return;
+            }
         }
 
         var session = await db.Sessions.Include(s => s.Messages).FirstOrDefaultAsync(s => s.Id == sessionId);
@@ -77,12 +92,60 @@ public class SummarizerAgent : ISummarizerAgent
 
         var history = string.Join("\n", session.Messages.OrderBy(m => m.CreatedAt).Select(m => $"{m.Role}: {m.Content}"));
 
+        // ── KİŞİSELLEŞTİRME: Öğrenci zayıf noktaları + yanlış quiz cevapları ──
+        string personalizationBlock = "";
+        try
+        {
+            var profile = await _redis.GetStudentProfileAsync(topicId);
+
+            var failedAttempts = await db.QuizAttempts
+                .Where(q => q.TopicId == topicId && q.UserId == userId && !q.IsCorrect)
+                .OrderByDescending(q => q.CreatedAt)
+                .Take(5)
+                .Select(q => q.Question)
+                .ToListAsync();
+
+            var parts = new List<string>();
+            if (profile.HasValue)
+            {
+                parts.Add($"- Kavrama Seviyesi: {profile.Value.score}/10");
+                if (!string.IsNullOrEmpty(profile.Value.weaknesses))
+                    parts.Add($"- Zayıf Noktalar: {profile.Value.weaknesses}");
+            }
+            if (failedAttempts.Any())
+            {
+                parts.Add($"- Yanlış Cevaplanan Sorular ({failedAttempts.Count}):");
+                parts.AddRange(failedAttempts.Select(q => $"  • {(q.Length > 150 ? q[..150] + "..." : q)}"));
+            }
+
+            if (parts.Any())
+            {
+                personalizationBlock = $"""
+
+                    [KİŞİSELLEŞTİRME — ÖĞRENCİ PROFİLİ]:
+                    {string.Join("\n", parts)}
+
+                    WIKI'Yİ BU PROFİLE GÖRE ŞEKİLLENDİR:
+                    - Zayıf noktalar/yanlış cevaplar varsa o kavramlara daha fazla yer ver, ek örnekle açıkla.
+                    - Kavrama seviyesi düşükse dili daha basitleştir, benzetmeleri artır.
+                    - Yanlış cevaplanan soruların ardındaki temel kavramı Wiki'de açıkça anlat.
+                    """;
+                _logger.LogInformation("[WikiCurator] Kişiselleştirme uygulandı. TopicId={TopicId} Failed={Count}",
+                    topicId, failedAttempts.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[WikiCurator] Kişiselleştirme verisi okunamadı, jenerik wiki üretiliyor.");
+        }
+
         var systemPrompt = $$"""
             Sen Orka AI'nın 'Bilgi Özetleyici ve İçerik Hazırlayıcı'sın.
             Görev: Sohbet geçmişini, İLKOKUL'dan LİSE'ye kadar HER kesimden öğrencinin anlayabileceği,
             sade Türkçeyle ve görsel açıdan zengin bir Wiki sayfasına dönüştür.
 
             Konu: {{topicTitle}}
+            {{personalizationBlock}}
 
             HEDEF KİTLE & DİL:
             - Akademik değil, öğretici ve samimi bir dil kullan.

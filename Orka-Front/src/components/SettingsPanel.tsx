@@ -136,8 +136,6 @@ export default function SettingsPanel() {
       const s = res.data.settings;
       if (!s) return;
 
-      if (s.theme) setTheme(s.theme as Theme);
-      if (s.language) setLanguage(s.language as Language);
       if (s.fontSize) setFontSize(s.fontSize as FontSize);
 
       setNotifications({
@@ -218,21 +216,10 @@ export default function SettingsPanel() {
   };
 
   // Localized option lists
-  const themeOptions: { key: Theme; label: string }[] = [
-    { key: "Dark", label: t("dark") || "Koyu" },
-    { key: "Light", label: t("light") || "Açık" },
-    { key: "System", label: t("system") || "Sistem" },
-  ];
-
   const fontOptions: { key: FontSize; label: string }[] = [
     { key: "Small", label: t("small") || "Küçük" },
     { key: "Medium", label: t("medium") || "Orta" },
     { key: "Large", label: t("large") || "Büyük" },
-  ];
-
-  const langOptions: { key: Language; label: string }[] = [
-    { key: "Türkçe", label: "Türkçe 🇹🇷" },
-    { key: "English", label: "English 🇬🇧" },
   ];
 
   return (
@@ -258,7 +245,7 @@ export default function SettingsPanel() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-zinc-200">
-                    {user ? `${user.firstName} ${user.lastName}` : "Yükleniyor..."}
+                    {user ? `${user.firstName} ${user.lastName}`.trim() : "Yükleniyor..."}
                   </p>
                   <p className="text-xs text-zinc-500 mt-0.5">{user?.email}</p>
                 </div>
@@ -272,29 +259,16 @@ export default function SettingsPanel() {
               </div>
 
               {/* Editable Name Fields */}
-              <div className="flex gap-3">
-                <div className="flex flex-col gap-1.5 flex-1">
-                  <label className="text-xs text-zinc-400 font-medium">Adınız</label>
-                  <input
-                    type="text"
-                    value={profile.firstName}
-                    onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                    onBlur={handleProfileChange}
-                    className="bg-zinc-950/50 border border-zinc-700/80 rounded-lg px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 transition-colors"
-                    placeholder="Adınızı girin"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5 flex-1">
-                  <label className="text-xs text-zinc-400 font-medium">Soyadınız</label>
-                  <input
-                    type="text"
-                    value={profile.lastName}
-                    onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                    onBlur={handleProfileChange}
-                    className="bg-zinc-950/50 border border-zinc-700/80 rounded-lg px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 transition-colors"
-                    placeholder="Soyadınızı girin"
-                  />
-                </div>
+              <div className="flex flex-col gap-1.5 mt-3">
+                <label className="text-xs text-zinc-400 font-medium">Kullanıcı Adı</label>
+                <input
+                  type="text"
+                  value={profile.firstName}
+                  onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                  onBlur={handleProfileChange}
+                  className="bg-zinc-950/50 border border-zinc-700/80 rounded-lg px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 transition-colors"
+                  placeholder="Kullanıcı adı girin"
+                />
               </div>
 
               {/* Email (readonly) */}
@@ -314,59 +288,11 @@ export default function SettingsPanel() {
 
           {/* ── APPEARANCE ── */}
           <SettingsSection title={t("appearance") || "Görünüm"} icon={<Palette className="w-4 h-4" />}>
-            <OptionRow<Theme>
-              label={t("theme") || "Tema"}
-              value={theme}
-              options={themeOptions}
-              onChange={handleTheme}
-            />
             <OptionRow<FontSize>
               label={t("font_size") || "Yazı Boyutu"}
               value={fontSize}
               options={fontOptions}
               onChange={handleFontSize}
-            />
-          </SettingsSection>
-
-          <div className="border-t border-zinc-800/50 mb-6" />
-
-          {/* ── LANGUAGE ── */}
-          <SettingsSection title={t("language_region") || "Dil ve Bölge"} icon={<Globe className="w-4 h-4" />}>
-            <OptionRow<Language>
-              label={t("interface_language") || "Arayüz Dili"}
-              value={language}
-              options={langOptions}
-              onChange={handleLanguage}
-            />
-          </SettingsSection>
-
-          <div className="border-t border-zinc-800/50 mb-6" />
-
-          {/* ── NOTIFICATIONS ── */}
-          <SettingsSection title={t("notifications") || "Bildirimler"} icon={<Bell className="w-4 h-4" />}>
-            <ToggleRow
-              label={t("quiz_reminders") || "Quiz Hatırlatıcıları"}
-              description={t("quiz_reminders_desc") || "Günlük quiz hatırlatıcılarını al"}
-              checked={notifications.quizReminders}
-              onChange={(val) => handleNotification("quizReminders", val)}
-            />
-            <ToggleRow
-              label={t("weekly_report") || "Haftalık Rapor"}
-              description={t("weekly_report_desc") || "İlerleme özetini haftalık al"}
-              checked={notifications.weeklyReport}
-              onChange={(val) => handleNotification("weeklyReport", val)}
-            />
-            <ToggleRow
-              label={t("new_content") || "Yeni İçerik Uyarıları"}
-              description={t("new_content_desc") || "Yeni müfredat içerikleri eklendiğinde bildir"}
-              checked={notifications.newContent}
-              onChange={(val) => handleNotification("newContent", val)}
-            />
-            <ToggleRow
-              label={t("sounds") || "Ses Efektleri"}
-              description={t("sounds_desc") || "Bildirim ve tamamlanma seslerini çal"}
-              checked={notifications.sounds}
-              onChange={(val) => handleNotification("sounds", val)}
             />
           </SettingsSection>
 

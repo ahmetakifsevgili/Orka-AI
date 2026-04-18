@@ -10,6 +10,7 @@ export interface QuizOption {
 }
 
 export interface QuizData {
+  type?: "multiple_choice" | "coding";
   question: string;
   options: QuizOption[];
   explanation: string;
@@ -21,7 +22,7 @@ export interface ChatMessage {
   role: MessageRole;
   type: MessageType;
   content: string;
-  quiz?: QuizData;
+  quiz?: QuizData | QuizData[];
   completedTopicId?: string; // Set when type === "topic_complete"
   timestamp: Date;
   isStreaming?: boolean;

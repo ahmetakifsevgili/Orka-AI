@@ -16,6 +16,11 @@ public class RedisMemoryService : IRedisMemoryService
     private readonly IDatabase _db;
     private readonly ILogger<RedisMemoryService> _logger;
 
+    // ── Evaluator feedback JSON şeması ──────────────────────────────────────
+    // Eski format: "[HH:mm:ss] Puan: {score} - Not: {feedback}" (fragile parsing)
+    // Yeni format: JSON — parse güvenliği için.
+    private record EvaluatorRecord(int Score, string Feedback, DateTime At);
+
     public RedisMemoryService(IConnectionMultiplexer redis, ILogger<RedisMemoryService> logger)
     {
         _redis = redis;
@@ -29,14 +34,15 @@ public class RedisMemoryService : IRedisMemoryService
         try
         {
             string key = $"orka:feedback:{sessionId}";
-            string entry = $"[{DateTime.UtcNow:HH:mm:ss}] Puan: {score} - Not: {feedback}";
-            
+            var record = new EvaluatorRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
+            var entry = JsonSerializer.Serialize(record);
+
             // LPUSH: Listenin başından (solundan) ekler, böylece en yeniler en üstte kalır.
             await _db.ListLeftPushAsync(key, entry);
-            
+
             // ListTrim: Listenin sonsuza kadar büyümesini engeller, sadece son 20 uyarıyı tutar.
             await _db.ListTrimAsync(key, 0, 19);
-            
+
             // KeyExpire: 7 gün sonra (session tarihi eskiyince) otomatik silinir, Redis'i temiz tutar.
             await _db.KeyExpireAsync(key, TimeSpan.FromDays(7));
         }
@@ -46,19 +52,46 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
+    /// <summary>
+    /// Evaluator feedback'ini TutorAgent'ın prompt'a enjekte edebileceği insan-okur formatta döner.
+    /// Backward compat: yeni JSON ve eski string formatının ikisini de parse eder.
+    /// </summary>
     public async Task<IEnumerable<string>> GetRecentFeedbackAsync(Guid sessionId, int count = 5)
     {
         try
         {
             string key = $"orka:feedback:{sessionId}";
             var items = await _db.ListRangeAsync(key, 0, count - 1);
-            return items.Select(x => x.ToString());
+            return items.Select(x => NormalizeFeedbackEntry(x.ToString())).ToList();
         }
         catch(Exception ex)
         {
              _logger.LogError(ex, "[Redis] Geçmiş geri bildirimler çekilirken hata oluştu.");
              return Enumerable.Empty<string>();
         }
+    }
+
+    /// <summary>
+    /// Bir Redis list entry'sini insan okur formatına çevirir.
+    /// JSON ise deserialize, değilse ham string (eski format) olarak döner.
+    /// </summary>
+    private static string NormalizeFeedbackEntry(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+
+        // JSON başlangıcı → yeni format
+        if (raw.StartsWith('{'))
+        {
+            try
+            {
+                var rec = JsonSerializer.Deserialize<EvaluatorRecord>(raw);
+                if (rec is not null)
+                    return $"[{rec.At:HH:mm:ss}] Puan: {rec.Score} - Not: {rec.Feedback}";
+            }
+            catch { /* bozuksa raw döner */ }
+        }
+
+        return raw; // eski format (backward compat)
     }
 
     public async Task<bool> CheckRateLimitAsync(string clientIp, int maxRequests, TimeSpan window)
@@ -291,6 +324,51 @@ public class RedisMemoryService : IRedisMemoryService
         return result;
     }
 
+    public async Task<IEnumerable<ProviderUsageStat>> GetProviderUsageAsync()
+    {
+        try
+        {
+            // Tüm ajanların call history'lerini dolaş, provider sayım yap
+            var allRecords = new List<AgentCallRecord>();
+
+            foreach (var role in AllAgentRoles)
+            {
+                var key = $"orka:metrics:{role}";
+                var items = await _db.ListRangeAsync(key, 0, -1);
+                foreach (var item in items)
+                {
+                    try
+                    {
+                        var rec = JsonSerializer.Deserialize<AgentCallRecord>(item!);
+                        if (rec is not null) allRecords.Add(rec);
+                    }
+                    catch { /* skip malformed */ }
+                }
+            }
+
+            if (allRecords.Count == 0) return Enumerable.Empty<ProviderUsageStat>();
+
+            var total = allRecords.Count;
+
+            return allRecords
+                .GroupBy(r => string.IsNullOrWhiteSpace(r.Provider) ? "Unknown" : r.Provider)
+                .Select(g => new ProviderUsageStat(
+                    Provider:     g.Key,
+                    CallCount:    g.Count(),
+                    ErrorCount:   g.Count(r => !r.IsSuccess),
+                    Percentage:   Math.Round(g.Count() * 100.0 / total, 1),
+                    AvgLatencyMs: Math.Round(g.Average(r => (double)r.LatencyMs), 0)
+                ))
+                .OrderByDescending(p => p.CallCount)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Provider kullanım dağılımı okunurken hata oluştu.");
+            return Enumerable.Empty<ProviderUsageStat>();
+        }
+    }
+
     public async Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20)
     {
         try
@@ -308,25 +386,10 @@ public class RedisMemoryService : IRedisMemoryService
                 var items = await _db.ListRangeAsync(key, 0, 9); // Her session'dan max 10 al
                 foreach (var item in items)
                 {
-                    // Format: "[HH:mm:ss] Puan: {score} - Not: {feedback}"
                     var raw = item.ToString();
-                    var timeEnd = raw.IndexOf(']');
-                    var recordedAt = timeEnd > 0 ? raw[1..timeEnd] : "—";
-
-                    var scoreIdx = raw.IndexOf("Puan: ");
-                    var noteIdx  = raw.IndexOf(" - Not: ");
-
-                    if (scoreIdx < 0) continue;
-
-                    var scoreStr = noteIdx > scoreIdx
-                        ? raw[(scoreIdx + 6)..noteIdx]
-                        : raw[(scoreIdx + 6)..];
-
-                    var feedback = noteIdx > 0 ? raw[(noteIdx + 8)..] : "";
-
-                    if (int.TryParse(scoreStr.Trim(), out var score))
+                    if (TryParseEvaluatorEntry(raw, out var entry))
                     {
-                        allEntries.Add(new EvaluatorLogEntry(score, feedback.Trim(), recordedAt));
+                        allEntries.Add(entry);
                     }
                 }
             }
@@ -339,6 +402,155 @@ public class RedisMemoryService : IRedisMemoryService
         {
             _logger.LogError(ex, "[Redis] Evaluator logları okunurken hata oluştu.");
             return Enumerable.Empty<EvaluatorLogEntry>();
+        }
+    }
+
+    /// <summary>
+    /// Hem yeni JSON hem de eski ham-string formatı destekler (migration güvenliği).
+    /// Yeni kayıtlar JSON, eski kayıtlar "[HH:mm:ss] Puan: X - Not: Y" olarak duruyor olabilir.
+    /// </summary>
+    private static bool TryParseEvaluatorEntry(string raw, out EvaluatorLogEntry entry)
+    {
+        entry = default!;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        // 1) JSON yolu (yeni format)
+        if (raw.StartsWith('{'))
+        {
+            try
+            {
+                var rec = JsonSerializer.Deserialize<EvaluatorRecord>(raw);
+                if (rec is not null)
+                {
+                    entry = new EvaluatorLogEntry(rec.Score, rec.Feedback, rec.At.ToString("HH:mm:ss"));
+                    return true;
+                }
+            }
+            catch { /* fallback */ }
+        }
+
+        // 2) Eski string formatı (backward compat)
+        var timeEnd = raw.IndexOf(']');
+        var recordedAt = timeEnd > 0 ? raw[1..timeEnd] : "—";
+
+        var scoreIdx = raw.IndexOf("Puan: ", StringComparison.Ordinal);
+        if (scoreIdx < 0) return false;
+
+        // Score substring: "Puan: " sonrası → ilk boşluk veya string sonu
+        var afterScore = raw[(scoreIdx + 6)..];
+        var spaceIdx   = afterScore.IndexOf(' ');
+        var scoreStr   = spaceIdx < 0 ? afterScore : afterScore[..spaceIdx];
+        if (!int.TryParse(scoreStr.Trim(), out var score)) return false;
+
+        // Feedback: "- Not: " sonrası (ilk occurrence), yoksa boş
+        const string noteMarker = "- Not: ";
+        var noteIdx = raw.IndexOf(noteMarker, scoreIdx, StringComparison.Ordinal);
+        var feedback = noteIdx > 0 ? raw[(noteIdx + noteMarker.Length)..].Trim() : string.Empty;
+
+        entry = new EvaluatorLogEntry(score, feedback, recordedAt);
+        return true;
+    }
+
+    // ── Faz 14: Topic-level Kümülatif Puanlama ─────────────────────────────
+
+    private record TopicScoreRecord(int Score, string Feedback, DateTime At);
+
+    public async Task RecordTopicScoreAsync(Guid topicId, int score, string feedback)
+    {
+        try
+        {
+            var key = $"orka:topic_score:{topicId}";
+            var record = new TopicScoreRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
+            var entry = JsonSerializer.Serialize(record);
+
+            await _db.ListLeftPushAsync(key, entry);
+            await _db.ListTrimAsync(key, 0, 49); // Max 50 kayıt
+            await _db.KeyExpireAsync(key, TimeSpan.FromDays(30));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Topic score kaydedilirken hata. TopicId={TopicId}", topicId);
+        }
+    }
+
+    public async Task<(double avgScore, int totalEvals)> GetTopicScoreAsync(Guid topicId)
+    {
+        try
+        {
+            var key = $"orka:topic_score:{topicId}";
+            var items = await _db.ListRangeAsync(key, 0, -1);
+            
+            if (items.Length == 0) return (0, 0);
+
+            var scores = items
+                .Where(x => x.HasValue)
+                .Select(x =>
+                {
+                    try
+                    {
+                        var rec = JsonSerializer.Deserialize<TopicScoreRecord>(x.ToString());
+                        return rec?.Score ?? 0;
+                    }
+                    catch { return 0; }
+                })
+                .Where(s => s > 0)
+                .ToList();
+
+            if (scores.Count == 0) return (0, 0);
+            return (Math.Round(scores.Average(), 1), scores.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Topic score okunurken hata. TopicId={TopicId}", topicId);
+            return (0, 0);
+        }
+    }
+
+    // ── Faz 15: Yaşayan Organizasyon (Öğrenci Anlayış Takibi) ────────────────
+    
+    private record StudentProfileRecord(int UnderstandingScore, string Weaknesses, DateTime RecordedAt);
+
+    public async Task RecordStudentProfileAsync(Guid topicId, int understandingScore, string weaknesses)
+    {
+        try
+        {
+            var key = $"orka:student_profile:{topicId}";
+            var record = new StudentProfileRecord(understandingScore, weaknesses ?? string.Empty, DateTime.UtcNow);
+            
+            // Konu bazında sadece en güncel profili tek record olarak tutmak isteyebiliriz.
+            // Ama zaman içerisindeki değişimi anlamak için liste de tutulabilir.
+            // Şimdilik sadece en güncel veriyi String (SET) olarak ya da ufak bir liste olarak tutalım.
+            // Tek kaynakta güncel durum kalsın diye SET/GET yapalım (üzerine yazsın, "yaşayan organizasyon"un "şu anki" hali)
+            
+            var payload = JsonSerializer.Serialize(record);
+            await _db.StringSetAsync(key, payload, TimeSpan.FromDays(30));
+            
+            _logger.LogInformation("[Redis] Öğrenci Profili güncellendi. TopicId={TopicId} Puan={Score}", topicId, understandingScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Öğrenci profili kaydedilirken hata. TopicId={TopicId}", topicId);
+        }
+    }
+
+    public async Task<(int score, string weaknesses)?> GetStudentProfileAsync(Guid topicId)
+    {
+        try
+        {
+            var key = $"orka:student_profile:{topicId}";
+            var val = await _db.StringGetAsync(key);
+            
+            if (val.IsNullOrEmpty) return null;
+            
+            var record = JsonSerializer.Deserialize<StudentProfileRecord>(val.ToString());
+            if (record == null) return null;
+            
+            return (record.UnderstandingScore, record.Weaknesses);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Öğrenci profili okunurken hata. TopicId={TopicId}", topicId);
+            return null;
         }
     }
 }

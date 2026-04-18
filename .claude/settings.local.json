@@ -81,7 +81,11 @@
       "Bash(awk '{print $5}')",
       "Bash(findstr 5065)",
       "Bash(findstr \":5065\")",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"TS_OK_EXIT_$?\")",
+      "WebSearch",
+      "WebFetch(domain:www.promptfoo.dev)",
+      "Bash(wait)"
     ]
   }
 }

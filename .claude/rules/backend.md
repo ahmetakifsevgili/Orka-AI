@@ -1,3 +1,13 @@
+---
+description: Orka backend (.NET 8) için katman kuralları, agent mimarisi, SSE protokolü, Semantic Kernel
+globs:
+  - "Orka.API/**/*.cs"
+  - "Orka.Core/**/*.cs"
+  - "Orka.Infrastructure/**/*.cs"
+  - "**/*.csproj"
+alwaysApply: false
+---
+
 # Backend Kuralları — C# / .NET 8 / Orka Mimarisi
 
 ## Katman Yapısı (Zorunlu)

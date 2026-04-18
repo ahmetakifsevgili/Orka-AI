@@ -1,3 +1,12 @@
+---
+description: Orka frontend (React 19) için bileşen mimarisi, tasarım sistemi, state yönetimi, SSE parse
+globs:
+  - "Orka-Front/src/**/*.tsx"
+  - "Orka-Front/src/**/*.ts"
+  - "Orka-Front/src/**/*.css"
+alwaysApply: false
+---
+
 # Frontend Kuralları — React 19 / Vite 6 / Tailwind v4
 
 ## Dizin Yapısı
@@ -15,12 +24,19 @@ Orka-Front/src/
 
 ## Tasarım Sistemi — Kesinlikle Uyulacak Kurallar
 
-- **Renk paleti:** Yalnızca `zinc` paleti kullanılır (`zinc-950`, `zinc-900`, `zinc-800`...).
-- **Gradient, neon, glassmorphism, top-navbar:** YASAKTIR.
-- **Tamamlanma/başarı rengi:** `emerald-*` (yeşil tonları).
-- **Uyarı/quiz rengi:** `amber-*`.
+İzin verilen tüm Tailwind renk sınıfları **yalnızca** bu üç aile içindendir:
+
+| Niyet | Sınıf ailesi | Ne zaman |
+|---|---|---|
+| Notr / arka plan / metin | `zinc-*` | Her yerde (varsayılan) |
+| Başarı / tamamlanma / online | `emerald-*` | Sadece pozitif durumlar |
+| Uyarı / kritik / quiz / halüsinasyon | `amber-*` | Tüm uyarı + hata + kritik durumlar |
+
+**Kesinlikle YASAK:** `red-*`, `blue-*`, `purple-*`, `orange-*`, `indigo-*`, `cyan-*`, `violet-*`, `pink-*`, `rose-*`, tüm `bg-gradient-*`, glassmorphism, neon, top-navbar.  (Kritik durumlar için `amber-300` — normal uyarı için `amber-400/500` kullan — tonu şiddetten arttırarak ayırt et.)
+
 - **Dark mode:** Uygulama her zaman dark mode'dadır; light mode geçişi yoktur.
 - **Emojiler:** Kullanıcı açıkça istemediği sürece dosyalara emoji eklenmez.
+- **Admin-only UI:** `storage.getUser()?.isAdmin === true` dışındaki kullanıcılara LLMOps/System Health HUD gösterilmez.  Yalnızca admin sekmesi sarı rozetle vurgulanır.
 
 ## Routing
 

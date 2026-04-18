@@ -1,0 +1,15 @@
+{
+  "name": "orka-llm-eval",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Orka AI TutorAgent için promptfoo tabanlı LLM kalite değerlendirme paketi",
+  "scripts": {
+    "eval": "promptfoo eval",
+    "eval:quick": "promptfoo eval --filter-providers orka-tutor",
+    "view": "promptfoo view",
+    "prepare-token": "node prepare-token.mjs"
+  },
+  "devDependencies": {
+    "promptfoo": "^0.95.0"
+  }
+}

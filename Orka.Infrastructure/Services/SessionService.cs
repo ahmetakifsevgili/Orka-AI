@@ -27,9 +27,19 @@ public class SessionService
 
     public async Task<object?> GetLatestSessionAsync(Guid topicId, Guid userId)
     {
+        var targetTopic = await _dbContext.Topics.FindAsync(topicId);
+        if (targetTopic == null) return null;
+
+        var rootId = targetTopic.ParentTopicId ?? targetTopic.Id;
+
+        var treeTopicIds = await _dbContext.Topics
+            .Where(t => t.Id == rootId || t.ParentTopicId == rootId)
+            .Select(t => t.Id)
+            .ToListAsync();
+
         var session = await _dbContext.Sessions
             .Include(s => s.Messages)
-            .Where(s => s.TopicId == topicId && s.UserId == userId)
+            .Where(s => s.TopicId.HasValue && treeTopicIds.Contains(s.TopicId.Value) && s.UserId == userId)
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 

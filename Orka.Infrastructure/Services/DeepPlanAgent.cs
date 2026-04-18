@@ -42,13 +42,13 @@ public class DeepPlanAgent : IDeepPlanAgent
     }
 
     public async Task<List<Topic>> GenerateAndSaveDeepPlanAsync(
-        Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null)
+        Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null)
     {
-        var modules = await GenerateModulesAsync(topicTitle, userLevel, researchContext);
+        var modules = await GenerateModulesAsync(topicTitle, userLevel, researchContext, failedTopics);
         return await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
     }
 
-    private async Task<List<ModuleDefinition>> GenerateModulesAsync(string topicTitle, string userLevel, string? researchContext = null)
+    private async Task<List<ModuleDefinition>> GenerateModulesAsync(string topicTitle, string userLevel, string? researchContext = null, string? failedTopics = null)
     {
         _logger.LogInformation("[DeepPlan] Multi-Agent RAG döngüsü başlıyor. Konu: {Topic}", topicTitle);
 
@@ -72,23 +72,32 @@ public class DeepPlanAgent : IDeepPlanAgent
             }
         }
 
+        string failedTopicsDiagnostic = "";
+        if (!string.IsNullOrWhiteSpace(failedTopics))
+        {
+            failedTopicsDiagnostic = $"\n\n[DİKKAT - MİKRO TEŞHİS (ZAYIFLIK Analizi)]:\nÖğrenci şu konularda HATA YAPMIŞ veya zorlanmış: {failedTopics}.\nMüfredatı eksiksiz ve kapsamlı çıkar, ANCAK öğrencinin eksik olduğu bu konulara matkapla (drill) in! Bu kavramlar geçtiğinde müfredata ekstra 'Uygulamalı Örnekler', 'Derinlemesine Analiz' ve 'Pratik Lab' alt modülleri ekle. Diğer bildiği konularda standart anlatımla geç.";
+        }
+
         var systemPrompt = $$"""
             Sen akademik seviyede bir 'Müfredat Mimarı (Curriculum Architect)' botusun.
             Görev: Verilen konuyu profesyonel, kapsamlı ve konunun doğasına uygun bir müfredata dönüştürmek.
             Mevcut kullanıcının bilgi seviyesi: {{userLevel}}
             Konunun Alanı / Kategorisi: {{intentCategory}}
             {{contextInfo}}
+            {{failedTopicsDiagnostic}}
 
             ORGANİZASYON KURALI (KRİTİK — KONUYA GÖRE AKILLI YAPILANDIR):
+            - Kullanıcı cümlesinden (Örn: "C# çalışmak istiyorum") ASIL KONUYU çıkar ("C# Programlama"). Kesinlikle "Selamlaşma", "İstek", "Giriş" gibi konulardan bahsetme!
             - Programlama/teknoloji → "Temel Yapı Taşları → Uygulama Becerileri → İleri Düzey" yaklaşımı
             - Tarih/toplum → "Dönemsel sıralama" veya "Tematik gruplama"
             - Bilim/matematik → "Teorik temeller → Uygulamalı konular → İleri araştırma"
-            - Sanat/dil → "Giriş → Teknik beceriler → Yaratıcı uygulama"
+            - Sanat/dil → "Temel İfadeler → Dil Bilgisi → İleri Seviye Konuşma"
 
             MODÜL VE DERS İSİMLENDİRME KURALI (ŞİDDETLİ UYARI):
-            - "Bölüm 1", "Modül 1", "Giriş", "Genel Bakış", "Temel Kavramlar", "Sonuç", "Uygulama" gibi JENERİK, İÇİ BOŞ BAŞLIKLAR KESİNLİKLE YASAKTIR!
-            - Modül başlıkları temanın özeti olmalı (Örn: JS için "Veri Tipleri ve Fonksiyonel Yaklaşım", Tarih için "Osmanlı Yükseliş Dönemi Etkenleri").
-            - Ders (Topic) başlıkları tamamen spesifik olmalı (Örn: "Primitive vs Reference Type Farkları", "Fatih Sultan Mehmet'in Yönetsel Stratejisi").
+            - "Bölüm 1", "Modül 1", "Giriş", "Genel Bakış", "Temel Kavramlar", "Sonuç", "Uygulama", "Selamlaşma" gibi JENERİK, İÇİ BOŞ BAŞLIKLAR KESİNLİKLE YASAKTIR!
+            - Modül başlıkları temanın teknik ve mantıksal özeti olmalı (Örn: JS için "Veri Tipleri ve Fonksiyonel Yaklaşım").
+            - Ders (Topic) başlıkları tamamen spesifik olmalı (Örn: "Primitive vs Reference Type Farkları").
+            - Müfredat SADECE seçilen uzmanlık alanının profesyonel teknik içeriğiyle dolu olmalıdır.
             - Her modülde 2 ile 4 arası DERS konusu olsun. Toplam 3 ile 5 MODÜL üret.
             - Kullanıcının seviyesi '{{userLevel}}' olduğu için içerik yoğunluğunu buna göre ayarla.
 
@@ -256,37 +265,34 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         var systemPrompt = $$"""
             Sen bir 'Eğitim Tanılama Uzmanı (Educational Diagnostician)' botusun.
-            Görevin: Kullanıcının '{{topicTitle}}' konusundaki bilgi seviyesini TAM OLARAK tespit etmek için 5 soru hazırlamak.
+            Görevin: Kullanıcının '{{topicTitle}}' konusundaki bilgi seviyesini EN İNCE AYRINTISINA KADAR tespit etmek için 20 soru hazırlamak.
+            
+            SORU DAĞILIMI VE DERİNLİK (Toplam 20 Soru):
+            - 1-4: TEMEL KAVRAMLAR (Başlangıç seviyesi, terminoloji kontrolü)
+            - 5-10: UYGULAMA VE SENARYO (Orta seviye, "nasıl yapılır?" ve kod okuma)
+            - 11-16: ANALİZ VE PROBLEM ÇÖZME (İleri seviye, hata ayıklama ve mimari kararlar)
+            - 17-20: UZMANLIK VE DERİN KONULAR (Zorlayıcı, uç durumlar ve optimizasyon)
 
-            SORU DAĞILIMI (her biri FARKLI bir boyutu ölçer):
-            1. KAVRAMSAL — Konunun temel kavramlarını anlıyor mu? (Orta zorluk)
-            2. UYGULAMA — Bilgiyi gerçek bir senaryoda kullanabiliyor mu? (Orta-üst zorluk)
-            3. ANALİZ — İki yaklaşımı karşılaştırıp doğru olanı seçebiliyor mu? (Üst zorluk)
-            4. PROBLEM ÇÖZME — Verilen bir soruna çözüm üretebiliyor mu? (Üst zorluk)
-            5. İLERİ SEVİYE — İleri düzey bir kavramı biliyor mu? (Zor)
-
-            SORU KALİTESİ KURALI:
-            - "X nedir?" veya "X'in amacı nedir?" gibi Google'lanabilir tanımlama soruları YASAK.
-            - Her soru gerçek dünya senaryosu, kod parçacığı veya somut bir durum içermeli.
-            - Seçenekler birbirine yakın ve mantıklı olmalı — düşünme gerektirmeli.
-            - Her soru bağımsız; öncekine dayalı olmamalı.
-
-            ÇIKTI KURALI (KESİNLİKLE UYULACAK):
-            - SADECE aşağıdaki JSON dizisini döndür. Başka hiçbir metin, markdown tırnağı veya açıklama EKLEME.
-            - "text" alanlarına A), B), C) gibi ön ek EKLEME.
-
+            KALİTE VE FORMAT KURALLARI:
+            - Sadece "X nedir?" gibi ezber soruları YASAKTIR. Sorular gerçek hayat problemlerini veya teknik senaryoları yansıtmalıdır.
+            - Yanlış seçenekler (çeldiriciler) mantıklı ve kafa karıştırıcı olmalı.
+            - Çıktı SADECE saf JSON dizisi olmalıdır.
+            - "type" alanı çok önemlidir. Eğer soru sözel ve kavramsal bir bilgiyse "multiple_choice" (4 şık ekle), ALGORİTMA VEYA KODLAMA gerektiriyorsa "coding" (şıkları boş bırak) yap.
+            
             [
               {
-                "question": "1. sorunun metni",
+                "type": "multiple_choice", // veya "coding"
+                "question": "Soru metni...",
                 "options": [
-                  { "text": "Seçenek", "isCorrect": false },
-                  { "text": "Doğru cevap", "isCorrect": true },
-                  { "text": "Çeldirici", "isCorrect": false },
-                  { "text": "Çeldirici", "isCorrect": false }
+                  { "text": "...", "isCorrect": false },
+                  { "text": "...", "isCorrect": true },
+                  { "text": "...", "isCorrect": false },
+                  { "text": "...", "isCorrect": false }
                 ],
-                "explanation": "Kısa açıklama"
+                "explanation": "Detaylı açıklama",
+                "topic": "{{topicTitle}}"
               },
-              ... (toplam 5 soru)
+              ... (TOPLAM 20 SORU)
             ]
 
             DİL: Türkçe.

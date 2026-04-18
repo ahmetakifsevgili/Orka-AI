@@ -32,3 +32,14 @@ public record EvaluatorLogEntry(
     string Feedback,
     string RecordedAt
 );
+
+/// <summary>
+/// Bir LLM provider'ının kullanım dağılımı (HUD "Model Mix" widget'ı için).
+/// </summary>
+public record ProviderUsageStat(
+    string Provider,
+    int    CallCount,
+    int    ErrorCount,
+    double Percentage,      // Toplam çağrıların % kaçı bu provider
+    double AvgLatencyMs
+);

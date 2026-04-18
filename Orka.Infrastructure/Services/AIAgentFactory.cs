@@ -80,13 +80,13 @@ public class AIAgentFactory : IAIAgentFactory
                 _logger.LogDebug("[AIAgentFactory] {Role} → GitHub Models ({Model})", role, model);
                 var result = await _github.ChatAsync(systemPrompt, userMessage, model, cts1.Token);
                 sw.Stop();
-                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "GitHub");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "GitHub");
                 return result;
             }
             catch (Exception ex) when (IsTransient(ex) || cts1.IsCancellationRequested)
             {
                 _logger.LogWarning("[AIAgentFactory] {Role} GitHub başarısız/timeout ({Msg}), Groq fallback.", role, ex.Message);
-                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, false, "GitHub");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "GitHub");
                 sw.Restart();
             }
         }
@@ -99,13 +99,13 @@ public class AIAgentFactory : IAIAgentFactory
             {
                 var result = await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts2.Token);
                 sw.Stop();
-                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "Groq");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "Groq");
                 return result;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("[AIAgentFactory] {Role} Groq başarısız/timeout ({Msg}), Gemini fallback.", role, ex.Message);
-                _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, false, "Groq");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Groq");
                 sw.Restart();
             }
         }
@@ -113,16 +113,26 @@ public class AIAgentFactory : IAIAgentFactory
         // 3. Gemini fallback — 10s timeout
         using var cts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts3.CancelAfter(AgentTimeout);
-        var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts3.Token);
-        sw.Stop();
-        _ = _redis.RecordAgentMetricAsync(roleName, sw.ElapsedMilliseconds, true, "Gemini");
-        return geminiResult;
+        try
+        {
+            var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts3.Token);
+            sw.Stop();
+            RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "Gemini");
+            return geminiResult;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _logger.LogError(ex, "[AIAgentFactory] {Role} Gemini de başarısız. Tüm provider'lar tükendi.", role);
+            RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Gemini");
+            throw;
+        }
     }
 
     /// <inheritdoc/>
     /// C# kısıtı: yield return, catch yan tümcesi içeren try bloğunda kullanamaz.
     /// Bu nedenle "ilk token probe" pattern kullanılır:
-    ///   - İlk token TRY/CATCH içinde alınır (yield yok)
+    ///   - İlk token TRY/CATCH içinde alınır (yield yok) ve TTFT ölçülür
     ///   - Başarılıysa, geri kalan stream TRY dışında yield edilir
     ///   - Başarısızsa fallback provider'a geçilir
     public async IAsyncEnumerable<string> StreamChatAsync(
@@ -131,12 +141,14 @@ public class AIAgentFactory : IAIAgentFactory
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var model = GetModel(role);
+        var model    = GetModel(role);
+        var roleName = role.ToString();
 
-        // ── 1. GitHub Models stream — 10s ilk token timeout ─────────────────
+        // ── 1. GitHub Models stream — TTFT ile ölçülüyor ────────────────────
         IAsyncEnumerator<string>? githubEnum = null;
         string? firstChunk = null;
         bool githubOk = false;
+        var swGithub = Stopwatch.StartNew();
 
         using (var probeCts1 = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
@@ -145,21 +157,24 @@ public class AIAgentFactory : IAIAgentFactory
             {
                 githubEnum = _github.ChatStreamAsync(systemPrompt, userMessage, model, probeCts1.Token)
                                      .GetAsyncEnumerator(probeCts1.Token);
-                githubOk   = await githubEnum.MoveNextAsync();
+                githubOk   = await githubEnum.MoveNextAsync(); // TTFT noktası
+                swGithub.Stop();
                 if (githubOk) firstChunk = githubEnum.Current;
             }
             catch (Exception ex)
             {
+                swGithub.Stop();
                 _logger.LogWarning("[AIAgentFactory] {Role} GitHub stream başarısız/timeout: {Msg}", role, ex.Message);
+                RecordMetricSafe(roleName, swGithub.ElapsedMilliseconds, false, "GitHub");
                 githubOk = false;
             }
         }
 
         if (githubOk && githubEnum != null)
         {
+            RecordMetricSafe(roleName, swGithub.ElapsedMilliseconds, true, "GitHub");
             yield return firstChunk!;
 
-            // Geri kalanı outer ct ile stream et
             while (await githubEnum.MoveNextAsync())
                 yield return githubEnum.Current;
 
@@ -171,10 +186,11 @@ public class AIAgentFactory : IAIAgentFactory
 
         _logger.LogInformation("[AIAgentFactory] {Role} Groq stream fallback.", role);
 
-        // ── 2. Groq stream — 10s ilk token timeout ──────────────────────────
+        // ── 2. Groq stream — TTFT ile ölçülüyor ─────────────────────────────
         IAsyncEnumerator<string>? groqEnum = null;
         string? groqFirst = null;
         bool groqOk = false;
+        var swGroq = Stopwatch.StartNew();
 
         using (var probeCts2 = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
@@ -183,18 +199,22 @@ public class AIAgentFactory : IAIAgentFactory
             {
                 groqEnum = _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, probeCts2.Token)
                                  .GetAsyncEnumerator(probeCts2.Token);
-                groqOk   = await groqEnum.MoveNextAsync();
+                groqOk   = await groqEnum.MoveNextAsync(); // TTFT noktası
+                swGroq.Stop();
                 if (groqOk) groqFirst = groqEnum.Current;
             }
             catch (Exception ex)
             {
+                swGroq.Stop();
                 _logger.LogWarning("[AIAgentFactory] {Role} Groq stream başarısız/timeout: {Msg}", role, ex.Message);
+                RecordMetricSafe(roleName, swGroq.ElapsedMilliseconds, false, "Groq");
                 groqOk = false;
             }
         }
 
         if (groqOk && groqEnum != null)
         {
+            RecordMetricSafe(roleName, swGroq.ElapsedMilliseconds, true, "Groq");
             yield return groqFirst!;
 
             while (await groqEnum.MoveNextAsync())
@@ -208,12 +228,23 @@ public class AIAgentFactory : IAIAgentFactory
 
         _logger.LogInformation("[AIAgentFactory] {Role} Gemini stream fallback.", role);
 
-        // ── 3. Gemini stream (son çare) — 10s ilk token timeout ─────────────
+        // ── 3. Gemini stream — TTFT ile ölçülüyor ───────────────────────────
+        var swGemini = Stopwatch.StartNew();
+        bool geminiGotFirst = false;
         using var probeCts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
         probeCts3.CancelAfter(AgentTimeout);
         await foreach (var chunk in _gemini.StreamSmartAsync(systemPrompt, userMessage, probeCts3.Token))
+        {
+            if (!geminiGotFirst)
+            {
+                swGemini.Stop();
+                RecordMetricSafe(roleName, swGemini.ElapsedMilliseconds, true, "Gemini");
+                geminiGotFirst = true;
+            }
             yield return chunk;
+        }
     }
+
 
     /// <inheritdoc/>
     public async Task<string> CompleteChatWithHistoryAsync(
@@ -228,6 +259,28 @@ public class AIAgentFactory : IAIAgentFactory
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Redis metric kaydını güvenli şekilde fire-and-forget yapar.
+    /// Hata durumunda log'lar, stream performansını etkilemez.
+    /// Dashboard güvenilirliği için kritik — sessiz hataları engeller.
+    /// </summary>
+    private void RecordMetricSafe(string roleName, long latencyMs, bool isSuccess, string provider)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _redis.RecordAgentMetricAsync(roleName, latencyMs, isSuccess, provider);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[AIAgentFactory] Redis metric kaydı başarısız. Role={Role}, Provider={Provider}, Latency={Latency}ms, Success={Success}",
+                    roleName, provider, latencyMs, isSuccess);
+            }
+        });
+    }
 
     private static bool IsTransient(Exception ex)
     {

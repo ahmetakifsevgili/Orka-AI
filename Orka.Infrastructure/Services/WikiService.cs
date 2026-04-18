@@ -42,19 +42,47 @@ public class WikiService : IWikiService
             .OrderBy(w => w.OrderIndex)
             .ToListAsync();
 
+        // Eğer parent topic ise, subtopic'lerin wiki sayfalarını da getir
+        var subtopicIds = await db.Topics
+            .Where(t => t.ParentTopicId == topicId)
+            .OrderBy(t => t.Order)
+            .Select(t => t.Id)
+            .ToListAsync();
+        
+        if (subtopicIds.Count > 0)
+        {
+            var subtopicPages = await db.WikiPages
+                .Include(w => w.Blocks)
+                .Where(w => subtopicIds.Contains(w.TopicId) && w.UserId == userId)
+                .OrderBy(w => w.OrderIndex)
+                .ToListAsync();
+            
+            pages = pages.Concat(subtopicPages).ToList();
+        }
+
         if (pages.Count > 0) return pages;
 
-        // Fallback: Sayfa Topic'e ait ama UserId farklı kaydedilmişse,
-        // Topic sahibini kontrol et ve doğruysa döndür
+        // Fallback: Topic sahibini kontrol et
         var topic = await db.Topics.FindAsync(topicId);
         if (topic != null && topic.UserId == userId)
         {
-            // UserId eşleşmemiş olabilir (eski kayıtlar / Albert flow) — erişim ver
             pages = await db.WikiPages
                 .Include(w => w.Blocks)
                 .Where(w => w.TopicId == topicId)
                 .OrderBy(w => w.OrderIndex)
                 .ToListAsync();
+            
+            // Subtopic fallback da ekle
+            if (subtopicIds.Count > 0)
+            {
+                var subtopicPages = await db.WikiPages
+                    .Include(w => w.Blocks)
+                    .Where(w => subtopicIds.Contains(w.TopicId))
+                    .OrderBy(w => w.OrderIndex)
+                    .ToListAsync();
+                
+                pages = pages.Concat(subtopicPages).ToList();
+            }
         }
 
         return pages;
@@ -138,32 +166,48 @@ public class WikiService : IWikiService
 
     public async Task AutoUpdateWikiAsync(Guid topicId, string aiContent, string userQuestion, string modelUsed)
     {
-        // [HATA-6 DÜZELTMESİ]: Her çağrı kendi scope'unu açarak thread-safe çalışır
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
+        var topic = await db.Topics.FindAsync(topicId);
+        if (topic == null) return;
+
+        // ── Subtopic desteği: Eğer parent topic ise, aktif subtopic'i bul ─────
+        Guid wikiTopicId = topicId;
+        string wikiTitle = topic.Title;
+        
+        var subTopics = await db.Topics
+            .Where(t => t.ParentTopicId == topicId)
+            .OrderBy(t => t.Order)
+            .ToListAsync();
+        
+        if (subTopics.Count > 0)
+        {
+            // CompletedSections ile aktif subtopic'i bul
+            var activeIndex = Math.Min(topic.CompletedSections, subTopics.Count - 1);
+            var activeSub = subTopics[activeIndex];
+            wikiTopicId = activeSub.Id;
+            wikiTitle = activeSub.Title;
+        }
+
+        // ── Mevcut wiki sayfasını bul veya oluştur ───────────────────────────
         var page = await db.WikiPages
-            .Where(w => w.TopicId == topicId && (w.Status == "pending" || w.Status == "learning"))
+            .Where(w => w.TopicId == wikiTopicId && (w.Status == "pending" || w.Status == "learning"))
             .OrderBy(w => w.OrderIndex)
             .FirstOrDefaultAsync();
 
         if (page == null)
         {
-            var topic = await db.Topics.FindAsync(topicId);
-
-            if (topic == null) return;
-
-            // UserId: topic'ten al (en güvenilir kaynak)
             var resolvedUserId = topic.UserId;
-
-            _logger.LogDebug("[WIKI] Aktif wiki sayfası bulunamadı, topicId={TopicId}. Yeni wiki sayfası oluşturuluyor.", topicId);
+            
+            _logger.LogDebug("[WIKI] Yeni wiki sayfası oluşturuluyor. SubtopicId={SubtopicId} Title={Title}", wikiTopicId, wikiTitle);
 
             page = new WikiPage
             {
                 Id = Guid.NewGuid(),
-                TopicId = topicId,
+                TopicId = wikiTopicId,
                 UserId = resolvedUserId,
-                Title = topic.Title,
+                Title = wikiTitle,
                 Status = "learning",
                 OrderIndex = 1,
                 CreatedAt = DateTime.UtcNow,
@@ -178,9 +222,43 @@ public class WikiService : IWikiService
             page.UpdatedAt = DateTime.UtcNow;
         }
 
+        // ── Mevcut block sayısını kontrol et — her 3 etkileşimde bir özet üret ──
+        var existingBlockCount = await db.WikiBlocks
+            .Where(b => b.WikiPageId == page.Id && b.BlockType == WikiBlockType.Concept)
+            .CountAsync();
+        
         var maxOrder = await db.WikiBlocks
             .Where(b => b.WikiPageId == page.Id)
             .MaxAsync(b => (int?)b.OrderIndex) ?? 0;
+
+        // ── Groq ile konuya özel özet üret (ham yanıt yerine) ─────────────────
+        string summary;
+        try
+        {
+            var summaryPrompt = $"""
+                Aşağıdaki ders içeriğini, "{wikiTitle}" konusu için kısa ve öz bir wiki notu olarak yeniden yaz.
+                
+                KURALLAR:
+                - Maksimum 3-4 paragraf
+                - Sadece öğretici bilgi, gereksiz sohbet kısmını çıkar
+                - Markdown formatı kullan (başlık, liste, kalın metin)
+                - Kod varsa koru ama gereksiz açıklamaları kısalt
+                - Türkçe yaz, sade bir dil kullan
+                
+                İçerik:
+                {aiContent}
+                """;
+            
+            summary = await _groq.GenerateResponseAsync(
+                "Sen bir eğitim içerik editörüsün. Ders içeriklerini kısa, öz wiki notlarına dönüştürürsün.",
+                summaryPrompt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[WIKI] Groq özet üretimi başarısız, ham içerik kaydediliyor.");
+            // Fallback: ham içeriğin ilk 1000 karakterini kaydet
+            summary = aiContent.Length > 1000 ? aiContent[..1000] + "\n\n..." : aiContent;
+        }
 
         var block = new WikiBlock
         {
@@ -188,7 +266,7 @@ public class WikiService : IWikiService
             WikiPageId = page.Id,
             BlockType = WikiBlockType.Concept,
             Title = TruncateTitle(userQuestion, 60),
-            Content = EnsureMarkdownIntegrity(aiContent), // Format onarıcı eklendi
+            Content = EnsureMarkdownIntegrity(summary),
             Source = modelUsed,
             OrderIndex = maxOrder + 1,
             CreatedAt = DateTime.UtcNow,
@@ -197,36 +275,39 @@ public class WikiService : IWikiService
 
         db.WikiBlocks.Add(block);
 
-        // QuizBlock: Her wiki güncellenmesinde Groq ile pekiştirme soruları üretilir
-        try
+        // QuizBlock: Her 3. wiki güncellemesinde pekiştirme soruları üret (her mesajda değil)
+        if ((existingBlockCount + 1) % 3 == 0)
         {
-            var prompt = $@"Aşağıdaki ders içeriğine dayanarak 3-5 adet pekiştirme sorusu hazırla.
+            try
+            {
+                var prompt = $@"Aşağıdaki ders içeriğine dayanarak 3-5 adet pekiştirme sorusu hazırla.
 Sorular kısa ve net cevaplı olmalı. Sadece soruları maddeler halinde dön.
 
 Ders İçeriği:
-{aiContent}";
+{summary}";
 
-            var questions = await _groq.GenerateResponseAsync(
-                "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.",
-                prompt);
+                var questions = await _groq.GenerateResponseAsync(
+                    "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.",
+                    prompt);
 
-            var quizBlock = new WikiBlock
+                var quizBlock = new WikiBlock
+                {
+                    Id = Guid.NewGuid(),
+                    WikiPageId = page.Id,
+                    BlockType = WikiBlockType.Quiz,
+                    Title = "💡 Pekiştirme Soruları",
+                    Content = questions,
+                    Source = "groq-curator",
+                    OrderIndex = maxOrder + 2,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                db.WikiBlocks.Add(quizBlock);
+            }
+            catch (Exception ex)
             {
-                Id = Guid.NewGuid(),
-                WikiPageId = page.Id,
-                BlockType = WikiBlockType.Quiz,
-                Title = "💡 Pekiştirme Soruları",
-                Content = questions,
-                Source = "groq-curator",
-                OrderIndex = maxOrder + 2,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            db.WikiBlocks.Add(quizBlock);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[WIKI CURATOR] Quiz üretimi başarısız — ders akışı engellenmedi.");
+                _logger.LogWarning(ex, "[WIKI CURATOR] Quiz üretimi başarısız — ders akışı engellenmedi.");
+            }
         }
 
         await db.SaveChangesAsync();

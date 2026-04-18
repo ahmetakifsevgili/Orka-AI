@@ -101,8 +101,11 @@ public class DashboardController : ControllerBase
     /// <summary>
     /// Gerçek zamanlı sistem sağlığı — Tek kişilik dev kadrosu için LLMOps İzleme Paneli.
     /// Ajanların latency, hata oranı, token/maliyet ve pedagoji skoru döner.
+    /// SQL AgentEvaluations + Redis metrics birleşik veri kaynağı.
+    /// Yalnızca admin hesapları erişebilir.
     /// </summary>
     [HttpGet("system-health")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetSystemHealth()
     {
         var userId = GetUserId();
@@ -113,10 +116,10 @@ public class DashboardController : ControllerBase
             .Select(s => new { s.TotalTokensUsed, s.TotalCostUSD })
             .ToListAsync();
 
-        var totalTokens = tokenData.Sum(s => s.TotalTokensUsed);
+        var totalTokens  = tokenData.Sum(s => s.TotalTokensUsed);
         var totalCostUSD = tokenData.Sum(s => (double)s.TotalCostUSD);
 
-        // 2. Pedagoji Skoru — SkillMasteries üzerinden öğrenci başarı ortalaması
+        // 2. Pedagoji Skoru — SkillMasteries tablosu (quiz başarı oranı)
         var masteries = await _dbContext.SkillMasteries
             .Where(sm => sm.UserId == userId)
             .Select(sm => sm.QuizScore)
@@ -136,24 +139,93 @@ public class DashboardController : ControllerBase
             .Select(s => (DateTime?)s.CreatedAt)
             .FirstOrDefaultAsync();
 
-        // 4. Redis: Ajan gecikme / hata metrikleri (GERÇEK)
+        // 4. SQL AgentEvaluations — Ajan başına gerçek kalite puanları
+        var sqlEvals = await _dbContext.AgentEvaluations
+            .Where(e => e.UserId == userId)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(200) // En son 200 kayıt
+            .Select(e => new
+            {
+                e.AgentRole,
+                e.EvaluationScore,
+                e.EvaluatorFeedback,
+                e.CreatedAt
+            })
+            .ToListAsync();
+
+        // 4a. Ajan başına ortalama kalite puanı (SQL'den)
+        var agentQuality = sqlEvals
+            .GroupBy(e => e.AgentRole)
+            .Select(g => new
+            {
+                agentRole      = g.Key,
+                avgQuality     = Math.Round(g.Average(e => (double)e.EvaluationScore), 2),
+                totalEvals     = g.Count(),
+                lastEvalAt     = g.Max(e => e.CreatedAt).ToString("O"),
+                goldCount      = g.Count(e => e.EvaluationScore >= 9),
+                warnCount      = g.Count(e => e.EvaluationScore < 5),
+            })
+            .ToList();
+
+        // 4b. Son 20 evaluator logu — SQL öncelikli, Redis'e fallback yok (artık SQL'de var)
+        var recentSqlLogs = sqlEvals
+            .Take(20)
+            .Select(e => new
+            {
+                score      = e.EvaluationScore,
+                agentRole  = e.AgentRole,
+                feedback   = e.EvaluatorFeedback.Length > 200
+                                 ? e.EvaluatorFeedback[..200] + "..."
+                                 : e.EvaluatorFeedback,
+                recordedAt = e.CreatedAt.ToString("HH:mm:ss"),
+                quality    = e.EvaluationScore >= 9 ? "gold"
+                           : e.EvaluationScore >= 7 ? "good"
+                           : e.EvaluationScore >= 5 ? "ok"
+                           : "warn"
+            })
+            .ToList();
+
+        // 4c. Genel LLMOps ortalaması
+        var avgEvaluatorScore = sqlEvals.Count > 0
+            ? Math.Round(sqlEvals.Average(e => (double)e.EvaluationScore), 2)
+            : 0.0;
+
+        // 5. Redis: Ajan gecikme / hata metrikleri (TTFT + non-stream)
         var agentMetrics = await _redis.GetSystemMetricsAsync();
 
-        // 5. Redis: Son Evaluator LLMOps log kayıtları (GERÇEK)
-        var evaluatorLogs = await _redis.GetRecentEvaluatorLogsAsync(20);
+        // 5b. Provider kullanım dağılımı — HUD Model Mix widget
+        var providerUsage = await _redis.GetProviderUsageAsync();
 
-        // 6. Evaluator Ortalama Puanı (LLMOps kalite skoru)
-        var logList = evaluatorLogs.ToList();
-        var avgEvaluatorScore = logList.Count > 0
-            ? Math.Round(logList.Average(e => (double)e.Score), 2)
-            : 0.0;
+        // 6. Redis + SQL birleşimi: Agent kartlarına SQL kalite verisi ekle
+        var agentQualityMap = agentQuality.ToDictionary(a => a.agentRole, a => a);
+        var enrichedAgents = agentMetrics.Select(a =>
+        {
+            agentQualityMap.TryGetValue(a.AgentRole, out var quality);
+            return new
+            {
+                a.AgentRole,
+                a.AvgLatencyMs,
+                a.TotalCalls,
+                a.ErrorCount,
+                a.ErrorRatePct,
+                a.LastProvider,
+                avgQualityScore = quality?.avgQuality ?? 0.0,
+                totalEvals      = quality?.totalEvals ?? 0,
+                goldCount       = quality?.goldCount ?? 0,
+                warnCount       = quality?.warnCount ?? 0,
+                status = a.TotalCalls == 0 ? "idle"
+                       : a.ErrorRatePct > 50 ? "critical"
+                       : a.ErrorRatePct > 20 ? "degraded"
+                       : "online",
+            };
+        });
 
         return Ok(new
         {
             tokens = new
             {
-                total    = totalTokens,
-                costUSD  = Math.Round(totalCostUSD, 4),
+                total   = totalTokens,
+                costUSD = Math.Round(totalCostUSD, 4),
             },
             pedagogy = new
             {
@@ -168,27 +240,12 @@ public class DashboardController : ControllerBase
             llmops = new
             {
                 avgEvaluatorScore,
-                recentLogs = logList.Take(20).Select(e => new
-                {
-                    e.Score,
-                    e.Feedback,
-                    e.RecordedAt,
-                    quality = e.Score >= 9 ? "gold" : e.Score >= 7 ? "good" : e.Score >= 5 ? "ok" : "warn"
-                }),
+                totalEvaluations = sqlEvals.Count,
+                recentLogs       = recentSqlLogs,
             },
-            agents = agentMetrics.Select(a => new
-            {
-                a.AgentRole,
-                a.AvgLatencyMs,
-                a.TotalCalls,
-                a.ErrorCount,
-                a.ErrorRatePct,
-                a.LastProvider,
-                status = a.TotalCalls == 0 ? "idle"
-                       : a.ErrorRatePct > 50 ? "critical"
-                       : a.ErrorRatePct > 20 ? "degraded"
-                       : "online",
-            }),
+            agents   = enrichedAgents,
+            modelMix = providerUsage,
         });
     }
 }
+

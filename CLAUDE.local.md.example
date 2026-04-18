@@ -1,0 +1,30 @@
+# Claude Kişisel Tercihler (Örnek Dosya)
+
+Bu dosyayı **`CLAUDE.local.md`** olarak kopyala — otomatik okunur ve gitignore'dur.
+
+```bash
+cp CLAUDE.local.md.example CLAUDE.local.md
+```
+
+## Örnek Girdiler
+
+### Dil Tercihi
+- Yanıtları Türkçe ver, teknik terimler İngilizce kalabilir.
+- Kod yorumları Türkçe.
+
+### Çalışma Stili
+- Öncelik hız, önce çalışan çözüm sun sonra rafine et.
+- Her fix sonrası `dotnet build` + `npx tsc --noEmit` otomatik çalıştır.
+- Uzun kod parçası açmadan önce kısa özet ver.
+
+### Debug Tercihleri
+- Hataları stack trace'inin son 5 satırıyla özetle.
+- Production fixlerinde `git blame` ile ne zaman eklenmiş bak.
+
+### Yasaklar
+- Claude Artifacts / HTML görselleri oluşturma (CLI ortamındayım, render edilmiyor).
+- Git push'u asla otomatik yapma — onay bekle.
+
+### İletişim
+- Aşama aşama ilerlerken her aşama bitiminde tek satır özet yaz.
+- Her commit sonrası 1 satır "ne değişti" yaz.

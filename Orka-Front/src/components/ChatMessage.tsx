@@ -4,7 +4,7 @@
  * Diğer AI mesajları prose-invert + react-markdown + syntax highlighting ile gösterilir.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -24,6 +24,8 @@ interface ChatMessageProps {
   userName?: string;
   /** Konu tamamlama kartındaki wiki butonu için. */
   onOpenWiki?: (topicId: string) => void;
+  /** IDE'yi quiz sorusuyla açma tetikleyicisi */
+  onOpenIDE?: (question?: string) => void;
 }
 
 function formatTime(date: Date): string {
@@ -111,7 +113,7 @@ function InlineCode({ children }: { children: React.ReactNode }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function ChatMessage({ message, onSubmitAnswer, userName = "Sen", onOpenWiki }: ChatMessageProps) {
+function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isTopicComplete = message.type === "topic_complete";
 
@@ -124,38 +126,11 @@ export default function ChatMessage({ message, onSubmitAnswer, userName = "Sen",
   // Track previous isStreaming to detect the streaming→done transition
   const prevStreamingRef = useRef(message.isStreaming);
 
-  // Typewriter effect for AI responses (skip during streaming — SSE already provides incremental updates)
+  // Sync displayed content with message content — no typewriter animation for performance
   useEffect(() => {
-    const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = message.isStreaming;
-
-    if (isUser || isTopicComplete || quizData || message.isStreaming) {
-      setDisplayedContent(message.content);
-      return;
-    }
-
-    // Stream just finished (true → false): set content directly, no typewriter replay
-    if (wasStreaming) {
-      setDisplayedContent(message.content);
-      return;
-    }
-
-    // Typewriter only for messages loaded from history (never streamed)
-    let i = 0;
-    const interval = setInterval(() => {
-      setDisplayedContent(() => {
-        if (i >= message.content.length) {
-          clearInterval(interval);
-          return message.content;
-        }
-        const nextChar = message.content.slice(0, i + 1);
-        i += 3;
-        return nextChar;
-      });
-    }, 10);
-
-    return () => clearInterval(interval);
-  }, [message.content, isUser, !!quizData, message.isStreaming]);
+    setDisplayedContent(message.content);
+  }, [message.content, message.isStreaming]);
 
   // ── Konu Tamamlama Kartı ───────────────────────────────────────────────
   if (isTopicComplete && message.completedTopicId) {
@@ -193,10 +168,7 @@ export default function ChatMessage({ message, onSubmitAnswer, userName = "Sen",
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+    <div
       className="py-3"
     >
       {isUser ? (
@@ -303,18 +275,29 @@ export default function ChatMessage({ message, onSubmitAnswer, userName = "Sen",
                 quiz={quizData}
                 messageId={message.id}
                 onSubmitAnswer={onSubmitAnswer}
+                onOpenIDE={onOpenIDE}
                 isBaseline={
                     message.content.includes("akademik") ||
                     message.content.includes("Sıfır Noktası") ||
                     message.content.includes("seviyeni ölçmeli") ||
                     message.content.toLowerCase().includes("baseline") ||
-                    quizData.topic?.toLowerCase().includes("planlama")
+                    (!Array.isArray(quizData) && quizData.topic != null && quizData.topic.toLowerCase().includes("planlama"))
                 }
               />
             )}
           </div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
+
+export default memo(ChatMessageInner, (prev, next) => {
+  return (
+    prev.message.id === next.message.id &&
+    prev.message.content === next.message.content &&
+    prev.message.isStreaming === next.message.isStreaming &&
+    prev.message.type === next.message.type &&
+    prev.userName === next.userName
+  );
+});

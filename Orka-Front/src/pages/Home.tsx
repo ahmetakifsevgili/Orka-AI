@@ -19,6 +19,15 @@ import DashboardPanel from "@/components/DashboardPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
 import SplitPane from "@/components/SplitPane";
 
+// ── F5 Sonrası Context Kalıcılığı (localStorage keys) ─────────────────────
+// Kullanıcı sayfayı yenilediğinde son aktif topic / view / wiki ekranı
+// otomatik geri yüklenir. AUTH.clear() ile logout'ta temizlenir.
+const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
+const LS_ACTIVE_VIEW = "orka_active_view";
+const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
+
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide"]);
+
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
 }
@@ -46,20 +55,40 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionLoading, setSessionLoading] = useState(false);
 
-  const [activeView, setActiveView] = useState("chat");
-  const [wikiTopicId, setWikiTopicId] = useState<string | null>(null);
+  // Initial view — localStorage'da geçerli bir kayıt varsa onu yükle
+  const [activeView, setActiveView] = useState<string>(() => {
+    const saved = localStorage.getItem(LS_ACTIVE_VIEW);
+    return saved && VALID_VIEWS.has(saved) ? saved : "chat";
+  });
+  const [wikiTopicId, setWikiTopicId] = useState<string | null>(
+    () => localStorage.getItem(LS_WIKI_TOPIC_ID)
+  );
   const [defaultChatMode, setDefaultChatMode] = useState<"plan" | "chat">("chat");
   const [pendingIDEMessage, setPendingIDEMessage] = useState<string | null>(null);
+  const [activeQuizQuestion, setActiveQuizQuestion] = useState<string | null>(null);
 
-  // ── Load topics on mount; otomatik ilk seçimi yap ────────────────────
+  // ── Load topics on mount; localStorage'daki son aktif topic'i tercih et ─
   useEffect(() => {
     TopicsAPI.getAll()
       .then((r) => {
         const loaded: ApiTopic[] = (r && r.data) ? r.data : [];
         setTopics(loaded);
-        if (loaded.length > 0 && !activeTopic) {
-          setActiveTopic(loaded[0]);
+        if (loaded.length === 0) return;
+
+        // F5 sonrası restore: önce kaydedilmiş topicId'yi dene
+        const savedId = localStorage.getItem(LS_ACTIVE_TOPIC_ID);
+        if (savedId) {
+          const found = loaded.find((t) => t.id === savedId);
+          if (found) {
+            setActiveTopic(found);
+            return;
+          }
+          // Kayıtlı topic artık yoksa temizle
+          localStorage.removeItem(LS_ACTIVE_TOPIC_ID);
         }
+
+        // Fallback: ilk topic
+        if (!activeTopic) setActiveTopic(loaded[0]);
       })
       .catch((err) => {
         console.error("Topics load failed:", err);
@@ -68,6 +97,27 @@ export default function Home() {
       .finally(() => setTopicsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── activeTopic / activeView / wikiTopicId → localStorage sync ──────────
+  useEffect(() => {
+    if (activeTopic?.id) {
+      localStorage.setItem(LS_ACTIVE_TOPIC_ID, activeTopic.id);
+    } else {
+      localStorage.removeItem(LS_ACTIVE_TOPIC_ID);
+    }
+  }, [activeTopic]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_ACTIVE_VIEW, activeView);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (wikiTopicId) {
+      localStorage.setItem(LS_WIKI_TOPIC_ID, wikiTopicId);
+    } else {
+      localStorage.removeItem(LS_WIKI_TOPIC_ID);
+    }
+  }, [wikiTopicId]);
 
   const [creating, setCreating] = useState(false);
   const ignoreTopicChangeRef = useRef(false);
@@ -120,23 +170,37 @@ export default function Home() {
         ignoreTopicChangeRef.current = true; // chat mesajlarını sıfırlama
         setActiveTopic(parent);
       }
-      setActiveView("chat");
+      // IDE açıksa IDE kalsın, değilse chat'e geç
+      if (activeView !== "ide") setActiveView("chat");
       setWikiTopicId(null);
       return;
     }
 
     // Parent plan topic (children var) → chat session'a yönlendir
     setActiveTopic(topic);
-    setActiveView("chat");
+    if (activeView !== "ide") setActiveView("chat");
     setWikiTopicId(null);
   }, [topics, activeTopic]);
 
   // ── Explicitly enter a chat session (Lesson Focus) ───────────────────
   const handleEnterChat = useCallback((topic: ApiTopic) => {
-    setActiveTopic(topic);
-    setActiveView("chat");
+    // Subtopic → parent'ın global session'ına yönlendir
+    if (topic.parentTopicId) {
+      const parent = topics.find(t => t.id === topic.parentTopicId);
+      if (parent) {
+        setActiveTopic(parent);
+      } else {
+        setActiveTopic(topic);
+      }
+    } else {
+      setActiveTopic(topic);
+    }
+    // IDE açıksa açık kalsın, değilse chat'e geç
+    if (activeView !== "ide") {
+      setActiveView("chat");
+    }
     setWikiTopicId(null);
-  }, []);
+  }, [topics, activeView]);
 
   // ── New topic created from sidebar ─────────────────────────────────────
   const handleTopicCreated = useCallback((topic: ApiTopic) => {
@@ -177,6 +241,16 @@ export default function Home() {
 
   // ── View switching ─────────────────────────────────────────────────────
   const handleViewChange = useCallback((view: string) => {
+    // wiki:subtopicId formatı — flyout panelden belirli bir subtopic wiki'si açılıyor
+    if (view.startsWith("wiki:")) {
+      const subtopicId = view.split(":")[1];
+      if (subtopicId) {
+        setWikiTopicId(subtopicId);
+        setActiveView("wiki");
+        return;
+      }
+    }
+    
     if (view === "wiki") {
       if (activeTopic) {
         setWikiTopicId(activeTopic.id);
@@ -208,6 +282,12 @@ export default function Home() {
   const handleIDESendToChat = useCallback((message: string) => {
     setPendingIDEMessage(message);
     // Split-pane modundayken ide view'dan çıkmasına gerek yok, chat ve ide yan yana!
+  }, []);
+
+  const handleIDEClose = useCallback(() => {
+    // Quiz bittikten sonra IDE kapanır, chat'e geri döner
+    setActiveQuizQuestion(null);
+    setActiveView("chat");
   }, []);
 
   const renderMain = () => {
@@ -242,13 +322,15 @@ export default function Home() {
                 defaultMode={defaultChatMode}
                 pendingMessage={pendingIDEMessage}
                 onPendingMessageConsumed={() => setPendingIDEMessage(null)}
-                onOpenIDE={() => setActiveView("ide")}
+                onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
               />
             }
             right={
               <InteractiveIDE
                 topicTitle={activeTopic?.title}
+                quizQuestion={activeQuizQuestion ?? undefined}
                 onSendToChat={handleIDESendToChat}
+                onClose={handleIDEClose}
               />
             }
           />
@@ -270,7 +352,7 @@ export default function Home() {
             defaultMode={defaultChatMode}
             pendingMessage={pendingIDEMessage}
             onPendingMessageConsumed={() => setPendingIDEMessage(null)}
-            onOpenIDE={() => setActiveView("ide")}
+            onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
           />
         );
     }

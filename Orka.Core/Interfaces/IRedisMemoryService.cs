@@ -71,4 +71,37 @@ public interface IRedisMemoryService
     /// Session bazında EvaluatorAgent'ın verdiği ham puanların genelini döner (Dashboard LLMOps Log).
     /// </summary>
     Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20);
+
+    /// <summary>
+    /// Tüm ajanlar üzerindeki provider kullanım dağılımı (GitHub / Groq / Gemini).
+    /// HUD "Model Mix" widget'ında sağlık göstergesi olarak kullanılır —
+    /// failover'a ne kadar sık düştüğünü gösterir (Primary %85+ = sağlıklı).
+    /// </summary>
+    Task<IEnumerable<ProviderUsageStat>> GetProviderUsageAsync();
+
+    // ── Faz 14: Topic-level Kümülatif Puanlama ─────────────────────────────
+
+    /// <summary>
+    /// Evaluator puanını topic bazında da kaydeder. Session değişse bile topic puanı korunur.
+    /// Key: "orka:topic_score:{topicId}" | Max 50 kayıt | TTL: 30 gün.
+    /// </summary>
+    Task RecordTopicScoreAsync(Guid topicId, int score, string feedback);
+
+    /// <summary>
+    /// Topic bazında kümülatif puan ortalaması ve toplam değerlendirme sayısı döner.
+    /// </summary>
+    Task<(double avgScore, int totalEvals)> GetTopicScoreAsync(Guid topicId);
+
+    // ── Faz 15: Yaşayan Organizasyon (Öğrenci Anlayış Takibi) ────────────────
+    
+    /// <summary>
+    /// AnalyzerAgent (IntentClassifier) aracılığıyla elde edilen öğrenci anlama seviyesi ve zayıf noktaları kaydeder.
+    /// Key: "orka:student_profile:{topicId}"
+    /// </summary>
+    Task RecordStudentProfileAsync(Guid topicId, int understandingScore, string weaknesses);
+
+    /// <summary>
+    /// TutorAgent'ın kullanması için topic bazındaki son öğrenci profili notlarını çeker.
+    /// </summary>
+    Task<(int score, string weaknesses)?> GetStudentProfileAsync(Guid topicId);
 }

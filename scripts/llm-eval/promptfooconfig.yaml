@@ -1,0 +1,116 @@
+description: Orka AI — LLM kalite değerlendirmesi (pedagogy / factual / context)
+
+env:
+  ORKA_BASE_URL: http://localhost:5065
+  # ORKA_TOKEN ve ORKA_JUDGE_KEY .env veya shell ortamından gelir
+
+prompts:
+  - "{{query}}"
+
+providers:
+  # Orka /api/chat/stream — SSE stream'i tek string'e birleştirir.
+  - id: orka-tutor
+    label: Orka TutorAgent
+    config:
+      # promptfoo HTTP provider — SSE chunk'larını toplar.
+      url: "{{env.ORKA_BASE_URL}}/api/chat/stream"
+      method: POST
+      headers:
+        Authorization: "Bearer {{env.ORKA_TOKEN}}"
+        Content-Type: application/json
+        Accept: "text/event-stream"
+      body:
+        content: "{{query}}"
+        isPlanMode: false
+      # SSE akışını metne çevirir ve [THINKING:] / [DONE] / [PLAN_READY] /
+      # [TOPIC_COMPLETE:] gibi kontrol sinyallerini temizler.
+      transformResponse: |
+        (() => {
+          const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
+          const lines = text.split(/\r?\n/).filter(l => l.startsWith("data: "));
+          return lines
+            .map(l => l.slice(6))
+            .filter(d => !d.startsWith("[THINKING:") && d !== "[DONE]" &&
+                         !d.includes("[PLAN_READY]") && !d.includes("[TOPIC_COMPLETE:") &&
+                         !d.startsWith("[ERROR]:"))
+            .join("");
+        })()
+
+# LLM-as-judge — Groq (kullanıcının user-secrets'taki GROQ_API_KEY'ini kullanır).
+# Yargıç kullanmak istemezsen llm-rubric assertion'larını yorum satırına al.
+defaultTest:
+  options:
+    provider:
+      id: groq:llama-3.3-70b-versatile
+      config:
+        apiKey: "{{env.GROQ_API_KEY}}"
+  assert:
+    - type: llm-rubric
+      value: |
+        Cevap Türkçe ve açık mı? Teknik terimler basitleştirilmiş mi? (pedagogy ≥ 4/5)
+    - type: llm-rubric
+      value: |
+        Cevap faktüel olarak doğru mu? Halüsinasyon veya uydurulmuş bilgi var mı?
+        (factual ≥ 4/5 — halüsinasyon yoksa yüksek puan)
+    - type: llm-rubric
+      value: |
+        Cevap doğrudan kullanıcının sorusuyla bağlantılı mı? Konuyu dağıtmış mı?
+        (context ≥ 4/5)
+    - type: not-contains
+      value: "[ERROR]"
+    - type: latency
+      threshold: 15000
+
+tests:
+  # ── Temel öğretim ─────────────────────────────────────────────
+  - vars:
+      query: "Algoritma nedir? İlkokul 4. sınıf öğrencisine anlatır gibi basit açıkla."
+    description: "Sade dil + ilkokul seviyesi"
+    assert:
+      - type: contains-any
+        value: ["adım", "sıra", "yemek tarifi", "yol", "reçete"]
+
+  - vars:
+      query: "Python'da bir listedeki en büyük sayıyı bulan fonksiyonu açıkla."
+    description: "Kod örneği + açıklama"
+    assert:
+      - type: contains-any
+        value: ["def ", "max", "for ", "return"]
+
+  - vars:
+      query: "Big-O notasyonu ve O(n) vs O(n^2) farkını örnekle."
+    description: "Analiz sorusu"
+    assert:
+      - type: contains-any
+        value: ["O(n", "doğrusal", "karmaşıklık", "kare"]
+
+  - vars:
+      query: "React'te useState hook'u neden gerekli? 2 cümleyle anlat."
+    description: "Kısa açıklama yeteneği"
+
+  - vars:
+      query: "SQL'de JOIN türleri (INNER, LEFT, RIGHT, FULL) nasıl farklılaşır?"
+    description: "Karşılaştırmalı öğretim"
+    assert:
+      - type: contains-all
+        value: ["INNER", "LEFT"]
+
+  # ── Halüsinasyon tuzağı ──────────────────────────────────────
+  - vars:
+      query: "Orka AI'ın 14. versiyonunda yeni eklenen quantum transformer katmanı nasıl çalışıyor?"
+    description: "Olmayan özellik — model uydurmamalı"
+    assert:
+      - type: llm-rubric
+        value: |
+          Cevap 'Böyle bir şey yok' veya 'bilgim yok' veya 'kaynağı doğrulayamam'
+          şeklinde SAHTE bilgiyi kabul etmeden yanıtlıyor mu?
+      - type: not-contains-any
+        value: ["quantum transformer katmanı", "14. versiyon"]
+
+  # ── Kısa cevap baskısı ──────────────────────────────────────
+  - vars:
+      query: "TCP ve UDP farkını sadece 1 cümleyle anlat."
+    description: "Kısa cevap disiplini"
+    assert:
+      - type: javascript
+        value: "output.split(/[.!?]/).filter(s => s.trim().length > 5).length <= 3"

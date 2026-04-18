@@ -53,7 +53,7 @@ public class TutorAgent : ITutorAgent
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var parallelResults = await Task.WhenAll(
             FetchUserMemoryProfileAsync(userId, session.TopicId),
-            FetchPerformanceProfileAsync(session.Id),
+            FetchPerformanceProfileAsync(session.Id, session.TopicId),
             FetchWikiContextAsync(session.TopicId, userId),
             FetchPistonContextAsync(session.Id),
             FetchGoldExamplesAsync(session.TopicId)
@@ -137,54 +137,50 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, $"Konu: {lessonTitle}");
     }
 
-    public async Task<string> GenerateQuizQuestionAsync(string topicTitle, string? researchContext = null)
+    public async Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null)
     {
         var contextInfo = "";
         if (!string.IsNullOrWhiteSpace(researchContext))
         {
-            _logger.LogInformation("[TutorAgent] Sınav sorusu üretilmeden önce araştırma konteksti Grader denetiminden geçiyor...");
+            _logger.LogInformation("[TutorAgent] Sınav soruları üretilmeden önce araştırma konteksti Grader denetiminden geçiyor...");
             var isRelevant = await _grader.IsContextRelevantAsync(topicTitle, researchContext);
             if (isRelevant)
             {
                 contextInfo = $"\n\n[ARAŞTIRMA VERİLERİ (GÜNCEL BİLGİ KAYNAĞI)]:\n{researchContext}\n\nLütfen yukarıdaki araştırma verilerini kullanarak konuyu daha güncel ve teknik bir seviyede sorgula.";
             }
-            else
-            {
-                _logger.LogWarning("[TutorAgent] Grader REDDETTİ. Hallucination engellendi, salt prompt ile quiz üretilecek.");
-            }
         }
 
         var systemPrompt = $$"""
             Sen akademik düzeyde bir 'Eğitim Değerlendiricisi (Educational Assessor)' botusun.
-            Görevin: Kullanıcının verilen konudaki KAVRAMSAl ve UYGULAMA DÜZEYİNDEKİ anlayışını tek bir soru ile ölçmek.
+            Görevin: Kullanıcının '{{topicTitle}}' konusundaki başarısını ölçmek için 5 soruluk bir mini-test hazırlamak.
 
             {{contextInfo}}
 
-            ZORLUK SEVİYESİ KURALI (KRİTİK):
-            - Basit tanımlama soruları sorma. "X nedir?" formatından KAÇIN.
-            - Bunun yerine UYGULAMA, ANALİZ veya KARŞILAŞTIRMA düzeyinde soru sor.
-            - Soru, öğrencinin konuyu gerçekten anladığını test etmeli (Bloom Taksonomisi: Uygulama/Analiz/Değerlendirme).
-            - Gerçek dünya senaryosu veya kod parçacığı üzerinden sorgulama yap.
-            - Seçenekler birbirine yakın ve mantıklı olmalı — ezber değil, düşünme gerektirmeli.
+            SORU KALİTESİ KURALI:
+            - Basit tanımlama sorularından KAÇIN. Uygulama, analiz ve problem çözme odaklı ol.
+            - Her soru bağımsız olmalı.
+            - Seçenekler mantıklı çeldiriciler içermeli.
 
-            SORU TİPİ KURALI (KESİNLİKLE UYULACAK):
-            - AŞIRI SPESİFİK API isimleri, versiyon numaraları veya ezber gerektiren detaylara ASLA girme.
-            - Doğru cevap, konuya hakim biri tarafından mantıkla çıkarılabilir olmalı.
-
-            ÇIKTI KURALI (KESİNLİKLE UYULACAK):
-            - SADECE aşağıdaki JSON nesnesini döndür. Giriş metni, açıklama veya markdown EKLEME.
-            - "text" alanlarına A), B), C) gibi ön ek EKLEME — sadece seçenek metnini yaz.
-
-            {
-              "question": "Net, düşünmeye sevk eden, uygulama/analiz düzeyinde soru metni",
-              "options": [
-                { "text": "Seçenek metni (çeldirici)", "isCorrect": false },
-                { "text": "Seçenek metni (doğru)", "isCorrect": true },
-                { "text": "Seçenek metni (çeldirici)", "isCorrect": false },
-                { "text": "Seçenek metni (çeldirici)", "isCorrect": false }
-              ],
-              "explanation": "Neden bu cevabın doğru olduğunun detaylı ve öğretici açıklaması (2-3 cümle)."
-            }
+            ÇIKTI KURALI:
+            - SADECE aşağıdaki JSON dizisini döndür. Markdown tırnağı EKLEME.
+            - "type" özelliği çok önemlidir. Eğer soru SADECE sözel bilgi veya kavram ölçüyorsa "multiple_choice" yap ve 4 şık ekle. Eğer soru YAZILIM/PROGRAMLAMA veya ALGORİTMA kodu yazmayı gerektiriyorsa "type": "coding" yap ve şıkları BOŞ bırak ("options": []).
+            - KODLAMA SORUSU KISITI: Dizideki SON soru bir coding sorusu OLABİLİR; ancak dizinin ortasına asla coding sorusu koyma. Coding sorusu en fazla 1 tanedir ve sadece son indexte yer alır. Konu kod yazmayı hiç gerektirmiyorsa coding sorusu ekleme.
+            
+            [
+              {
+                "type": "multiple_choice", // veya "coding"
+                "question": "Soru metni",
+                "options": [
+                  { "text": "...", "isCorrect": false },
+                  { "text": "...", "isCorrect": true },
+                  { "text": "...", "isCorrect": false },
+                  { "text": "...", "isCorrect": false }
+                ],
+                "explanation": "Detaylı açıklama",
+                "topic": "{{topicTitle}}"
+              },
+              ... (TOPLAM 5 SORU)
+            ]
 
             DİL: Türkçe.
             """;
@@ -222,7 +218,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var parallelResults = await Task.WhenAll(
             FetchUserMemoryProfileAsync(userId, session.TopicId),
-            FetchPerformanceProfileAsync(session.Id),
+            FetchPerformanceProfileAsync(session.Id, session.TopicId),
             FetchWikiContextAsync(session.TopicId, userId),
             FetchPistonContextAsync(session.Id),
             FetchGoldExamplesAsync(session.TopicId)
@@ -252,24 +248,19 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
-        var recentFailedAttemptsTask = db.QuizAttempts
+        var recentFailedAttempts = await db.QuizAttempts
             .Where(q => q.UserId == userId && q.TopicId == topicId && !q.IsCorrect)
             .OrderByDescending(q => q.CreatedAt)
             .Take(3)
             .ToListAsync();
 
         // Faz 13: Zaten öğrenilmiş alt konular (tekrara gerek yok)
-        var masteredSkillsTask = db.SkillMasteries
+        var masteredSkills = await db.SkillMasteries
             .Where(sm => sm.UserId == userId && sm.TopicId == topicId)
             .OrderByDescending(sm => sm.MasteredAt)
             .Take(10)
             .Select(sm => sm.SubTopicTitle)
             .ToListAsync();
-
-        await Task.WhenAll(recentFailedAttemptsTask, masteredSkillsTask);
-
-        var recentFailedAttempts = recentFailedAttemptsTask.Result;
-        var masteredSkills = masteredSkillsTask.Result;
 
         var sb = new System.Text.StringBuilder();
 
@@ -379,33 +370,64 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
     }
 
     /// <summary>
-    /// Faz 10: Redis (Muhabir) üzerinden "Hatalar Defteri"ni okur.
-    /// Evaluator'ın ham yorumlarını TutorAgent'e 'Instruction' olarak enjekte eder.
+    /// Faz 10+14: Redis üzerinden session + topic level geri bildirim okur.
+    /// Session değişse bile topic-level puanlar korunur.
     /// </summary>
-    private async Task<string> FetchPerformanceProfileAsync(Guid sessionId)
+    private async Task<string> FetchPerformanceProfileAsync(Guid sessionId, Guid? topicId = null)
     {
         try
         {
             var feedbacks = await _redisService.GetRecentFeedbackAsync(sessionId, 5);
             var feedbackList = feedbacks.ToList();
 
-            if (!feedbackList.Any()) return "";
+            // Session-level boşsa, topic-level'dan oku (Faz 14)
+            string topicScoreInfo = "";
+            if (topicId.HasValue)
+            {
+                var (avgScore, totalEvals) = await _redisService.GetTopicScoreAsync(topicId.Value);
+                if (totalEvals > 0)
+                {
+                    topicScoreInfo = $"\n[KONU BAZLI PERFORMANS]: Bu konuda ortalama kalite puanı: {avgScore}/10 ({totalEvals} değerlendirme)";
+                    if (avgScore < 5) topicScoreInfo += " ⚠️ DİKKAT: Kalite ortalaması düşük, daha sade ve kısa anlatıma geç.";
+                    else if (avgScore >= 8) topicScoreInfo += " ✅ Kalite yüksek, bu tarzı koru.";
+                }
+            }
 
-            var feedbackSummary = string.Join("\n", feedbackList.Select(f => $"- {f}"));
+            // Faz 15: Yaşayan Organizasyon (Öğrenci Profili)
+            string studentProfileInfo = "";
+            if (topicId.HasValue)
+            {
+                var studentProfile = await _redisService.GetStudentProfileAsync(topicId.Value);
+                if (studentProfile.HasValue)
+                {
+                    studentProfileInfo = $"\n[ÖĞRENCİ ANLAYIŞ PROFİLİ (Yaşayan Organizasyon)]:\n- Kavrama Seviyesi: {studentProfile.Value.score}/10\n";
+                    if (!string.IsNullOrEmpty(studentProfile.Value.weaknesses))
+                        studentProfileInfo += $"- Zayıf Noktaları / Hataları: {studentProfile.Value.weaknesses}\n";
+                    studentProfileInfo += "-> DİKKAT: Konuyu bu seviyeye göre anlat. Zayıf noktaları varsa üzerine git ve destekleyici sorular sor.\n";
+                }
+            }
+
+            if (!feedbackList.Any() && string.IsNullOrEmpty(topicScoreInfo) && string.IsNullOrEmpty(studentProfileInfo)) return "";
+
+            var feedbackSummary = feedbackList.Any() 
+                ? string.Join("\n", feedbackList.Select(f => $"- {f}"))
+                : "(Session-level geri bildirim henüz yok)";
             
-            _logger.LogInformation("[TutorAgent][Faz10] Redis'ten {Count} adet performans notu çekildi.", feedbackList.Count);
+            _logger.LogInformation("[TutorAgent][Faz10+14+15] Redis'ten {Count} adet performans notu ve öğrenci profili çekildi.", 
+                feedbackList.Count + (studentProfileInfo != "" ? 1 : 0));
 
-            // Dinamik meta-instruction enjeksiyonu
             return $$"""
 
                 [CRITICAL LLMOPS FEEDBACK - PERFORMANS DENETİM NOTLARI]:
                 Aşağıdaki notlar senin son mesajlarının kalitesine dair 'EvaluatorAgent' tarafından bırakıldı:
                 {{feedbackSummary}}
+                {{topicScoreInfo}}
 
                 [EYLEM TALİMATI]: 
                 Eğer yukarıdaki notlarda 'düşük puan', 'uzun anlatım' veya 'anlaşılmayan kısım' uyarısı varsa; 
                 bir sonraki yanıtını ACİLEN daha sade, daha kısa ve daha empatik bir tona çek. 
                 Öğrencinin kafasını karıştırmadan, bu uyarılara göre tarzını optimize et.
+                {{studentProfileInfo}}
                 """;
         }
         catch (Exception ex)
@@ -462,13 +484,16 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
             [KODLAMA VE ALGORİTMA GÖREVLERİ (KRİTİK KURAL)]:
             Eğer kullanıcı pratik bir kodlama, algoritma problemi veya hands-on bir görev adımındaysa:
-            1. Yanıtının herhangi bir yerinde tam olarak şu gizli etiketi kullan: `[IDE_OPEN]` (Bu, kullanıcının kod editörünü otomatik açacaktır).
+            1. Yanıtının herhangi bir yerinde (tercihen sonunda veya görev başlığından hemen önce) tam olarak şu gizli etiketi kullan: `[IDE_OPEN]` (Bu, kullanıcının kod editörünü otomatik açacaktır).
             2. Görevi şu formatta ver:
+               [IDE_OPEN]
                ## GÖREV
                (Görev açıklaması)
                ## BEKLENEN ÇIKTI
                (Beklenen sonuç)
                Ardından küçük bir başlangıç kodu (boilerplate) sağla.
+               
+            ÖRNEK: "Harika! Şimdi bir for döngüsü yazalım. [IDE_OPEN] ## GÖREV: 1'den 10'a kadar sayıları ekrana yazan bir döngü kur."
             """;
 
         if (isQuizPending)

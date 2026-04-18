@@ -20,6 +20,7 @@ export interface AuthUser {
   lastName: string;
   email: string;
   plan?: string;
+  isAdmin?: boolean;
   settings?: {
     theme: string;
     language: string;
@@ -71,6 +72,11 @@ export const storage = {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
+    // Home.tsx context kalıcılığı — logout'ta temizlensin ki farklı
+    // kullanıcı girişinde önceki kullanıcının ekranı açılmasın.
+    localStorage.removeItem("orka_active_topic_id");
+    localStorage.removeItem("orka_active_view");
+    localStorage.removeItem("orka_wiki_topic_id");
   },
 };
 

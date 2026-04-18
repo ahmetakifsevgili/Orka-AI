@@ -123,7 +123,9 @@ public class AuthService : IAuthService
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim("plan", user.Plan.ToString())
+            new Claim("plan", user.Plan.ToString()),
+            new Claim(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User"),
+            new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant())
         };
 
         var expiryMinutes = double.Parse(_configuration["JWT:AccessTokenExpiryMinutes"] ?? "60");

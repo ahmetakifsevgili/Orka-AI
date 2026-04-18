@@ -33,10 +33,10 @@ public interface ITutorAgent
     Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle, IReadOnlyList<string>? curriculumTitles = null);
 
     /// <summary>
-    /// Konu başlığına uygun, kısa ve net bir sınav sorusu üretir.
+    /// Konu başlığına uygun, 5 soruluk bir sınav json formatında üretir.
     /// Albert araştırmasından gelen taze bilgiler (context) varsa sınav daha nitelikli olur.
     /// </summary>
-    Task<string> GenerateQuizQuestionAsync(string topicTitle, string? researchContext = null);
+    Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null);
 
     /// <summary>
     /// Öğrencinin cevabını değerlendirir.
@@ -45,7 +45,7 @@ public interface ITutorAgent
     Task<bool> EvaluateQuizAnswerAsync(string question, string answer);
 }
 
-public record AnalyzerResult(bool IsComplete, string Reasoning);
+public record AnalyzerResult(bool IsComplete, string Reasoning, IntentResult IntentData);
 
 public interface IAnalyzerAgent
 {
@@ -70,7 +70,9 @@ public interface IQuizAgent
 public record IntentResult(
     string   Intent,     // UNDERSTOOD | CONFUSED | CHANGE_TOPIC | QUIZ_REQUEST | CONTINUE
     double   Confidence, // 0.0 - 1.0
-    string   Reasoning   // Karar gerekçesi
+    string   Reasoning,  // Karar gerekçesi
+    int      UnderstandingScore, // 1-10
+    string   Weaknesses  // Zayıf yönler
 );
 
 public interface IIntentClassifierAgent

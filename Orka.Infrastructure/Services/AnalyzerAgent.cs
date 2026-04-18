@@ -48,6 +48,6 @@ public class AnalyzerAgent : IAnalyzerAgent
             "[AnalyzerAgent] Intent={Intent} | Confidence={Conf:P0} | IsComplete={Complete} | Sebep={Reason}",
             intentResult.Intent, intentResult.Confidence, isComplete, intentResult.Reasoning);
 
-        return new AnalyzerResult(isComplete, intentResult.Reasoning);
+        return new AnalyzerResult(isComplete, intentResult.Reasoning, intentResult);
     }
 }
