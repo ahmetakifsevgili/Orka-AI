@@ -164,6 +164,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
             if (isBaselineMode)
                 yield return "[THINKING: Kisisel ogrenme plani derleniyor...]";
 
+            // State handler içinde değişir — Evaluator etiketlemesi için entry state'i yakala
+            var entryState = session.CurrentState;
+
             string syncResponse;
             Guid syncMsgId = Guid.Empty;
             try
@@ -207,7 +210,16 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
             if (!string.IsNullOrEmpty(syncResponse) && syncMsgId != Guid.Empty)
             {
-                TriggerBackgroundTasks(session, userId, content, syncResponse, syncMsgId);
+                // Sync route path'ten hangi ajan cevap verdiyse doğru rolü etiketle (entry state baz alınır)
+                string syncAgentRole = entryState switch
+                {
+                    SessionState.QuizMode         => "GraderAgent",
+                    SessionState.BaselineQuizMode => "DeepPlanAgent",
+                    SessionState.AwaitingChoice   => "TutorAgent",
+                    _                             => isPlanMode || content.Contains("/plan", StringComparison.OrdinalIgnoreCase)
+                                                     ? "DeepPlanAgent" : "TutorAgent"
+                };
+                TriggerBackgroundTasks(session, userId, content, syncResponse, syncMsgId, syncAgentRole);
             }
 
             yield return syncResponse;
@@ -241,10 +253,11 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
     }
 
-    private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId)
+    private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId, string agentRole = "TutorAgent")
     {
         var capturedTopicId      = session.TopicId;
         var capturedSessionId    = session.Id;
+        var capturedAgentRole    = agentRole;
         // ICorrelationContext Scoped'dır — Task.Run dışında capture edilmeli (scope güvenliği)
         var capturedCorrelationId = _correlationContext.CorrelationId;
 
@@ -261,10 +274,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
             try
             {
-                // 1. LLMOps Evaluator — TutorAgent yanıtını değerlendir
-                //    topicId geçilir: puan >= 9 ise Altın Örnek kaydedilir (Faz 12)
+                // 1. LLMOps Evaluator — ilgili ajan yanıtını değerlendir
+                //    topicId geçilir: puan >= 9 ise Altın Örnek kaydedilir (Faz 12, yalnızca TutorAgent)
                 var (score, feedback) = await evaluator.EvaluateInteractionAsync(
-                    capturedSessionId, content, aiResponse, "TutorAgent",
+                    capturedSessionId, content, aiResponse, capturedAgentRole,
                     topicId: capturedTopicId);
 
                 var eval = new AgentEvaluation
@@ -272,7 +285,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     SessionId         = capturedSessionId,
                     UserId            = userId,
                     MessageId         = aiMessageId,
-                    AgentRole         = "TutorAgent",
+                    AgentRole         = capturedAgentRole,
                     UserInput         = content,
                     AgentResponse     = aiResponse,
                     EvaluationScore   = score,
@@ -546,38 +559,18 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         await _db.SaveChangesAsync();
 
-        // 4. AUTO-WIKI: WikiService.AutoUpdateWikiAsync ile WikiBlock olarak kaydet
-        // WikiPanel.jsx blokları render eder — page.Content değil WikiBlock listesi.
-        // wikiUpdated: Ders geçişi (skipAutoWiki=true) dışındaki durumlarda async tamamlanmadan
-        // flag set edemeyiz. Çözüm: WikiPage'de aktif sayfa varsa önceden true set et.
-        if (!skipAutoWiki && session.TopicId.HasValue && !string.IsNullOrWhiteSpace(aiResponse))
+        // AUTO-WIKI: Mesaj başına wiki üretimi YAPILMAZ (CLAUDE.md kuralı).
+        // Wiki yalnızca (a) alt konu quiz'i geçildiğinde veya (b) AnalyzerAgent konu tamamlandı
+        // dediğinde SummarizerAgent tarafından üretilir. Stream path ile tutarlı.
+        if (!skipAutoWiki && session.TopicId.HasValue)
         {
-            var tId          = session.TopicId.Value;
-            var snapshot     = aiResponse;
-            var userQuestion = content;
-
-            // WikiPage mevcutsa frontend'e önceden güncelleme sinyali ver
+            var tId = session.TopicId.Value;
             var hasActivePage = await _db.WikiPages
                 .AnyAsync(p => p.TopicId == tId && (p.Status == "pending" || p.Status == "learning"));
-            if (hasActivePage)
-                wikiUpdated = true;
-
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                try
-                {
-                    var wiki = scope.ServiceProvider.GetRequiredService<IWikiService>();
-                    await wiki.AutoUpdateWikiAsync(tId, snapshot, userQuestion, "tutor-agent");
-                }
-                catch (Exception ex)
-                {
-                    AiDebugLogger.LogError("AUTO-WIKI", $"WikiService.AutoUpdateWikiAsync başarısız. TopicId={tId} — {ex.Message}");
-                }
-            });
+            if (hasActivePage) wikiUpdated = true;
         }
 
-        // 5. BACKGROUND ANALYSIS (Topic Completed?)
+        // BACKGROUND ANALYSIS (Topic Completed?)
         if (session.CurrentState == SessionState.Learning)
         {
             var sId = session.Id;
@@ -789,11 +782,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         if (currentTopic != null)
         {
-            var activeSubTopic = await _db.Topics
-                .Where(t => t.ParentTopicId == currentTopic.Id && t.UserId == userId)
-                .OrderBy(t => t.Order)
-                .Skip(currentTopic.CompletedSections)
-                .FirstOrDefaultAsync();
+            var orderedLessons = await _topicService.GetOrderedLessonsAsync(currentTopic.Id, userId);
+            var activeSubTopic = orderedLessons.Skip(currentTopic.CompletedSections).FirstOrDefault();
 
             if (activeSubTopic != null)
             {
@@ -1136,12 +1126,17 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         var currentTopic = await _db.Topics.FindAsync(session.TopicId.Value);
+        if (currentTopic == null)
+        {
+            _logger.LogWarning("[TRANSITION] TopicId geçerli ama Topic kaydı bulunamadı. SessionId={SessionId}", session.Id);
+            session.CurrentState = SessionState.Learning;
+            session.PendingQuiz = null;
+            await _db.SaveChangesAsync();
+            return ("🎉 Tebrikler! Bu konuyu tamamladın.", true);
+        }
 
         // Sistemin dallanma listesini getir
-        var siblings = await _db.Topics
-            .Where(t => t.ParentTopicId == currentTopic.Id && t.UserId == userId)
-            .OrderBy(t => t.Order)
-            .ToListAsync();
+        var siblings = await _topicService.GetOrderedLessonsAsync(currentTopic.Id, userId);
 
         if (siblings.Count == 0)
         {
@@ -1490,7 +1485,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         topic.CompletedSections += 1;
         await db.SaveChangesAsync();
 
-        var subTopics = await topicService.GetSubTopicsAsync(topicId);
+        // Hiyerarşi farkında: modül→ders yapısında leaf-level'a iner, düz planda children döner
+        var subTopics = await topicService.GetOrderedLessonsAsync(topicId, userId);
         if (topic.CompletedSections < subTopics.Count)
         {
             var nextTopic = subTopics[topic.CompletedSections];

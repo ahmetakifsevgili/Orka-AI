@@ -16,4 +16,11 @@ public interface ITopicService
     Task DeleteTopicAsync(Guid topicId, Guid userId);
     Task UpdateLastAccessedAsync(Guid topicId);
     Task<List<Topic>> GetSubTopicsAsync(Guid parentTopicId);
+
+    /// <summary>
+    /// Hiyerarşi-farkında ders listesi. Parent → Modül → Ders yapısında leaf-level'a iner,
+    /// modül sırasına göre ders sıralaması üretir. Düz (tek seviye) plan varsa direct children döner.
+    /// Ders geçişi / quiz index / wiki yönlendirme için TEK kaynak.
+    /// </summary>
+    Task<List<Topic>> GetOrderedLessonsAsync(Guid rootTopicId, Guid userId);
 }

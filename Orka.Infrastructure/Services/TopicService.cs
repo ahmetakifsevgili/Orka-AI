@@ -223,6 +223,35 @@ public class TopicService : ITopicService
             .ToListAsync();
     }
 
+    public async Task<List<Topic>> GetOrderedLessonsAsync(Guid rootTopicId, Guid userId)
+    {
+        var children = await _dbContext.Topics
+            .Where(t => t.ParentTopicId == rootTopicId && t.UserId == userId)
+            .OrderBy(t => t.Order)
+            .ToListAsync();
+
+        if (children.Count == 0) return new List<Topic>();
+
+        var childIds = children.Select(c => c.Id).ToList();
+
+        var grandchildren = await _dbContext.Topics
+            .Where(t => t.ParentTopicId.HasValue && childIds.Contains(t.ParentTopicId.Value) && t.UserId == userId)
+            .ToListAsync();
+
+        if (grandchildren.Count == 0) return children;
+
+        var ordered = new List<Topic>();
+        foreach (var module in children)
+        {
+            var lessons = grandchildren
+                .Where(g => g.ParentTopicId == module.Id)
+                .OrderBy(g => g.Order)
+                .ToList();
+            ordered.AddRange(lessons);
+        }
+        return ordered;
+    }
+
     private static List<string> ParsePlanJson(string json)
     {
         // JSON bloğunu temizle (```json ... ``` gibi markdown varsa)
