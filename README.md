@@ -140,6 +140,9 @@ Session state geçişleri **yalnızca** `AgentOrchestratorService`'in `Handle*` 
 
 ## 3. Sistem UML — Tam Mimari
 
+> 💡 **Not:** Sistemin tüm detaylı akışları (DeepPlan Modül/Ders Hiyerarşisi, Piston IDE Entegrasyonu, Korteks Araştırma Sekansları vb.) için özel olarak hazırladığımız kapsamlı [ARCHITECTURE.md](ARCHITECTURE.md) dosyasını inceleyebilirsiniz.
+
+
 ```mermaid
 graph TB
     subgraph Client["🖥️ Frontend — React 19 + Vite + Tailwind v4"]
