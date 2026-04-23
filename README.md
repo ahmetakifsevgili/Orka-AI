@@ -161,6 +161,7 @@ graph TB
         CODE[CodeController<br/>Judge0/Piston]
         DASH[DashboardController<br/>admin HUD]
         HEALTH[HealthController<br/>/health/ready]
+        VOICE[VoiceController<br/>Edge TTS Stream]
         USERC[UserController]
         SKILL[SkillMasteryController]
         MW[CorrelationId +<br/>ExceptionMiddleware]
@@ -259,6 +260,7 @@ graph TB
     TAV --> TAVILY
     WIKIP --> WIKI_EXT
     AGENTS_PISTON --> JUDGE
+    VOICE --> TTS_SUB[Python edge-tts<br/>Subprocess]
 
     TUTOR --> FAC
     DEEP --> FAC
@@ -634,6 +636,7 @@ erDiagram
 | **SupervisorAgent** | Meta-kontrol, kritik cevap denetimi |
 | **EvaluatorAgent** | **LLMOps kalite — 3 boyutlu skorlama** |
 | **IntentClassifierAgent** | Mesajın niyetini (Plan/Explain/Quiz/...) etiketler |
+| **EdgeTtsStreamService** | Python `edge-tts` subprocess üzerinden canlı ses akışı (Podcast) |
 | **RouterService** | Intent → ajan yönlendirme (orchestrator bağımlılığı yasak) |
 | **IAIAgentFactory** | Rol → model eşleme + TTFT telemetri |
 | **IAIServiceChain** | Provider failover zinciri |
@@ -661,7 +664,8 @@ erDiagram
 
 - **Tavily Search API** — deep research
 - **Wikipedia REST API** — fact grounding
-- **Judge0 CE** — sandbox kod çalıştırma (Python, C#, JS, Go, Rust, ... 70+ dil)
+- **Judge0 CE / Piston** — sandbox kod çalıştırma (Python, C#, JS, Go, Rust, ... 70+ dil)
+- **Edge TTS (Python CLI)** — Yüksek kaliteli, sıfır gecikmeli Türkçe ses sentezi
 
 ### Mimari Desenler
 
@@ -676,6 +680,7 @@ erDiagram
 - **Chaos Engineering** — `X-Chaos-Fail` header ile provider başarısızlığı simülasyonu
 - **Rate Limiting** — Redis Token Bucket (IP + Plan bazlı)
 - **Fail-Open Security** — Redis/cache çökse de sistem çalışmaya devam eder
+- **OASI (Orka Agent Stability Index)** — Hata, gecikme ve SQL kalite puanlarını harmanlayan Ajan Sağlık Skoru (S, A, B, C, F)
 - **SSE (Server-Sent Events)** — chat + wiki akışı için; özel sinyaller: `[THINKING:]`, `[PLAN_READY]`, `[TOPIC_COMPLETE:guid]`, `[ERROR]:`, `[DONE]`
 
 ### Test & Kalite
