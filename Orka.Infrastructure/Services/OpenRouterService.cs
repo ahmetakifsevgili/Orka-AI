@@ -28,7 +28,7 @@ public class OpenRouterService : IOpenRouterService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
         => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
 
     public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
@@ -106,7 +106,7 @@ public class OpenRouterService : IOpenRouterService
         }
     }
 
-    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
         => GenerateResponseStreamWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
 
     public async IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
@@ -160,3 +160,4 @@ public class OpenRouterService : IOpenRouterService
         }
     }
 }
+

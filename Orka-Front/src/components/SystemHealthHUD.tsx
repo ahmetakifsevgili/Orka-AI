@@ -33,6 +33,8 @@ interface AgentStat {
   goldCount: number;
   warnCount: number;
   status: "online" | "degraded" | "critical" | "idle";
+  stabilityScore: number;
+  stabilityGrade: string;
 }
 
 interface EvaluatorLog {
@@ -167,6 +169,32 @@ function statusBadge(status: AgentStat["status"]) {
       );
   }
 }
+
+function stabilityBadge(agent: AgentStat) {
+  if (agent.status === "idle" || typeof agent.stabilityScore === 'undefined') return statusBadge("idle");
+  
+  let color = "text-zinc-600";
+  let bg = "bg-zinc-700";
+  let animate = "";
+
+  switch (agent.stabilityGrade) {
+    case "S": color = "text-emerald-400"; bg = "bg-emerald-400"; animate = "animate-pulse"; break;
+    case "A": color = "text-emerald-500"; bg = "bg-emerald-500"; break;
+    case "B": color = "text-amber-400"; bg = "bg-amber-400"; break;
+    case "C": color = "text-amber-300"; bg = "bg-amber-300"; break;
+    case "F": color = "text-amber-700 dark:text-amber-300"; bg = "bg-amber-500"; animate = "animate-ping"; break;
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className={`flex items-center gap-1 text-[11px] font-black uppercase tracking-widest ${color}`}>
+        {agent.stabilityGrade} <span className="font-medium text-[9px] opacity-70">OASI</span>
+        <span className={`w-1.5 h-1.5 rounded-full ${bg} ${animate}`} />
+      </span>
+    </div>
+  );
+}
+
 
 function qualityStyle(q: EvaluatorLog["quality"]) {
   switch (q) {
@@ -443,7 +471,7 @@ export default function SystemHealthHUD() {
                         <p className="text-[10px] text-zinc-600">{agent.lastProvider}</p>
                       </div>
                     </div>
-                    {statusBadge(agent.status)}
+                    {stabilityBadge(agent)}
                   </div>
 
                   {/* Metrikler */}
@@ -499,19 +527,25 @@ export default function SystemHealthHUD() {
                     )}
                   </div>
 
-                  {/* Latency bar */}
-                  {agent.avgLatencyMs > 0 && (
-                    <div className="mt-3 w-full h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+                  {/* Latency bar -> OASI Gauge */}
+                  {agent.avgLatencyMs > 0 && typeof agent.stabilityScore !== "undefined" && (
+                    <div className="mt-3 relative w-full h-1 bg-zinc-800 rounded-full overflow-hidden group/tooltip cursor-pointer">
                       <div
                         className="h-full rounded-full transition-all duration-1000"
                         style={{
-                          width: `${Math.min((agent.avgLatencyMs / 5000) * 100, 100)}%`,
+                          width: `${Math.max(agent.stabilityScore, 2)}%`,
                           backgroundColor:
-                            agent.avgLatencyMs < 1500 ? "#10b981"
-                            : agent.avgLatencyMs < 4000 ? "#f59e0b"
-                            : "#fcd34d",
+                            agent.stabilityScore >= 80 ? "#10b981"
+                            : agent.stabilityScore >= 60 ? "#f59e0b"
+                            : "#f87171",
                         }}
                       />
+                      {/* Tooltip on Hover */}
+                      <div className="absolute opacity-0 group-hover/tooltip:opacity-100 transition-opacity top-0 translate-y-[-120%] left-0 z-10 w-full text-center pointer-events-none">
+                         <span className="text-[9px] font-bold tracking-widest bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded">
+                            {agent.stabilityScore}/100 OASI Puanı
+                         </span>
+                      </div>
                     </div>
                   )}
                 </div>

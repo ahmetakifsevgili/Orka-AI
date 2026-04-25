@@ -1,19 +1,18 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  BookOpen,
-  Brain,
-  Target,
-  Flame,
-  TrendingUp,
-  ArrowRight,
-  ChevronRight,
   Activity,
+  ArrowRight,
   Award,
+  BookOpen,
+  CheckCircle2,
   Cpu,
+  Flame,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
-import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
-import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
+import { DashboardAPI, QuizAPI, storage, UserAPI } from "@/services/api";
+import type { ApiDashboardStats, ApiGamification, ApiGlobalStats, ApiTopic } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 
 interface DashboardPanelProps {
@@ -21,315 +20,228 @@ interface DashboardPanelProps {
   onViewChange: (view: string) => void;
 }
 
-/** 
- * Custom Sparkline Component
- * UX Mandate: No heavy chart libs, premium SVG feel.
- */
-function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] }) {
-  if (!data || data.length < 2) return null;
-  
-  const width = 200;
-  const height = 40;
-  const padding = 5;
-  
-  const maxVal = 100;
-  const minVal = 0;
-  
-  const points = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
-    const y = height - ((d.accuracy - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding;
-    return `${x},${y}`;
-  }).join(" ");
+function StatTile({
+  label,
+  value,
+  icon: Icon,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string | number;
+  icon: typeof Activity;
+  tone?: "neutral" | "success" | "warning";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10"
+      : tone === "warning"
+        ? "text-amber-700 dark:text-amber-300 bg-amber-500/10"
+        : "text-foreground soft-muted";
 
   return (
-    <div className="relative group">
-      <svg width={width} height={height} className="overflow-visible">
-        {/* Shadow path for depth */}
-        <polyline
-          points={points}
-          fill="none"
-          stroke="rgba(16, 185, 129, 0.1)"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Main path */}
-        <polyline
-          points={points}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-emerald-500/80"
-        />
-        {/* End dot */}
-        <circle 
-          cx={(width - padding)} 
-          cy={height - ((data[data.length-1].accuracy - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding}
-          r="3"
-          className="fill-emerald-400 stroke-emerald-950 stroke-2"
-        />
-      </svg>
+    <div className="soft-surface border rounded-xl p-5">
+      <div className={`mb-4 flex h-9 w-9 items-center justify-center rounded-lg ${toneClass}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-2xl font-semibold tracking-tight text-foreground">{value}</p>
+      <p className="mt-1 text-xs font-medium uppercase tracking-wide soft-text-muted">{label}</p>
     </div>
   );
 }
 
 export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
-  const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
-  // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
+  const { attempts: sessionAttempts } = useQuizHistory();
   const isAdmin = storage.getUser()?.isAdmin === true;
-  const [activeTab, setActiveTab] = useState<"karne" | "hud">("karne");
+  const [activeTab, setActiveTab] = useState<"summary" | "hud">("summary");
   const [stats, setStats] = useState<ApiGlobalStats | null>(null);
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Quiz istatistikleri (doğruluk oranı, sparkline)
     QuizAPI.getGlobalStats()
-      .then(res => setStats(res.data))
-      .catch(err => console.error("Quiz stats fetch error:", err));
+      .then((res) => setStats(res.data))
+      .catch((err) => console.error("Quiz stats fetch error:", err));
 
-    // Gamification (seviye, xpToNextLevel, levelLabel)
     UserAPI.getGamification()
-      .then(res => setGamification(res.data as ApiGamification))
-      .catch(err => console.error("Gamification fetch error:", err));
+      .then((res) => setGamification(res.data as ApiGamification))
+      .catch((err) => console.error("Gamification fetch error:", err));
 
-    // Dashboard istatistikleri (XP, Streak, gerçek tamamlama verileri)
     DashboardAPI.getStats()
-      .then(res => setDashStats(res.data as ApiDashboardStats))
-      .catch(err => console.error("Dashboard stats fetch error:", err))
+      .then((res) => setDashStats(res.data as ApiDashboardStats))
+      .catch((err) => console.error("Dashboard stats fetch error:", err))
       .finally(() => setLoading(false));
-  }, [sessionAttempts.length]); // Quiz tamamlandığında yenile
+  }, [sessionAttempts.length]);
 
-  const correctCount = stats?.correctAnswers ?? 0;
-  const totalQuizzes = stats?.totalQuizzes ?? 0;
   const accuracy = stats?.accuracy ?? 0;
-
-  const totalLessons = dashStats?.totalSections ?? topics.reduce(
-    (sum, t) => sum + (t.totalSections ?? 0), 0
-  );
-  const completedLessons = dashStats?.completedSections ?? topics.reduce(
-    (sum, t) => sum + (t.completedSections ?? 0), 0
-  );
-
-  // Gerçek değerler: DB'den gelen XP ve Streak
-  const totalXP      = dashStats?.totalXP      ?? 0;
-  const activeStreak = dashStats?.currentStreak ?? stats?.dailyProgress.filter(d => d.total > 0).length ?? 0;
+  const totalLessons = dashStats?.totalSections ?? topics.reduce((sum, t) => sum + (t.totalSections ?? 0), 0);
+  const completedLessons =
+    dashStats?.completedSections ?? topics.reduce((sum, t) => sum + (t.completedSections ?? 0), 0);
+  const totalXP = dashStats?.totalXP ?? 0;
+  const activeStreak = dashStats?.currentStreak ?? stats?.dailyProgress.filter((d) => d.total > 0).length ?? 0;
+  const activeTopics = topics.filter((topic) => !topic.parentTopicId).slice(0, 5);
+  const quests = dashStats?.dailyQuests ?? [];
+  const level = gamification?.level ? `Seviye ${gamification.level}` : "Öğrenme özeti";
 
   return (
-    <div className="flex-1 flex flex-col bg-[#0a0a0a] h-full overflow-hidden">
-
-      {/* Tab Switcher */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-8 pt-6 pb-0">
-        <button
-          onClick={() => setActiveTab("karne")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "karne"
-              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-              : "text-zinc-500 hover:text-zinc-300 border border-transparent"
-          }`}
-        >
-          <Award className="w-3.5 h-3.5" />
-          Öğrenme Karnesi
-        </button>
-        {isAdmin && (
-          <button
-            onClick={() => setActiveTab("hud")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === "hud"
-                ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-                : "text-zinc-500 hover:text-zinc-300 border border-transparent"
-            }`}
-            title="Admin paneli — LLMOps İzleme"
-          >
-            <Cpu className="w-3.5 h-3.5" />
-            Sistem Analitiği
-            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-amber-400/80 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded">
-              Admin
-            </span>
-          </button>
-        )}
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === "hud" && isAdmin ? (
-        <SystemHealthHUD />
-      ) : (
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto w-full px-8 py-10">
-          
-          {/* Header & Mastery Card */}
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h1 className="text-2xl font-bold text-zinc-100 mb-1.5 tracking-tight">Öğrenme Karnesi</h1>
-              <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-widest">Sistem Analitiği Aktif</p>
-              </div>
-            </div>
-            
-            <div className="hidden sm:flex items-center gap-6 bg-zinc-900/40 border border-zinc-800/80 px-6 py-4 rounded-2xl">
-               <div className="text-right">
-                  <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tighter mb-0.5">Global Başarı</p>
-                  <p className="text-xl font-mono font-bold text-emerald-400">%{accuracy}</p>
-               </div>
-               {stats && <SuccessRateSparkline data={stats.dailyProgress} />}
-            </div>
+    <div className="flex-1 overflow-y-auto soft-page">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-8 py-8">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide soft-text-muted">{level}</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Bugünkü öğrenme durumu</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed soft-text-muted">
+              {dashStats?.motivationalMessage || "Kaldığın yerden devam et. Sohbet ana akışın, burası sadece yolu netleştirir."}
+            </p>
           </div>
 
-          {/* Core Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-            {/* Stat Item: XP */}
-            <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center mb-4 group-hover:bg-zinc-800 transition-colors">
-                <TrendingUp className="w-4 h-4 text-zinc-400" />
-              </div>
-              <p className="text-2xl font-bold text-zinc-100">{loading ? "—" : totalXP}</p>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase mt-1">Toplam XP</p>
-              {gamification && (
-                <p className="text-[10px] text-zinc-600 mt-1">
-                  {gamification.levelLabel} · Seviye {gamification.level}
-                </p>
-              )}
-            </div>
-
-            {/* Stat Item: Lessons */}
-            <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center mb-4 group-hover:bg-zinc-800 transition-colors">
-                <Brain className="w-4 h-4 text-zinc-400" />
-              </div>
-              <p className="text-2xl font-bold text-zinc-100">
-                {loading ? "—" : (totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length)}
-              </p>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase mt-1">Tamamlanan Ders</p>
-            </div>
-
-            {/* Stat Item: Accuracy */}
-            <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4">
-                <Target className="w-4 h-4 text-emerald-500/70" />
-              </div>
-              <p className="text-2xl font-bold text-emerald-400">{loading ? "—" : `%${accuracy}`}</p>
-              <p className="text-[11px] font-medium text-emerald-600/80 uppercase mt-1">Doğruluk Oranı</p>
-            </div>
-
-            {/* Stat Item: Streak (gerçek DB verisi) */}
-            <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/10 hover:border-amber-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center mb-4">
-                <Flame className="w-4 h-4 text-amber-500/70" />
-              </div>
-              <p className="text-2xl font-bold text-amber-400">{loading ? "—" : activeStreak}</p>
-              <p className="text-[11px] font-medium text-amber-600/80 uppercase mt-1">
-                {activeStreak > 1 ? `${activeStreak} Günlük Seri` : "Öğrenme Serisi"}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-widest flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-zinc-500" />
-                  Konu İlerlemesi
-                </h2>
-                <button
-                  onClick={() => onViewChange("courses")}
-                   className="text-[11px] font-bold text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors uppercase tracking-wider"
-                >
-                  Tümünü Gör
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-
-              {topics.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-zinc-800 rounded-3xl">
-                  <p className="text-xs text-zinc-500">Henüz aktif bir öğrenme yolunuz bulunmuyor.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {topics.slice(0, 4).map((topic) => {
-                    const pct = topic.totalSections ? Math.round((topic.completedSections || 0) / topic.totalSections * 100) : 0;
-                    return (
-                      <div
-                        key={topic.id}
-                        className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-800/40 hover:bg-zinc-900/50 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-zinc-800/50 flex items-center justify-center text-lg shadow-inner">
-                              {topic.emoji}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors">{topic.title}</p>
-                              <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-tighter">{topic.category || 'GENEL'}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-sm font-mono font-bold text-zinc-400">%{pct}</p>
-                          </div>
-                        </div>
-                        <div className="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
-                           <div 
-                             className="h-full bg-zinc-600 rounded-full transition-all duration-1000 group-hover:bg-zinc-400"
-                             style={{ width: `${pct}%` }}
-                           />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-6">
-              <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-widest flex items-center gap-2">
-                <Award className="w-4 h-4 text-zinc-500" />
-                Hızlı Erişim
-              </h2>
-              
-              <div className="grid grid-cols-1 gap-3">
-                <button
-                  onClick={() => onViewChange("chat")}
-                  className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
-                >
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors">Öğrenmeye Devam</span>
-                    <span className="text-[10px] text-zinc-500">En son kaldığın ders</span>
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <ArrowRight className="w-4 h-4 text-zinc-400" />
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => onViewChange("wiki")}
-                  className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
-                >
-                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-zinc-200">Wiki Kütüphanesi</span>
-                    <span className="text-[10px] text-zinc-500">Hafıza haritasını keşfet</span>
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <BookOpen className="w-4 h-4 text-zinc-400" />
-                  </div>
-                </button>
-              </div>
-
-              {/* Tips Section */}
-              <div className="p-6 rounded-3xl bg-emerald-500/5 border border-emerald-500/10">
-                 <h4 className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2">Günlük İpucu</h4>
-                 <p className="text-[11px] text-zinc-400 leading-relaxed italic">
-                   "Öğrenilenlerin %70'i ilk 24 saat içinde unutulur. Quizleri düzenli çözerek kalıcı hafızayı güçlendir."
-                 </p>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab("summary")}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                activeTab === "summary" ? "soft-muted text-foreground" : "soft-text-muted hover:bg-surface-muted"
+              }`}
+            >
+              Özet
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab("hud")}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                  activeTab === "hud" ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "soft-text-muted hover:bg-surface-muted"
+                }`}
+              >
+                <Cpu className="h-3.5 w-3.5" />
+                Sistem
+              </button>
+            )}
           </div>
         </div>
+
+        {activeTab === "hud" && isAdmin ? (
+          <div className="overflow-hidden rounded-xl border soft-border soft-surface">
+            <SystemHealthHUD />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <StatTile label="Toplam XP" value={loading ? "-" : totalXP} icon={TrendingUp} />
+              <StatTile
+                label="Tamamlanan ders"
+                value={loading ? "-" : totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length}
+                icon={BookOpen}
+                tone="success"
+              />
+              <StatTile label="Doğruluk" value={loading ? "-" : `%${accuracy}`} icon={Target} tone="success" />
+              <StatTile label="Günlük seri" value={loading ? "-" : activeStreak} icon={Flame} tone="warning" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+              <section className="soft-surface border rounded-xl p-5">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">Öğrenme yolları</h2>
+                    <p className="mt-1 text-xs soft-text-muted">Aktif konular ve ilerleme.</p>
+                  </div>
+                  <button
+                    onClick={() => onViewChange("chat")}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium soft-text-muted hover:bg-surface-muted hover:text-foreground"
+                  >
+                    Sohbete dön
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {activeTopics.length === 0 ? (
+                  <div className="rounded-lg border border-dashed soft-border px-4 py-10 text-center text-sm soft-text-muted">
+                    Henüz aktif bir öğrenme yolu yok.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {activeTopics.map((topic) => {
+                      const pct = topic.totalSections
+                        ? Math.round(((topic.completedSections || 0) / topic.totalSections) * 100)
+                        : Math.round(topic.progressPercentage || 0);
+
+                      return (
+                        <button
+                          key={topic.id}
+                          onClick={() => onViewChange("chat")}
+                          className="w-full rounded-lg border soft-border p-4 text-left transition-colors hover:bg-surface-muted"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-foreground">{topic.title}</p>
+                              <p className="mt-1 text-xs soft-text-muted">{topic.category || "Genel"}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">%{pct}</span>
+                          </div>
+                          <div className="mt-3 h-1.5 overflow-hidden rounded-full soft-muted">
+                            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <aside className="space-y-6">
+                <section className="soft-surface border rounded-xl p-5">
+                  <div className="mb-4 flex items-center gap-2">
+                    <Award className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                    <h2 className="text-sm font-semibold text-foreground">Günlük görevler</h2>
+                  </div>
+
+                  {quests.length === 0 ? (
+                    <p className="text-sm soft-text-muted">Görevler yükleniyor.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {quests.map((quest) => (
+                        <div key={quest.id} className="flex items-center gap-3 rounded-lg soft-muted p-3">
+                          <div
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                              quest.isCompleted
+                                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            }`}
+                          >
+                            {quest.isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">{quest.title}</p>
+                            <p className="text-xs soft-text-muted">+{quest.xpReward} XP</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="soft-surface border rounded-xl p-5">
+                  <h2 className="text-sm font-semibold text-foreground">Hızlı erişim</h2>
+                  <div className="mt-4 grid gap-2">
+                    <button
+                      onClick={() => onViewChange("chat")}
+                      className="flex items-center justify-between rounded-lg px-3 py-3 text-left hover:bg-surface-muted"
+                    >
+                      <span className="text-sm font-medium text-foreground">Öğrenmeye devam</span>
+                      <ArrowRight className="h-4 w-4 soft-text-muted" />
+                    </button>
+                    <button
+                      onClick={() => onViewChange("wiki")}
+                      className="flex items-center justify-between rounded-lg px-3 py-3 text-left hover:bg-surface-muted"
+                    >
+                      <span className="text-sm font-medium text-foreground">Wiki</span>
+                      <ArrowRight className="h-4 w-4 soft-text-muted" />
+                    </button>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </>
+        )}
       </div>
-      )}
     </div>
   );
 }

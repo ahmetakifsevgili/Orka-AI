@@ -16,7 +16,7 @@ public interface IGraderAgent
     /// Sağlanan bilginin, hedeflenen bağlam (context) ve konuya ne kadar uygun olduğunu puanlar.
     /// 0 ile 1.0 arası bir "Relevancy Score" (Alaka Durumu) veya geçiş izni verir.
     /// </summary>
-    Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, CancellationToken ct = default);
+    Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, string? goalContext = null, CancellationToken ct = default);
 }
 
 public class GraderAgent : IGraderAgent
@@ -30,12 +30,14 @@ public class GraderAgent : IGraderAgent
         _logger = logger;
     }
 
-    public async Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, CancellationToken ct = default)
+    public async Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, string? goalContext = null, CancellationToken ct = default)
     {
         var prompt = $$"""
             Sen katı bir akademik gözlemcisin (Grader). 
             Sana verilen 'Gelen İçerik' metninin, belirtilen 'Konu: {{topic}}' ile ne ölçüde örtüştüğünü ve doğruluğunu kontrol edeceksin.
-            Eğer içerik alakasızsa, yanıltıcıysa veya çok zayıfsa 'REJECT' yaz.
+            Öğrencinin Hedefi: {{(string.IsNullOrWhiteSpace(goalContext) ? "Genel" : goalContext)}}
+            Lütfen içeriğin öğrencinin hedefine (varsa) ve konuya uygunluğunu denetle.
+            Eğer içerik alakasızsa, yanıltıcıysa veya hedef kitle için çok zayıfsa 'REJECT' yaz.
             Eğer içerik faydalıysa, bağlamsal olarak yüksek bir örtüşme (Hit Rate) taşıyorsa 'APPROVE' yaz.
             
             SADECE REJECT VEYA APPROVE YAZ, AÇIKLAMA YAPMA.

@@ -1,7 +1,7 @@
 // ─── UI Types ──────────────────────────────────────────────────────────────
 
 export type MessageRole = "user" | "ai";
-export type MessageType = "text" | "quiz" | "plan" | "topic_complete";
+export type MessageType = "text" | "quiz" | "plan" | "topic_complete" | "research";
 
 export interface QuizOption {
   id: string;
@@ -22,8 +22,14 @@ export interface ChatMessage {
   role: MessageRole;
   type: MessageType;
   content: string;
+  attachments?: Array<{
+    type: "image";
+    url: string;
+    name: string;
+  }>;
   quiz?: QuizData | QuizData[];
   completedTopicId?: string; // Set when type === "topic_complete"
+  researchTopic?: string;    // Set when type === "research" — export toolbar başlığı
   timestamp: Date;
   isStreaming?: boolean;
 }
@@ -133,6 +139,8 @@ export interface ApiDashboardStats {
   progressPercentage: number;
   wikisCount: number;
   activity: Array<{ date: string; count: number }>;
+  motivationalMessage?: string;
+  dailyQuests?: Array<{ id: string; title: string; isCompleted: boolean; xpReward: number; icon: string }>;
 }
 
 /** Gamification stats — /api/user/gamification */
@@ -170,6 +178,38 @@ export interface ApiQuizHistoryItem {
   isCorrect: boolean;
   explanation: string;
   createdAt: string;
+}
+
+export type MultimodalContentItem =
+  | { type: "Text"; text: string }
+  | { type: "ImageUrl"; imageUrl: string };
+
+export interface UploadedImage {
+  imageUrl: string;
+  fileName: string;
+  sizeKb: number;
+}
+
+export interface SkillNode {
+  id: string;
+  title: string;
+  nodeType: "Core" | "RemedialPractice" | "Milestone" | string;
+  isUnlocked: boolean;
+  difficultyLevel: number;
+  ruleMetadataJson?: string;
+  relatedTopicId?: string | null;
+  createdAt?: string;
+  unlockedAt?: string | null;
+}
+
+export interface SkillEdge {
+  source: string;
+  target: string;
+}
+
+export interface SkillTreeResponse {
+  nodes: SkillNode[];
+  edges: SkillEdge[];
 }
 
 // ─── Course Types ───────────────────────────────────────────────────────────

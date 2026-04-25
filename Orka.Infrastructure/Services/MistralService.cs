@@ -30,7 +30,7 @@ public class MistralService : IMistralService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
         => CallMistralApiAsync(userMessage, systemPrompt, ct);
 
     public async Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel öğrenme", string level = "orta")
@@ -156,7 +156,7 @@ Ders İçeriği:
         }
     }
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] string? model = null, CancellationToken ct = default)
     {
         const string RequestUrl = "https://api.mistral.ai/v1/chat/completions";
         var messages = new[]
@@ -203,3 +203,4 @@ Ders İçeriği:
         }
     }
 }
+

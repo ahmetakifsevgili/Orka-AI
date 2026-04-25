@@ -39,7 +39,7 @@ public class AIServiceChain : IAIServiceChain
             try
             {
                 _logger.LogDebug("[AIChain] Groq (Smart Router) deneniyor...");
-                var primaryResult = await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts0.Token)
+                var primaryResult = await _groq.GenerateResponseAsync(systemPrompt, userMessage, null, cts0.Token)
                                                .WaitAsync(cts0.Token);
                 if (IsUsableResponse(primaryResult))
                 {
@@ -174,7 +174,7 @@ public class AIServiceChain : IAIServiceChain
             probeCts.CancelAfter(ProviderTimeout);
             try
             {
-                groqEnum = _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, probeCts.Token)
+                groqEnum = _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, null, probeCts.Token)
                                  .GetAsyncEnumerator(probeCts.Token);
                 if (await groqEnum.MoveNextAsync() && IsUsableResponse(groqEnum.Current))
                 {
@@ -233,3 +233,4 @@ public class AIServiceChain : IAIServiceChain
             $"{(m.Role?.ToLower() == "user" ? "Kullanıcı" : "Asistan")}: {m.Content}"));
     }
 }
+

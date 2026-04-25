@@ -14,12 +14,24 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Send, Sparkles, BookOpen, Bell, Globe } from "lucide-react";
+import {
+  Send,
+  Sparkles,
+  BookOpen,
+  Globe,
+  Volume2,
+  VolumeX,
+  Image as ImageIcon,
+  X,
+  StopCircle,
+  Users,
+} from "lucide-react";
+import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
 import type { ChatMessage, ApiTopic, QuizData } from "@/lib/types";
-import { ChatAPI, UserAPI, KorteksAPI } from "@/services/api";
+import { ChatAPI, UserAPI, KorteksAPI, UploadAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
 import ChatMessageComponent from "./ChatMessage";
@@ -68,8 +80,18 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const [isPlanMode, setIsPlanMode] = useState(defaultMode === "plan");
   const [isKorteksMode, setIsKorteksMode] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isClassroomMode, setIsClassroomMode] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingState, setThinkingState] = useState(THINKING_STATES[0]);
+  const [showRemedialPrompt, setShowRemedialPrompt] = useState(false);
+  const [remedialCountdown, setRemedialCountdown] = useState(10);
+  const [pendingImage, setPendingImage] = useState<{
+    file: File;
+    previewUrl: string;
+  } | null>(null);
 
   // Yeni topic modu aktifleştirildiğinde reset at
   useEffect(() => {
@@ -77,10 +99,18 @@ export default function ChatPanel({
       setIsPlanMode(defaultMode === "plan");
     }
   }, [defaultMode, activeTopic, messages.length]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingImage?.previewUrl) URL.revokeObjectURL(pendingImage.previewUrl);
+    };
+  }, [pendingImage?.previewUrl]);
   const [userName, setUserName] = useState<string>("User");
   const [userInitial, setUserInitial] = useState<string>("U");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const streamRunIdRef = useRef(0);
   // IDE → Chat mesaj tetikleyici için sendMessage ref'i
   const sendMessageRef = useRef<((content: string) => void) | null>(null);
 
@@ -94,14 +124,28 @@ export default function ChatPanel({
       const fullName = `${first} ${last}`.trim() || "User";
       setUserName(fullName);
       setUserInitial(first?.[0]?.toUpperCase() || "U");
-    }).catch(() => {});
+    }).catch(() => { });
+  }, []);
+
+  // Voice dictation ref — allows ClassroomAudioPlayer to call sendMessage
+  // without a circular dependency (sendMessage is declared later).
+  const voiceDictationRef = useRef<((text: string) => void) | null>(null);
+
+  useEffect(() => {
+    (window as any).handleVoiceDictation = (text: string) => {
+      setInput("");
+      voiceDictationRef.current?.(text);
+    };
+    return () => {
+      delete (window as any).handleVoiceDictation;
+    };
   }, []);
 
   // ── Thinking state rotator ─────────────────────────────────────────────
   useEffect(() => {
     if (!isThinking) return;
     const currentStates = isPlanMode ? PLANNING_THINKING_STATES : THINKING_STATES;
-    
+
     let i = 0;
     setThinkingState(currentStates[0]);
 
@@ -115,7 +159,7 @@ export default function ChatPanel({
   // ── Auto-scroll (only if user is near bottom) ───────────────────────────
   const isNearBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
-  
+
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
@@ -149,17 +193,28 @@ export default function ChatPanel({
 
   // ── Core send logic ────────────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!content || isThinking) return;
+    async (
+      content: string,
+      options?: {
+        force?: boolean;
+        image?: { file: File; previewUrl: string } | null;
+      }
+    ) => {
+      const imageToSend = options?.image ?? null;
+      if ((!content && !imageToSend) || (isThinking && !options?.force)) return;
+      const runId = ++streamRunIdRef.current;
 
       const userMsg: ChatMessage = {
         id: `local-user-${Date.now()}`,
         role: "user",
         type: "text",
-        content,
+        content: content || "Bu görseli incele.",
+        attachments: imageToSend
+          ? [{ type: "image", url: imageToSend.previewUrl, name: imageToSend.file.name }]
+          : undefined,
         timestamp: new Date(),
       };
-      
+
       const assistantId = `local-ai-${Date.now()}`;
       const placeholderMsg: ChatMessage = {
         id: assistantId,
@@ -172,7 +227,7 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, userMsg, placeholderMsg]);
       setIsThinking(true);
-      
+
       const isPlanRequest = isPlanMode || content.toLowerCase().includes("plan") || content.toLowerCase().includes("müfredat");
       const initStates = isPlanRequest ? PLANNING_THINKING_STATES : THINKING_STATES;
       setThinkingState(initStates[0]);
@@ -180,12 +235,29 @@ export default function ChatPanel({
       let completedTopicId: string | null = null;
 
       try {
-        const response = await ChatAPI.streamMessage({
-          topicId: activeTopic?.id ?? undefined,
-          sessionId: sessionId ?? undefined,
-          content,
-          isPlanMode: isPlanMode,
-        });
+        let response: Response;
+        if (imageToSend) {
+          setThinkingState("Görsel yükleniyor...");
+          const uploaded = await UploadAPI.image(imageToSend.file);
+          if (runId !== streamRunIdRef.current) return;
+          response = await ChatAPI.streamMultimodal({
+            topicId: activeTopic?.id ?? undefined,
+            sessionId: sessionId ?? undefined,
+            isPlanMode,
+            contentItems: [
+              ...(content ? [{ type: "Text" as const, text: content }] : []),
+              { type: "ImageUrl" as const, imageUrl: uploaded.imageUrl },
+            ],
+          });
+        } else {
+          response = await ChatAPI.streamMessage({
+            topicId: activeTopic?.id ?? undefined,
+            sessionId: sessionId ?? undefined,
+            content,
+            isPlanMode: isPlanMode,
+            isVoiceMode: isVoiceMode,
+          });
+        }
 
         if (!response.ok) throw new Error("Stream connection failed");
 
@@ -202,9 +274,14 @@ export default function ChatPanel({
         let currentContent = "";
 
         if (reader) {
-          setIsThinking(false); 
+          setIsThinking(false);
+          if (isVoiceMode) setIsSpeaking(true);
           while (true) {
             const { done, value } = await reader.read();
+            if (runId !== streamRunIdRef.current) {
+              await reader.cancel().catch(() => {});
+              return;
+            }
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
@@ -227,7 +304,7 @@ export default function ChatPanel({
                   );
                   return;
                 }
-                
+
                 // [THINKING:... ] chunk'ları — chat'e yazma, sadece thinking state güncelle
                 if (data.startsWith("[THINKING:")) {
                   const thinkingText = data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, "");
@@ -235,7 +312,7 @@ export default function ChatPanel({
                   setIsThinking(true);
                   continue;
                 }
-                
+
                 // First append the decoded chunk to our content buffer
                 currentContent += data.replaceAll("[NEWLINE]", "\n");
 
@@ -247,17 +324,24 @@ export default function ChatPanel({
                 }
 
                 // Plan_ready detector
+                if (currentContent.includes("[REMEDIAL_OFFER]")) {
+                  currentContent = currentContent.replace(/\[REMEDIAL_OFFER\]/g, "");
+                  setShowRemedialPrompt(true);
+                  setRemedialCountdown(10);
+                }
+
                 if (currentContent.includes("[PLAN_READY]")) {
                   currentContent = currentContent.replace(/\[PLAN_READY\]/g, "");
+                  setIsPlanMode(false); // Otomatik olarak plan modundan çıkıştır
 
                   // Play sound if enabled
                   const userStr = localStorage.getItem("orka_user");
                   const user = userStr ? JSON.parse(userStr) : null;
                   if (user?.settings?.soundsEnabled !== false) {
-                     const audio = new Audio("/assets/notification.wav");
-                     audio.play().catch(console.error);
+                    const audio = new Audio("/assets/notification.wav");
+                    audio.play().catch(console.error);
                   }
-                  
+
                   // Extract Topic Title cleanly or default to generic string
                   const match = currentContent.match(/\*\*(.*?)\*\*/);
                   const subjectName = match ? match[1] : "Seçili Eğitim";
@@ -267,13 +351,18 @@ export default function ChatPanel({
                   });
                 }
 
-                // IDE Open Detector (Robust)
+                // IDE_OPEN tag will be removed here, but the trigger will happen at the end
                 if (/\[IDE_OPEN\]/i.test(currentContent)) {
-                  currentContent = currentContent.replace(/\[IDE_OPEN\]/gi, "");
-                  if (onOpenIDE) onOpenIDE();
+                  currentContent = currentContent.replace(/\[IDE_OPEN\]/gi, "\n<!-- IDE TRIGGERED -->\n");
                 }
 
-                setMessages((prev) => 
+                // Pollinations URL Encoding Fix
+                currentContent = currentContent.replace(
+                  /(https:\/\/image\.pollinations\.ai\/prompt\/)([^?)]+)/g,
+                  (match, p1, p2) => p1 + encodeURIComponent(p2.replace(/ /g, ' '))
+                );
+
+                setMessages((prev) =>
                   prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
                 );
               }
@@ -283,10 +372,23 @@ export default function ChatPanel({
 
         // Finalize: Check for Quiz/Rich content or Topic Completion
         const quizData = tryParseQuiz(currentContent);
+        
+        // IDE Open processing at the end of stream — remove internal marker from displayed content
+        if (currentContent.includes("<!-- IDE TRIGGERED -->")) {
+          let questionCode = "";
+          const taskMatch = currentContent.match(/(?:## GÖREV|GÖREV)[\s\S]*?(?=\n\n(?:##|\[)|\n$|$)/i);
+          if (taskMatch) {
+            questionCode = taskMatch[0].trim();
+          }
+          // Clean internal marker from the message before displaying
+          currentContent = currentContent.replace(/\n<!-- IDE TRIGGERED -->\n/g, "").trim();
+          if (onOpenIDE) onOpenIDE(questionCode);
+        }
+
         if (completedTopicId) {
           // Konu tamamlandı: AI mesajını bitir, ardından tamamlama kartı ekle
           setMessages((prev) =>
-            prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            prev.map(m => m.id === assistantId ? { ...m, content: currentContent, isStreaming: false } : m)
           );
           const completionCard: ChatMessage = {
             id: `completion-${Date.now()}`,
@@ -309,32 +411,38 @@ export default function ChatPanel({
 
         // Force sidebar refresh to reflect potential hierarchy changes (Deep Plan, new topics)
         onTopicsRefresh();
-        
+
         // If it was a null-topic start, the header will also have the new SessionId & TopicId
         const finalSessionId = response.headers.get("X-Orka-SessionId");
         const finalTopicId = response.headers.get("X-Orka-TopicId");
-        
+
         if (finalSessionId && !sessionId) {
-            onSessionStart(finalSessionId);
-            if (finalTopicId && onTopicAutoCreated) {
-                onTopicAutoCreated(finalTopicId);
-            }
-            // Re-fetch all topics to ensure the auto-created one is there
-            setTimeout(() => onTopicsRefresh(), 500);
+          onSessionStart(finalSessionId);
+          if (finalTopicId && onTopicAutoCreated) {
+            onTopicAutoCreated(finalTopicId);
+          }
+          // Re-fetch all topics to ensure the auto-created one is there
+          setTimeout(() => onTopicsRefresh(), 500);
         }
       } catch (err) {
         console.error("Streaming error:", err);
         toast.error("Yanıt akışında bir sorun oluştu.");
-        setMessages((prev) => 
+        setMessages((prev) =>
           prev.map(m => m.id === assistantId ? { ...m, content: "Üzgünüm, bir bağlantı hatası oluştu." } : m)
         );
       } finally {
-        setIsThinking(false);
+        if (runId === streamRunIdRef.current) {
+          setIsThinking(false);
+          if (!isVoiceMode) {
+            setIsSpeaking(false);
+          }
+        }
       }
     },
     [
       isThinking,
       isPlanMode,
+      isVoiceMode,
       activeTopic,
       sessionId,
       onSessionStart,
@@ -343,9 +451,151 @@ export default function ChatPanel({
     ]
   );
 
-  // sendMessage ref'i güncel tut — IDE→Chat tetikleyici için
+  const sendClassroomMessage = useCallback(
+    async (content: string, force = false) => {
+      const topic = content || activeTopic?.title || "Serbest konu";
+      if ((!topic && !activeTopic) || (isThinking && !force)) return;
+      const runId = ++streamRunIdRef.current;
+
+      const userMsg: ChatMessage = {
+        id: `local-user-${Date.now()}`,
+        role: "user",
+        type: "text",
+        content: `Sınıfı başlat: ${topic}`,
+        timestamp: new Date(),
+      };
+      const assistantId = `classroom-ai-${Date.now()}`;
+      const placeholderMsg: ChatMessage = {
+        id: assistantId,
+        role: "ai",
+        type: "text",
+        content: "",
+        timestamp: new Date(),
+        isStreaming: true,
+      };
+
+      setMessages((prev) => [...prev, userMsg, placeholderMsg]);
+      setIsThinking(true);
+      setThinkingState("Sınıf oturumu hazırlanıyor...");
+
+      try {
+        const response = await ChatAPI.streamClassroom({
+          topic,
+          topicId: activeTopic?.id ?? undefined,
+          sessionId: sessionId ?? undefined,
+          isVoiceMode,
+        });
+
+        if (!response.ok) throw new Error("Classroom stream failed");
+
+        const newSessionId = response.headers.get("X-Orka-SessionId");
+        if (newSessionId && !sessionId) onSessionStart(newSessionId);
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let currentContent = "";
+
+        if (reader) {
+          setIsThinking(false);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (runId !== streamRunIdRef.current) {
+              await reader.cancel().catch(() => {});
+              return;
+            }
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            for (const line of chunk.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.substring(6).replace(/\r$/, "");
+              if (!data || data === "[DONE]") continue;
+              if (data.startsWith("[ERROR]:")) {
+                throw new Error(data.replace("[ERROR]:", "").trim());
+              }
+
+              const normalized = data
+                .replaceAll("[NEWLINE]", "\n")
+                .replace(/\[TUTOR\]:/gi, "\n\n**Orka Hoca:** ")
+                .replace(/\[PEER\]:/gi, "\n\n**Akran:** ");
+              currentContent += normalized;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: currentContent.trimStart() } : m
+                )
+              );
+            }
+          }
+        }
+
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+        );
+        onTopicsRefresh();
+      } catch (err) {
+        console.error("Classroom stream error:", err);
+        toast.error("Sınıf oturumu başlatılamadı.");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: "Sınıf oturumu sırasında bir bağlantı hatası oluştu.", isStreaming: false }
+              : m
+          )
+        );
+      } finally {
+        if (runId === streamRunIdRef.current) setIsThinking(false);
+      }
+    },
+    [activeTopic, isThinking, isVoiceMode, onSessionStart, onTopicsRefresh, sessionId, setMessages]
+  );
+
+  const interruptAndSend = useCallback(
+    async (content: string, image?: { file: File; previewUrl: string } | null) => {
+      if ((!content && !image) || !sessionId) {
+        setIsThinking(false);
+        if (isClassroomMode) {
+          await sendClassroomMessage(content, true);
+        } else {
+          await sendMessage(content, { force: true, image });
+        }
+        return;
+      }
+
+      streamRunIdRef.current += 1;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.isStreaming
+            ? {
+                ...m,
+                isStreaming: false,
+                content: m.content
+                  ? `${m.content}\n\n_Yanıt burada kesildi._`
+                  : "_Yanıt kesildi._",
+              }
+            : m
+        )
+      );
+      setIsThinking(false);
+
+      try {
+        await ChatAPI.interruptStream(sessionId, content || "Yeni kullanıcı girdisi");
+      } catch (err) {
+        console.warn("Interrupt failed, continuing with a fresh stream", err);
+      }
+
+      if (isClassroomMode) {
+        await sendClassroomMessage(content, true);
+      } else {
+        await sendMessage(content, { force: true, image });
+      }
+    },
+    [isClassroomMode, sendClassroomMessage, sendMessage, sessionId, setMessages]
+  );
+
+  // sendMessage ref'i güncel tut — IDE→Chat tetikleyici ve sesli dikte için
   useEffect(() => {
     sendMessageRef.current = sendMessage;
+    voiceDictationRef.current = sendMessage;
   }, [sendMessage]);
 
   // IDE'den gelen pending mesajı otomatik gönder
@@ -356,6 +606,28 @@ export default function ChatPanel({
     fn(pendingMessage);
     onPendingMessageConsumed?.();
   }, [pendingMessage]);
+
+  // Remedial Lesson Handlers & Timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showRemedialPrompt && remedialCountdown > 0) {
+      timer = setInterval(() => setRemedialCountdown(c => c - 1), 1000);
+    } else if (showRemedialPrompt && remedialCountdown === 0) {
+      setShowRemedialPrompt(false);
+      if (sendMessageRef.current) sendMessageRef.current("[REMEDIAL_ACCEPT]");
+    }
+    return () => clearInterval(timer);
+  }, [showRemedialPrompt, remedialCountdown]);
+
+  const handleAcceptRemedial = useCallback(() => {
+    setShowRemedialPrompt(false);
+    if (sendMessageRef.current) sendMessageRef.current("[REMEDIAL_ACCEPT]");
+  }, []);
+
+  const handleDeclineRemedial = useCallback(() => {
+    setShowRemedialPrompt(false);
+    if (sendMessageRef.current) sendMessageRef.current("[REMEDIAL_DECLINE]");
+  }, []);
 
   // ── Korteks stream send ────────────────────────────────────────────────
   const sendKorteksMessage = useCallback(
@@ -382,50 +654,50 @@ export default function ChatPanel({
       setThinkingState("Korteks derin arastirma yapıyor...");
       let currentContent = "";
       try {
-        const response = await KorteksAPI.stream({
-          topic: content,
+        const startResponse = await KorteksAPI.startResearch({
+          query: content,
           topicId: activeTopic?.id ?? undefined,
         });
-        if (!response.ok) throw new Error("Korteks stream failed");
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        if (reader) {
-          setIsThinking(false);
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n")) {
-              if (!line.startsWith("data: ")) continue;
-              const data = line.substring(6).replace(/\r$/, "");
-              if (data === "[DONE]") break;
-              if (data.startsWith("[ERROR]:")) {
-                toast.error(data.replace("[ERROR]:", "").trim(), { duration: 6000 });
-                break;
-              }
-              if (data.startsWith("[THINKING:")) {
-                setThinkingState(data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, ""));
-                setIsThinking(true);
-                continue;
-              }
-              currentContent += data;
+
+        const jobId = startResponse.jobId;
+        setIsThinking(true);
+        setThinkingState("Korteks Swarm araştırma görevini başlattı...");
+
+        const intervalId = setInterval(async () => {
+          try {
+            const status = await KorteksAPI.getJobStatus(jobId);
+            
+            if (status.error) {
+              clearInterval(intervalId);
+              toast.error(status.error);
               setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
+                prev.map((m) => (m.id === assistantId ? { ...m, content: `Hata: ${status.error}`, isStreaming: false } : m))
               );
+              setIsThinking(false);
+              return;
             }
+
+            if (status.phase === "Completed") {
+              clearInterval(intervalId);
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: status.result || "", isStreaming: false, type: "research", researchTopic: content } : m))
+              );
+              setIsThinking(false);
+              onTopicsRefresh();
+            } else {
+              setThinkingState(status.phase + ": " + (status.logs?.split('\n').filter((l: string) => l.trim().length > 0).pop() || "İşleniyor..."));
+            }
+          } catch (pollErr) {
+            console.error("Poll error", pollErr);
           }
-        }
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
-        );
-        onTopicsRefresh();
+        }, 3000);
+
       } catch (err) {
         console.error("Korteks error:", err);
-        toast.error("Korteks araştırması başarısız oldu.");
+        toast.error("Korteks araştırması başlatılamadı.");
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, content: "Korteks araştırması sırasında bir hata oluştu.", isStreaming: false } : m))
         );
-      } finally {
         setIsThinking(false);
       }
     },
@@ -436,16 +708,36 @@ export default function ChatPanel({
   const handleSend = useCallback(
     (text?: string) => {
       const content = (text ?? input).trim();
-      if (!content) return;
+      const imageToSend = pendingImage;
+      if (!content && !imageToSend) return;
       setInput("");
+      setPendingImage(null);
       resetTextarea();
+      if (isThinking) {
+        void interruptAndSend(content, imageToSend);
+        return;
+      }
+      if (isClassroomMode) {
+        sendClassroomMessage(content);
+        return;
+      }
       if (isKorteksMode) {
         sendKorteksMessage(content);
       } else {
-        sendMessage(content);
+        sendMessage(content, { image: imageToSend });
       }
     },
-    [input, isKorteksMode, sendMessage, sendKorteksMessage]
+    [
+      input,
+      pendingImage,
+      isThinking,
+      interruptAndSend,
+      isClassroomMode,
+      sendClassroomMessage,
+      isKorteksMode,
+      sendKorteksMessage,
+      sendMessage,
+    ]
   );
 
   // ── Quiz answer callback ───────────────────────────────────────────────
@@ -470,15 +762,42 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Sadece görsel dosyaları eklenebilir.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Görsel 10MB sınırını aşmamalı.");
+      return;
+    }
+    setPendingImage((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file) };
+    });
+    setIsKorteksMode(false);
+    setIsClassroomMode(false);
+  };
+
+  const clearPendingImage = () => {
+    setPendingImage((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  };
+
   // ── Session loading spinner ────────────────────────────────────────────
   if (sessionLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-zinc-900 h-full">
+      <div className="flex-1 flex items-center justify-center soft-page h-full">
         <div className="flex items-center gap-2.5">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse"
+              className="w-1.5 h-1.5 rounded-full bg-foreground/30 animate-pulse"
               style={{ animationDelay: `${i * 0.15}s` }}
             />
           ))}
@@ -488,33 +807,33 @@ export default function ChatPanel({
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900 h-full overflow-hidden">
+    <div className="flex-1 flex flex-col soft-page h-full overflow-hidden">
       {/* Topic Header — topic varsa adını, yoksa AI assistant markasını göster */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-zinc-800/50">
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b soft-border soft-surface">
         <div className="flex items-center gap-2.5">
           {activeTopic ? (
             <>
               <span className="text-base">{activeTopic.emoji}</span>
-              <span className="text-sm font-medium text-zinc-200">
+              <span className="text-sm font-medium text-foreground">
                 {activeTopic.title}
               </span>
               {currentSubtopic && (
-                <div className="flex items-center gap-2 ml-2 pl-2 border-l border-zinc-700/50">
-                  <span className="text-[11px] text-zinc-500">{'>'}</span>
-                  <span className="text-xs text-zinc-400">{currentSubtopic.title}</span>
+                <div className="flex items-center gap-2 ml-2 pl-2 border-l soft-border">
+                  <span className="text-[11px] soft-text-muted">{'>'}</span>
+                  <span className="text-xs soft-text-muted">{currentSubtopic.title}</span>
                   <div className="flex items-center gap-1.5 ml-2">
-                    <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="w-16 h-1 soft-muted rounded-full overflow-hidden">
                       <div className="h-full bg-emerald-500/60 transition-all duration-500" style={{ width: `${currentSubtopic.progress}%` }} />
                     </div>
-                    <span className="text-[9px] text-zinc-600">{currentSubtopic.index}/{currentSubtopic.total}</span>
+                    <span className="text-[9px] soft-text-muted">{currentSubtopic.index}/{currentSubtopic.total}</span>
                   </div>
                 </div>
               )}
             </>
           ) : (
             <>
-              <OrcaLogo className="w-4 h-4 text-zinc-500" />
-              <span className="text-sm font-medium text-zinc-400">
+              <OrcaLogo className="w-4 h-4 soft-text-muted" />
+              <span className="text-sm font-medium soft-text-muted">
                 Orka AI
               </span>
             </>
@@ -524,7 +843,7 @@ export default function ChatPanel({
           {activeTopic && (
             <button
               onClick={() => onOpenWiki(activeTopic.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 transition-colors duration-150"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium soft-text-muted hover:text-foreground hover:bg-surface-muted transition-colors duration-150"
             >
               <BookOpen className="w-3.5 h-3.5" />
               Wiki
@@ -543,21 +862,21 @@ export default function ChatPanel({
             exit={{ opacity: 0, y: -10 }}
             className="absolute top-0 inset-x-0 z-10 flex justify-center pt-4 pointer-events-none"
           >
-            <div className="bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-full px-5 py-2 shadow-lg shadow-black/20 flex items-center gap-3">
+            <div className="soft-surface border rounded-full px-5 py-2 soft-shadow flex items-center gap-3">
               <BookOpen className="w-4 h-4 text-emerald-500" />
               <div className="flex items-center gap-2 text-xs font-medium">
-                <span className="text-zinc-400">{activeTopic?.title}</span>
-                <span className="text-zinc-600">❯</span>
-                <span className="text-zinc-100">{currentSubtopic.title}</span>
+                <span className="soft-text-muted">{activeTopic?.title}</span>
+                <span className="soft-text-muted">/</span>
+                <span className="text-foreground">{currentSubtopic.title}</span>
               </div>
-              
-              <div className="flex items-center gap-2 ml-4 pl-4 border-l border-zinc-800">
-                <div className="text-[10px] text-zinc-500 font-mono">
+
+              <div className="flex items-center gap-2 ml-4 pl-4 border-l soft-border">
+                <div className="text-[10px] soft-text-muted font-mono">
                   {currentSubtopic.index} / {currentSubtopic.total}
                 </div>
-                <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-emerald-500 rounded-full" 
+                <div className="w-16 h-1.5 soft-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full"
                     style={{ width: `${currentSubtopic.progress}%` }}
                   />
                 </div>
@@ -566,7 +885,7 @@ export default function ChatPanel({
           </motion.div>
         )}
       </AnimatePresence>
-      
+
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
         <div className="max-w-3xl mx-auto w-full px-6 py-8">
@@ -596,8 +915,8 @@ export default function ChatPanel({
                 exit={{ opacity: 0 }}
                 className="flex items-center gap-3 mt-4"
               >
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-                  <OrcaLogo className="w-4 h-4 text-zinc-300" animated={true} />
+                <div className="flex-shrink-0 w-8 h-8 rounded-full soft-muted border soft-border flex items-center justify-center">
+                  <OrcaLogo className="w-4 h-4 text-foreground" animated={true} />
                 </div>
                 <div className="pt-0">
                   <ThinkingIndicator state={thinkingState} />
@@ -605,23 +924,141 @@ export default function ChatPanel({
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Remedial Timer HUD */}
+          <AnimatePresence>
+            {showRemedialPrompt && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="mt-4 p-4 rounded-xl border border-amber-500/25 bg-amber-500/10 flex flex-col gap-3 relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 h-1 bg-amber-500/20 w-full">
+                  <motion.div 
+                     initial={{ width: "100%" }}
+                     animate={{ width: "0%" }}
+                     transition={{ duration: 10, ease: "linear" }}
+                     className="h-full bg-amber-500"
+                  />
+                </div>
+                <div className="flex items-start gap-4 z-10">
+                  <div className="p-2 bg-amber-500/15 rounded-lg shrink-0 mt-1">
+                     <BookOpen className="w-5 h-5 text-amber-700 dark:text-amber-300" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-sm font-semibold text-foreground">Özel telafi dersi</h3>
+                    <p className="text-xs soft-text-muted leading-relaxed">
+                      Sıradaki konuya geçmeden önce hatalarını pekiştirmen için sana özel bir telafi dersi oluşturabilirim. 
+                      İstemiyorsan <span className="font-bold text-foreground">{remedialCountdown} sn</span> içinde reddedebilirsin.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-2 z-10">
+                  <button onClick={handleDeclineRemedial} className="px-4 py-2 rounded-lg text-[11px] font-semibold soft-text-muted hover:text-foreground hover:bg-surface-muted transition-colors">
+                    Hayır, sıradaki konuya geç
+                  </button>
+                  <button onClick={handleAcceptRemedial} className="px-4 py-2 rounded-lg text-[11px] font-semibold text-emerald-950 bg-emerald-500 hover:bg-emerald-400 transition-colors">
+                    Evet, Telafi Dersi İsterim
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
+
+      {/* Voice Classroom Player & HUD */}
+      {isVoiceMode && sessionId && (
+        <div className="flex-shrink-0 px-6 py-2 border-t soft-border soft-surface">
+          {/* Audio Engine */}
+          <ClassroomAudioPlayer
+            sessionId={sessionId}
+            onInterrupt={(elapsedMs) => {
+              setIsSpeaking(false);
+              setActiveSpeaker(null);
+              console.log("Voice interrupted at", elapsedMs, "ms");
+            }}
+            isSpeaking={isSpeaking}
+            onSpeakerActive={(speaker) => setActiveSpeaker(speaker)}
+            onAudioEnded={() => {
+              setIsSpeaking(false);
+              setActiveSpeaker(null);
+            }}
+          />
+
+          {/* Podcast Avatars HUD */}
+          <div className="flex items-center justify-center gap-8 py-3 w-full">
+            {/* HOCA AVATARI */}
+            <div className="flex flex-col items-center gap-2">
+              <motion.div 
+                animate={{
+                  boxShadow: activeSpeaker === "Hoca" ? ["0px 0px 0px 0px rgba(16,185,129,0.4)", "0px 0px 0px 10px rgba(16,185,129,0)", "0px 0px 0px 0px rgba(16,185,129,0)"] : "none",
+                  scale: activeSpeaker === "Hoca" ? [1, 1.05, 1] : 1
+                }}
+                transition={{ duration: 1.5, repeat: activeSpeaker === "Hoca" ? Infinity : 0 }}
+                className={`relative w-16 h-16 rounded-full flex items-center justify-center border transition-colors duration-300 ${activeSpeaker === "Hoca" ? "border-emerald-500 bg-emerald-500/10" : "soft-border soft-muted"}`}
+              >
+                <span className="text-2xl">👨‍🏫</span>
+                {activeSpeaker === "Hoca" && (
+                  <motion.div className="absolute inset-0 rounded-full border-2 border-emerald-400" layoutId="speaking-ring" />
+                )}
+              </motion.div>
+              <span className={`text-xs font-bold ${activeSpeaker === "Hoca" ? "text-emerald-600 dark:text-emerald-300" : "soft-text-muted"}`}>Orka Hoca</span>
+            </div>
+
+            {/* LIVE INDICATOR */}
+            <div className="flex flex-col items-center justify-center h-full px-4">
+               {activeSpeaker ? (
+                 <motion.div className="flex gap-1 items-end h-4" initial="hidden" animate="visible" variants={{
+                   visible: { transition: { staggerChildren: 0.1, repeat: Infinity, repeatType: "reverse" } }
+                 }}>
+                   {[...Array(5)].map((_, i) => (
+                     <motion.div key={i} className={`w-1 rounded-full ${activeSpeaker === "Hoca" ? "bg-emerald-500" : "bg-amber-500"}`}
+                       variants={{
+                         hidden: { height: "20%" },
+                         visible: { height: ["20%", "100%", "20%"], transition: { duration: 0.8, ease: "easeInOut" } }
+                       }}
+                     />
+                   ))}
+                 </motion.div>
+               ) : (
+                 <div className="text-[10px] font-medium soft-text-muted tracking-wider">BEKLENİYOR</div>
+               )}
+            </div>
+
+            {/* ASISTAN AVATARI */}
+            <div className="flex flex-col items-center gap-2">
+              <motion.div 
+                animate={{
+                  boxShadow: activeSpeaker === "Asistan" ? ["0px 0px 0px 0px rgba(244,63,94,0.4)", "0px 0px 0px 10px rgba(244,63,94,0)", "0px 0px 0px 0px rgba(244,63,94,0)"] : "none",
+                  scale: activeSpeaker === "Asistan" ? [1, 1.05, 1] : 1
+                }}
+                transition={{ duration: 1.5, repeat: activeSpeaker === "Asistan" ? Infinity : 0 }}
+                className={`flex w-16 h-16 rounded-full items-center justify-center border transition-colors duration-300 ${activeSpeaker === "Asistan" ? "border-amber-500 bg-amber-500/10" : "soft-border soft-muted"}`}
+              >
+                <span className="text-2xl">👩‍🎓</span>
+              </motion.div>
+              <span className={`text-xs font-bold ${activeSpeaker === "Asistan" ? "text-amber-700 dark:text-amber-300" : "soft-text-muted"}`}>Asistan</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Input Frame — Claude/Gemini Style */}
       <div className="flex-shrink-0 relative pointer-events-none">
         <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
-          <motion.div 
+          <motion.div
             layout
             initial={false}
             className={`
-              glass-panel rounded-2xl border transition-all duration-500 shadow-2xl
+              glass-panel rounded-xl border transition-all duration-300 soft-shadow
               ${isThinking ? "opacity-90 grayscale-[0.2]" : "opacity-100"}
-              ${isPlanMode ? "glow-silver-active" : (input.length > 0 ? "glow-silver border-zinc-500/20" : "border-zinc-700/40 shadow-black/40")}
-              bg-zinc-900/80 backdrop-blur-xl overflow-hidden
+              ${isPlanMode ? "glow-silver-active" : (input.length > 0 ? "glow-silver border-soft-border" : "border-soft-border")}
+              overflow-hidden
             `}
           >
-            <div className="px-4 pt-3 flex flex-col">
+           <div className="px-4 pt-3 flex flex-col">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -631,23 +1068,70 @@ export default function ChatPanel({
                   isKorteksMode
                     ? "Arastirmamı istediğin konuyu yaz, web'de derinlemesine arastırayım..."
                     : isPlanMode
-                    ? "Bana bir konu ver, senin icin en güncel müfredatı olusturayım..."
-                    : "Bir sey sor veya müfredat olusturmak icin Plan Modu'nu ac..."
+                      ? "Bana bir konu ver, senin icin en güncel müfredatı olusturayım..."
+                      : (messages.length > 0 && messages[messages.length - 1].role === "ai" && messages[messages.length - 1].type === "quiz" && !messages[messages.length - 1].isStreaming)
+                        ? "Lütfen öncelikle yukarıdaki soruyu cevaplayın..."
+                        : "Bir sey sor veya müfredat olusturmak icin Plan Modu'nu ac..."
                 }
                 rows={1}
-                disabled={isThinking}
-                className="w-full bg-transparent resize-none outline-none text-[14px] text-zinc-100 placeholder-zinc-500 leading-relaxed min-h-[44px] max-h-[200px] py-1"
+                disabled={messages.length > 0 && messages[messages.length - 1].role === "ai" && messages[messages.length - 1].type === "quiz" && !messages[messages.length - 1].isStreaming}
+                className="w-full bg-transparent resize-none outline-none text-[14px] text-foreground placeholder:text-muted-foreground leading-relaxed min-h-[44px] max-h-[200px] py-1 disabled:opacity-50 disabled:cursor-not-allowed"
               />
-              
-              <div className="flex items-center justify-between pb-3 pt-2 border-t border-zinc-800/30 mt-1">
-                <div className="flex items-center gap-2">
+
+              {pendingImage && (
+                <div className="mb-3 flex items-center gap-3 rounded-lg border soft-border soft-muted p-2">
+                  <img
+                    src={pendingImage.previewUrl}
+                    alt={pendingImage.file.name}
+                    className="h-14 w-14 rounded-md object-cover border soft-border"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-foreground">
+                      {pendingImage.file.name}
+                    </p>
+                    <p className="text-[10px] soft-text-muted">
+                      {(pendingImage.file.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
                   <button
-                    onClick={() => { setIsPlanMode((prev) => !prev); setIsKorteksMode(false); }}
+                    onClick={clearPendingImage}
+                    className="h-7 w-7 rounded-md soft-text-muted hover:text-foreground hover:bg-surface-muted flex items-center justify-center"
+                    title="Görseli kaldır"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pb-3 pt-2 border-t soft-border mt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageSelect}
+                  />
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isKorteksMode || isClassroomMode}
+                    className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 ${
+                      pendingImage
+                        ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-300"
+                        : "soft-muted border-soft-border soft-text-muted hover:text-foreground"
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title="Görsel ekle"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    onClick={() => { setIsPlanMode((prev) => !prev); setIsKorteksMode(false); setIsClassroomMode(false); }}
                     className={`
                       flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
                       ${isPlanMode
-                        ? "bg-white/10 border-white/20 text-white shadow-sm shadow-white/5"
-                        : "bg-zinc-800/40 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}
+                        ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-300"
+                        : "soft-muted border-soft-border soft-text-muted hover:text-foreground"}
                     `}
                     title="Plan Modu — Ogrenme mufredati olusturur"
                   >
@@ -656,12 +1140,12 @@ export default function ChatPanel({
                   </button>
 
                   <button
-                    onClick={() => { setIsKorteksMode((prev) => !prev); setIsPlanMode(false); }}
+                    onClick={() => { setIsKorteksMode((prev) => !prev); setIsPlanMode(false); setIsClassroomMode(false); clearPendingImage(); }}
                     className={`
                       flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
                       ${isKorteksMode
-                        ? "bg-emerald-900/30 border-emerald-700/50 text-emerald-400 shadow-sm"
-                        : "bg-zinc-800/40 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"}
+                        ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-300"
+                        : "soft-muted border-soft-border soft-text-muted hover:text-foreground"}
                     `}
                     title="Korteks — Web'de derin arastirma yapar ve wiki'ye kaydeder"
                   >
@@ -669,39 +1153,70 @@ export default function ChatPanel({
                     <span>Korteks</span>
                   </button>
 
-                  {(isPlanMode || isKorteksMode) && (
+                  <button
+                    onClick={() => setIsVoiceMode((prev) => !prev)}
+                    className={`
+                      flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
+                      ${isVoiceMode
+                        ? "bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-300"
+                        : "soft-muted border-soft-border soft-text-muted hover:text-foreground"}
+                    `}
+                    title="Sesli Sınıf — Hoca ve Asistan seslendirmesini aktifleştirir"
+                  >
+                    {isVoiceMode ? <Volume2 className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" /> : <VolumeX className="w-3.5 h-3.5" />}
+                    <span>Sesli Sınıf</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsClassroomMode((prev) => !prev); setIsPlanMode(false); setIsKorteksMode(false); clearPendingImage(); }}
+                    className={`
+                      flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
+                      ${isClassroomMode
+                        ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-300"
+                        : "soft-muted border-soft-border soft-text-muted hover:text-foreground"}
+                    `}
+                    title="Otonom sınıf - Tutor ve akran ajan konuşması"
+                  >
+                    <Users className={`w-3.5 h-3.5 ${isClassroomMode ? "text-emerald-400" : ""}`} />
+                    <span>Sınıf</span>
+                  </button>
+
+                  {(isPlanMode || isKorteksMode || isVoiceMode || isClassroomMode || pendingImage) && (
                     <motion.span
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode ? "text-emerald-600" : "text-zinc-400"}`}
+                      className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode || isClassroomMode || pendingImage ? "text-emerald-600" : isVoiceMode ? "text-amber-700 dark:text-amber-300" : "soft-text-muted"}`}
                     >
-                      {isKorteksMode ? "Deep Research Active" : "Planning Engine Active"}
+                      {pendingImage ? "Görsel hazır" : isKorteksMode ? "Araştırma açık" : isClassroomMode ? "Sınıf açık" : isVoiceMode ? "Sesli sınıf açık" : "Plan modu açık"}
                     </motion.span>
                   )}
                 </div>
 
                 <div className="flex items-center gap-3">
-                   <span className="text-[10px] text-zinc-600 hidden sm:inline-block">
-                     {input.length > 0 ? "Shift+Enter yeni satır" : ""}
-                   </span>
-                   <button
+                  <span className="text-[10px] soft-text-muted hidden sm:inline-block">
+                    {input.length > 0 ? "Shift+Enter yeni satır" : ""}
+                  </span>
+                  <button
                     onClick={() => handleSend()}
-                    disabled={!input.trim() || isThinking}
+                    disabled={(!input.trim() && !pendingImage) || (messages.length > 0 && messages[messages.length - 1].role === "ai" && messages[messages.length - 1].type === "quiz" && !messages[messages.length - 1].isStreaming)}
                     className={`
                       flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200
-                      ${!input.trim() || isThinking 
-                        ? "bg-zinc-800 text-zinc-600 opacity-50 cursor-not-allowed" 
-                        : "bg-zinc-100 hover:bg-white text-zinc-950 shadow-lg shadow-white/5"}
+                      ${((!input.trim() && !pendingImage) || (messages.length > 0 && messages[messages.length - 1].role === "ai" && messages[messages.length - 1].type === "quiz" && !messages[messages.length - 1].isStreaming))
+                        ? "soft-muted soft-text-muted opacity-50 cursor-not-allowed"
+                        : isThinking
+                          ? "bg-amber-500 hover:bg-amber-400 text-amber-950"
+                          : "bg-foreground hover:opacity-90 text-background"}
                     `}
+                    title={isThinking ? "Yanıtı kes ve yeni mesajı gönder" : "Gönder"}
                   >
-                    <Send className="w-4 h-4" />
+                    {isThinking ? <StopCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
             </div>
           </motion.div>
-          <p className="text-[9px] text-zinc-600 mt-3 text-center tracking-wide uppercase opacity-50 font-medium">
-            Orka AI · SOLID Planning Engine v4.2 · Streaming Enabled
+          <p className="text-[9px] soft-text-muted mt-3 text-center tracking-wide uppercase opacity-70 font-medium">
+            Orka AI
           </p>
         </div>
       </div>
@@ -721,25 +1236,25 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
         className="text-center"
       >
         <div className="flex items-center justify-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-800 border border-zinc-700/50 flex items-center justify-center shadow-2xl shadow-black/40">
-            <OrcaLogo className="w-6 h-6 text-zinc-100" />
+          <div className="w-12 h-12 rounded-xl soft-surface border flex items-center justify-center soft-shadow">
+            <OrcaLogo className="w-6 h-6 text-foreground" />
           </div>
         </div>
-        <h1 className="text-xl font-semibold text-zinc-100 mb-2">
+        <h1 className="text-xl font-semibold text-foreground mb-2">
           Bugün ne öğrenmek istiyorsun?
         </h1>
-        <p className="text-xs text-zinc-500 mb-8 max-w-[280px] mx-auto leading-relaxed">
+        <p className="text-xs soft-text-muted mb-8 max-w-[280px] mx-auto leading-relaxed">
           Bana herhangi bir şey sor veya{" "}
-          <code className="text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded text-[10px] font-mono">
+          <code className="text-foreground soft-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
             /plan
           </code>{" "}
           yazarak kişiselleştirilmiş bir müfredat oluştur.
         </p>
-        
-        <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-zinc-800/50 bg-zinc-900/30 w-fit mx-auto">
-          <Sparkles className="w-3 h-3 text-zinc-400" />
-          <span className="text-[10px] font-medium text-zinc-500 tracking-wide uppercase">
-            SOLID Thinking Engine Ready
+
+        <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border soft-border soft-surface w-fit mx-auto">
+          <Sparkles className="w-3 h-3 soft-text-muted" />
+          <span className="text-[10px] font-medium soft-text-muted tracking-wide uppercase">
+            Öğrenmeye hazır
           </span>
         </div>
       </motion.div>

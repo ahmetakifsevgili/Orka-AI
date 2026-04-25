@@ -13,7 +13,13 @@ export function tryParseQuiz(content: string): QuizData | QuizData[] | null {
   const blockMatch = content.match(/```(?:json|quiz)?\s*([\s\S]+?)\s*```/i);
   if (blockMatch) candidates.unshift(blockMatch[1]);
 
-  // fallback: süslü parantez bloklarını dene
+  // fallback: köşeli veya süslü parantez bloklarını dene
+  const firstBracket = content.indexOf('[');
+  const lastBracket = content.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      candidates.push(content.substring(firstBracket, lastBracket + 1));
+  }
+
   const firstBrace = content.indexOf('{');
   const lastBrace = content.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {

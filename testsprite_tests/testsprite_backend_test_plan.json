@@ -1,0 +1,42 @@
+[
+  {
+    "id": "TC001",
+    "title": "postapiauthregisterwithvaliddata",
+    "description": "Test user registration with valid email and password to ensure 201 Created response with userId and basic profile is returned."
+  },
+  {
+    "id": "TC002",
+    "title": "postapiauthregisterwithexistingemail",
+    "description": "Test user registration with an email that already exists to verify 409 Conflict response with error message 'email already in use'."
+  },
+  {
+    "id": "TC003",
+    "title": "postapiauthloginwithvalidcredentials",
+    "description": "Test user login with valid credentials to receive 200 OK with accessToken, refreshToken, and expiresIn."
+  },
+  {
+    "id": "TC004",
+    "title": "postapiauthloginwithinvalidcredentials",
+    "description": "Test user login with invalid credentials to ensure 401 Unauthorized response with 'invalid credentials' error message."
+  },
+  {
+    "id": "TC005",
+    "title": "postapiauthrefreshwithvalidrefreshtoken",
+    "description": "Test refreshing access token using a valid refreshToken to receive 200 OK with new accessToken and refreshToken."
+  },
+  {
+    "id": "TC006",
+    "title": "postapiauthrefreshwithexpiredorrevokedtoken",
+    "description": "Test refreshing access token with expired or revoked refreshToken to verify 401 Unauthorized or 400 Bad Request indicating invalid refresh token."
+  },
+  {
+    "id": "TC007",
+    "title": "postapiauthlogoutwithvalidrefreshtoken",
+    "description": "Test logout endpoint with valid refreshToken to confirm 200 OK response indicating token revoked."
+  },
+  {
+    "id": "TC008",
+    "title": "postapiauthlogoutwithoutrefreshtoken",
+    "description": "Test logout endpoint without providing refreshToken to ensure 401 Unauthorized response."
+  }
+]

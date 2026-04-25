@@ -202,6 +202,56 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.ResearchJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DocumentContext")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FinalReport")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Logs")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Phase")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Query")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("RequiresWebSearch")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ResearchJobs");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -287,6 +337,71 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("UserId", "TopicId");
 
                     b.ToTable("SkillMasteries");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.SkillNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DifficultyLevel")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsUnlocked")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NodeType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid?>("RelatedTopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RuleMetadataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("UnlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "NodeType");
+
+                    b.ToTable("SkillNodes");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.SkillTreeClosure", b =>
+                {
+                    b.Property<Guid>("AncestorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DescendantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Depth")
+                        .HasColumnType("int");
+
+                    b.HasKey("AncestorId", "DescendantId");
+
+                    b.HasIndex("AncestorId");
+
+                    b.HasIndex("DescendantId");
+
+                    b.ToTable("SkillTreeClosures");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.Source", b =>
@@ -403,6 +518,9 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("Age")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -414,6 +532,12 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<DateTime>("DailyMessageResetAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("DailyStudyMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EducationLevel")
+                        .HasColumnType("int");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -444,6 +568,12 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("LearningGoal")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LearningTone")
+                        .HasColumnType("int");
+
                     b.Property<bool>("NewContentAlerts")
                         .HasColumnType("bit");
 
@@ -454,6 +584,9 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<string>("Plan")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("ProfileCompleted")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("QuizReminders")
                         .HasColumnType("bit");
@@ -640,6 +773,24 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.ResearchJob", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.Session", b =>
                 {
                     b.HasOne("Orka.Core.Entities.Topic", "Topic")
@@ -674,6 +825,36 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("Topic");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.SkillNode", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.SkillTreeClosure", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.SkillNode", "Ancestor")
+                        .WithMany("AncestorLinks")
+                        .HasForeignKey("AncestorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.SkillNode", "Descendant")
+                        .WithMany("DescendantLinks")
+                        .HasForeignKey("DescendantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Ancestor");
+
+                    b.Navigation("Descendant");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.Source", b =>
@@ -738,6 +919,13 @@ namespace Orka.Infrastructure.Migrations
             modelBuilder.Entity("Orka.Core.Entities.Session", b =>
                 {
                     b.Navigation("Messages");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.SkillNode", b =>
+                {
+                    b.Navigation("AncestorLinks");
+
+                    b.Navigation("DescendantLinks");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.Topic", b =>

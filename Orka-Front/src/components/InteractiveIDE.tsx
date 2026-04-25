@@ -6,7 +6,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import Editor from "@monaco-editor/react";
-import { Play, Loader2, Send, Terminal, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Play, Loader2, Send, Terminal, ChevronDown, ChevronUp, RotateCcw, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CodeAPI } from "@/services/api";
 
@@ -19,6 +19,8 @@ interface InteractiveIDEProps {
   quizQuestion?: string;
   /** IDE kapanma callback'i — quiz gönderildikten sonra çağrılır */
   onClose?: () => void;
+  /** Aktif session ID — Piston sonucu Redis'e yazılır, TutorAgent kod bağlamını okur */
+  sessionId?: string;
 }
 
 const DEFAULT_CODE = `using System;
@@ -76,7 +78,7 @@ const STARTER_CODE: Record<string, string> = {
   bash: `echo "Merhaba, Orka!"`,
 };
 
-export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion, onClose }: InteractiveIDEProps) {
+export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion, onClose, sessionId }: InteractiveIDEProps) {
   const [code, setCode]         = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState("csharp");
   const [running, setRunning]   = useState(false);
@@ -102,7 +104,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
     setSuccess(null);
 
     try {
-      const result = await CodeAPI.run({ code, language });
+      const result = await CodeAPI.run({ code, language, sessionId });
       setStdout(result.stdout || null);
       setStderr(result.stderr || null);
       setSuccess(result.success);
@@ -125,7 +127,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
     if (!onSendToChat) return;
 
     const questionContext = quizQuestion
-      ? `**Quiz Sorusu:** ${quizQuestion}\n\n`
+      ? `**Quiz Sorusu:** ${quizQuestion}\n**Kullanılan Dil:** ${langLabel}\n\n`
       : "";
 
     if (!hasOutput) {
@@ -165,16 +167,16 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
   }, [code, stdout, stderr, success, language, onSendToChat, hasOutput, langLabel, quizQuestion, onClose]);
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900 h-full overflow-hidden">
+    <div className="flex-1 flex flex-col soft-page h-full overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-zinc-800/50">
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b soft-border soft-surface">
         <div className="flex items-center gap-3">
-          <Terminal className="w-4 h-4 text-zinc-400" />
-          <span className="text-sm font-medium text-zinc-200">
+          <Terminal className="w-4 h-4 soft-text-muted" />
+          <span className="text-sm font-medium text-foreground">
             İnteraktif Kod Editörü
           </span>
           {topicTitle && (
-            <span className="text-xs text-zinc-500 pl-2 border-l border-zinc-700">
+            <span className="text-xs soft-text-muted pl-2 border-l soft-border">
               {topicTitle}
             </span>
           )}
@@ -185,7 +187,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
           <select
             value={language}
             onChange={(e) => handleLanguageChange(e.target.value)}
-            className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-zinc-500 transition-colors"
+            className="text-xs soft-surface border rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500/50 transition-colors"
           >
             {LANGUAGE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -196,7 +198,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
 
           <button
             onClick={() => { setCode(STARTER_CODE[language] ?? ""); setStdout(null); setStderr(null); setSuccess(null); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-zinc-700/50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs soft-text-muted hover:text-foreground hover:bg-surface-muted border soft-border transition-colors"
             title="Editörü sıfırla"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -208,8 +210,8 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
             className={`
               flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border
               ${running || !code.trim()
-                ? "bg-zinc-800 border-zinc-700 text-zinc-500 cursor-not-allowed opacity-60"
-                : "bg-emerald-900/50 border-emerald-700/60 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 shadow-sm shadow-emerald-900/20"}
+                ? "soft-muted border-soft-border soft-text-muted cursor-not-allowed opacity-60"
+                : "bg-emerald-500/10 border-emerald-500/25 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15"}
             `}
           >
             {running
@@ -222,11 +224,22 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
             <button
               onClick={handleSendToChat}
               disabled={running || !code.trim()}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-900/40 border border-amber-700/50 text-amber-200 hover:bg-amber-800/50 hover:text-amber-100 shadow-sm shadow-amber-900/20 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
               title="Kodu değerlendirmesi için eğitmene gönder"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Hocaya Gönder</span>
+            </button>
+          )}
+
+          {/* Kapat / Küçült butonu */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="ml-2 flex items-center justify-center p-1.5 soft-text-muted hover:text-foreground hover:bg-surface-muted rounded-lg transition-colors"
+              title="Editörü Kapat / Küçült"
+            >
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -236,7 +249,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
       {quizQuestion && (
         <div className="flex-shrink-0 px-6 py-3 bg-amber-950/25 border-b border-amber-900/30">
           <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-1">Çözmen Gereken Soru</p>
-          <p className="text-sm text-zinc-200 leading-relaxed">{quizQuestion}</p>
+          <p className="text-sm text-foreground leading-relaxed">{quizQuestion}</p>
         </div>
       )}
 
@@ -277,13 +290,13 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950 overflow-hidden"
+            className="flex-shrink-0 border-t soft-border soft-surface overflow-hidden"
           >
             {/* Output header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/60">
+            <div className="flex items-center justify-between px-4 py-2 border-b soft-border">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${success ? "bg-emerald-500" : "bg-amber-500"}`} />
-                <span className="text-[11px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+                <span className="text-[11px] font-mono font-medium soft-text-muted uppercase tracking-wider">
                   {success ? "Çıktı" : "Hata"} — {langLabel}
                 </span>
               </div>
@@ -291,7 +304,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
                 {onSendToChat && (
                   <button
                     onClick={handleSendToChat}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 border border-zinc-700/50 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium soft-text-muted hover:text-foreground hover:bg-surface-muted border soft-border transition-colors"
                   >
                     <Send className="w-3 h-3" />
                     AI'a Sor
@@ -299,7 +312,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
                 )}
                 <button
                   onClick={() => setOutputOpen((v) => !v)}
-                  className="text-zinc-600 hover:text-zinc-400 transition-colors p-1"
+                  className="soft-text-muted hover:text-foreground transition-colors p-1"
                 >
                   {outputOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
                 </button>

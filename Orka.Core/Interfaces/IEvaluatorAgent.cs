@@ -16,5 +16,6 @@ public interface IEvaluatorAgent
         string agentResponse,
         string agentRole,
         Guid? topicId = null,
+        string? goalContext = null,
         CancellationToken ct = default);
 }

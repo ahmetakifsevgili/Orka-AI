@@ -85,7 +85,14 @@
       "Bash(echo \"TS_OK_EXIT_$?\")",
       "WebSearch",
       "WebFetch(domain:www.promptfoo.dev)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(findstr :5065)",
+      "Bash(tasklist /FI \"PID eq 19440\" /FO LIST)",
+      "Bash(tasklist //FI \"PID eq 19440\" //FO LIST)",
+      "Bash(taskkill *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git *)"
     ]
   }
 }

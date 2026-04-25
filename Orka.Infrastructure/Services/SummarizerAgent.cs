@@ -229,4 +229,92 @@ public class SummarizerAgent : ISummarizerAgent
             _logger.LogError(ex, "[WikiCurator] Tüm sağlayıcılar başarısız. TopicId={TopicId}", topicId);
         }
     }
+
+    public async Task SummarizeModuleAsync(Guid parentTopicId, Guid userId)
+    {
+        var lockKey = $"MODULE:{parentTopicId}";
+        if (!_inProgress.TryAdd(lockKey, 0)) return;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var wikiService = scope.ServiceProvider.GetRequiredService<IWikiService>();
+
+            var parentTopic = await db.Topics.FindAsync(parentTopicId);
+            if (parentTopic == null) return;
+
+            // Ağaçtaki tüm alt konu yapısını BFS ile topla (DeepPlan desteği)
+            var allSubTopics = new List<Orka.Core.Entities.Topic>();
+            var queue = new Queue<Guid>();
+            queue.Enqueue(parentTopicId);
+
+            while(queue.Count > 0)
+            {
+                var curr = queue.Dequeue();
+                var children = await db.Topics.Where(t => t.ParentTopicId == curr).OrderBy(t => t.Order).ToListAsync();
+                foreach(var c in children)
+                {
+                    allSubTopics.Add(c);
+                    queue.Enqueue(c.Id);
+                }
+            }
+
+            var combinedWikis = new System.Text.StringBuilder();
+            foreach (var sub in allSubTopics)
+            {
+                var subWiki = await wikiService.GetWikiFullContentAsync(sub.Id, userId);
+                if (!string.IsNullOrWhiteSpace(subWiki))
+                {
+                    combinedWikis.AppendLine($"## Ders: {sub.Title}");
+                    combinedWikis.AppendLine(subWiki);
+                    combinedWikis.AppendLine("\n---\n");
+                }
+            }
+
+            string finalWikiContent = combinedWikis.ToString();
+            if (finalWikiContent.Length > 25000)
+            {
+                _logger.LogWarning("[SummarizerAgent] Modül içeriği çok büyük ({Length} char). Limitleniyor.", finalWikiContent.Length);
+                finalWikiContent = finalWikiContent.Substring(0, 25000) + "\n...[İçerik Kırpıldı, Diğer Notlara Geçildi]...";
+            }
+
+            if (combinedWikis.Length < 100)
+            {
+                _logger.LogWarning("[SummarizerAgent] Modül({ModId}) için yeterli alt konu wiki içeriği yok, özet üretilemiyor.", parentTopicId);
+                return;
+            }
+
+            var summarizePrompt = $$"""
+                Sen bir 'Eğitim Modülü Baş Yazarı'sın.
+                Görev: "{{parentTopic.Title}}" modülüne ait aşağıdaki derslerin içeriklerini derleyip, tek ve kapsayıcı bir "Modül Özeti" (Wiki Sayfası) oluştur.
+                
+                DERSLER VE İÇERİKLERİ:
+                {{finalWikiContent}}
+
+                KURALLAR:
+                - Genel okuyucuya hitap et. Çok sade bir Türkçe kullan.
+                - Her dersin ana fikrini birleştirerek "Büyük Resmi" göster.
+                - Modülü okuduktan sonra elde edilen en büyük 3 kazanımı maddeler halinde vurgula.
+                - Markdown formatında temiz bir çıktı oluştur.
+                """;
+
+            _logger.LogInformation("[WikiCurator] Modül {ModName} toplu özeti üretiliyor...", parentTopic.Title);
+            
+            var summary = await _factory.CompleteChatAsync(Orka.Core.Enums.AgentRole.Summarizer, summarizePrompt, "Modül Özetini Oluştur");
+
+            await wikiService.AutoUpdateWikiAsync(parentTopicId, summary, "Otomatik Oluşturulan Modül Özeti", "Groq-Curator");
+            await db.SaveChangesAsync();
+
+            _logger.LogInformation("[WikiCurator] Modül {ModName} başarıyla özetlenip Wiki'ye eklendi.", parentTopic.Title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[WikiCurator] Modül özetleme başarısız. ParentTopicId={ParentId}", parentTopicId);
+        }
+        finally
+        {
+            _inProgress.TryRemove(lockKey, out _);
+        }
+    }
 }

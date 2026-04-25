@@ -1,5 +1,8 @@
 # Orka AI — Kapsamlı Sistem UML Diyagramı & Kopukluk Analizi
 
+> **Son Güncelleme:** Nisan 2026 — Faz 1-4 Mimari Evrim dahil edildi
+> **Derleme:** ✅ `Build succeeded. 0 Error` — `AddSkillTreeFaz4` migration uygulandı
+
 ---
 
 ## 1. Sistem Bileşen Diyagramı (Component Diagram)
@@ -17,7 +20,8 @@ graph TB
     end
 
     subgraph API["🌐 API Layer (ASP.NET Core)"]
-        ChatCtrl["ChatController /api/chat"]
+        ChatCtrl["ChatController /api/chat\n+interrupt\n+classroom/start\n+multimodal"]
+        UploadCtrl["UploadController /api/upload"]
         CodeCtrl["CodeController /api/code"]
         WikiCtrl["WikiController /api/wiki"]
         KorteksCtrl["KorteksController /api/korteks"]
@@ -25,15 +29,19 @@ graph TB
         DashCtrl["DashboardController /api/dashboard"]
         QuizCtrl["QuizController /api/quiz"]
         AuthCtrl["AuthController /api/auth"]
+        SkillCtrl["SkillTreeController /api/skilltree"]
     end
 
-    subgraph Orchestrator["🧠 Orchestrator (State Machine)"]
+    subgraph Orchestrator["🧠 Orchestrator (Hybrid: State Machine + LLM Strategy)"]
         AGO["AgentOrchestratorService"]
+        CSM["ClassroomSessionManager\n(Barge-in Token Registry)"]
+        ICS["InteractiveClassSession\n(Tutor⟷Peer Loop)"]    
     end
 
-    subgraph Agents["🤖 Agent Swarm (12 Ajan)"]
+    subgraph Agents["🤖 Agent Swarm (14 Ajan)"]
         direction LR
         TUTOR["TutorAgent"]
+        PEER["PeerAgent ★NEW"]
         SUPERVISOR["SupervisorAgent"]
         INTENT["IntentClassifierAgent"]
         ANALYZER["AnalyzerAgent"]
@@ -45,6 +53,7 @@ graph TB
         KORTEKS["KorteksAgent"]
         QUIZ["QuizAgent"]
         PROFILE["StudentProfileService"]
+        SKILLTREE["SkillTreeService ★NEW"]
     end
 
     subgraph LLM["☁️ LLM Provider Chain"]
@@ -54,14 +63,18 @@ graph TB
         GH["GitHubModels"]
         GROQ["Groq"]
         GEMINI["Gemini"]
-        OR["OpenRouter"]
-        MISTRAL["Mistral"]
     end
 
     subgraph Data["💾 Data Stores"]
-        DB["PostgreSQL (EF Core)"]
+        DB["SQL Server (EF Core)"]
         REDIS["Redis"]
         PISTON["Judge0 CE (Sandbox)"]
+        BLOB["LocalBlobStorage ★NEW\n(wwwroot/uploads)"]    
+    end
+
+    subgraph SkillGraph["🗺️ Skill Tree (DAG)"]
+        SNODES["SkillNodes Table"]
+        SCLOSURE["SkillTreeClosure\n(Closure Table)"]
     end
 
     UI_Chat --> ChatCtrl
@@ -71,8 +84,12 @@ graph TB
     UI_Dashboard --> DashCtrl
 
     ChatCtrl --> AGO
+    ChatCtrl --> CSM
+    ChatCtrl --> UploadCtrl
+    UploadCtrl --> BLOB
     CodeCtrl --> PISTON
     CodeCtrl --> REDIS
+    SkillCtrl --> SKILLTREE
 
     AGO --> SUPERVISOR
     AGO --> TUTOR
@@ -80,6 +97,12 @@ graph TB
     AGO --> EVALUATOR
     AGO --> SUMMARIZER
     AGO --> ANALYZER
+    AGO --> ICS
+    AGO --> SKILLTREE
+
+    ICS --> TUTOR
+    ICS --> PEER
+    CSM --> AGO
 
     SUPERVISOR --> INTENT
     ANALYZER --> INTENT
@@ -87,9 +110,11 @@ graph TB
     TUTOR --> REDIS
     DEEPPLAN --> GRADER
     KORTEKS --> GRADER
+    EVALUATOR --> SKILLTREE
 
     INTENT --> FACTORY
     TUTOR --> CHAIN
+    PEER --> FACTORY
     EVALUATOR --> FACTORY
     GRADER --> FACTORY
     DEEPPLAN --> FACTORY
@@ -100,13 +125,14 @@ graph TB
     ROUTER --> GH
     ROUTER --> GROQ
     ROUTER --> GEMINI
-    ROUTER --> OR
 
     AGO --> DB
     WIKI --> DB
     EVALUATOR --> REDIS
     TUTOR --> REDIS
     AGO --> REDIS
+    SKILLTREE --> SNODES
+    SNODES --> SCLOSURE
 ```
 
 ---
@@ -273,7 +299,140 @@ sequenceDiagram
 
 ---
 
-## 6. Plan Mode (Deep Plan) Akışı
+## 6A. ★ FAZ 1: Metin Barge-In Akışı (Yeni)
+
+```mermaid
+sequenceDiagram
+    participant Ö as Öğrenci
+    participant FE as Frontend
+    participant API as ChatController
+    participant CSM as ClassroomSessionManager
+    participant AGO as Orchestrator
+    participant TUT as TutorAgent
+
+    Ö->>FE: Mesaj yazar (LLM stream devam ediyor)
+    FE->>API: POST /api/chat/stream (yeni mesaj)
+    FE->>API: POST /api/chat/interrupt/{sessionId}
+    Note over API: Cancel-then-Send pattern
+    API->>CSM: InterruptTextSession(sessionId, userMessage)
+    CSM->>CSM: Cancel CancellationToken
+    CSM->>CSM: PendingBargeInMessage = userMessage
+    Note over TUT: OperationCanceledException
+    TUT-->>AGO: Akış kesildi
+    Note over AGO: wasInterrupted=true → DB'ye yazma!
+    
+    FE->>API: POST /api/chat/stream (interrupt sonrası)
+    API->>CSM: StartTextSession(sessionId)
+    CSM-->>AGO: Yeni CancellationToken
+    Note over AGO: Context = PendingBargeInMessage inject
+    AGO->>TUT: GetResponseStreamAsync
+    TUT-->>API: Yeni akış
+    API-->>FE: SSE chunks
+```
+
+---
+
+## 6B. ★ FAZ 2: Otonom Sınıf Simülasıyonu (Yeni)
+
+```mermaid
+sequenceDiagram
+    participant Ö as Öğrenci
+    participant API as ChatController
+    participant AGO as Orchestrator
+    participant ICS as InteractiveClassSession
+    participant TUT as TutorAgent
+    participant PEER as PeerAgent
+    participant EVL as EvaluatorAgent
+
+    Ö->>API: POST /api/chat/classroom/start
+    API->>AGO: StartClassroomSessionAsync
+    AGO->>ICS: StartAsync(session, topic, ct)
+
+    loop MaxIterations=15
+        ICS->>TUT: GetResponseStreamAsync [TUTOR]:
+        TUT-->>ICS: Ders anlatımı
+        ICS->>PEER: GetResponseStreamAsync [PEER]:
+        PEER-->>ICS: Soru
+        ICS->>EVL: CompleteChatAsync (TAMAM/DEVAM?)
+        
+        alt Kullanıcı araya girdi
+            Ö->>API: POST /api/chat/interrupt/{sessionId}
+            ICS->>ICS: PopPendingBargeInMessage()
+            ICS->>TUT: GetResponseStreamAsync (barge-in context)
+        end
+        
+        alt EVL = TAMAM veya MaxIter aşıldı
+            ICS-->>AGO: Simülasıyon bitti
+        end
+    end
+    
+    API-->>Ö: event: classroom-ended
+```
+
+---
+
+## 6C. ★ FAZ 3: Multimodal Görsel İşleme (Yeni)
+
+```mermaid
+sequenceDiagram
+    participant Ö as Öğrenci
+    participant FE as Frontend
+    participant UPL as UploadController
+    participant BLOB as LocalBlobStorage
+    participant API as ChatController
+    participant AGO as Orchestrator
+    participant TUT as TutorAgent
+
+    Ö->>FE: Görsel seçer
+    FE->>UPL: POST /api/upload/image (multipart/form-data)
+    Note over UPL: IFormFile → Stream (Base64 YOK → LOH güvenli)
+    UPL->>BLOB: UploadImageAsync(stream, fileName, userId)
+    BLOB-->>UPL: "/uploads/{userId}/{guid}.jpg"
+    UPL-->>FE: { imageUrl }
+
+    Ö->>FE: Mesaj + görsel gönder
+    FE->>API: POST /api/chat/multimodal
+    Note over API: ContentItems: [{Text}, {ImageUrl}]
+    API->>AGO: ProcessMultimodalMessageStreamAsync
+    Note over AGO: URL → Prompt'a eklenir: "[Görsel 1]: url"
+    AGO->>TUT: GetResponseStreamAsync (metin+URL birl)
+    TUT-->>API: SSE Stream
+    API-->>FE: Chunks
+```
+
+---
+
+## 6D. ★ FAZ 4: DAG Skill Tree (Yeni)
+
+```mermaid
+sequenceDiagram
+    participant EVL as EvaluatorAgent
+    participant AGO as Orchestrator
+    participant STS as SkillTreeService
+    participant DB as SQL Server
+    participant FE as Frontend (xyflow)
+
+    Note over EVL: Quiz < %60 → Remedial node önerisi
+    EVL->>AGO: ProposeRemedialNodeAsync(userId, weakness)
+    AGO->>STS: AddNodeAsync(userId, request)
+    Note over STS: In-Memory DFS Döngü Tespiti
+    alt Döngü YOK
+        STS->>DB: INSERT SkillNodes
+        STS->>DB: INSERT SkillTreeClosure (O(n))
+        STS-->>AGO: SkillNode
+    else Döngü VAR
+        STS-->>AGO: CycleDetectedException
+        Note over AGO: Retry prompt (farklı ebeveyn)
+    end
+
+    FE->>AGO: GET /api/skilltree
+    AGO->>STS: GetAllNodesAsync + GetAllEdgesAsync
+    STS->>DB: SELECT Depth=1 kenarlar (O(1))
+    STS-->>FE: { nodes, edges } → xyflow + dagre.js
+```
+
+
+## 6E. Plan Mode (Deep Plan) Akışı
 
 ```mermaid
 sequenceDiagram
@@ -282,7 +441,7 @@ sequenceDiagram
     participant DP as DeepPlanAgent
     participant SP as StudentProfileService
     participant GR as GraderAgent
-    participant DB as PostgreSQL
+    participant DB as SQL Server
 
     Ö->>AGO: "KPSS Matematik çalışmak istiyorum"
     AGO->>AGO: State → PlanDiagnosticMode
@@ -316,24 +475,80 @@ sequenceDiagram
 
 ## 7. Ajan Bağımlılık Matrisi
 
-| Ajan | Tükettiği Ajanlar | Kullandığı Data Store | Tetiklenme Zamanı |
+| Ajan | Tüketilen Ajanlar | Data Store | Tetiklenme |
 |---|---|---|---|
 | **SupervisorAgent** | IntentClassifier | — | Her mesaj (Learning state) |
-| **IntentClassifierAgent** | — | — (cache: ConcurrentDict) | Supervisor + Analyzer çağrısı |
+| **IntentClassifierAgent** | — | — (cache: ConcurrentDict) | Supervisor + Analyzer |
 | **TutorAgent** | GraderAgent | Redis (perf, piston, gold, profile) | Her Learning mesajı |
-| **EvaluatorAgent** | — | Redis (eval, topic_score, gold) | Background task (her mesaj) |
-| **AnalyzerAgent** | IntentClassifier | — | Background task (her mesaj) |
-| **GraderAgent** | — | — | TutorAgent, DeepPlanAgent, KorteksAgent |
-| **DeepPlanAgent** | GraderAgent | DB (Topics) | Plan mode tetiklendiğinde |
-| **WikiAgent** | — | DB (WikiPages, WikiBlocks) | Summarizer tetiklemesiyle |
-| **SummarizerAgent** | — | DB (Messages, WikiPages) | Background task (topic complete) |
-| **KorteksAgent** | GraderAgent | Redis (research report) | Kullanıcı araştırma başlattığında |
+| **PeerAgent** ★ | — | — | InteractiveClassSession (Tutor⟺ turn) |
+| **EvaluatorAgent** | — | Redis + **SkillTreeService** ★ | Background task |
+| **AnalyzerAgent** | IntentClassifier | — | Background task |
+| **GraderAgent** | — | — | Tutor, DeepPlan, Korteks |
+| **DeepPlanAgent** | GraderAgent | DB (Topics) | Plan mode |
+| **WikiAgent** | — | DB (WikiPages) | Summarizer tetiklemesi |
+| **SummarizerAgent** | — | DB (Messages, WikiPages) | Topic complete |
+| **KorteksAgent** | GraderAgent | Redis (research report) | Kullanıcı araştırma |
 | **QuizAgent** | — | DB (QuizAttempts) | Frontend quiz kayıt |
-| **StudentProfileService** | — | DB (Users) | TutorAgent, DeepPlanAgent |
+| **StudentProfileService** | — | DB (Users) | Tutor, DeepPlan |
+| **SkillTreeService** ★ | — | DB (SkillNodes, SkillTreeClosure) | EvaluatorAgent + API |
 
 ---
 
-## 8. UML Tabanlı Kopukluk Analizi
+## 8. UML Kopukluk Analizi (Güncel)
+
+### ✅ Faz 1-4 ile Çözülen Kopukluklar
+
+| # | Kopukluk | Çözüm | Dosya |
+|---|---|---|---|
+| ✅ 1 | IntentClassifier çift LLM call | Session-scoped cache | IntentClassifierAgent.cs |
+| ✅ 2 | Supervisor CONFUSED sinyali iletilmiyor | supervisorHint | AgentOrchestratorService.cs |
+| ✅ 3 | Quiz weakness context yok | Adaptive Quiz (Redis) | TutorAgent.cs |
+| ✅ 4 | Konu geçişi salt string-match | AI + String hibrit | AgentOrchestratorService.cs |
+| ✅ 5 | IDE sessionId gönderilmiyor | Frontend → Backend zinciri | api.ts, InteractiveIDE.tsx |
+| ✅ 6 | IDE quiz Piston sonucu dahil değil | Redis'ten enrichment | AgentOrchestratorService.cs |
+| ✅ 7 | EvaluatorAgent kodlama metriği yok | Kod-özel değerlendirme | EvaluatorAgent.cs |
+| ✅ 8 | IDE dil bağlamı kopuyor | Dil metadata eklendi | InteractiveIDE.tsx |
+| ✅ 9 | IDE sonuçları profile kaydedilmiyor | Metrik + hata kayıt | CodeController.cs |
+| ✅ 10 | Metin stream’i kesilemiyor (Barge-in) | CancellationToken + CSM | ClassroomSessionManager.cs |
+| ✅ 11 | Tek ajan monologu (no peer) | PeerAgent + InteractiveClassSession | PeerAgent.cs |
+| ✅ 12 | Multimodal görsel desteği yok | IBlobStorageService + UploadCtrl | LocalBlobStorageService.cs |
+| ✅ 13 | Curriculum Tree (tek ebeveyn) | DAG + Closure Table | SkillTreeService.cs |
+
+---
+
+### 🟡 Açık Kopukluklar (Hala Geçerli)
+
+#### Kopukluk 1: Korteks Raporu → Quiz'e Dahil Değil
+**UML İzi:** `KorteksAgent` araştırma raporu Redis'e yazıyor. TutorAgent bunu ders anlatımında okuyor **AMA** `GenerateTopicQuizAsync` çağrısında `researchContext` parametresine geçirilmiyor.
+**Etki:** Korteks'in bulduğu güncel bilgiler quizlere yansmakıyor.
+**Önerilen Çözüm:** Quiz üretiminden önce `redis.GetKorteksResearchReportAsync()` çekip `researchContext`'e geçir.
+
+#### Kopukluk 2: QuizAgent vs TutorAgent — Çift Quiz Üretimi
+**Problem:** İki farklı quiz yolu var (Orkestratör + MediatR Event). Farklı prompt ve kalite kuralları kullanıyorlar.
+**Risk:** Race condition — `session.PendingQuiz` birbirini ezebilir.
+
+#### Kopukluk 3: TopicDetectorService Dead Code
+**Durum:** `ITopicDetectorService` ve `TopicDetectorService` hiçbir yerden çağrılmıyor. Orkestratör kendi AI logic’i ile konu tespiti yapıyor.
+**Öneri:** Silinebilir veya orkestratöre entegre edilebilir.
+
+#### Kopukluk 4: PeerAgent AgentRole.Peer Yok
+**Durum:** `PeerAgent` `AgentRole.Tutor` kullanıyor (ajan çakışması). `AgentRole` enum’a `Peer` eklenmeli, `appsettings.json`’a PeerAgent model ataması yapılmalı.
+
+#### Kopukluk 5: EvaluatorAgent → SkillTreeService Bağlantısı Eksik
+**Durum:** EvaluatorAgent quiz çıkışında `SkillTreeService.AddNodeAsync` çağırmıyor. Bu bağ el ile kurulmalı.
+
+---
+
+## 9. Açık Aksiyonlar Özeti
+
+| Öncelik | Kopukluk | Karmaşıklık | Tahmini Etki |
+|---|---|---|---|
+| 🟡 Orta | Korteks raporu quiz'e dahil değil | Düşük | Quizler güncel kaynaklardan soru soramıyor |
+| 🟡 Orta | QuizAgent/TutorAgent çift quiz | Orta (mimari karar) | Race condition + tutarsız kalite |
+| 🟡 Düşük | TopicDetectorService dead code | Çok düşük | Kod karmaşıklığı |
+| 🟡 Orta | PeerAgent AgentRole.Peer eksik | Düşük | AI model ataması yanlış | 
+| 🟡 Yüksek | EvaluatorAgent → SkillTree bağı yok | Orta | Skill Tree otonom büymüyor |
+
 
 UML diyagramlarını izleyerek tespit ettiğim **hala mevcut potansiyel kopukluklar**:
 

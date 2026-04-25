@@ -47,4 +47,27 @@ public class User
     public int CurrentStreak { get; set; } = 0;
     /// <summary>Son aktivite tarihi; streak hesabında kullanılır.</summary>
     public DateTime? LastActiveDate { get; set; }
+
+    // ── Öğrenci Profili (Faz B) ─────────────────────────────────────────────
+    // DeepPlanAgent / TutorAgent / WikiAgent prompt'ları bu alanları okur.
+    // Tüm alanlar NULLABLE — mevcut hesapları kırmamak için migration sırasında eski
+    // kullanıcılar Unknown değerlerle doldurulur, Settings'ten güncellenebilir.
+
+    /// <summary>Yaş — küçük kullanıcılar için kısa cümle + oyunsu örnek tetikleyici.</summary>
+    public int? Age { get; set; }
+
+    /// <summary>Eğitim seviyesi — jargon yoğunluğu ve örnek zorluğu için.</summary>
+    public EducationLevel EducationLevel { get; set; } = EducationLevel.Unknown;
+
+    /// <summary>Öğrenme amacı — müfredat derinliği ve quiz ağırlığı için.</summary>
+    public LearningGoal LearningGoal { get; set; } = LearningGoal.Unknown;
+
+    /// <summary>Anlatım üslubu tercihi — yaş tek başına yeterli sinyal değil.</summary>
+    public LearningTone LearningTone { get; set; } = LearningTone.Unknown;
+
+    /// <summary>Günlük tahmini çalışma dakikası — DeepPlan haftalık ders dağıtımı için.</summary>
+    public int? DailyStudyMinutes { get; set; }
+
+    /// <summary>Profil tamamlandı mı — false ise Home'da tek seferlik onboarding kartı.</summary>
+    public bool ProfileCompleted { get; set; } = false;
 }

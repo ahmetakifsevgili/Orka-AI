@@ -20,8 +20,9 @@ public interface IDeepPlanAgent
         string topicTitle,
         Guid userId,
         string userLevel = "Bilinmiyor",
+        string? goalContext = null,
         string? researchContext = null,
         string? failedTopics = null);
 
-    Task<string> GenerateBaselineQuizAsync(string topicTitle);
+    Task<string> GenerateBaselineQuizAsync(string topicTitle, string? contextGoal = null);
 }

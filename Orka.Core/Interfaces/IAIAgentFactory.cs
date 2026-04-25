@@ -14,6 +14,9 @@ public interface IAIAgentFactory
     /// <summary>Verilen rol için yapılandırılmış model adını döner.</summary>
     string GetModel(AgentRole role);
 
+    /// <summary>Verilen rol için yapılandırılmış sağlayıcı (Provider) adını döner.</summary>
+    string GetProvider(AgentRole role);
+
     /// <summary>
     /// Tek seferlik chat tamamlama.
     /// Failover: GitHub Models → Groq → Gemini

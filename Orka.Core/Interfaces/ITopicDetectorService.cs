@@ -5,5 +5,5 @@ namespace Orka.Core.Interfaces;
 public interface ITopicDetectorService
 {
     bool IsNewTopic(string message);
-    Task<string> ExtractTopicNameAsync(string message);
+    Task<(string Topic, string Category)> ExtractTopicNameAsync(string message);
 }

@@ -34,11 +34,17 @@ public interface IRedisMemoryService
     Task<string> GetLastPistonResultAsync(Guid sessionId);
 
     /// <summary>
-    /// KorteksAgent araştırması tamamlandığında topicId için sinyal yazar.
-    /// TutorAgent bu key'i kontrol ederek güncel araştırmanın mevcut olduğunu öğrenir.
-    /// TTL: 1 saat.
+    /// KorteksAgent araştırması tamamlandığında topicId için araştırma raporunu yazar.
+    /// TutorAgent bu key'i kontrol ederek güncel araştırmanın içeriğini okur.
+    /// TTL: 12 saat.
     /// </summary>
-    Task SetWikiReadyAsync(Guid topicId);
+    Task SetKorteksResearchReportAsync(Guid topicId, string reportContent);
+
+    /// <summary>
+    /// Korteks araştırmasının rapor özetini döner. Henüz yoksa boş döner.
+    /// TTL: 12 saat.
+    /// </summary>
+    Task<string> GetKorteksResearchReportAsync(Guid topicId);
 
     // ── Faz 12: Dynamic Few-Shot — Altın Örnek Kütüphanesi ──────────────────
 

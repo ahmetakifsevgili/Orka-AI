@@ -1,7 +1,7 @@
 /**
  * Course Detail Page
  * Module accordion with lesson list, progress tracking, and course overview.
- * Premium dark zinc design.
+ * Soft neutral web design.
  */
 
 import { useState, useMemo } from "react";
@@ -29,9 +29,9 @@ import OrcaLogo from "@/components/OrcaLogo";
 import WikiDrawer from "@/components/WikiDrawer";
 
 const levelColors: Record<CourseLevel, string> = {
-  Başlangıç: "text-sky-400 bg-sky-400/10 border-sky-400/20",
+  Başlangıç: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20",
   Orta: "text-amber-400 bg-amber-400/10 border-amber-400/20",
-  İleri: "text-red-400 bg-red-400/10 border-red-400/20",
+  İleri: "text-zinc-700 bg-zinc-500/10 border-zinc-500/20",
 };
 
 const lessonTypeIcons: Record<CourseLesson["type"], React.ReactNode> = {
@@ -178,12 +178,12 @@ export default function CourseDetail() {
             </div>
             <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden relative">
               <div
-                className="h-full bg-gradient-to-r from-sky-500 to-amber-400 rounded-full transition-all duration-700 relative"
+                className="h-full bg-emerald-500 rounded-full transition-all duration-700 relative"
                 style={{
                   width: `${Math.round((totalCompleted / course.modules.reduce((sum, m) => sum + m.lessons.length, 0)) * 100)}%`,
                 }}
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                <div className="absolute inset-0 bg-emerald-400/20 animate-pulse" />
               </div>
             </div>
           </div>
@@ -223,9 +223,9 @@ export default function CourseDetail() {
                 key={mod.id}
                 className={`border rounded-xl overflow-hidden transition-all duration-300 ${
                   mod.percent === 100
-                    ? "bg-zinc-900/40 border-zinc-700/40 backdrop-blur-sm"
+                    ? "bg-zinc-900/40 border-zinc-700/40"
                     : mod.percent > 0
-                      ? "bg-amber-500/[0.03] border-amber-500/10 backdrop-blur-sm hover:border-amber-500/20"
+                      ? "bg-amber-500/[0.03] border-amber-500/10 hover:border-amber-500/20"
                       : "bg-zinc-900/30 border-zinc-800/50"
                 }`}
               >
@@ -248,7 +248,7 @@ export default function CourseDetail() {
                         {mod.title}
                       </h3>
                       {mod.percent === 100 && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                       )}
                     </div>
                     <p className="text-[11px] text-zinc-600 truncate">
@@ -269,7 +269,7 @@ export default function CourseDetail() {
                           mod.percent === 100
                             ? "bg-zinc-400"
                             : mod.percent > 0
-                              ? "bg-gradient-to-r from-amber-500/80 to-amber-400"
+                              ? "bg-amber-500"
                               : "bg-zinc-700"
                         }`}
                         style={{ width: `${mod.percent}%` }}
@@ -308,7 +308,7 @@ export default function CourseDetail() {
                           >
                             {/* Completion indicator */}
                             {lesson.completed ? (
-                              <CheckCircle2 className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                             ) : (
                               <Circle className="w-4 h-4 text-zinc-700 flex-shrink-0" />
                             )}

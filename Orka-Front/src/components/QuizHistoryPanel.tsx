@@ -82,9 +82,9 @@ export default function QuizHistoryPanel() {
                 >
                   <div className="flex-shrink-0 mt-0.5">
                     {attempt.isCorrect ? (
-                      <CheckCircle2 className="w-4.5 h-4.5 text-green-500" />
+                      <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600" />
                     ) : (
-                      <XCircle className="w-4.5 h-4.5 text-red-500" />
+                      <XCircle className="w-4.5 h-4.5 text-amber-600" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

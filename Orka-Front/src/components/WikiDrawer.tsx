@@ -1,5 +1,5 @@
 /*
- * WikiDrawer — Premium Wiki Copilot Panel
+ * WikiDrawer - soft wiki helper panel
  * Sağdan kayan panel. İçerisinde:
  *   1. Wiki doküman görüntüleme (Mevcut)
  *   2. Wiki Soru-Cevap Ajanı (Mevcut, iyileştirilmiş)
@@ -22,8 +22,7 @@ import {
   Link,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownRender from "./MarkdownRender";
 import { WikiAPI, KorteksAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
@@ -263,9 +262,9 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
       {/* Resize Handle */}
       <div
         onMouseDown={() => setIsResizing(true)}
-        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-sky-500/20 transition-colors z-30 group"
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500/20 transition-colors z-30 group"
       >
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-8 bg-zinc-800 rounded-full group-hover:bg-sky-500/50"></div>
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-8 bg-zinc-800 rounded-full group-hover:bg-emerald-500/40"></div>
       </div>
 
       {/* ─── Header ─── */}
@@ -390,14 +389,12 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                               prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:text-[14px]
                               prose-strong:text-zinc-100 prose-strong:font-semibold
                               prose-li:text-zinc-300 prose-li:text-[14px]
-                              prose-code:text-sky-400 prose-code:bg-sky-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                              prose-code:text-emerald-600 dark:prose-code:text-emerald-300 prose-code:bg-emerald-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
                               prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-zinc-800/80 prose-pre:rounded-xl prose-pre:shadow-xl
                             "
                               >
                                 {textWithoutJson.trim() && (
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {textWithoutJson}
-                                  </ReactMarkdown>
+                                  <MarkdownRender>{textWithoutJson}</MarkdownRender>
                                 )}
                               </div>
                               {parsedQuiz && (
@@ -420,13 +417,11 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                   prose-headings:text-zinc-100 prose-headings:font-semibold
                   prose-p:text-zinc-400 prose-p:leading-relaxed prose-p:text-[13px]
                   prose-strong:text-zinc-100
-                  prose-code:text-sky-400 prose-code:bg-sky-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                  prose-code:text-emerald-600 dark:prose-code:text-emerald-300 prose-code:bg-emerald-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
                   prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-zinc-800/80 prose-pre:rounded-xl
                 "
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {pageContent}
-                </ReactMarkdown>
+                <MarkdownRender>{pageContent}</MarkdownRender>
               </div>
             )}
           </div>
@@ -434,7 +429,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════
-          COPILOT PANEL — Premium çekmece tasarım
+          COPILOT PANEL - soft helper drawer
           ═══════════════════════════════════════════════════════════ */}
       <div className="absolute bottom-0 left-0 right-0 z-20">
         <AnimatePresence>
@@ -536,10 +531,8 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                           : "bg-zinc-900/60 text-zinc-300 border border-zinc-800/60"
                       }`}
                     >
-                      <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-p:text-[13px] prose-headings:text-sm prose-headings:mb-1 prose-headings:mt-2 prose-li:text-[13px] prose-code:text-sky-400 prose-code:text-xs">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content || "…"}
-                        </ReactMarkdown>
+                      <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-p:text-[13px] prose-headings:text-sm prose-headings:mb-1 prose-headings:mt-2 prose-li:text-[13px] prose-code:text-emerald-600 dark:prose-code:text-emerald-300 prose-code:text-xs">
+                        <MarkdownRender>{msg.content || "…"}</MarkdownRender>
                       </div>
                     </div>
                   </div>
@@ -575,10 +568,10 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                       </span>
                     )}
                     {urlInput.trim() && !attachedFile && (
-                      <span className="flex items-center gap-1 text-[11px] text-sky-400 bg-sky-950/40 border border-sky-800/40 rounded px-2 py-0.5 max-w-[200px] truncate">
+                      <span className="flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-0.5 max-w-[200px] truncate">
                         <Link className="w-3 h-3 flex-shrink-0" />
                         <span className="truncate">{urlInput}</span>
-                        <button onClick={() => { setUrlInput(""); setShowUrlInput(false); }} className="ml-1 hover:text-sky-200">×</button>
+                        <button onClick={() => { setUrlInput(""); setShowUrlInput(false); }} className="ml-1 hover:text-emerald-500">×</button>
                       </span>
                     )}
                   </div>
@@ -591,7 +584,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                     value={urlInput}
                     onChange={(e) => setUrlInput(e.target.value)}
                     placeholder="https://... URL yapıştırın"
-                    className="w-full mb-2 bg-zinc-900 border border-sky-800/60 focus:border-sky-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none transition-colors"
+                    className="w-full mb-2 bg-zinc-900 border border-emerald-500/30 focus:border-emerald-500 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 outline-none transition-colors"
                   />
                 )}
 
@@ -620,7 +613,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                       <button
                         onClick={() => { setShowUrlInput((v) => !v); setAttachedFile(null); }}
                         title="URL ekle"
-                        className={`p-1.5 rounded-lg transition-colors ${showUrlInput ? "text-sky-400 bg-sky-950/40" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"}`}
+                        className={`p-1.5 rounded-lg transition-colors ${showUrlInput ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800"}`}
                       >
                         <Link className="w-4 h-4" />
                       </button>
@@ -654,7 +647,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
 
         {/* ─── FAB Button ─── */}
         {!showCopilot && (
-          <div className="px-4 py-3 border-t border-zinc-800/40 bg-zinc-950/95 backdrop-blur-sm">
+          <div className="px-4 py-3 border-t soft-border soft-surface">
             <button
               onClick={() => setShowCopilot(true)}
               className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 group"

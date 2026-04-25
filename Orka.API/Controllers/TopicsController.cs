@@ -132,7 +132,7 @@ public class TopicsController : ControllerBase
     {
         var userId = GetUserId();
         var result = await _sessionService.GetLatestSessionAsync(id, userId);
-        if (result == null) return NotFound(new { message = "Oturum bulunamadı." });
+        if (result == null) return Ok(null);
         return Ok(result);
     }
 

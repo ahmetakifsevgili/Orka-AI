@@ -38,10 +38,10 @@ public class GroqService : IGroqService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
         => CallGroqApiAsync(userMessage, systemPrompt, ct);
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] string? model = null, CancellationToken ct = default)
     {
         var messages = new List<object>
         {
@@ -305,3 +305,4 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         }
     }
 }
+

@@ -59,7 +59,8 @@ public class CodeController : ControllerBase
             request.Stdin);
 
         // SessionId sağlandıysa sonucu Redis'e yaz — TutorAgent bir sonraki mesajda okur
-        if (request.SessionId.HasValue && result.Success)
+        // Faz 16: Hem başarılı hem başarısız sonuçları kaydet → TutorAgent hata kalıplarını görebilsin
+        if (request.SessionId.HasValue)
         {
             await _redis.SetLastPistonResultAsync(
                 request.SessionId.Value,
@@ -68,9 +69,16 @@ public class CodeController : ControllerBase
                 result.Stderr,
                 request.Language ?? "csharp");
 
+            // Faz 16: IDE çalıştırma metriğini kaydet → Dashboard'da IDE kullanım istatistikleri
+            await _redis.RecordAgentMetricAsync(
+                "IDE_Piston",
+                0, // latency burada ölçülmüyor, 0 placeholder
+                result.Success,
+                request.Language ?? "csharp");
+
             _logger.LogInformation(
-                "Piston sonucu Redis'e yazıldı. Session={SessionId} Dil={Language}",
-                request.SessionId.Value, request.Language);
+                "Piston sonucu Redis'e yazıldı. Session={SessionId} Dil={Language} Başarı={Success}",
+                request.SessionId.Value, request.Language, result.Success);
         }
 
         return Ok(new CodeRunResponse(result.Stdout, result.Stderr, result.Success));

@@ -1,5 +1,5 @@
 /*
- * WikiDrawer — Premium Wiki Copilot Panel
+ * Wiki panel - soft learning reference surface
  * Sağdan kayan panel. İçerisinde:
  *   1. Wiki doküman görüntüleme (Mevcut)
  *   2. Wiki Soru-Cevap Ajanı (Mevcut, iyileştirilmiş)
@@ -19,11 +19,10 @@ import {
   Clock,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { WikiAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
+import MarkdownRender from "./MarkdownRender";
 
 interface WikiPage {
   id: string;
@@ -230,29 +229,29 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="flex-1 flex bg-zinc-950 overflow-hidden relative"
+      className="flex-1 flex soft-page overflow-hidden relative"
     >
       {/* ─── LEFT PANE: WIKI CONTENT ─── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-zinc-800/60 bg-zinc-950/50 backdrop-blur-sm z-10">
+        <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b soft-border soft-surface z-10">
           <div className="flex flex-col gap-1 min-w-0 pr-8">
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500 truncate font-medium tracking-wide">
+            <div className="flex items-center gap-1.5 text-xs soft-text-muted truncate font-medium tracking-wide">
               <span>Müfredat Haritası</span>
-              <span className="text-zinc-700">/</span>
-              <span className="text-zinc-300 truncate">
+              <span>/</span>
+              <span className="text-foreground truncate">
                 {activePage?.title || "Konu"}
               </span>
             </div>
-            <h3 className="text-xl font-bold text-zinc-100 truncate flex items-center gap-2.5">
-              <BookOpen className="w-5 h-5 text-zinc-400" />
+            <h3 className="text-xl font-bold text-foreground truncate flex items-center gap-2.5">
+              <BookOpen className="w-5 h-5 soft-text-muted" />
               <span>{activePage?.title || "Wiki"}</span>
             </h3>
           </div>
           {/* Sadece kapatıp sohbet listesine dönmek istenebileceği ihtimali için ufak buton */}
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors duration-150 p-2 rounded-lg"
+            className="soft-text-muted hover:text-foreground hover:bg-surface-muted transition-colors duration-150 p-2 rounded-lg"
             title="Dersi Kapat"
           >
             <X className="w-5 h-5" />
@@ -264,16 +263,16 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
           {loading && (
             <div className="flex flex-col items-center justify-center h-40 gap-3">
               <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
-              <span className="text-sm text-zinc-400">Ders yükleniyor...</span>
+              <span className="text-sm soft-text-muted">Ders yükleniyor...</span>
             </div>
           )}
 
           {!loading && error && (
-            <div className="text-center py-16 bg-zinc-900/30 rounded-2xl border border-zinc-800/50">
-              <p className="text-base text-zinc-400 mb-2">
+            <div className="text-center py-16 soft-surface rounded-xl border">
+              <p className="text-base soft-text-muted mb-2">
                 Wiki içeriği henüz oluşturulmadı.
               </p>
-              <p className="text-sm text-zinc-600">
+              <p className="text-sm soft-text-muted">
                 Sistem konuyu hazırlarken lütfen bekleyin.
               </p>
             </div>
@@ -285,15 +284,15 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
 
           {!loading && !error && pages.length === 0 && !isPolling && (
             <div className="text-center py-16">
-              <p className="text-base text-zinc-500 mb-2">Wiki içeriği bulunamadı.</p>
-              <p className="text-sm text-zinc-600">Bir konu anlatımı tamamlandığında wiki otomatik oluşturulur.</p>
+              <p className="text-base soft-text-muted mb-2">Wiki içeriği bulunamadı.</p>
+              <p className="text-sm soft-text-muted">Bir konu anlatımı tamamlandığında wiki otomatik oluşturulur.</p>
             </div>
           )}
 
           {!loading && activePage && (
             <div className="max-w-4xl mx-auto pb-12">
               <div className="mb-8">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-100 tracking-tight">
+                <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight">
                   {activePage.title}
                 </h1>
               </div>
@@ -316,7 +315,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                         className={`rounded-xl border overflow-hidden transition-all duration-300 shadow-sm ${
                           isQuiz
                             ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50"
-                            : "border-zinc-800/60 bg-zinc-900/30"
+                            : "soft-border soft-surface"
                         }`}
                       >
                         <div
@@ -353,19 +352,15 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                             >
                               <div className="px-6 py-5">
                                 <div
-                                  className="prose prose-invert prose-base max-w-none
-                                  prose-headings:text-zinc-100 prose-headings:font-bold
-                                  prose-p:text-zinc-300 prose-p:leading-relaxed
-                                  prose-strong:text-zinc-100
-                                  prose-li:text-zinc-300
+                                  className="prose prose-orka prose-base max-w-none
+                                  prose-headings:font-bold
+                                  prose-p:leading-relaxed
                                   prose-code:text-emerald-400 prose-code:bg-emerald-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
-                                  prose-pre:bg-[#0c0c0c] prose-pre:border prose-pre:border-zinc-800 prose-pre:rounded-xl prose-pre:shadow-2xl
+                                  prose-pre:bg-surface-muted prose-pre:border prose-pre:border-border prose-pre:rounded-xl
                                 "
                                 >
                                   {textWithoutJson.trim() && (
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                      {textWithoutJson}
-                                    </ReactMarkdown>
+                                    <MarkdownRender>{textWithoutJson}</MarkdownRender>
                                   )}
                                 </div>
                                 {parsedQuiz && (
@@ -383,17 +378,14 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                 </div>
               ) : (
                 <div
-                  className="prose prose-invert prose-base max-w-none
-                    prose-headings:text-zinc-100 prose-headings:font-bold
-                    prose-p:text-zinc-300 prose-p:leading-relaxed
-                    prose-strong:text-zinc-100
+                  className="prose prose-orka prose-base max-w-none
+                    prose-headings:font-bold
+                    prose-p:leading-relaxed
                     prose-code:text-emerald-400 prose-code:bg-emerald-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
-                    prose-pre:bg-[#0c0c0c] prose-pre:border prose-pre:border-zinc-800 prose-pre:rounded-xl
+                    prose-pre:bg-surface-muted prose-pre:border prose-pre:border-border prose-pre:rounded-xl
                   "
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {pageContent}
-                  </ReactMarkdown>
+                  <MarkdownRender>{pageContent}</MarkdownRender>
                 </div>
               )}
             </div>
@@ -409,17 +401,17 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
             animate={{ width: 440, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="h-full bg-zinc-950/80 border-l border-zinc-800 flex flex-col flex-shrink-0"
+            className="h-full soft-surface border-l flex flex-col flex-shrink-0"
           >
             {/* Copilot Header */}
-            <div className="px-5 py-4 border-b border-zinc-800/60 flex items-center justify-between flex-shrink-0 bg-zinc-900/20">
+            <div className="px-5 py-4 border-b soft-border flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
-                <MessageCircle className="w-4 h-4 text-zinc-400" />
-                <span className="text-sm font-medium text-zinc-200">Belge Ajanı</span>
+                <MessageCircle className="w-4 h-4 soft-text-muted" />
+                <span className="text-sm font-medium text-foreground">Belge Ajanı</span>
               </div>
               <button
                 onClick={() => setShowCopilot(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                className="soft-text-muted hover:text-foreground p-2 rounded-lg hover:bg-surface-muted transition-colors"
                 title="Paneli Gizle"
               >
                 <X className="w-4 h-4" />
@@ -427,17 +419,17 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 sidebar-scrollbar bg-zinc-950/50">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 sidebar-scrollbar">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-8">
-                  <div className="w-12 h-12 rounded-2xl bg-zinc-800/80 flex items-center justify-center shadow-inner border border-zinc-700/50">
-                    <MessageCircle className="w-6 h-6 text-zinc-400" />
+                  <div className="w-12 h-12 rounded-xl soft-muted flex items-center justify-center border soft-border">
+                    <MessageCircle className="w-6 h-6 soft-text-muted" />
                   </div>
                   <div>
-                    <p className="text-base text-zinc-300 font-semibold mb-1">
+                    <p className="text-base text-foreground font-semibold mb-1">
                       Belge Ajanı Hazır
                     </p>
-                    <p className="text-sm text-zinc-500 max-w-[260px] leading-relaxed">
+                    <p className="text-sm soft-text-muted max-w-[260px] leading-relaxed">
                       Yandaki ders dokümanı hakkında aklınıza takılan her şeyi bana sorabilirsiniz.
                     </p>
                   </div>
@@ -452,14 +444,12 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                   <div
                     className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
                       msg.role === "user"
-                        ? "bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 rounded-tr-sm"
-                        : "bg-zinc-900/80 text-zinc-200 border border-zinc-800/80 rounded-tl-sm"
+                        ? "soft-muted text-foreground border soft-border rounded-tr-sm"
+                        : "soft-surface text-foreground border rounded-tl-sm"
                     }`}
                   >
-                    <div className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-p:leading-relaxed prose-headings:text-sm prose-headings:mb-1.5 prose-headings:mt-3 prose-li:my-1 prose-code:text-emerald-400 prose-code:text-[13px] prose-a:text-emerald-400">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content || "…"}
-                      </ReactMarkdown>
+                    <div className="prose prose-orka prose-sm max-w-none prose-p:my-1.5 prose-p:leading-relaxed prose-headings:text-sm prose-headings:mb-1.5 prose-headings:mt-3 prose-li:my-1 prose-code:text-emerald-400 prose-code:text-[13px] prose-a:text-emerald-400">
+                      <MarkdownRender>{msg.content || "…"}</MarkdownRender>
                     </div>
                   </div>
                 </div>
@@ -472,7 +462,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:150ms]" />
                     <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:300ms]" />
                   </div>
-                  <span className="text-xs text-zinc-500 font-medium tracking-wide">
+                  <span className="text-xs soft-text-muted font-medium tracking-wide">
                     Yanıt sentezleniyor...
                   </span>
                 </div>
@@ -481,8 +471,8 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
             </div>
 
             {/* Input Area */}
-            <div className="px-4 py-4 border-t border-zinc-800/60 bg-zinc-900/40 flex-shrink-0">
-              <div className="relative flex items-end gap-2 bg-zinc-950/50 border border-zinc-800/80 focus-within:border-zinc-700/80 focus-within:bg-zinc-950 rounded-xl px-3 py-2 transition-all shadow-inner">
+            <div className="px-4 py-4 border-t soft-border flex-shrink-0">
+              <div className="relative flex items-end gap-2 soft-surface border focus-within:border-emerald-500/50 rounded-xl px-3 py-2 transition-all">
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -493,7 +483,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     }
                   }}
                   placeholder="Ders hakkında bir soru sorun..."
-                  className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none resize-none max-h-32 min-h-[40px] py-2 sidebar-scrollbar"
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none max-h-32 min-h-[40px] py-2 sidebar-scrollbar"
                   rows={input.split("\n").length > 1 ? Math.min(input.split("\n").length, 5) : 1}
                 />
                 <button
@@ -515,10 +505,10 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           onClick={() => setShowCopilot(true)}
-          className="absolute right-8 bottom-8 flex items-center gap-2 px-5 py-3 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 shadow-2xl transition-all duration-300 group z-20"
+          className="absolute right-8 bottom-8 flex items-center gap-2 px-5 py-3 rounded-full soft-surface hover:bg-surface-muted border soft-shadow transition-all duration-300 group z-20"
         >
           <Sparkles className="w-5 h-5 text-amber-500 group-hover:text-amber-400" />
-          <span className="text-sm font-semibold text-zinc-300 group-hover:text-zinc-100">
+          <span className="text-sm font-semibold text-foreground">
             Ajanı Aç
           </span>
         </motion.button>
@@ -533,11 +523,11 @@ function WikiGeneratingSkeleton() {
   return (
     <div className="max-w-4xl mx-auto pb-12">
       {/* Status banner */}
-      <div className="flex items-center gap-3 mb-8 px-4 py-3 rounded-xl bg-zinc-900/60 border border-zinc-800/60">
+      <div className="flex items-center gap-3 mb-8 px-4 py-3 rounded-xl soft-surface border">
         <Clock className="w-4 h-4 text-emerald-500 animate-pulse flex-shrink-0" />
         <div>
-          <p className="text-sm font-medium text-zinc-200">Kişisel wikiniz hazırlanıyor</p>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-sm font-medium text-foreground">Kişisel wikiniz hazırlanıyor</p>
+          <p className="text-xs soft-text-muted mt-0.5">
             Sohbet verilerinizden derleniyor, lütfen bekleyin...
           </p>
         </div>
@@ -555,15 +545,15 @@ function WikiGeneratingSkeleton() {
       {/* Skeleton lines */}
       <div className="space-y-6">
         {/* Title skeleton */}
-        <div className="h-8 w-2/3 rounded-lg bg-zinc-800/60 animate-pulse" />
+        <div className="h-8 w-2/3 rounded-lg soft-muted animate-pulse" />
 
         {/* Block skeletons */}
         {[1, 0.8, 0.9, 0.7].map((w, i) => (
-          <div key={i} className="rounded-xl border border-zinc-800/60 bg-zinc-900/30 p-5 space-y-3">
-            <div className="h-3.5 rounded bg-zinc-800/70 animate-pulse" style={{ width: `${w * 40}%` }} />
-            <div className="h-3 rounded bg-zinc-800/50 animate-pulse w-full" />
-            <div className="h-3 rounded bg-zinc-800/50 animate-pulse" style={{ width: `${w * 80}%` }} />
-            <div className="h-3 rounded bg-zinc-800/50 animate-pulse" style={{ width: `${w * 65}%` }} />
+          <div key={i} className="rounded-xl border soft-border soft-surface p-5 space-y-3">
+            <div className="h-3.5 rounded soft-muted animate-pulse" style={{ width: `${w * 40}%` }} />
+            <div className="h-3 rounded soft-muted animate-pulse w-full" />
+            <div className="h-3 rounded soft-muted animate-pulse" style={{ width: `${w * 80}%` }} />
+            <div className="h-3 rounded soft-muted animate-pulse" style={{ width: `${w * 65}%` }} />
           </div>
         ))}
       </div>

@@ -2,65 +2,103 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.Services;
 
 /// <summary>
-/// AIAgentFactory — Orka'nın ajan yönlendirme ve hata toleransı merkezi.
-///
-/// Her ajan rolü için model eşleştirmesi appsettings.json'dan okunur:
-///   AI:GitHubModels:Agents:{Role}:Model
-///
-/// Failover Zinciri (sıralı):
-///   1. GitHub Models (Azure AI Inference)  — Primary
-///   2. Groq (llama-3.3-70b-versatile)      — Fallback 1
-///   3. Gemini 2.5 Flash                     — Fallback 2
+/// AIAgentFactory — Orka'nın dinamik Swarm Router'ı.
+/// N-to-N mimarisi ile her ajan için appsettings'ten Provider ve Model okur.
+/// Tüm LLM API'leri (OpenRouter, Mistral, Cerebras vs.) liyakat tabanlı ve optimize kullanılır.
 /// </summary>
 public class AIAgentFactory : IAIAgentFactory
 {
-    private readonly IGitHubModelsService _github;
-    private readonly IGroqService _groq;
-    private readonly IGeminiService _gemini;
+    private readonly IServiceProvider _serviceProvider;
     private readonly IRedisMemoryService _redis;
     private readonly ILogger<AIAgentFactory> _logger;
-    private readonly Dictionary<AgentRole, string> _modelMap;
+    private readonly Dictionary<AgentRole, (string Provider, string Model)> _agentConfigMap;
 
     public AIAgentFactory(
-        IGitHubModelsService github,
-        IGroqService groq,
-        IGeminiService gemini,
+        IServiceProvider serviceProvider,
         IRedisMemoryService redis,
         IConfiguration configuration,
         ILogger<AIAgentFactory> logger)
     {
-        _github = github;
-        _groq   = groq;
-        _gemini = gemini;
-        _redis  = redis;
+        _serviceProvider = serviceProvider;
+        _redis = redis;
         _logger = logger;
+        _agentConfigMap = new Dictionary<AgentRole, (string, string)>();
 
-        _modelMap = new Dictionary<AgentRole, string>
+        foreach (var role in Enum.GetValues<AgentRole>())
         {
-            [AgentRole.Tutor]      = configuration["AI:GitHubModels:Agents:Tutor:Model"]      ?? "gpt-4o",
-            [AgentRole.DeepPlan]   = configuration["AI:GitHubModels:Agents:DeepPlan:Model"]   ?? "Meta-Llama-3.1-405B-Instruct",
-            [AgentRole.Analyzer]   = configuration["AI:GitHubModels:Agents:Analyzer:Model"]   ?? "gpt-4o-mini",
-            [AgentRole.Summarizer] = configuration["AI:GitHubModels:Agents:Summarizer:Model"] ?? "gpt-4o-mini",
-            [AgentRole.Korteks]    = configuration["AI:GitHubModels:Agents:Korteks:Model"]    ?? "Meta-Llama-3.1-405B-Instruct",
-            [AgentRole.Supervisor] = configuration["AI:GitHubModels:Agents:Supervisor:Model"]  ?? "gpt-4o-mini",
-            [AgentRole.Grader]     = configuration["AI:GitHubModels:Agents:Grader:Model"]      ?? "gpt-4o-mini",
-            [AgentRole.Evaluator]  = configuration["AI:GitHubModels:Agents:Evaluator:Model"]   ?? "gpt-4o-mini",
-        };
+            var roleName = role.ToString();
+            // Yeni konfigürasyon yapısı: AI:AgentRouting:{Role}:Provider
+            var provider = configuration[$"AI:AgentRouting:{roleName}:Provider"] ?? "GitHubModels";
+            var model = configuration[$"AI:AgentRouting:{roleName}:Model"] ?? "gpt-4o-mini";
+            _agentConfigMap[role] = (provider, model);
+        }
     }
 
-    /// <inheritdoc/>
-    public string GetModel(AgentRole role) =>
-        _modelMap.TryGetValue(role, out var m) ? m : "gpt-4o-mini";
+    public string GetModel(AgentRole role) => _agentConfigMap.TryGetValue(role, out var config) ? config.Model : "gpt-4o-mini";
+    public string GetProvider(AgentRole role) => _agentConfigMap.TryGetValue(role, out var config) ? config.Provider : "GitHubModels";
 
     private static readonly TimeSpan AgentTimeout = TimeSpan.FromSeconds(20);
 
-    /// <inheritdoc/>
+    private IAIService ResolveService(string provider)
+    {
+        return provider switch
+        {
+            "OpenRouter"  => _serviceProvider.GetRequiredService<IOpenRouterService>(),
+            "Mistral"     => _serviceProvider.GetRequiredService<IMistralService>(),
+            "SambaNova"   => _serviceProvider.GetRequiredService<ISambaNovaService>(),
+            "Cerebras"    => _serviceProvider.GetRequiredService<ICerebrasService>(),
+            "HuggingFace" => _serviceProvider.GetRequiredService<IHuggingFaceService>(),
+            "Groq"        => _serviceProvider.GetRequiredService<IGroqService>(),
+            "Cohere"      => _serviceProvider.GetRequiredService<ICohereService>(),
+            _             => throw new NotSupportedException($"Desteklenmeyen AI Provider: {provider}")
+        };
+    }
+
+    private async Task<string> DispatchChatAsync(string provider, string model, string systemPrompt, string userMessage, CancellationToken ct)
+    {
+        if (provider == "GitHubModels")
+        {
+            var gh = _serviceProvider.GetRequiredService<IGitHubModelsService>();
+            return await gh.ChatAsync(systemPrompt, userMessage, model, ct);
+        }
+        else if (provider == "Gemini")
+        {
+            var gem = _serviceProvider.GetRequiredService<IGeminiService>();
+            return await gem.GenerateSmartAsync(systemPrompt, userMessage, ct);
+        }
+        else
+        {
+            var service = ResolveService(provider);
+            return await service.GenerateResponseAsync(systemPrompt, userMessage, model, ct);
+        }
+    }
+
+    private IAsyncEnumerable<string> DispatchStreamAsync(string provider, string model, string systemPrompt, string userMessage, CancellationToken ct)
+    {
+        if (provider == "GitHubModels")
+        {
+            var gh = _serviceProvider.GetRequiredService<IGitHubModelsService>();
+            return gh.ChatStreamAsync(systemPrompt, userMessage, model, ct);
+        }
+        else if (provider == "Gemini")
+        {
+            var gem = _serviceProvider.GetRequiredService<IGeminiService>();
+            return gem.StreamSmartAsync(systemPrompt, userMessage, ct);
+        }
+        else
+        {
+            var service = ResolveService(provider);
+            return service.GenerateResponseStreamAsync(systemPrompt, userMessage, model, ct);
+        }
+    }
+
     public async Task<string> CompleteChatAsync(
         AgentRole role,
         string systemPrompt,
@@ -68,73 +106,50 @@ public class AIAgentFactory : IAIAgentFactory
         CancellationToken ct = default)
     {
         var model    = GetModel(role);
+        var provider = GetProvider(role);
         var roleName = role.ToString();
         var sw       = Stopwatch.StartNew();
 
-        // 1. GitHub Models — 10s timeout
-        using (var cts1 = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            cts1.CancelAfter(AgentTimeout);
+            cts.CancelAfter(AgentTimeout);
             try
             {
-                _logger.LogDebug("[AIAgentFactory] {Role} → GitHub Models ({Model})", role, model);
-                var result = await _github.ChatAsync(systemPrompt, userMessage, model, cts1.Token);
+                _logger.LogDebug("[AIAgentFactory] {Role} → {Provider} ({Model})", role, provider, model);
+                var result = await DispatchChatAsync(provider, model, systemPrompt, userMessage, cts.Token);
                 sw.Stop();
-                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "GitHub");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, provider);
                 return result;
             }
-            catch (Exception ex) when (IsTransient(ex) || cts1.IsCancellationRequested)
+            catch (Exception ex) when (IsTransient(ex) || cts.IsCancellationRequested)
             {
-                _logger.LogWarning("[AIAgentFactory] {Role} GitHub başarısız/timeout ({Msg}), Groq fallback.", role, ex.Message);
-                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "GitHub");
+                _logger.LogWarning("[AIAgentFactory] {Role} {Provider} başarısız ({Msg}), Global Fallback (Groq) devrede.", role, provider, ex.Message);
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, provider);
                 sw.Restart();
             }
         }
 
-        // 2. Groq fallback — 10s timeout
-        using (var cts2 = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        // Global Fallback - Eğer atanan Provider çökerse her zaman çalışan ücretsiz ve hızlı Groq veya Gemini kurtarıcısı.
+        using (var ctsFallback = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            cts2.CancelAfter(AgentTimeout);
+            ctsFallback.CancelAfter(AgentTimeout);
             try
             {
-                var result = await _groq.GenerateResponseAsync(systemPrompt, userMessage, cts2.Token);
+                var groq = _serviceProvider.GetRequiredService<IGroqService>();
+                var result = await groq.GenerateResponseAsync(systemPrompt, userMessage, null, ctsFallback.Token);
                 sw.Stop();
-                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "Groq");
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "GroqFallback");
                 return result;
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.LogWarning("[AIAgentFactory] {Role} Groq başarısız/timeout ({Msg}), Gemini fallback.", role, ex.Message);
-                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Groq");
-                sw.Restart();
+                sw.Stop();
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "GroqFallback");
+                throw;
             }
-        }
-
-        // 3. Gemini fallback — 10s timeout
-        using var cts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts3.CancelAfter(AgentTimeout);
-        try
-        {
-            var geminiResult = await _gemini.GenerateSmartAsync(systemPrompt, userMessage, cts3.Token);
-            sw.Stop();
-            RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, "Gemini");
-            return geminiResult;
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogError(ex, "[AIAgentFactory] {Role} Gemini de başarısız. Tüm provider'lar tükendi.", role);
-            RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Gemini");
-            throw;
         }
     }
 
-    /// <inheritdoc/>
-    /// C# kısıtı: yield return, catch yan tümcesi içeren try bloğunda kullanamaz.
-    /// Bu nedenle "ilk token probe" pattern kullanılır:
-    ///   - İlk token TRY/CATCH içinde alınır (yield yok) ve TTFT ölçülür
-    ///   - Başarılıysa, geri kalan stream TRY dışında yield edilir
-    ///   - Başarısızsa fallback provider'a geçilir
     public async IAsyncEnumerable<string> StreamChatAsync(
         AgentRole role,
         string systemPrompt,
@@ -142,111 +157,68 @@ public class AIAgentFactory : IAIAgentFactory
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var model    = GetModel(role);
+        var provider = GetProvider(role);
         var roleName = role.ToString();
 
-        // ── 1. GitHub Models stream — TTFT ile ölçülüyor ────────────────────
-        IAsyncEnumerator<string>? githubEnum = null;
+        IAsyncEnumerator<string>? mainEnum = null;
         string? firstChunk = null;
-        bool githubOk = false;
-        var swGithub = Stopwatch.StartNew();
+        bool isOk = false;
+        var sw = Stopwatch.StartNew();
 
-        using (var probeCts1 = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        using (var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            probeCts1.CancelAfter(AgentTimeout);
+            probeCts.CancelAfter(AgentTimeout);
             try
             {
-                githubEnum = _github.ChatStreamAsync(systemPrompt, userMessage, model, probeCts1.Token)
-                                     .GetAsyncEnumerator(probeCts1.Token);
-                githubOk   = await githubEnum.MoveNextAsync(); // TTFT noktası
-                swGithub.Stop();
-                if (githubOk) firstChunk = githubEnum.Current;
+                mainEnum = DispatchStreamAsync(provider, model, systemPrompt, userMessage, probeCts.Token).GetAsyncEnumerator(probeCts.Token);
+                isOk = await mainEnum.MoveNextAsync(); // TTFT
+                sw.Stop();
+                if (isOk) firstChunk = mainEnum.Current;
             }
             catch (Exception ex)
             {
-                swGithub.Stop();
-                _logger.LogWarning("[AIAgentFactory] {Role} GitHub stream başarısız/timeout: {Msg}", role, ex.Message);
-                RecordMetricSafe(roleName, swGithub.ElapsedMilliseconds, false, "GitHub");
-                githubOk = false;
+                sw.Stop();
+                _logger.LogWarning("[AIAgentFactory] {Role} stream başarısız {Provider}: {Msg}", role, provider, ex.Message);
+                RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, provider);
+                isOk = false;
             }
         }
 
-        if (githubOk && githubEnum != null)
+        if (isOk && mainEnum != null)
         {
-            RecordMetricSafe(roleName, swGithub.ElapsedMilliseconds, true, "GitHub");
+            RecordMetricSafe(roleName, sw.ElapsedMilliseconds, true, provider);
             yield return firstChunk!;
 
-            while (await githubEnum.MoveNextAsync())
-                yield return githubEnum.Current;
+            while (await mainEnum.MoveNextAsync())
+                yield return mainEnum.Current;
 
-            await githubEnum.DisposeAsync();
+            await mainEnum.DisposeAsync();
             yield break;
         }
 
-        if (githubEnum != null) await githubEnum.DisposeAsync();
+        if (mainEnum != null) await mainEnum.DisposeAsync();
 
-        _logger.LogInformation("[AIAgentFactory] {Role} Groq stream fallback.", role);
+        _logger.LogInformation("[AIAgentFactory] {Role} Global Fallback (Gemini stream) devrede.", role);
 
-        // ── 2. Groq stream — TTFT ile ölçülüyor ─────────────────────────────
-        IAsyncEnumerator<string>? groqEnum = null;
-        string? groqFirst = null;
-        bool groqOk = false;
-        var swGroq = Stopwatch.StartNew();
-
-        using (var probeCts2 = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        // Global Stream Fallback
+        var gemini = _serviceProvider.GetRequiredService<IGeminiService>();
+        var swFallback = Stopwatch.StartNew();
+        bool gotFirst = false;
+        using var fbCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        fbCts.CancelAfter(AgentTimeout);
+        
+        await foreach (var chunk in gemini.StreamSmartAsync(systemPrompt, userMessage, fbCts.Token))
         {
-            probeCts2.CancelAfter(AgentTimeout);
-            try
+            if (!gotFirst)
             {
-                groqEnum = _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, probeCts2.Token)
-                                 .GetAsyncEnumerator(probeCts2.Token);
-                groqOk   = await groqEnum.MoveNextAsync(); // TTFT noktası
-                swGroq.Stop();
-                if (groqOk) groqFirst = groqEnum.Current;
-            }
-            catch (Exception ex)
-            {
-                swGroq.Stop();
-                _logger.LogWarning("[AIAgentFactory] {Role} Groq stream başarısız/timeout: {Msg}", role, ex.Message);
-                RecordMetricSafe(roleName, swGroq.ElapsedMilliseconds, false, "Groq");
-                groqOk = false;
-            }
-        }
-
-        if (groqOk && groqEnum != null)
-        {
-            RecordMetricSafe(roleName, swGroq.ElapsedMilliseconds, true, "Groq");
-            yield return groqFirst!;
-
-            while (await groqEnum.MoveNextAsync())
-                yield return groqEnum.Current;
-
-            await groqEnum.DisposeAsync();
-            yield break;
-        }
-
-        if (groqEnum != null) await groqEnum.DisposeAsync();
-
-        _logger.LogInformation("[AIAgentFactory] {Role} Gemini stream fallback.", role);
-
-        // ── 3. Gemini stream — TTFT ile ölçülüyor ───────────────────────────
-        var swGemini = Stopwatch.StartNew();
-        bool geminiGotFirst = false;
-        using var probeCts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        probeCts3.CancelAfter(AgentTimeout);
-        await foreach (var chunk in _gemini.StreamSmartAsync(systemPrompt, userMessage, probeCts3.Token))
-        {
-            if (!geminiGotFirst)
-            {
-                swGemini.Stop();
-                RecordMetricSafe(roleName, swGemini.ElapsedMilliseconds, true, "Gemini");
-                geminiGotFirst = true;
+                swFallback.Stop();
+                RecordMetricSafe(roleName, swFallback.ElapsedMilliseconds, true, "GeminiFallback");
+                gotFirst = true;
             }
             yield return chunk;
         }
     }
 
-
-    /// <inheritdoc/>
     public async Task<string> CompleteChatWithHistoryAsync(
         AgentRole role,
         string systemPrompt,
@@ -258,13 +230,6 @@ public class AIAgentFactory : IAIAgentFactory
         return await CompleteChatAsync(role, systemPrompt, userMessage, ct);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Redis metric kaydını güvenli şekilde fire-and-forget yapar.
-    /// Hata durumunda log'lar, stream performansını etkilemez.
-    /// Dashboard güvenilirliği için kritik — sessiz hataları engeller.
-    /// </summary>
     private void RecordMetricSafe(string roleName, long latencyMs, bool isSuccess, string provider)
     {
         _ = Task.Run(async () =>
@@ -275,9 +240,7 @@ public class AIAgentFactory : IAIAgentFactory
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
-                    "[AIAgentFactory] Redis metric kaydı başarısız. Role={Role}, Provider={Provider}, Latency={Latency}ms, Success={Success}",
-                    roleName, provider, latencyMs, isSuccess);
+                _logger.LogWarning(ex, "[AIAgentFactory] Redis metric başarısız. {Role} {Provider}", roleName, provider);
             }
         });
     }
@@ -285,17 +248,9 @@ public class AIAgentFactory : IAIAgentFactory
     private static bool IsTransient(Exception ex)
     {
         if (ex is Azure.RequestFailedException rfe)
-            // 401/403: token hatası (geçici değil ama fallback açısından tolere edilir)
-            // 429: rate limit, 503: servis dışı, 0: ağ hatası
             return rfe.Status is 401 or 403 or 429 or 503 or 0;
-
-        if (ex is HttpRequestException) return true;
-        if (ex is TaskCanceledException)  return true;
-        if (ex is TimeoutException)       return true;
-
-        if (ex.InnerException != null)
-            return IsTransient(ex.InnerException);
-
+        if (ex is HttpRequestException || ex is TaskCanceledException || ex is TimeoutException) return true;
+        if (ex.InnerException != null) return IsTransient(ex.InnerException);
         return false;
     }
 }

@@ -1,18 +1,19 @@
 /*
  * Design: "Sessiz Lüks" — Full-screen auth page.
  * Split layout: Left panel with branding, right panel with form.
- * Zinc monochrome, no neon, no glassmorphism.
+ * Soft neutral web design.
  * Tabs for Sign In / Sign Up.
  */
 
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { motion } from "framer-motion";
-import { Eye, EyeOff, ArrowRight, Mail, Lock, User, AlertCircle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Eye, EyeOff, ArrowRight, Mail, Lock, User, AlertCircle, ArrowLeft } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
-import { AuthAPI, storage } from "../services/api";
+import { AuthAPI, storage, type EducationLevel, type LearningGoal, type LearningTone } from "../services/api";
 
 type AuthTab = "signin" | "signup";
+type SignupStep = "credentials" | "profile";
 
 export default function Login() {
   const [tab, setTab] = useState<AuthTab>("signin");
@@ -25,43 +26,106 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Signup 2-adım akışı — 1) kimlik, 2) öğrenci profili
+  const [signupStep, setSignupStep] = useState<SignupStep>("credentials");
+  const [age, setAge] = useState<number | "">(18);
+  const [educationLevel, setEducationLevel] = useState<EducationLevel>("Unknown");
+  const [learningGoal, setLearningGoal] = useState<LearningGoal>("Unknown");
+  const [learningTone, setLearningTone] = useState<LearningTone>("Friendly");
+  const [dailyStudyMinutes, setDailyStudyMinutes] = useState<number>(30);
+
+  const resetSignupExtras = () => {
+    setSignupStep("credentials");
+    setAge(18);
+    setEducationLevel("Unknown");
+    setLearningGoal("Unknown");
+    setLearningTone("Friendly");
+    setDailyStudyMinutes(30);
+  };
+
+  const submitLogin = async () => {
+    const { data } = await AuthAPI.login({ email, password });
+    storage.save(data);
+    navigate("/app");
+  };
+
+  const submitRegister = async (withProfile: boolean) => {
+    const firstName = name.trim() || "Yeni";
+    const { data } = await AuthAPI.register({
+      firstName,
+      lastName: "",
+      email,
+      password,
+      ...(withProfile
+        ? {
+            age: typeof age === "number" ? age : null,
+            educationLevel: educationLevel === "Unknown" ? null : educationLevel,
+            learningGoal: learningGoal === "Unknown" ? null : learningGoal,
+            learningTone: learningTone === "Unknown" ? null : learningTone,
+            dailyStudyMinutes: dailyStudyMinutes || null,
+          }
+        : {}),
+    });
+    storage.save(data);
+    navigate("/app");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Basic Validation
-    if (!email || !password) {
-      setError("Lütfen tüm alanları doldurun.");
-      return;
-    }
-    if (tab === "signup" && !name) {
-      setError("Lütfen adınızı ve soyadınızı girin.");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      if (tab === "signin") {
-        const { data } = await AuthAPI.login({ email, password });
-        storage.save(data);
-      } else {
-        const firstName = name.trim() || "Yeni";
-        const lastName = "";
-        
-        const { data } = await AuthAPI.register({ 
-          firstName, 
-          lastName, 
-          email, 
-          password 
-        });
-        storage.save(data);
+    if (tab === "signin") {
+      if (!email || !password) {
+        setError("Lütfen tüm alanları doldurun.");
+        return;
       }
-      navigate("/app");
+      setIsLoading(true);
+      try {
+        await submitLogin();
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message ?? "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.";
+        setError(msg);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Signup akışı — 1. adım doğrulama, 2. adıma geçiş
+    if (signupStep === "credentials") {
+      if (!email || !password || !name) {
+        setError("Lütfen tüm alanları doldurun.");
+        return;
+      }
+      setSignupStep("profile");
+      return;
+    }
+
+    // Signup 2. adım — profil bilgisi ile hesap oluştur
+    setIsLoading(true);
+    try {
+      await submitRegister(true);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.";
+          ?.message ?? "Kayıt başarısız. Lütfen bilgilerinizi kontrol edin.";
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSkipProfile = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await submitRegister(false);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "Kayıt başarısız. Lütfen bilgilerinizi kontrol edin.";
       setError(msg);
     } finally {
       setIsLoading(false);
@@ -173,7 +237,7 @@ export default function Login() {
           {/* Tab Switcher */}
           <div className="flex gap-1 p-1 bg-zinc-900 rounded-lg mb-8">
             <button
-              onClick={() => { setTab("signin"); setError(null); }}
+              onClick={() => { setTab("signin"); setError(null); resetSignupExtras(); }}
               className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
                 tab === "signin"
                   ? "bg-zinc-800 text-zinc-100"
@@ -183,7 +247,7 @@ export default function Login() {
               Giriş Yap
             </button>
             <button
-              onClick={() => { setTab("signup"); setError(null); }}
+              onClick={() => { setTab("signup"); setError(null); resetSignupExtras(); }}
               className={`flex-1 py-2.5 text-sm font-medium rounded-md transition-colors duration-150 ${
                 tab === "signup"
                   ? "bg-zinc-800 text-zinc-100"
@@ -194,107 +258,279 @@ export default function Login() {
             </button>
           </div>
 
+          {/* Signup step indicator */}
+          {tab === "signup" && (
+            <div className="flex items-center gap-2 mb-5 text-[11px] text-zinc-500">
+              <span className={signupStep === "credentials" ? "text-zinc-200" : ""}>
+                1. Hesap
+              </span>
+              <span className="flex-1 h-px bg-zinc-800" />
+              <span className={signupStep === "profile" ? "text-zinc-200" : ""}>
+                2. Öğrenme Profili
+              </span>
+            </div>
+          )}
+
           {/* Error banner */}
           {error && (
-            <div className="flex items-start gap-2.5 p-3 bg-red-950/40 border border-red-900/50 rounded-lg mb-4">
-              <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-red-400">{error}</p>
+            <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/25 rounded-lg mb-4">
+              <AlertCircle className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-700 dark:text-amber-300">{error}</p>
             </div>
           )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {tab === "signup" && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <label className="block text-xs font-medium text-zinc-500 mb-1.5">
-                  Ad Soyad
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Adınızı girin"
-                    className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-500 mb-1.5">
-                E-posta
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ornek@email.com"
-                  className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-500 mb-1.5">
-                Şifre
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-10 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors duration-150"
+            <AnimatePresence mode="wait" initial={false}>
+              {(tab === "signin" || (tab === "signup" && signupStep === "credentials")) && (
+                <motion.div
+                  key="credentials"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-4"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
+                  {tab === "signup" && (
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                        Ad Soyad
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="Adınızı girin"
+                          className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
+                        />
+                      </div>
+                    </div>
                   )}
-                </button>
-              </div>
-            </div>
 
-            {tab === "signin" && (
-              <div className="flex justify-end">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      E-posta
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="ornek@email.com"
+                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Şifre
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-10 pr-10 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-700 transition-colors duration-150"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors duration-150"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {tab === "signin" && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors duration-150"
+                      >
+                        Şifremi unuttum
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {tab === "signup" && signupStep === "profile" && (
+                <motion.div
+                  key="profile"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 12 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-4"
+                >
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    Orka seni daha iyi tanısın — planlarını yaşına, hedefine ve tempoya göre hazırlasın.
+                    Bu adımı atlayabilirsin, sonra Ayarlar'dan da doldurabilirsin.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Yaşın
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={6}
+                        max={80}
+                        value={typeof age === "number" ? age : 18}
+                        onChange={(e) => setAge(parseInt(e.target.value, 10))}
+                        className="flex-1 accent-emerald-500"
+                      />
+                      <span className="w-10 text-right text-sm text-zinc-200 tabular-nums">
+                        {typeof age === "number" ? age : 18}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Eğitim Seviyen
+                    </label>
+                    <select
+                      value={educationLevel}
+                      onChange={(e) => setEducationLevel(e.target.value as EducationLevel)}
+                      className="w-full px-3 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 outline-none focus:border-zinc-700 transition-colors duration-150"
+                    >
+                      <option value="Unknown">Belirtmek istemiyorum</option>
+                      <option value="Primary">İlkokul</option>
+                      <option value="Secondary">Ortaokul</option>
+                      <option value="HighSchool">Lise</option>
+                      <option value="University">Üniversite</option>
+                      <option value="Graduate">Mezun / Yüksek Lisans</option>
+                      <option value="Professional">Çalışan / Doktora</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Öğrenme Amacın
+                    </label>
+                    <select
+                      value={learningGoal}
+                      onChange={(e) => setLearningGoal(e.target.value as LearningGoal)}
+                      className="w-full px-3 py-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-100 outline-none focus:border-zinc-700 transition-colors duration-150"
+                    >
+                      <option value="Unknown">Genel öğrenme</option>
+                      <option value="ExamPrep">Sınav hazırlığı (KPSS/YKS/ALES)</option>
+                      <option value="Career">Kariyer / meslek</option>
+                      <option value="Hobby">Hobi / kişisel ilgi</option>
+                      <option value="Academic">Akademik çalışma</option>
+                      <option value="Certification">Mesleki sertifika</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Anlatım Üslubu Tercihi
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { value: "Formal", label: "Akademik" },
+                        { value: "Friendly", label: "Samimi" },
+                        { value: "Playful", label: "Oyunsu" },
+                      ] as { value: LearningTone; label: string }[]).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setLearningTone(opt.value)}
+                          className={`py-2.5 text-xs font-medium rounded-lg border transition-colors duration-150 ${
+                            learningTone === opt.value
+                              ? "bg-zinc-800 border-zinc-600 text-zinc-100"
+                              : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">
+                      Günlük çalışma süren (dakika)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={5}
+                        max={240}
+                        step={5}
+                        value={dailyStudyMinutes}
+                        onChange={(e) => setDailyStudyMinutes(parseInt(e.target.value, 10))}
+                        className="flex-1 accent-emerald-500"
+                      />
+                      <span className="w-14 text-right text-sm text-zinc-200 tabular-nums">
+                        {dailyStudyMinutes} dk
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex items-center gap-2">
+              {tab === "signup" && signupStep === "profile" && (
                 <button
                   type="button"
-                  className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors duration-150"
+                  onClick={() => { setSignupStep("credentials"); setError(null); }}
+                  className="flex items-center gap-1.5 py-3 px-3 text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
                 >
-                  Şifremi unuttum
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Geri
                 </button>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading || !email || !password || (tab === "signup" && !name)}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-zinc-100 text-zinc-950 rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <div className="w-4 h-4 border-2 border-zinc-400 border-t-zinc-950 rounded-full animate-spin" />
-              ) : (
-                <>
-                  {tab === "signin" ? "Giriş Yap" : "Hesap Oluştur"}
-                  <ArrowRight className="w-4 h-4" />
-                </>
               )}
-            </button>
+
+              <button
+                type="submit"
+                disabled={
+                  isLoading
+                  || !email
+                  || !password
+                  || (tab === "signup" && signupStep === "credentials" && !name)
+                }
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-100 text-zinc-950 rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="w-4 h-4 border-2 border-zinc-400 border-t-zinc-950 rounded-full animate-spin" />
+                ) : (
+                  <>
+                    {tab === "signin"
+                      ? "Giriş Yap"
+                      : signupStep === "credentials"
+                        ? "Devam Et"
+                        : "Hesap Oluştur"}
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            {tab === "signup" && signupStep === "profile" && (
+              <button
+                type="button"
+                onClick={handleSkipProfile}
+                disabled={isLoading}
+                className="w-full text-xs text-zinc-500 hover:text-zinc-300 transition-colors duration-150 disabled:opacity-40"
+              >
+                Şimdilik atla, sonra doldururum
+              </button>
+            )}
           </form>
 
           {/* Divider */}

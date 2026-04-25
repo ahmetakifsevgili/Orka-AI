@@ -269,14 +269,14 @@ function QuizHistoryTab({ attempts }: { attempts: import("@/lib/types").QuizAtte
             key={attempt.id}
             className={`p-4 rounded-lg border ${
               attempt.isCorrect
-                ? "border-green-900/30 bg-green-950/10"
-                : "border-red-900/30 bg-red-950/10"
+                ? "border-emerald-500/25 bg-emerald-500/10"
+                : "border-amber-500/25 bg-amber-500/10"
             }`}
           >
             <div className="flex items-start justify-between">
               <p className="text-sm text-zinc-200 flex-1">{attempt.question}</p>
               <span className={`text-xs px-2 py-0.5 rounded ml-3 ${
-                attempt.isCorrect ? "bg-green-900/30 text-green-400" : "bg-red-900/30 text-red-400"
+                attempt.isCorrect ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
               }`}>
                 {attempt.isCorrect ? "Correct" : "Incorrect"}
               </span>

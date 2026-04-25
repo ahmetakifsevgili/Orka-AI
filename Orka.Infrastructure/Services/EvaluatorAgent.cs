@@ -38,36 +38,98 @@ public class EvaluatorAgent : IEvaluatorAgent
         _redisService = redisService;
     }
 
+    // Podcast tag ve görsel URL'lerini temizle — evaluator içerik skor versin, format değil
+    private static readonly System.Text.RegularExpressions.Regex PodcastTagRegex =
+        new(@"\[(HOCA|ASİSTAN|ASISTAN)\]:?\s*", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex ImageUrlRegex =
+        new(@"!\[[^\]]*\]\([^)]+\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex MermaidBlockRegex =
+        new(@"```mermaid[\s\S]*?```", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string SanitizeForEvaluation(string text)
+    {
+        text = PodcastTagRegex.Replace(text, "");
+        text = ImageUrlRegex.Replace(text, "[görsel]");
+        text = MermaidBlockRegex.Replace(text, "[diyagram]");
+        return text.Trim();
+    }
+
     public async Task<(int score, string feedback)> EvaluateInteractionAsync(
         Guid sessionId,
         string userMessage,
         string agentResponse,
         string agentRole,
         Guid? topicId = null,
+        string? goalContext = null,
         CancellationToken ct = default)
     {
-        var prompt = $$"""
-            Sen Orka AI için LLMOps Kalite Kontrol ajanısın. Bir ajanın ({{agentRole}}) cevabını
-            üç boyutta değerlendir:
+        // Podcast/görsel etiketlerini temizle — evaluator içerik kalitesini ölçsün
+        var cleanedResponse = SanitizeForEvaluation(agentResponse);
 
-              1) pedagogy  (1-5): Açıklama öğretici mi, seviyeye uygun mu, gereksiz gevezelik var mı?
-              2) factual   (1-5): İçerik doğru mu, uydurma bilgi/hallucination var mı?
-              3) context   (1-5): Kullanıcının sorusuyla gerçekten alakalı mı, konuyu kaçırmış mı?
+        // Faz 16: IDE kodlama cevabı mı yoksa normal ders anlatımı mı?
+        bool isCodeInteraction = userMessage.Contains("```") || 
+                                  userMessage.Contains("[KOD ÇALIŞTIRMA SONUCU") ||
+                                  userMessage.Contains("**Quiz Sorusu:**") && userMessage.Contains("```");
 
-            Her boyut için kısa gerekçeyi zihninde tut, sonra 1-10 arası "overall" (genel) puan
-            üret. Eğer factual < 3 ise hallucinationRisk=true işaretle.
+        var prompt = isCodeInteraction 
+        ? $$"""
+            Sen Orka AI için LLMOps Kod Kalite Kontrol ajanısın. Bir ajanın ({{agentRole}}) kodlama cevabını değerlendir.
+            
+            KODLAMA DEĞERLENDİRME BOYUTLARI:
+              1) pedagogy      (1-5): Açıklama öğretici mi? Kodun neden doğru/yanlış olduğu anlatılmış mı?
+              2) factual       (1-5): Kod mantığı doğru mu? Algoritmik olarak istenen çıktıyı veriyor mu?
+              3) context       (1-5): Sorunun istediği tam olarak cevaplandı mı? Edge case'ler düşünülmüş mü?
+              4) goal_alignment (1-5): Öğrencinin '{{(string.IsNullOrWhiteSpace(goalContext) ? "Genel Başarı" : goalContext)}}' hedefine uygun mu?
+              5) code_quality  (1-5): Kod okunabilir mi? Değişken isimleri anlamlı mı? DRY prensibi uygulanmış mı?
+
+            KOD SONUCU VARSA: [KOD ÇALIŞTIRMA SONUCU] bloğunu oku. Eğer kod başarıyla çalıştıysa ve doğru çıktı verdiyse factual puanını yükselt. 
+            Eğer kod hata verdiyse factual puanını düşür ve hatanın ne olduğunu feedback'te açıkla.
+            
+            Overall = normalize((pedagogy + factual + context + goal_alignment + code_quality) / 25 * 10).
+            Eğer factual < 3 ise hallucinationRisk=true.
 
             Öğrencinin Mesajı:
             "{{userMessage}}"
 
-            AI Cevabı:
-            "{{agentResponse}}"
+            AI Cevabı (temizlenmiş):
+            "{{cleanedResponse}}"
 
             YALNIZCA AŞAĞIDAKİ JSON ŞEMASINDA CEVAP VER, BAŞKA METİN EKLEME:
             {
               "pedagogy": 4,
               "factual": 5,
               "context": 4,
+              "goal_alignment": 4,
+              "code_quality": 4,
+              "overall": 8,
+              "hallucinationRisk": false,
+              "feedback": "Kod doğru çalışıyor, bubble sort mantığı doğru ama değişken isimleri daha açıklayıcı olabilirdi."
+            }
+            """
+        : $$"""
+            Sen Orka AI için LLMOps Kalite Kontrol ajanısın. Bir ajanın ({{agentRole}}) cevabını
+            üç boyutta değerlendir:
+
+              1) pedagogy  (1-5): Açıklama öğretici mi, seviyeye uygun mu, gereksiz gevezelik var mı?
+              2) factual   (1-5): İçerik doğru mu, uydurma bilgi/hallucination var mı?
+              3) context   (1-5): Kullanıcının sorusuyla gerçekten alakalı mı, konuyu kaçırmış mı?
+              4) goal_alignment (1-5): Öğrencinin '{{(string.IsNullOrWhiteSpace(goalContext) ? "Genel Başarı" : goalContext)}}' hedefine uygun bir anlatım veya zorluk seviyesi kullanılmış mı?
+
+            Her boyut için kısa gerekçeyi zihninde tut, sonra 1-10 arası "overall" (genel) puan
+            üret. Eğer factual < 3 ise hallucinationRisk=true işaretle. Aynı şekilde goal_alignment çok düşükse overall puanı kır.
+
+            Öğrencinin Mesajı:
+            "{{userMessage}}"
+
+            AI Cevabı (temizlenmiş):
+            "{{cleanedResponse}}"
+
+            YALNIZCA AŞAĞIDAKİ JSON ŞEMASINDA CEVAP VER, BAŞKA METİN EKLEME:
+            {
+              "pedagogy": 4,
+              "factual": 5,
+              "context": 4,
+              "goal_alignment": 4,
               "overall": 8,
               "hallucinationRisk": false,
               "feedback": "Kısa, net ve doğru bir açıklama."
@@ -139,7 +201,8 @@ public class EvaluatorAgent : IEvaluatorAgent
             var pedagogy = Read("pedagogy", 1, 5, 3);
             var factual  = Read("factual",  1, 5, 3);
             var ctx      = Read("context",  1, 5, 3);
-            var overall  = Read("overall",  1, 10, NormalizeOverall(pedagogy, factual, ctx));
+            var goalAl   = Read("goal_alignment", 1, 5, 3);
+            var overall  = Read("overall",  1, 10, NormalizeOverall(pedagogy, factual, ctx, goalAl));
 
             var halluc = root.TryGetProperty("hallucinationRisk", out var hr) && hr.ValueKind == JsonValueKind.True;
             // Fallback inference: factual<3 ise riski zorla
@@ -157,9 +220,9 @@ public class EvaluatorAgent : IEvaluatorAgent
         }
     }
 
-    // Sub-skorları 1-10 scale'ine normalize eder (basit ortalama × 2/3 ≈ 10 tavan)
-    private static int NormalizeOverall(int pedagogy, int factual, int ctx)
-        => Math.Clamp((int)Math.Round((pedagogy + factual + ctx) / 15.0 * 10.0), 1, 10);
+    // Sub-skorları 1-10 scale'ine normalize eder
+    private static int NormalizeOverall(int pedagogy, int factual, int ctx, int goalAl)
+        => Math.Clamp((int)Math.Round((pedagogy + factual + ctx + goalAl) / 20.0 * 10.0), 1, 10);
 
     private static string BuildCombinedFeedback(EvaluationDetail d)
     {

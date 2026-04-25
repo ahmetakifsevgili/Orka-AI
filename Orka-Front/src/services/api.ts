@@ -4,6 +4,11 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
+import type {
+  MultimodalContentItem,
+  SkillTreeResponse,
+  UploadedImage,
+} from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +17,37 @@ import toast from "react-hot-toast";
 export interface AuthTokens {
   token: string;
   refreshToken: string;
+}
+
+// Backend enum değerleri ile aynı sıra (Orka.Core.Enums.EducationLevel)
+export type EducationLevel =
+  | "Unknown"
+  | "Primary"
+  | "Secondary"
+  | "HighSchool"
+  | "University"
+  | "Graduate"
+  | "Professional";
+
+// Backend enum değerleri ile aynı sıra (Orka.Core.Enums.LearningGoal)
+export type LearningGoal =
+  | "Unknown"
+  | "ExamPrep"
+  | "Career"
+  | "Hobby"
+  | "Academic"
+  | "Certification";
+
+// Backend enum değerleri ile aynı sıra (Orka.Core.Enums.LearningTone)
+export type LearningTone = "Unknown" | "Formal" | "Friendly" | "Playful";
+
+export interface LearningProfile {
+  profileCompleted: boolean;
+  age: number | null;
+  educationLevel: EducationLevel | number | null;
+  learningGoal: LearningGoal | number | null;
+  learningTone: LearningTone | number | null;
+  dailyStudyMinutes: number | null;
 }
 
 export interface AuthUser {
@@ -30,6 +66,8 @@ export interface AuthUser {
     newContentAlerts: boolean;
     soundsEnabled: boolean;
   };
+  learningProfile?: LearningProfile;
+  profileCompleted?: boolean;
 }
 
 export interface AuthResponse extends AuthTokens {
@@ -46,6 +84,20 @@ export interface RegisterRequest {
   lastName: string;
   email: string;
   password: string;
+  // ── Öğrenci Profili (Faz B — opsiyonel) ─────────────────────────────────
+  age?: number | null;
+  educationLevel?: EducationLevel | null;
+  learningGoal?: LearningGoal | null;
+  learningTone?: LearningTone | null;
+  dailyStudyMinutes?: number | null;
+}
+
+export interface UpdateLearningProfileRequest {
+  age?: number | null;
+  educationLevel?: EducationLevel | null;
+  learningGoal?: LearningGoal | null;
+  learningTone?: LearningTone | null;
+  dailyStudyMinutes?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +263,8 @@ export const UserAPI = {
     newContentAlerts?: boolean;
     soundsEnabled?: boolean;
   }) => api.patch("/user/settings", data),
+  updateLearningProfile: (data: UpdateLearningProfileRequest) =>
+    api.patch<LearningProfile>("/user/learning-profile", data),
   deleteAccount: () => api.delete("/user/account"),
 };
 
@@ -233,12 +287,13 @@ export const ChatAPI = {
     content: string;
     isPlanMode?: boolean;
   }) => api.post("/chat/message", data),
-  
+
   streamMessage: async (data: {
     topicId?: string;
     sessionId?: string;
     content: string;
     isPlanMode?: boolean;
+    isVoiceMode?: boolean;
   }) => {
     const token = storage.getToken();
     return fetch("/api/chat/stream", {
@@ -251,8 +306,67 @@ export const ChatAPI = {
     });
   },
 
+  interruptStream: (sessionId: string, userMessage: string) =>
+    api.post<{ interrupted: boolean; message: string }>(
+      `/chat/interrupt/${sessionId}`,
+      { userMessage }
+    ).then((r) => r.data),
+
+  streamClassroom: async (data: {
+    topic: string;
+    topicId?: string;
+    sessionId?: string;
+    isVoiceMode?: boolean;
+  }) => {
+    const token = storage.getToken();
+    return fetch("/api/chat/classroom/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+  },
+
+  streamMultimodal: async (data: {
+    contentItems: MultimodalContentItem[];
+    topicId?: string;
+    sessionId?: string;
+    isPlanMode?: boolean;
+  }) => {
+    const token = storage.getToken();
+    return fetch("/api/chat/multimodal", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+  },
+
   endSession: (data: { sessionId: string }) =>
     api.post("/chat/session/end", data),
+};
+
+export const UploadAPI = {
+  image: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post<UploadedImage>("/upload/image", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }).then((r) => r.data);
+  },
+};
+
+export const SkillTreeAPI = {
+  get: () => api.get<SkillTreeResponse>("/skilltree").then((r) => r.data),
+  unlock: (nodeId: string) =>
+    api.post<{ message: string; nodeId: string }>(`/skilltree/unlock/${nodeId}`)
+      .then((r) => r.data),
+  descendants: (nodeId: string) =>
+    api.get(`/skilltree/${nodeId}/descendants`).then((r) => r.data),
 };
 
 export const DashboardAPI = {
@@ -289,7 +403,38 @@ export const WikiAPI = {
 };
 
 export const KorteksAPI = {
-  // Düz konu araştırması (opsiyonel URL)
+  startResearch: (data: { query: string; topicId?: string }) =>
+    api.post<{ jobId: string }>("/korteks/start", data).then((r) => r.data),
+
+  getJobStatus: (jobId: string) =>
+    api.get<{ phase: string; logs: string; result?: string; error?: string }>(`/korteks/status/${jobId}`).then((r) => r.data),
+
+  getLibrary: () =>
+    api.get<Array<{ id: string; query: string; phase: string; completedAt: string; hasReport: boolean; topicId?: string }>>("/korteks/library").then((r) => r.data),
+
+  getReport: (jobId: string) =>
+    api.get<{ query: string; report: string; completedAt: string }>(`/korteks/library/${jobId}/report`).then((r) => r.data),
+
+  startFileResearch: (data: {
+    query: string;
+    file: File;
+    requireWebSearch: boolean;
+    topicId?: string;
+  }) => {
+    const form = new FormData();
+    form.append("query", data.query);
+    form.append("file", data.file);
+    form.append("requireWebSearch", String(data.requireWebSearch));
+    if (data.topicId) form.append("topicId", data.topicId);
+
+    return api.post<{ jobId: string; mode: "rag" | "hybrid" }>(
+      "/korteks/start-file",
+      form,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    ).then((r) => r.data);
+  },
+
+  // Eski stream metodu (Silinmedi, geriye donuk uyumluluk)
   stream: (data: { topic: string; topicId?: string; sourceUrl?: string }) => {
     const token = storage.getToken();
     return fetch("/api/korteks/research", {
@@ -315,17 +460,31 @@ export const KorteksAPI = {
       body: form,
     });
   },
+
+  // Yazdırılabilir HTML (PDF kaydı için tarayıcının print dialog'u tetiklenir)
+  exportHtml: (data: { topic: string; markdown: string }) => {
+    const token = storage.getToken();
+    return fetch("/api/korteks/export-html", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 export const CodeAPI = {
   /**
    * Kodu Piston sandbox'ında çalıştırır.
    * POST /api/code/run → { stdout, stderr, success }
+   * sessionId verilirse sonuç Redis'e yazılır → TutorAgent bir sonraki mesajda okur.
    */
-  run: (data: { code: string; language?: string }) =>
+  run: (data: { code: string; language?: string; sessionId?: string }) =>
     api.post<{ stdout: string; stderr: string; success: boolean }>(
       "/code/run",
-      { code: data.code, language: data.language ?? "csharp" }
+      { code: data.code, language: data.language ?? "csharp", sessionId: data.sessionId }
     ).then((r) => r.data),
 };
 

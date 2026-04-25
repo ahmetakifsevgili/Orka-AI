@@ -7,6 +7,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Orka.Core.Interfaces;
+using Orka.Core.Enums;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 
 namespace Orka.Infrastructure.Services;
@@ -29,15 +30,18 @@ namespace Orka.Infrastructure.Services;
 /// </summary>
 public class KorteksAgent : IKorteksAgent
 {
+    private readonly IAIAgentFactory       _factory;
     private readonly IServiceProvider      _serviceProvider;
     private readonly IConfiguration        _config;
     private readonly ILogger<KorteksAgent> _logger;
 
     public KorteksAgent(
+        IAIAgentFactory       factory,
         IServiceProvider      serviceProvider,
         IConfiguration        configuration,
         ILogger<KorteksAgent> logger)
     {
+        _factory         = factory;
         _serviceProvider = serviceProvider;
         _config          = configuration;
         _logger          = logger;
@@ -45,9 +49,40 @@ public class KorteksAgent : IKorteksAgent
 
     private Kernel BuildKorteksKernel()
     {
-        var model   = _config["AI:GitHubModels:Agents:Korteks:Model"] ?? "Meta-Llama-3.1-405B-Instruct";
-        var apiKey  = _config["AI:GitHubModels:Token"]                ?? throw new InvalidOperationException("AI:GitHubModels:Token eksik.");
-        var baseUrl = _config["AI:GitHubModels:BaseUrl"]              ?? "https://models.inference.ai.azure.com";
+        var model    = _factory.GetModel(AgentRole.Korteks);
+        var provider = _factory.GetProvider(AgentRole.Korteks);
+        
+        string apiKey;
+        string baseUrl;
+
+        switch (provider)
+        {
+            case "GitHubModels":
+                apiKey = _config["AI:GitHubModels:Token"] ?? throw new InvalidOperationException("GitHubModels Token eksik.");
+                baseUrl = _config["AI:GitHubModels:BaseUrl"] ?? "https://models.inference.ai.azure.com";
+                break;
+            case "OpenRouter":
+                apiKey = _config["AI:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("OpenRouter ApiKey eksik.");
+                baseUrl = "https://openrouter.ai/api/v1";
+                break;
+            case "Groq":
+                apiKey = _config["AI:Groq:ApiKey"] ?? throw new InvalidOperationException("Groq ApiKey eksik.");
+                baseUrl = "https://api.groq.com/openai/v1";
+                break;
+            case "SambaNova":
+                apiKey = _config["AI:SambaNova:ApiKey"] ?? throw new InvalidOperationException("SambaNova ApiKey eksik.");
+                baseUrl = "https://api.sambanova.ai/v1";
+                break;
+            case "Cerebras":
+                apiKey = _config["AI:Cerebras:ApiKey"] ?? throw new InvalidOperationException("Cerebras ApiKey eksik.");
+                baseUrl = "https://api.cerebras.ai/v1";
+                break;
+            default:
+                // Fallback to GitHub Models
+                apiKey = _config["AI:GitHubModels:Token"] ?? "";
+                baseUrl = "https://models.inference.ai.azure.com";
+                break;
+        }
 
         var kernel = Kernel.CreateBuilder()
             .AddOpenAIChatCompletion(modelId: model, apiKey: apiKey, endpoint: new Uri(baseUrl))
@@ -68,6 +103,41 @@ public class KorteksAgent : IKorteksAgent
         // Plugin 4: Orka wiki (mevcut öğrenme içeriği)
         kernel.Plugins.AddFromObject(
             _serviceProvider.GetRequiredService<WikiPlugin>(), "OrkaWiki");
+
+        // Plugin 5: Korteks V2 — Akademik makale arama (Semantic Scholar)
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<SemanticScholarPlugin>(), "AcademicSearch");
+
+        // --- YENİ PUBLIC API EKLENTİLERİ ---
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<CrossRefPlugin>(), "CrossRef");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<ArXivPlugin>(), "ArXiv");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<DatamusePlugin>(), "Datamuse");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<OpenLibraryPlugin>(), "OpenLibrary");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<NewtonMathPlugin>(), "NewtonMath");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<FreeDictionaryPlugin>(), "Dictionary");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<OpenTriviaPlugin>(), "Trivia");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<QuickChartPlugin>(), "QuickChart");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<KrokiPlugin>(), "Diyagram");
+            
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<LibreTranslatePlugin>(), "Translate");
 
         return kernel;
     }
@@ -101,8 +171,14 @@ public class KorteksAgent : IKorteksAgent
             yield break;
         }
 
-        yield return "✅ Web araması + Wikipedia + Kaynak doğrulama aktif.\n";
+        yield return "✅ İki dalga iteratif araştırma + Wikipedia + Kaynakça numaralandırma aktif.\n";
         yield return $"🔍 \"{topic}\" için derin araştırma başlıyor...\n\n";
+
+        // Kullanıcıya çıktının nereye gideceğini baştan net söyle.
+        if (topicId.HasValue)
+            yield return "📍 **Çıktı:** Rapor aşağıya yazılacak ve **bu konunun Wiki'sine otomatik kaydedilecek**. Tamamlanınca PDF/Markdown olarak indirebilirsin.\n\n";
+        else
+            yield return "📍 **Çıktı:** Rapor aşağıya yazılacak. Tamamlanınca PDF/Markdown olarak indirebilirsin. (Wiki'ye kaydetmek için bir müfredat konusu seçmen gerekir.)\n\n";
 
         var chatService = kernel!.GetRequiredService<IChatCompletionService>();
 
@@ -125,53 +201,135 @@ public class KorteksAgent : IKorteksAgent
             """;
 
         var systemPrompt = $"""
-            Sen Orka AI'nın "Korteks" modülüsün — Perplexity benzeri bir derin araştırma motorusun.
-            Kullanıcının verdiği konuyu o kadar derinlemesine, akademik ve çok boyutlu işle ki, çıkan sonuç bir ansiklopedi maddesi kadar doyurucu olsun.
+            Sen Orka AI'nın "Korteks V2" modülüsün — ChatGPT Deep Research + Perplexity Pro seviyesinde otonom bir araştırma motorusun.
+            Kullanıcının verdiği konuyu akademik bir doktora tez özeti seviyesinde derinleştireceksin.
+            Çıktın bir üniversite ansiklopedi maddesi + sektör raporu + akademik literatür taraması bileşimi kadar kapsamlı olmalı.
 
-            ARAŞTIRMA SÜRECİ (bu sırayı takip et):
-            1. WebSearch-SearchWebDeep ile konuyu 3 farklı açıdan paralel ara.
-               Sorgular: [Ana kavramın detayları] / [Pratik kullanım, teknik örnekler] / [Son gelişmeler, endüstri standartları]
-            2. Wikipedia-SearchWikipedia ile makaleyi bulup çek.
-            3. Toplanan bilgileri karşılaştır.
-            4. En az 6-8 paragraf uzunluğunda, son derece doyurucu ve derinlemesine yapılandırılmış bir rapor yaz.
+            ZORUNLU ARAŞTIRMA SÜRECİ — ÜÇ DALGA İTERATİF DERİN ARAŞTIRMA:
+
+            [DALGA 1 — GENİŞ KAPSAM]
+            1. WebSearch-SearchWebDeep ile konuyu **5 farklı açıdan** paralel ara. İhtiyaç duyarsan Datamuse-FindRelatedWords ile arama terimlerini zenginleştir.
+            2. AcademicSearch-SearchPapers, CrossRef-SearchWorks ve ArXiv-SearchPapers kullanarak konuyla ilgili **en az 5 akademik makale** bul.
+            3. Wikipedia ve OpenLibrary-SearchBooks ile otorite kaynakları ve kitapları tara.
+
+            [DALGA 2 — DERİNLEŞTİRME]
+            4. İlk dalganın sonuçlarını incele: Hangi istatistik eksik? Hangi zıt görüş eksik?
+            5. En değerli web kaynaklarından WebSearch-ExtractFromUrls ile tam sayfa içeriği çek.
+            6. Yabancı dilde kritik metinler bulursan Translate-TranslateText ile Türkçe'ye çevir.
+
+            [DALGA 3 — BOŞLUK DOLDURMA]
+            7. WebSearch-SearchWebFollowUp ile **2-4 takip sorgusu** gönder.
+            8. Şayet iddialarda formül/matematik varsa NewtonMath-CalculateMath ile doğrula.
+
+            [DALGA 4 — GÖRSEL SENTEZ VE YAZIM]
+            9. Rapor yazımına geç. Eğer sayısal veriler elde ettiysen QuickChart-GenerateChart ile grafiğe dönüştür.
+            10. Mimari, yapısal veya ilişkisel durumlar barizse Kroki-GenerateDiagram ile SVG diyagram kodu üret.
+            11. En az **12-18 paragraf** uzunluğunda, akademik ton ve derinlikte nihai raporunu yaz.
 
             ZORUNLU ÇIKTI FORMATI:
 
-            ## 📌 Genel Bakış ve Kapsam
-            Konunun ne olduğunu tarihsel veya güncel bağlamıyla derinlemesine açıkla (Wikipedia'dan yararlan).
+            # <Konu Başlığı>
 
-            ## 🔬 Teknik Detaylar ve Bulgular (EN ÖNEMLİ BÖLÜM)
-            Web aramasından elde ettiğin tüm kritik teknik bilgileri, kod/uygulama standartlarını veya sektörel pratikleri madde madde ve paragraflar halinde yaz. Yüzeysel geçme.
-            **Her önemli iddianın sonuna kaynak göster: ([Kaynak başlığı](URL))**
+            ## 📌 Özet (TL;DR)
+            3-4 cümlede ne, neden önemli, kimi ilgilendiriyor.
 
-            ## ⚠️ Doğrulanamayan / Kısıtlı Bilgiler
-            Kaynaklar arasında çelişki varsa belirt. Yoksa tümünün doğrulandığını yaz.
+            ## 🌍 Genel Bakış ve Tarihsel Bağlam
+            Konunun tarihi, doğuşu, evrimi. Wikipedia otorite kaynağı olarak kullan. 2-3 paragraf.
+
+            ## 🔬 Teknik Detaylar ve Temel Kavramlar
+            Konunun iç yapısı, metodolojisi, kilit terminolojisi. Paragraflar halinde. Her kritik iddiaya kaynak[^N] numaralı dipnot.
+
+            ## 📊 Karşılaştırma Tablosu (ZORUNLU — Markdown Tablo formatında)
+            Konuyla ilgili en az 1 adet karşılaştırma, istatistik veya veri tablosu.
+            | Kriter | A | B | C |
+            |--------|---|---|---|
+            | ...    |...|...|...|
+
+            ## 🧪 Pratik Uygulamalar ve Vaka Örnekleri
+            Gerçek dünyada nasıl kullanılıyor, somut örnekler, endüstri vakaları.
+
+            ## 💻 Kod Örneği veya Teknik Uygulama (ZORUNLU — Konu Uygunsa)
+            Eğer konu yazılım, algoritma, veri bilimi veya teknik bir alansa KESİNLİKLE bir kod örneği (Python/JS/C#) ver.
+            Konu tamamen sosyal/tarihsel ise bu bölümü atla.
+
+            ## 📈 Sayısal Veriler — Mermaid Diyagramı (ZORUNLU — En Az 1 Adet)
+            Konunun akışını, yapısını veya tarihsel gelişimini gösteren bir `mermaid` diyagramı.
+            ```mermaid
+            graph TD veya timeline veya flowchart
+            ```
+
+            ## 🎓 Akademik Literatür Taraması
+            Semantic Scholar'dan bulunan en az 3-5 akademik makaleyi özet, yazarlar ve atıf sayısıyla sun.
+            Her makaleye kaynak numarası ver.
+
+            ## 🆕 2024-2026 Güncel Gelişmeler
+            Son 12-24 ayda neler değişti, hangi yeni yaklaşımlar ortaya çıktı.
+
+            ## ⚖️ Eleştiriler, Sınırlılıklar, Çelişen Kaynaklar
+            Konunun zayıf yönleri, akademik eleştiriler. Çelişen kaynak varsa hem A hem B görüşünü kaynaklarıyla ver.
+
+            ## 💡 Sentez ve Önerilen Okuma Yolu
+            Araştırmayı bağlayan akademik kapanış + kullanıcının daha derine inmek isterse hangi 3-5 konuyu araması gerektiği.
 
             ## 📚 Kaynakça
-            - [Başlık](URL) — ne tür bilgi sağladı (açıklama)
+            Numaralı dipnot listesi:
+            [^1]: [Başlık](URL) — kısa açıklama
+            [^2]: [Başlık](URL) — kısa açıklama
+            ... (en az 12-18 kaynak — web + akademik makale karışık)
 
-            ## 💡 Sentez ve Sonuç
-            Tüm araştırmayı bağlayan akademik bir kapanış.
+            HALLUCİNASYON ÖNLEME KURALLARI — İHLALİ YASAK:
+            - Kaynağı olmayan iddia YAZMA. Her somut bilgiye `[^N]` numaralı atıf ekle.
+            - Tavily raw_content kısmını temel al. Yeterli veri yoksa "Doğrulanamadı: kaynak bulunamadı" diye işaretle.
+            - Uydurma URL, uydurma istatistik, uydurma tarih YASAK.
+            - Numara/yıl/yüzde veriyorsan kaynağı mutlaka yanında olsun.
+            - Çelişen kaynak varsa "A kaynağı X diyor[^3], B kaynağı Y diyor[^7]" şeklinde ikisini de ver.
 
-            HALLUCİNASYON ÖNLEME KURALLARI:
-            - Kaynağı olmayan bilgiyi ekleme.
-            - Tavily raw_content kısmını temel al. Yeterli veri yoksa "Bulunamadı" de.
+            GÖRSEL SENTEZİ (ZORUNLU — EN AZ 3 ADET):
+            Kavramları görselleştirmek için Pollinations.ai kullan:
+            `![Görsel Açıklaması](https://image.pollinations.ai/prompt/URL_ENCODED_DETAYLI_INGILIZCE_PROMPT?width=1024&height=512&nologo=true)`
+            Görselleri raporun ilgili bölümlerine (Genel Bakış, Teknik Detaylar, Gelecek) dağıt.
 
-            DİL: Türkçe. Teknik terimlerin İngilizce karşılığını parantez içinde ver.
-            FORMAT: Markdown.
+            MATEMATİK/FORMÜL:
+            - Matematiksel ifadeler için KaTeX syntax'ı kullan: inline `$x^2$`, blok `$$\int f(x)dx$$`.
+
+            DİL VE STİL: Türkçe akademik, otoriter ve ufuk açıcı. Teknik terimlerin İngilizce karşılığını ilk geçişte parantez içinde ver.
+            UZUNLUK: En az 4500 kelime. Konuyu en ince ayrıntısına kadar (derin teknik mimari, matematiksel arka plan, küresel ekonomik etkiler vb.) işle. Yüzeyselliğe tolerans sıfır.
+            FORMAT: Zengin Markdown; tablolar, Mermaid diyagramları, iç linkler ve kapsamlı kaynakça.
             {topicContext}{fileSection}
             """;
 
         var chatHistory = new ChatHistory(systemPrompt);
         chatHistory.AddUserMessage(
             $"Konu: \"{topic}\"\n\n" +
-            $"Adımları sırayla uygula: önce WebSearch-SearchWebDeep ile paralel ara, " +
-            $"sonra Wikipedia-SearchWikipedia ile doğrula, ardından raporu yaz.");
+            $"ZORUNLU ARAŞTIRMA ADIMLARI — BU SIRALARI ATLAYAMAZSIN:\n\n" +
+            $"[ADIM 1 — TEMEL WEB ARAŞTIRMASI]:\n" +
+            $"WebSearch-SearchWebDeep ile konuyu minimum 3 farklı açıdan ara:\n" +
+            $"  - Arama 1: \"{topic} tanım kavram tarihçe\"\n" +
+            $"  - Arama 2: \"{topic} teknik detay metodoloji\"\n" +
+            $"  - Arama 3: \"{topic} güncel gelişmeler 2024 2025\"\n\n" +
+            $"[ADIM 2 — AKADEMİK KAYNAK TARAMASI — ZORUNLU, EN AZ 3 MAKALE BUL]:\n" +
+            $"  - AcademicSearch-SearchPapers ile en az 2 akademik makale bul\n" +
+            $"  - CrossRef-SearchWorks ile en az 1 peer-reviewed çalışma bul\n" +
+            $"  - ArXiv-SearchPapers ile varsa preprint makale bul (özellikle CS/matematik/fizik konularında)\n" +
+            $"  - Bu adımı atlarsan rapor KABUL EDİLMEZ.\n\n" +
+            $"[ADIM 3 — WİKİPEDİA DOĞRULAMASI]:\n" +
+            $"  - Wikipedia-SearchWikipedia ile konunun temel tanımını ve tarihçesini doğrula.\n\n" +
+            $"[ADIM 4 — URL EXTRACT (TAM İÇERİK)]:\n" +
+            $"  - WebSearch-ExtractFromUrls ile en değerli 2 kaynağın tam içeriğini çek.\n\n" +
+            $"[ADIM 5 — TAKİP ARAMALARI]:\n" +
+            $"  - WebSearch-SearchWebFollowUp ile eksik kalan alt başlıklara 2 takip araması yap.\n\n" +
+            $"[ADIM 6 — RAPOR YAZ]:\n" +
+            $"  - Tüm kaynakları bir araya getirip yukarıdaki sistem promptundaki formatta akademik rapor yaz.\n" +
+            $"  - Minimum 3500 kelime. Her iddiaya kaynak numarası. En az 12 kaynakça girişi.\n" +
+            $"  - Akademik makaleleri 'Akademik Literatür Taraması' bölümünde özet + atıf sayısı ile listele.\n" +
+            $"  - Eğer sayısal veriler bulduysan QuickChart-GenerateChart ile grafik üret.\n" +
+            $"  - Eğer mimari/yapısal ilişki varsa Kroki-GenerateDiagram ile SVG diyagram üret.");
+
 
         var settings = new OpenAIPromptExecutionSettings
         {
-            Temperature      = 0.2,   // Daha deterministik = daha az hallucination
-            MaxTokens        = 4096,
+            Temperature      = 0.15,  // Daha deterministik = daha az hallucination
+            MaxTokens        = 16384, // Korteks V2: 3500-5000+ kelime rapora yeterli alan
             ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions
         };
 
@@ -208,7 +366,7 @@ public class KorteksAgent : IKorteksAgent
 
                 guardrailMessage = "\n\n🛡️ [Güvenlik Kalkanı]: Elde edilen bilgiler 'Halüsinasyon' ve 'Konu Sapması' testinden geçiriliyor...\n";
                 
-                bool isValid = await grader.IsContextRelevantAsync(topic, fullResponse.ToString(), ct);
+                bool isValid = await grader.IsContextRelevantAsync(topic, fullResponse.ToString(), ct: ct);
 
                 if (isValid)
                 {
@@ -219,10 +377,15 @@ public class KorteksAgent : IKorteksAgent
                         "korteks-agent");
                     wikiSaved = true;
 
-                    // Faz 11: TutorAgent'a "bu konu için taze araştırma var" sinyali
+                    // Faz 11: Araştırma raporunun tamamını Redis'e kaydet — TutorAgent bağlam olarak kullanır
                     var redisService = scope.ServiceProvider.GetService<IRedisMemoryService>();
                     if (redisService != null)
-                        await redisService.SetWikiReadyAsync(topicId.Value);
+                    {
+                        var summary = fullResponse.Length > 3000
+                            ? fullResponse.ToString()[..3000]
+                            : fullResponse.ToString();
+                        await redisService.SetKorteksResearchReportAsync(topicId.Value, summary);
+                    }
                 }
                 else
                 {

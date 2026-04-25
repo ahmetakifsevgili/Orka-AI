@@ -21,6 +21,11 @@ public class OrkaDbContext : DbContext
     public DbSet<QuizAttempt> QuizAttempts { get; set; } = null!;
     public DbSet<AgentEvaluation> AgentEvaluations { get; set; } = null!;
     public DbSet<SkillMastery> SkillMasteries { get; set; } = null!;
+    public DbSet<ResearchJob> ResearchJobs { get; set; } = null!;
+
+    // FAZ 4: Dinamik Yetenek Ağacı (DAG Skill Tree)
+    public DbSet<SkillNode> SkillNodes { get; set; } = null!;
+    public DbSet<SkillTreeClosure> SkillTreeClosures { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +49,10 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<WikiBlock>()
             .Property(b => b.BlockType)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<ResearchJob>()
+            .Property(j => j.Phase)
             .HasConversion<string>();
 
         modelBuilder.Entity<User>()
@@ -127,6 +136,20 @@ public class OrkaDbContext : DbContext
             .HasForeignKey(sm => sm.TopicId)
             .OnDelete(DeleteBehavior.NoAction);
 
+        // ResearchJob FK ilişkileri
+        modelBuilder.Entity<ResearchJob>()
+            .HasOne(rj => rj.User)
+            .WithMany()
+            .HasForeignKey(rj => rj.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ResearchJob>()
+            .HasOne(rj => rj.Topic)
+            .WithMany()
+            .HasForeignKey(rj => rj.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
         // SkillMastery: kullanıcı + konu bazlı mastery sorguları
         modelBuilder.Entity<SkillMastery>()
             .HasIndex(sm => new { sm.UserId, sm.TopicId });
@@ -159,8 +182,42 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<Message>()
             .HasIndex(m => new { m.SessionId, m.CreatedAt });
 
-        // WikiPage: konu bazlı wiki içerik yükleme
-        modelBuilder.Entity<WikiPage>()
-            .HasIndex(w => w.TopicId);
+        // ── FAZ 4: DAG Skill Tree ───────────────────────────────────────────────────────────────────────
+        // SkillNode: kullanıcı başına yüksek sayıda düğüm için index
+        modelBuilder.Entity<SkillNode>()
+            .HasOne(sn => sn.User)
+            .WithMany()
+            .HasForeignKey(sn => sn.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SkillNode>()
+            .HasIndex(sn => sn.UserId);
+
+        modelBuilder.Entity<SkillNode>()
+            .HasIndex(sn => new { sn.UserId, sn.NodeType });
+
+        // SkillTreeClosure: Composite Primary Key (AncestorId, DescendantId)
+        // Döngüsel kaskat silmeyi önlemek için Restrict delete (uygulama katmanında yönetilir)
+        modelBuilder.Entity<SkillTreeClosure>()
+            .HasKey(c => new { c.AncestorId, c.DescendantId });
+
+        modelBuilder.Entity<SkillTreeClosure>()
+            .HasOne(c => c.Ancestor)
+            .WithMany(n => n.AncestorLinks)
+            .HasForeignKey(c => c.AncestorId)
+            .OnDelete(DeleteBehavior.Restrict); // Döngüsel cascade engelleme
+
+        modelBuilder.Entity<SkillTreeClosure>()
+            .HasOne(c => c.Descendant)
+            .WithMany(n => n.DescendantLinks)
+            .HasForeignKey(c => c.DescendantId)
+            .OnDelete(DeleteBehavior.Restrict); // Döngüsel cascade engelleme
+
+        // Closure Table sorgu performansı için index
+        modelBuilder.Entity<SkillTreeClosure>()
+            .HasIndex(c => c.DescendantId); // "Bu düğümün tüm atalarını getir" sorgusu için
+
+        modelBuilder.Entity<SkillTreeClosure>()
+            .HasIndex(c => c.AncestorId); // "Bu düğümün tüm torunlarını getir" sorgusu için
     }
 }

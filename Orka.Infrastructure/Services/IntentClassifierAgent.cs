@@ -40,6 +40,12 @@ public class IntentClassifierAgent : IIntentClassifierAgent
         "UNDERSTOOD", "CONFUSED", "CHANGE_TOPIC", "QUIZ_REQUEST", "CONTINUE"
     };
 
+    // Faz 16: Intent Cache — Aynı session+mesaj hash'i için duplicated LLM call önleme
+    // Supervisor ve Analyzer aynı mesaj setini ayrı ayrı ClassifyAsync ile çağırıyordu → 2x maliyet.
+    // Şimdi ilk çağrıda cache'leniyor, ikinci çağrıda cache'ten dönüyor.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (IntentResult Result, DateTime CachedAt)> _intentCache = new();
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(2); // 2 dakika sonra expire
+
     public IntentClassifierAgent(IAIAgentFactory factory, ILogger<IntentClassifierAgent> logger)
     {
         _factory = factory;
@@ -56,6 +62,19 @@ public class IntentClassifierAgent : IIntentClassifierAgent
             .Select(m => $"[{m.Role.ToUpper()}]: {m.Content.Substring(0, Math.Min(m.Content.Length, 300))}");
 
         var conversationContext = string.Join("\n---\n", lastSix);
+
+        // Faz 16: Cache kontrolü — aynı bağlam için duplicated LLM call önle
+        var cacheKey = conversationContext.GetHashCode().ToString();
+        
+        // Eski cache girdilerini temizle (memory leak önlemi)
+        foreach (var expired in _intentCache.Where(kv => DateTime.UtcNow - kv.Value.CachedAt > CacheTtl).Select(kv => kv.Key).ToList())
+            _intentCache.TryRemove(expired, out _);
+
+        if (_intentCache.TryGetValue(cacheKey, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheTtl)
+        {
+            _logger.LogInformation("[IntentClassifier] Cache HIT — duplicated LLM call önlendi. Intent={Intent}", cached.Result.Intent);
+            return cached.Result;
+        }
 
         var systemPrompt = """
             Sen Orka AI'nın Öğrenci Profil Geliştiricisi ve Niyet Analizcisisin (Intent Classifier & Student Profiler).
@@ -108,6 +127,9 @@ public class IntentClassifierAgent : IIntentClassifierAgent
                 _logger.LogInformation(
                     "[IntentClassifier] Intent: {Intent} | Conf: {Confidence:P0} | Score: {Score}/10 | Weaknesses: {Weaknesses}",
                     result.Intent, result.Confidence, result.UnderstandingScore, result.Weaknesses);
+
+                // Faz 16: Cache'e yaz — Supervisor ve Analyzer ikinci kez çağırdığında LLM call skip
+                _intentCache[cacheKey] = (result, DateTime.UtcNow);
 
                 return result;
             }

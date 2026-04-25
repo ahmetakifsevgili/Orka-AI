@@ -18,6 +18,8 @@ import SettingsPanel from "@/components/SettingsPanel";
 import DashboardPanel from "@/components/DashboardPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
 import SplitPane from "@/components/SplitPane";
+import ResearchLibraryPanel from "@/components/ResearchLibraryPanel";
+import SkillTreePanel from "@/components/SkillTreePanel";
 
 // ── F5 Sonrası Context Kalıcılığı (localStorage keys) ─────────────────────
 // Kullanıcı sayfayı yenilediğinde son aktif topic / view / wiki ekranı
@@ -26,7 +28,7 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide"]);
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide", "research", "skilltree"]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -292,8 +294,12 @@ export default function Home() {
 
   const renderMain = () => {
     switch (activeView) {
+      case "research":
+        return <ResearchLibraryPanel />;
       case "dashboard":
         return <DashboardPanel topics={topics} onViewChange={handleViewChange} />;
+      case "skilltree":
+        return <SkillTreePanel />;
       case "settings":
         return <SettingsPanel />;
       case "wiki":
@@ -331,6 +337,7 @@ export default function Home() {
                 quizQuestion={activeQuizQuestion ?? undefined}
                 onSendToChat={handleIDESendToChat}
                 onClose={handleIDEClose}
+                sessionId={sessionId ?? undefined}
               />
             }
           />
@@ -359,7 +366,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-zinc-950">
+    <div className="h-screen flex overflow-hidden soft-page">
       <LeftSidebar
         topics={topics}
         topicsLoading={topicsLoading}

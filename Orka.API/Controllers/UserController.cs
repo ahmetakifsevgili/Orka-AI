@@ -29,6 +29,15 @@ public class UpdateSettingsRequest
     public bool? SoundsEnabled { get; set; }
 }
 
+public class UpdateLearningProfileRequest
+{
+    public int? Age { get; set; }
+    public EducationLevel? EducationLevel { get; set; }
+    public LearningGoal? LearningGoal { get; set; }
+    public LearningTone? LearningTone { get; set; }
+    public int? DailyStudyMinutes { get; set; }
+}
+
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -69,7 +78,7 @@ public class UserController : ControllerBase
             dailyLimit,
             dailyResetAt = user.DailyMessageResetAt,
             createdAt = user.CreatedAt,
-            settings = new 
+            settings = new
             {
                 theme = user.Theme,
                 language = user.Language,
@@ -78,7 +87,60 @@ public class UserController : ControllerBase
                 weeklyReport = user.WeeklyReport,
                 newContentAlerts = user.NewContentAlerts,
                 soundsEnabled = user.SoundsEnabled
+            },
+            learningProfile = new
+            {
+                profileCompleted  = user.ProfileCompleted,
+                age               = user.Age,
+                educationLevel    = user.EducationLevel,
+                learningGoal      = user.LearningGoal,
+                learningTone      = user.LearningTone,
+                dailyStudyMinutes = user.DailyStudyMinutes
             }
+        });
+    }
+
+    /// <summary>
+    /// Öğrenci profilini günceller (yaş, eğitim, hedef, üslup, günlük çalışma).
+    /// Signup'ta adım atlayan veya mevcut kullanıcılar bu endpoint ile Settings'ten doldurur.
+    /// Herhangi bir alan set edilirse ProfileCompleted = true yapılır.
+    /// </summary>
+    [HttpPatch("learning-profile")]
+    public async Task<IActionResult> UpdateLearningProfile([FromBody] UpdateLearningProfileRequest req)
+    {
+        var userId = GetUserId();
+        var user = await _dbContext.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        bool touched = false;
+
+        if (req.Age.HasValue)
+        {
+            if (req.Age.Value is <= 5 or >= 120) return BadRequest("Yaş değeri geçersiz.");
+            user.Age = req.Age;
+            touched = true;
+        }
+        if (req.EducationLevel.HasValue) { user.EducationLevel = req.EducationLevel.Value; touched = true; }
+        if (req.LearningGoal.HasValue)   { user.LearningGoal   = req.LearningGoal.Value;   touched = true; }
+        if (req.LearningTone.HasValue)   { user.LearningTone   = req.LearningTone.Value;   touched = true; }
+        if (req.DailyStudyMinutes.HasValue)
+        {
+            if (req.DailyStudyMinutes.Value is <= 0 or > 600) return BadRequest("Günlük çalışma süresi geçersiz.");
+            user.DailyStudyMinutes = req.DailyStudyMinutes;
+            touched = true;
+        }
+
+        if (touched) user.ProfileCompleted = true;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new
+        {
+            profileCompleted  = user.ProfileCompleted,
+            age               = user.Age,
+            educationLevel    = user.EducationLevel,
+            learningGoal      = user.LearningGoal,
+            learningTone      = user.LearningTone,
+            dailyStudyMinutes = user.DailyStudyMinutes
         });
     }
 

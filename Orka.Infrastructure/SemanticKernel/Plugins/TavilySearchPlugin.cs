@@ -31,7 +31,8 @@ public class TavilySearchPlugin
     {
         _tavilyClient = httpClientFactory.CreateClient("Tavily");
         _tavilyApiKey = configuration["AI:Tavily:ApiKey"] ?? throw new ArgumentException("Tavily API Key eksik.");
-        _maxResults   = int.TryParse(configuration["AI:Albert:MaxSearchResults"], out var msr) ? msr : 5;
+        // Korteks V2: derin araştırma için varsayılan arttırıldı (8 → 12).
+        _maxResults   = int.TryParse(configuration["AI:Albert:MaxSearchResults"], out var msr) ? msr : 12;
     }
 
     /// <summary>
@@ -48,35 +49,65 @@ public class TavilySearchPlugin
     }
 
     /// <summary>
-    /// 3 farklı açıdan paralel arama — derin araştırma için.
+    /// 5 farklı açıdan paralel arama — derin araştırma için ilk dalga.
     /// Her sorgu bağımsız çalışır, sonuçlar birleştirilir.
     /// </summary>
     [KernelFunction, Description(
-        "Aynı konuyu 3 farklı açıdan paralel olarak araştırır. " +
+        "Aynı konuyu 5 farklı açıdan paralel olarak araştırır (ilk dalga). " +
         "Daha kapsamlı ve çok kaynaklı sonuçlar üretir. " +
-        "Virgülle ayrılmış 3 sorgu gönder: 'sorgu1, sorgu2, sorgu3'")]
+        "Virgülle ayrılmış 3-5 sorgu gönder: 'sorgu1, sorgu2, sorgu3, sorgu4, sorgu5'. " +
+        "İyi bir ilk dalga: tanım / tarihçe / teknik / pratik / güncel gelişmeler.")]
     public async Task<string> SearchWebDeep(
-        [Description("Virgülle ayrılmış 2-3 farklı arama sorgusu")] string queries)
+        [Description("Virgülle ayrılmış 3-5 farklı arama sorgusu")] string queries)
     {
         var queryList = queries
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Take(3)
+            .Take(5)
             .ToArray();
 
         if (queryList.Length == 0) return await ExecuteSearchAsync(queries);
 
-        // Paralel çalıştır
         var tasks   = queryList.Select(q => ExecuteSearchAsync(q)).ToArray();
         var results = await Task.WhenAll(tasks);
 
         var combined = new StringBuilder();
         for (int i = 0; i < queryList.Length; i++)
         {
-            combined.AppendLine($"### Arama {i + 1}: \"{queryList[i]}\"");
+            combined.AppendLine($"### İlk Dalga — Arama {i + 1}: \"{queryList[i]}\"");
             combined.AppendLine(results[i]);
             combined.AppendLine();
         }
+        return combined.ToString();
+    }
 
+    /// <summary>
+    /// İlk dalgadan sonra kalan boşlukları doldurmak için takip araması.
+    /// İlk dalgada eksik kalan alt-konuları derinleştirmek amaçlı — AI karar verir.
+    /// </summary>
+    [KernelFunction, Description(
+        "İlk dalgadan sonra kalan boşlukları doldurmak için ikinci dalga paralel arama. " +
+        "İlk araştırmada yetersiz/eksik/çelişkili çıkan alt-konuları daha spesifik ara. " +
+        "Virgülle ayrılmış 2-4 takip sorgusu gönder.")]
+    public async Task<string> SearchWebFollowUp(
+        [Description("Virgülle ayrılmış 2-4 takip sorgusu — boşluk dolduran")] string queries)
+    {
+        var queryList = queries
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Take(4)
+            .ToArray();
+
+        if (queryList.Length == 0) return "[Takip sorgu listesi boş]";
+
+        var tasks   = queryList.Select(q => ExecuteSearchAsync(q)).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        var combined = new StringBuilder();
+        for (int i = 0; i < queryList.Length; i++)
+        {
+            combined.AppendLine($"### İkinci Dalga (Takip) — Arama {i + 1}: \"{queryList[i]}\"");
+            combined.AppendLine(results[i]);
+            combined.AppendLine();
+        }
         return combined.ToString();
     }
 
@@ -132,8 +163,8 @@ public class TavilySearchPlugin
                     !string.IsNullOrWhiteSpace(raw.GetString()))
                 {
                     var rawText = raw.GetString()!;
-                    // İlk 800 karakteri al — fazlası token israfı
-                    content = rawText.Length > 800 ? rawText[..800] + "..." : rawText;
+                    // Korteks V2: Derin araştırma için 4000 karakter — akademik düzeyde kaynak okuma
+                    content = rawText.Length > 4000 ? rawText[..4000] + "..." : rawText;
                 }
 
                 results.AppendLine($"[Kaynak {index}] {title}");
@@ -148,6 +179,85 @@ public class TavilySearchPlugin
         catch (Exception ex)
         {
             return $"[Arama servisi hatası: {ex.Message}]";
+        }
+    }
+
+    // ── Korteks V2: Tavily Extract — URL'lerden tam sayfa içeriği çekme ──────
+
+    /// <summary>
+    /// Belirli URL'lerden tam sayfa içeriğini (tablolar, yapısal veri dahil) çeker.
+    /// Arama sonuçlarından en değerli kaynakları seçip derinlemesine okumak için kullanılır.
+    /// </summary>
+    [KernelFunction, Description(
+        "Belirli URL'lerden tam sayfa içeriğini çeker. Tablolar ve yapısal veri dahildir. " +
+        "SearchWeb ile bulunan en değerli 3-5 kaynağın URL'lerini virgülle ayırarak gönder. " +
+        "Akademik makaleler, teknik belgeler ve veri tabloları için idealdir.")]
+    public async Task<string> ExtractFromUrls(
+        [Description("Virgülle ayrılmış URL listesi (maks 5)")] string urls)
+    {
+        var urlList = urls
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Take(5)
+            .ToArray();
+
+        if (urlList.Length == 0) return "[URL listesi boş]";
+
+        try
+        {
+            var requestBody = new
+            {
+                api_key = _tavilyApiKey,
+                urls = urlList
+            };
+
+            var json = JsonSerializer.Serialize(requestBody, _jsonOpts);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.tavily.com/extract");
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _tavilyClient.SendAsync(request);
+            var respStr = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                return $"[Extract hatası: {response.StatusCode}]";
+
+            using var doc = JsonDocument.Parse(respStr);
+            var results = new StringBuilder();
+
+            if (doc.RootElement.TryGetProperty("results", out var resultsArr))
+            {
+                int index = 1;
+                foreach (var item in resultsArr.EnumerateArray())
+                {
+                    var url = item.TryGetProperty("url", out var u) ? u.GetString() : "";
+                    var rawContent = item.TryGetProperty("raw_content", out var rc) ? rc.GetString() : "";
+
+                    if (!string.IsNullOrWhiteSpace(rawContent))
+                    {
+                        // Tam sayfa içeriği — maks 6000 karakter (akademik derinlik)
+                        var truncated = rawContent.Length > 6000 ? rawContent[..6000] + "\n[...devamı kırpıldı]" : rawContent;
+                        results.AppendLine($"### [Derin Kaynak {index}] — {url}");
+                        results.AppendLine(truncated);
+                        results.AppendLine();
+                    }
+                    index++;
+                }
+            }
+
+            if (doc.RootElement.TryGetProperty("failed_results", out var failedArr))
+            {
+                foreach (var fail in failedArr.EnumerateArray())
+                {
+                    var failUrl = fail.TryGetProperty("url", out var fu) ? fu.GetString() : "?";
+                    var failErr = fail.TryGetProperty("error", out var fe) ? fe.GetString() : "Bilinmiyor";
+                    results.AppendLine($"⚠️ Erişilemedi: {failUrl} — {failErr}");
+                }
+            }
+
+            return results.Length > 0 ? results.ToString() : "[Extract sonuç döndürmedi]";
+        }
+        catch (Exception ex)
+        {
+            return $"[Extract servisi hatası: {ex.Message}]";
         }
     }
 }

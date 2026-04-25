@@ -5,8 +5,8 @@ namespace Orka.Core.Interfaces;
 /// </summary>
 public interface IAIService
 {
-    Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
-    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+    Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default);
+    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default);
 }
 
 /// <summary>

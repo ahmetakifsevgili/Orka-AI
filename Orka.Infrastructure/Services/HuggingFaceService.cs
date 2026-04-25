@@ -37,7 +37,7 @@ public class HuggingFaceService : IHuggingFaceService
         _logger     = logger;
     }
 
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
         => CallChatApiAsync(systemPrompt, userMessage, ct);
 
     private async Task<string> CallChatApiAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
@@ -93,7 +93,7 @@ public class HuggingFaceService : IHuggingFaceService
         }
     }
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] string? model = null, CancellationToken ct = default)
     {
         var endpoint = $"{_baseUrl.TrimEnd('/')}/chat/completions";
         var messages = new[]
@@ -140,3 +140,4 @@ public class HuggingFaceService : IHuggingFaceService
         }
     }
 }
+

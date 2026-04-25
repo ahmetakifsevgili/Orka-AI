@@ -93,9 +93,9 @@ export default function QuizHistoryAndNotes() {
                   >
                     <div className="flex items-start gap-3">
                       {attempt.isCorrect ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
                       ) : (
-                        <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                        <XCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
                       )}
                       <div className="flex-1">
                         <p className="text-sm text-zinc-200">{attempt.question}</p>

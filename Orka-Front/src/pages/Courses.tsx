@@ -2,7 +2,7 @@
  * Müfredatlarım — Kullanıcının kendi oluşturduğu konu listesi.
  * Statik courseData tamamen kaldırıldı; TopicsAPI.getAll() kullanılıyor.
  * Konu adı arama + kategori filtresi desteklenir.
- * Premium dark zinc design.
+ * Soft neutral web design.
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -41,8 +41,8 @@ const PHASE_LABELS: Record<number, string> = {
 };
 
 const PHASE_COLORS: Record<number, string> = {
-  0: "text-sky-400 bg-sky-400/10 border-sky-400/20",
-  1: "text-violet-400 bg-violet-400/10 border-violet-400/20",
+  0: "text-zinc-700 dark:text-zinc-300 bg-zinc-500/10 border-zinc-500/20",
+  1: "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20",
   2: "text-amber-400 bg-amber-400/10 border-amber-400/20",
   3: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
 };
@@ -104,7 +104,7 @@ export default function Courses() {
      return (
         <div className="min-h-screen bg-zinc-950 relative">
           {wikiTopicId && (
-            <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl border-l border-zinc-800">
+            <div className="fixed inset-y-0 right-0 z-50 flex soft-shadow border-l soft-border">
                <WikiDrawer topicId={wikiTopicId} onClose={() => setWikiTopicId(null)} />
             </div>
           )}

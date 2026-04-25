@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using Orka.Core.DTOs.Auth;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -25,7 +26,7 @@ public class AuthService : IAuthService
         _configuration = configuration;
     }
 
-    public async Task<(string Token, string RefreshToken, User User)> RegisterAsync(string firstName, string lastName, string email, string password)
+    public async Task<(string Token, string RefreshToken, User User)> RegisterAsync(string firstName, string lastName, string email, string password, UserProfileDraft? profile = null)
     {
         var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (existingUser != null)
@@ -47,6 +48,21 @@ public class AuthService : IAuthService
             DailyMessageResetAt = DateTime.UtcNow,
             LastLoginAt = DateTime.UtcNow
         };
+
+        if (profile is not null && profile.HasAnyValue)
+        {
+            if (profile.Age.HasValue && profile.Age.Value is > 5 and < 120)
+                user.Age = profile.Age;
+            if (profile.EducationLevel.HasValue)
+                user.EducationLevel = profile.EducationLevel.Value;
+            if (profile.LearningGoal.HasValue)
+                user.LearningGoal = profile.LearningGoal.Value;
+            if (profile.LearningTone.HasValue)
+                user.LearningTone = profile.LearningTone.Value;
+            if (profile.DailyStudyMinutes.HasValue && profile.DailyStudyMinutes.Value is > 0 and <= 600)
+                user.DailyStudyMinutes = profile.DailyStudyMinutes;
+            user.ProfileCompleted = true;
+        }
 
         _dbContext.Users.Add(user);
         await _dbContext.SaveChangesAsync();

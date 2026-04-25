@@ -43,16 +43,16 @@ public class TopicDetectorService : ITopicDetectorService
         return NewTopicPatterns.Any(p => lower.Contains(p));
     }
 
-    public async Task<string> ExtractTopicNameAsync(string message)
+    public async Task<(string Topic, string Category)> ExtractTopicNameAsync(string message)
     {
         // Önce basit keyword extraction dene
         var simpleExtract = TrySimpleExtract(message);
         if (!string.IsNullOrEmpty(simpleExtract))
-            return simpleExtract;
+            return (simpleExtract, "Genel");
 
         // Belirsizse Groq'a sor (SemanticRoute üzerinden)
         var route = await _groqService.SemanticRouteAsync(message);
-        return route.ExtractedTopic ?? "Bilinmeyen Konu";
+        return (route.ExtractedTopic ?? "Bilinmeyen Konu", route.Category ?? "Genel");
     }
 
     private static string? TrySimpleExtract(string message)

@@ -68,6 +68,22 @@ public class DashboardController : ControllerBase
         // 5. Wiki sayısı
         var wikisCount = await _dbContext.WikiPages.CountAsync(w => w.UserId == userId);
 
+        // 6. Gamification / Motivation Student-Friendly Logic
+        string motivationalMessage = currentStreak switch
+        {
+            > 10 => "Efsanevi bir seri! 🔥 Öğrenme alışkanlığını mükemmel oturttun.",
+            > 3 => "Harika gidiyorsun! 🚀 Serini korumak için bugün de bir şeyler öğren.",
+            > 0 => "Güzel bir başlangıç! 🌱 Her gün 15 dakika bile büyük fark yaratır.",
+            _ => "Bugün yeni bir şeyler öğrenmek için harika bir gün! ✨ Hadi başlayalım!"
+        };
+
+        var dailyQuests = new[]
+        {
+            new { id = "q1", title = "1 Quiz Tamamla", isCompleted = false, xpReward = 50, icon = "Target" },
+            new { id = "q2", title = "Yeni Bir Üniteye Göz At", isCompleted = activeLearning > 0, xpReward = 100, icon = "BookOpen" },
+            new { id = "q3", title = "Korteks'te Derin Araştırma", isCompleted = false, xpReward = 150, icon = "FlaskConical" }
+        };
+
         return Ok(new
         {
             totalXP,
@@ -79,7 +95,9 @@ public class DashboardController : ControllerBase
             totalSections,
             progressPercentage,
             wikisCount,
-            activity
+            activity,
+            motivationalMessage,
+            dailyQuests
         });
     }
 
@@ -196,11 +214,37 @@ public class DashboardController : ControllerBase
         // 5b. Provider kullanım dağılımı — HUD Model Mix widget
         var providerUsage = await _redis.GetProviderUsageAsync();
 
-        // 6. Redis + SQL birleşimi: Agent kartlarına SQL kalite verisi ekle
+        // 6. Redis + SQL birleşimi: Agent kartlarına SQL kalite verisi ve OASI İstikrar Skoru ekle
         var agentQualityMap = agentQuality.ToDictionary(a => a.agentRole, a => a);
         var enrichedAgents = agentMetrics.Select(a =>
         {
             agentQualityMap.TryGetValue(a.AgentRole, out var quality);
+
+            // OASI Hesabı (Orka Agent Stability Index)
+            double errorPenalty = a.ErrorRatePct * 1.5;
+            double errorScore = Math.Max(0, 40 - errorPenalty); // Max 40
+            
+            double latencyScore = 25; // Max 25
+            if (a.AvgLatencyMs > 5000) latencyScore = 0;
+            else if (a.AvgLatencyMs > 1500) 
+            {
+                latencyScore = 25 - (25 * ((a.AvgLatencyMs - 1500) / 3500.0));
+            }
+            
+            double avgQ = quality?.avgQuality ?? 0.0;
+            double qualityScore = (avgQ / 10.0) * 25; // Max 25
+            if (quality?.warnCount > 0) qualityScore = Math.Max(0, qualityScore - (quality.warnCount * 2));
+            
+            int totalInteractions = a.TotalCalls + (quality?.totalEvals ?? 0);
+            double volumeScore = Math.Min(10, totalInteractions / 5.0); // 50+ iletişim == tam 10 puan
+            
+            int stabilityScore = a.TotalCalls == 0 && totalInteractions == 0 ? 0 : (int)Math.Round(errorScore + latencyScore + qualityScore + volumeScore);
+            string stabilityGrade = stabilityScore >= 90 ? "S" 
+                                  : stabilityScore >= 80 ? "A" 
+                                  : stabilityScore >= 70 ? "B" 
+                                  : stabilityScore >= 50 ? "C" 
+                                  : "F";
+
             return new
             {
                 a.AgentRole,
@@ -209,7 +253,7 @@ public class DashboardController : ControllerBase
                 a.ErrorCount,
                 a.ErrorRatePct,
                 a.LastProvider,
-                avgQualityScore = quality?.avgQuality ?? 0.0,
+                avgQualityScore = avgQ,
                 totalEvals      = quality?.totalEvals ?? 0,
                 goldCount       = quality?.goldCount ?? 0,
                 warnCount       = quality?.warnCount ?? 0,
@@ -217,6 +261,8 @@ public class DashboardController : ControllerBase
                        : a.ErrorRatePct > 50 ? "critical"
                        : a.ErrorRatePct > 20 ? "degraded"
                        : "online",
+                stabilityScore,
+                stabilityGrade
             };
         });
 

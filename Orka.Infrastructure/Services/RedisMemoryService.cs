@@ -180,18 +180,32 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
-    public async Task SetWikiReadyAsync(Guid topicId)
+    public async Task SetKorteksResearchReportAsync(Guid topicId, string reportContent)
     {
         try
         {
             await _db.StringSetAsync(
                 $"orka:wiki-ready:{topicId}",
-                DateTime.UtcNow.ToString("O"),
-                TimeSpan.FromHours(1));
+                reportContent.Length > 2000 ? reportContent[..2000] + "..." : reportContent, // Özeti sakla
+                TimeSpan.FromHours(12));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Wiki-ready sinyali yazılırken hata oluştu. TopicId={TopicId}", topicId);
+            _logger.LogError(ex, "[Redis] Korteks raporu yazılırken hata oluştu. TopicId={TopicId}", topicId);
+        }
+    }
+
+    public async Task<string> GetKorteksResearchReportAsync(Guid topicId)
+    {
+        try
+        {
+            var val = await _db.StringGetAsync($"orka:wiki-ready:{topicId}");
+            return val.HasValue ? val.ToString() : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Korteks raporu okunurken hata. TopicId={TopicId}", topicId);
+            return string.Empty;
         }
     }
 
@@ -515,12 +529,28 @@ public class RedisMemoryService : IRedisMemoryService
         try
         {
             var key = $"orka:student_profile:{topicId}";
-            var record = new StudentProfileRecord(understandingScore, weaknesses ?? string.Empty, DateTime.UtcNow);
             
-            // Konu bazında sadece en güncel profili tek record olarak tutmak isteyebiliriz.
-            // Ama zaman içerisindeki değişimi anlamak için liste de tutulabilir.
-            // Şimdilik sadece en güncel veriyi String (SET) olarak ya da ufak bir liste olarak tutalım.
-            // Tek kaynakta güncel durum kalsın diye SET/GET yapalım (üzerine yazsın, "yaşayan organizasyon"un "şu anki" hali)
+            // Get previous profile to append weaknesses
+            var previousVal = await _db.StringGetAsync(key);
+            string finalWeaknesses = weaknesses ?? string.Empty;
+
+            if (!previousVal.IsNullOrEmpty)
+            {
+                var prevRecord = JsonSerializer.Deserialize<StudentProfileRecord>(previousVal.ToString());
+                if (prevRecord != null && !string.IsNullOrWhiteSpace(prevRecord.Weaknesses))
+                {
+                    if (!string.IsNullOrWhiteSpace(finalWeaknesses) && !prevRecord.Weaknesses.Contains(finalWeaknesses))
+                        finalWeaknesses = prevRecord.Weaknesses + " | " + finalWeaknesses;
+                    else if (string.IsNullOrWhiteSpace(finalWeaknesses))
+                        finalWeaknesses = prevRecord.Weaknesses;
+                }
+            }
+            
+            // Truncate to prevent token overflow in future prompts
+            if (finalWeaknesses.Length > 2000)
+                finalWeaknesses = finalWeaknesses.Substring(finalWeaknesses.Length - 2000);
+
+            var record = new StudentProfileRecord(understandingScore, finalWeaknesses, DateTime.UtcNow);
             
             var payload = JsonSerializer.Serialize(record);
             await _db.StringSetAsync(key, payload, TimeSpan.FromDays(30));

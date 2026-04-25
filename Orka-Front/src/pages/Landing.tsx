@@ -32,7 +32,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-800/50">
+      <nav className="fixed top-0 left-0 right-0 z-50 soft-surface border-b soft-border">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <OrcaLogo className="w-5 h-5 text-zinc-100" />
@@ -64,7 +64,7 @@ export default function Landing() {
             alt=""
             className="w-full h-full object-cover opacity-30"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/60 via-zinc-950/80 to-zinc-950" />
+          <div className="absolute inset-0 bg-background/80" />
         </div>
 
         <div className="relative max-w-4xl mx-auto text-center">
@@ -115,7 +115,7 @@ export default function Landing() {
             className="mt-16 relative"
             id="video"
           >
-            <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-900 shadow-2xl shadow-zinc-950/50">
+            <div className="rounded-xl border soft-border overflow-hidden soft-surface soft-shadow">
               <video
                 className="w-full aspect-video bg-zinc-950"
                 controls
@@ -236,14 +236,14 @@ export default function Landing() {
                 ))}
               </ul>
             </div>
-            <div className="rounded-xl border border-zinc-800 overflow-hidden shadow-2xl">
+            <div className="rounded-xl border soft-border overflow-hidden soft-shadow">
               <img src={FEATURE_2} alt="Quiz Arayüzü" className="w-full" />
             </div>
           </motion.div>
 
           {/* Feature Showcase 2 */}
           <motion.div {...fadeUp} className="grid grid-cols-2 gap-12 items-center">
-            <div className="rounded-xl border border-zinc-800 overflow-hidden order-1 shadow-2xl">
+            <div className="rounded-xl border soft-border overflow-hidden order-1 soft-shadow">
               <img src={FEATURE_3} alt="Wiki Arayüzü" className="w-full" />
             </div>
             <div className="order-2">

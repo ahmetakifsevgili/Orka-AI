@@ -1,3 +1,5 @@
+using Orka.Core.Enums;
+
 namespace Orka.Core.DTOs.Auth;
 
 public class AuthResponse
@@ -15,4 +17,12 @@ public class UserDto
     public int DailyMessageCount { get; set; }
     public int DailyLimit { get; set; }
     public bool IsAdmin { get; set; }
+
+    // ── Öğrenci Profili (frontend onboarding banner tetikleyici) ─────────────
+    public bool ProfileCompleted { get; set; }
+    public int? Age { get; set; }
+    public EducationLevel? EducationLevel { get; set; }
+    public LearningGoal? LearningGoal { get; set; }
+    public LearningTone? LearningTone { get; set; }
+    public int? DailyStudyMinutes { get; set; }
 }

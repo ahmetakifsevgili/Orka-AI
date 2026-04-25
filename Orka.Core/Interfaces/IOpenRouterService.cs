@@ -18,10 +18,11 @@ public interface IOpenRouterService : IAIService
     /// <summary>
     /// Varsayılan model ve key ile stream yanıtı döndürür.
     /// </summary>
-    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default);
 
     /// <summary>
     /// OpenRouter üzerinden belirli bir model ve API key ile stream yanıtı döndürür.
     /// </summary>
     IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default);
 }
+

@@ -1,199 +1,192 @@
+using System;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Markdig;
 using Orka.Core.Interfaces;
-using Orka.Infrastructure.Services;
-using System.Security.Claims;
 
 namespace Orka.API.Controllers;
 
-/// <summary>
-/// Korteks — Orka AI'nın otonom derin araştırma motoru.
-/// Semantic Kernel + Function Calling ile web'de arama yapar,
-/// sonuçları sentezler ve Wiki'ye kaydeder.
-///
-/// Dosya/URL desteği:
-///   POST /api/korteks/research        — JSON body (konu + opsiyonel URL)
-///   POST /api/korteks/research-file   — multipart/form-data (konu + PDF/TXT/MD)
-///   POST /api/korteks/research-sync   — JSON, tam sonucu döner (test/Swagger)
-/// </summary>
-[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class KorteksController : ControllerBase
 {
-    private readonly IKorteksAgent         _korteks;
-    private readonly FileExtractionService _fileExtractor;
-    private readonly ILogger<KorteksController> _logger;
+    private readonly IKorteksSwarmOrchestrator _swarm;
+    private readonly IDocumentExtractorService _extractor;
 
-    private const int MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
-
-    public KorteksController(
-        IKorteksAgent         korteks,
-        FileExtractionService fileExtractor,
-        ILogger<KorteksController> logger)
+    public KorteksController(IKorteksSwarmOrchestrator swarm, IDocumentExtractorService extractor)
     {
-        _korteks       = korteks;
-        _fileExtractor = fileExtractor;
-        _logger        = logger;
+        _swarm = swarm;
+        _extractor = extractor;
     }
 
-    private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    public class StartResearchRequest
+    {
+        public string Query { get; set; } = string.Empty;
+        public Guid? TopicId { get; set; }
+    }
 
-    // ── SSE stream — JSON body + opsiyonel URL ────────────────────────────────
+    [HttpPost("start")]
+    public async Task<IActionResult> StartResearch([FromBody] StartResearchRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Query))
+            return BadRequest("Arama sorgusu boş olamaz.");
+
+        var jobId = await _swarm.EnqueueResearchJobAsync(userId, request.Query, request.TopicId);
+
+        return Ok(new { JobId = jobId });
+    }
 
     /// <summary>
-    /// Derin araştırma — SSE stream formatında yanıt döner.
-    /// SourceUrl verilirse Tavily o URL'yi de çeker ve konuya ekler.
+    /// Dosya yükleyerek araştırma başlat.
+    /// requireWebSearch=false → Sadece belge analizi (RAG).
+    /// requireWebSearch=true  → Belge + İnternet teyidi (Hybrid).
+    /// Desteklenen formatlar: application/pdf, text/plain, text/markdown
     /// </summary>
-    [HttpPost("research")]
-    public async Task Research([FromBody] KorteksResearchRequest request)
+    [HttpPost("start-file")]
+    [RequestSizeLimit(25 * 1024 * 1024)] // 25 MB
+    public async Task<IActionResult> StartFileResearch(
+        [FromForm] string query,
+        [FromForm] Guid? topicId,
+        [FromForm] bool requireWebSearch,
+        IFormFile file)
     {
-        var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Araştırma: {Topic} | URL: {Url}", request.Topic, request.SourceUrl);
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
-        Response.ContentType = "text/event-stream";
-        Response.Headers.Append("Cache-Control", "no-cache");
-        Response.Headers.Append("Connection", "keep-alive");
+        if (string.IsNullOrWhiteSpace(query))
+            return BadRequest("Araştırma sorusu boş olamaz.");
 
-        var ct          = HttpContext.RequestAborted;
-        var fileContext = BuildUrlContext(request.SourceUrl);
+        if (file == null || file.Length == 0)
+            return BadRequest("Dosya boş.");
 
-        await StreamResearchAsync(request.Topic, userId, request.TopicId, fileContext, ct);
-    }
+        if (!_extractor.IsSupported(file.ContentType))
+            return BadRequest($"Desteklenmeyen dosya türü: {file.ContentType}. Kabul edilenler: PDF, TXT, Markdown.");
 
-    // ── SSE stream — multipart/form-data (dosya yükleme) ─────────────────────
-
-    /// <summary>
-    /// Dosya yükleme ile araştırma — PDF, TXT veya MD dosyası kabul eder.
-    /// Dosya içeriği Korteks'in context'ine enjekte edilir, web aramasıyla zenginleştirilir.
-    /// </summary>
-    [HttpPost("research-file")]
-    [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task ResearchFile([FromForm] KorteksFileRequest request)
-    {
-        var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Dosyalı araştırma: {Topic} | Dosya: {File}",
-            request.Topic, request.File?.FileName);
-
-        Response.ContentType = "text/event-stream";
-        Response.Headers.Append("Cache-Control", "no-cache");
-        Response.Headers.Append("Connection", "keep-alive");
-
-        var ct          = HttpContext.RequestAborted;
-        var fileContext = await ExtractFileContextAsync(request.File);
-
-        await StreamResearchAsync(request.Topic, userId, request.TopicId, fileContext, ct);
-    }
-
-    // ── Senkron — test/Swagger için ───────────────────────────────────────────
-
-    /// <summary>
-    /// Senkron araştırma — tam sonucu JSON olarak döner (test / Swagger için).
-    /// </summary>
-    [HttpPost("research-sync")]
-    public async Task<IActionResult> ResearchSync([FromBody] KorteksResearchRequest request)
-    {
-        var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Senkron araştırma: {Topic}", request.Topic);
-
-        var fileContext = BuildUrlContext(request.SourceUrl);
-        var result      = new System.Text.StringBuilder();
-        var ct          = HttpContext.RequestAborted;
-
-        try
+        // Metin çıkar — in-memory, disk'e yazılmaz
+        string documentContext;
+        await using (var stream = file.OpenReadStream())
         {
-            await foreach (var chunk in _korteks.RunResearchAsync(
-                request.Topic, userId, request.TopicId, fileContext, ct))
-            {
-                result.Append(chunk);
-            }
-            var text = result.ToString();
-            return Ok(new
-            {
-                success     = true,
-                topic       = request.Topic,
-                length      = text.Length,
-                hasFile     = fileContext != null,
-                research    = text
-            });
+            documentContext = await _extractor.ExtractTextAsync(stream, file.ContentType);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[KorteksController] Senkron araştırma hatası.");
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
+
+        if (string.IsNullOrWhiteSpace(documentContext))
+            return BadRequest("Belgeden metin çıkarılamadı. Metin tabanlı bir PDF veya TXT dosyası olduğundan emin olun.");
+
+        var jobId = await _swarm.EnqueueResearchJobAsync(
+            userId,
+            query,
+            topicId,
+            documentContext,
+            requireWebSearch);
+
+        return Ok(new { JobId = jobId, Mode = requireWebSearch ? "hybrid" : "rag" });
     }
 
-    // ── Ping ─────────────────────────────────────────────────────────────────
-
-    [HttpGet("ping")]
-    public IActionResult Ping() => Ok(new { status = "Korteks online", timestamp = DateTime.UtcNow });
-
-    // ── Yardımcılar ──────────────────────────────────────────────────────────
-
-    private async Task StreamResearchAsync(
-        string topic, Guid userId, Guid? topicId, string? fileContext, CancellationToken ct)
+    [HttpGet("status/{jobId}")]
+    public async Task<IActionResult> GetStatus(Guid jobId)
     {
-        try
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        var job = await _swarm.GetJobStatusAsync(jobId);
+        if (job == null) return NotFound();
+
+        // Security check
+        if (job.UserId != userId) return Forbid();
+
+        return Ok(new
         {
-            await foreach (var chunk in _korteks.RunResearchAsync(topic, userId, topicId, fileContext, ct))
-            {
-                await Response.WriteAsync($"data: {chunk}\n\n", ct);
-                await Response.Body.FlushAsync(ct);
-            }
-            await Response.WriteAsync("data: [DONE]\n\n", ct);
-            await Response.Body.FlushAsync(ct);
-        }
-        catch (Exception ex)
+            Phase = job.Phase.ToString(),
+            Logs = job.Logs,
+            Result = job.FinalReport,
+            Error = job.ErrorMessage
+        });
+    }
+
+    [HttpGet("library")]
+    public async Task<IActionResult> GetLibrary()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        var jobs = await _swarm.GetUserLibraryAsync(userId);
+
+        return Ok(jobs.Select(j => new
         {
-            _logger.LogError(ex, "[KorteksController] Araştırma akışı hatası.");
-            try
-            {
-                await Response.WriteAsync($"data: [ERROR]: {ex.Message}\n\n", ct);
-                await Response.Body.FlushAsync(ct);
-            }
-            catch { }
-        }
+            j.Id,
+            j.Query,
+            j.Phase,
+            CompletedAt = j.CompletedAt,
+            HasReport = !string.IsNullOrEmpty(j.FinalReport),
+            j.TopicId
+        }));
     }
 
-    private async Task<string?> ExtractFileContextAsync(IFormFile? file)
+    [HttpGet("library/{jobId}/report")]
+    public async Task<IActionResult> GetReport(Guid jobId)
     {
-        if (file == null || file.Length == 0) return null;
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
-        if (file.Length > MaxFileSizeBytes)
-            return $"[Dosya çok büyük: {file.Length / 1024 / 1024} MB — maksimum 10 MB]";
+        var job = await _swarm.GetJobStatusAsync(jobId);
+        if (job == null) return NotFound();
+        if (job.UserId != userId) return Forbid();
 
-        using var ms = new MemoryStream();
-        await file.CopyToAsync(ms);
-        return _fileExtractor.Extract(file.FileName, ms.ToArray());
+        return Ok(new { job.Query, Report = job.FinalReport, job.CompletedAt });
     }
 
-    private static string? BuildUrlContext(string? url)
+    public class ExportHtmlRequest
     {
-        if (string.IsNullOrWhiteSpace(url)) return null;
-        // URL validation — sadece http/https kabul et
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        // URL Tavily'ye SearchWeb sorgusu olarak geçirilecek şekilde işaretlenir.
-        // KorteksAgent sistem promptu bu metni görünce Tavily'ye URL araması yaptırır.
-        return $"[KAYNAK_URL]: {url}\nBu URL'yi WebSearch-SearchWeb ile çek ve içeriğini araştırmana ekle.";
+        public string Topic { get; set; } = string.Empty;
+        public string Markdown { get; set; } = string.Empty;
     }
-}
 
-// ── Request modelleri ─────────────────────────────────────────────────────────
+    [HttpPost("export-html")]
+    public IActionResult ExportHtml([FromBody] ExportHtmlRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Markdown))
+            return BadRequest("Markdown içerik boş olamaz.");
 
-public class KorteksResearchRequest
-{
-    public string  Topic     { get; set; } = "";
-    public Guid?   TopicId   { get; set; }
-    public string? SourceUrl { get; set; }
-}
+        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        var htmlContent = Markdig.Markdown.ToHtml(request.Markdown, pipeline);
 
-public class KorteksFileRequest
-{
-    public string    Topic   { get; set; } = "";
-    public Guid?     TopicId { get; set; }
-    public IFormFile? File   { get; set; }
+        var title = string.IsNullOrWhiteSpace(request.Topic) ? "Korteks Araştırması" : request.Topic;
+
+        var fullHtml = $@"<!DOCTYPE html>
+<html lang=""tr"">
+<head>
+    <meta charset=""UTF-8"">
+    <title>{System.Net.WebUtility.HtmlEncode(title)}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }}
+        h1, h2, h3 {{ border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }}
+        pre {{ background-color: #f6f8fa; padding: 16px; overflow: auto; border-radius: 6px; }}
+        code {{ background-color: #f6f8fa; padding: 0.2em 0.4em; border-radius: 6px; font-family: monospace; }}
+        blockquote {{ padding: 0 1em; color: #6a737d; border-left: 0.25em solid #dfe2e5; margin: 0; }}
+        table {{ border-collapse: collapse; width: 100%; margin-bottom: 1rem; }}
+        th, td {{ border: 1px solid #dfe2e5; padding: 6px 13px; }}
+        tr:nth-child(2n) {{ background-color: #f6f8fa; }}
+    </style>
+</head>
+<body onload=""window.print()"">
+    <h1>{System.Net.WebUtility.HtmlEncode(title)}</h1>
+    {htmlContent}
+</body>
+</html>";
+
+        return Content(fullHtml, "text/html", System.Text.Encoding.UTF8);
+    }
 }
