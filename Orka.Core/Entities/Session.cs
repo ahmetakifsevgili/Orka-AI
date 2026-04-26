@@ -27,5 +27,8 @@ public class Session
     /// <summary>Şu ana kadar doğru cevaplanan soru sayısı.</summary>
     public int BaselineCorrectCount { get; set; }
 
+    /// <summary>Aynı konuda kaç kez telafi dersi önerildi. 2+ olunca önkoşul yönlendirmesi yapılır.</summary>
+    public int RemedialAttemptCount { get; set; } = 0;
+
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }
