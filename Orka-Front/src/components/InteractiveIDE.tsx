@@ -1,23 +1,30 @@
-/*
- * InteractiveIDE — Monaco tabanlı kod editörü + Piston API çalıştırıcısı.
- * Öğrenci kodu yazar → "Kodu Çalıştır" → stdout/stderr terminal blokta görünür.
- * "AI'a Sor" butonu çıktıyı TutorAgent'a context olarak gönderir.
- */
-
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { Play, Loader2, Send, Terminal, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { CodeAPI } from "@/services/api";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Play,
+  RotateCcw,
+  Send,
+  Terminal,
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CodeAPI, LearningAPI } from "@/services/api";
 
 interface InteractiveIDEProps {
-  /** Kodu çalıştırma sonucunu AI chat'e göndermek için callback */
+  /** Kodu çalıştırma sonucunu AI chat'e göndermek için callback. */
   onSendToChat?: (message: string) => void;
-  /** Aktif konu adı — editör başlığında gösterilir */
+  /** Aktif konu adı editör başlığında gösterilir. */
   topicTitle?: string;
-  /** Algoritmik quiz sorusu — editör başlığında görev olarak gösterilir */
+  /** Aktif topic/session bilgisi IDE sonucunu öğrenme hafızasına bağlar. */
+  topicId?: string;
+  sessionId?: string;
+  /** Algoritmik quiz sorusu görev kartı olarak gösterilir. */
   quizQuestion?: string;
-  /** IDE kapanma callback'i — quiz gönderildikten sonra çağrılır */
+  /** IDE kapanma callback'i quiz gönderildikten sonra çağrılır. */
   onClose?: () => void;
 }
 
@@ -31,30 +38,29 @@ class Program
     }
 }`;
 
-/** Orka dil değeri → Monaco Editor dil ID eşlemesi (farklı olanlar) */
 const MONACO_LANG: Record<string, string> = {
   csharp: "csharp",
-  bash:   "shell",
-  r:      "r",
+  bash: "shell",
+  r: "r",
 };
 
 const LANGUAGE_OPTIONS = [
-  { value: "csharp",     label: "C#" },
-  { value: "python",     label: "Python" },
+  { value: "csharp", label: "C#" },
+  { value: "python", label: "Python" },
   { value: "javascript", label: "JavaScript" },
   { value: "typescript", label: "TypeScript" },
-  { value: "java",       label: "Java" },
-  { value: "rust",       label: "Rust" },
-  { value: "go",         label: "Go" },
-  { value: "cpp",        label: "C++" },
-  { value: "c",          label: "C" },
-  { value: "kotlin",     label: "Kotlin" },
-  { value: "swift",      label: "Swift" },
-  { value: "php",        label: "PHP" },
-  { value: "ruby",       label: "Ruby" },
-  { value: "scala",      label: "Scala" },
-  { value: "r",          label: "R" },
-  { value: "bash",       label: "Bash" },
+  { value: "java", label: "Java" },
+  { value: "rust", label: "Rust" },
+  { value: "go", label: "Go" },
+  { value: "cpp", label: "C++" },
+  { value: "c", label: "C" },
+  { value: "kotlin", label: "Kotlin" },
+  { value: "swift", label: "Swift" },
+  { value: "php", label: "PHP" },
+  { value: "ruby", label: "Ruby" },
+  { value: "scala", label: "Scala" },
+  { value: "r", label: "R" },
+  { value: "bash", label: "Bash" },
 ];
 
 const STARTER_CODE: Record<string, string> = {
@@ -76,200 +82,260 @@ const STARTER_CODE: Record<string, string> = {
   bash: `echo "Merhaba, Orka!"`,
 };
 
-export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion, onClose }: InteractiveIDEProps) {
-  const [code, setCode]         = useState(DEFAULT_CODE);
-  const [language, setLanguage] = useState("csharp");
-  const [running, setRunning]   = useState(false);
-  const [stdout, setStdout]     = useState<string | null>(null);
-  const [stderr, setStderr]     = useState<string | null>(null);
-  const [success, setSuccess]   = useState<boolean | null>(null);
-  const [outputOpen, setOutputOpen] = useState(true);
-  const editorRef = useRef<unknown>(null);
+const MAX_TUTOR_OUTPUT_CHARS = 4000;
 
-  const handleLanguageChange = useCallback((lang: string) => {
-    setLanguage(lang);
-    setCode(STARTER_CODE[lang] ?? "");
+const formatRunOutput = (stdout: string | null, stderr: string | null): string => {
+  const parts: string[] = [];
+  if (stdout?.trim()) parts.push(`Çıktı:\n${stdout.trim()}`);
+  if (stderr?.trim()) parts.push(`Hata:\n${stderr.trim()}`);
+  return parts.join("\n\n") || "(boş çıktı)";
+};
+
+const clipForTutor = (value: string): string => {
+  if (value.length <= MAX_TUTOR_OUTPUT_CHARS) return value;
+  return `${value.slice(0, MAX_TUTOR_OUTPUT_CHARS)}\n\n[Not: Çıktı çok uzun olduğu için Orka burada kırptı.]`;
+};
+
+export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sessionId, quizQuestion, onClose }: InteractiveIDEProps) {
+  const [code, setCode] = useState(DEFAULT_CODE);
+  const [language, setLanguage] = useState("csharp");
+  const [running, setRunning] = useState(false);
+  const [stdout, setStdout] = useState<string | null>(null);
+  const [stderr, setStderr] = useState<string | null>(null);
+  const [success, setSuccess] = useState<boolean | null>(null);
+  const [outputOpen, setOutputOpen] = useState(true);
+
+  const langLabel = LANGUAGE_OPTIONS.find((item) => item.value === language)?.label ?? language;
+  const hasOutput = stdout !== null || stderr !== null || success !== null;
+  const runSucceeded = success === true;
+  const outputText = formatRunOutput(stdout, stderr);
+
+  const resetOutput = useCallback(() => {
     setStdout(null);
     setStderr(null);
     setSuccess(null);
   }, []);
 
+  const handleLanguageChange = useCallback((lang: string) => {
+    setLanguage(lang);
+    setCode(STARTER_CODE[lang] ?? "");
+    resetOutput();
+  }, [resetOutput]);
+
   const handleRun = useCallback(async () => {
     if (running || !code.trim()) return;
     setRunning(true);
-    setStdout(null);
-    setStderr(null);
-    setSuccess(null);
+    resetOutput();
 
     try {
-      const result = await CodeAPI.run({ code, language });
+      const result = await CodeAPI.run({ code, language, topicId, sessionId });
       setStdout(result.stdout || null);
       setStderr(result.stderr || null);
-      setSuccess(result.success);
+      setSuccess(Boolean(result.success));
       setOutputOpen(true);
     } catch (err: any) {
-      // API'den gelen hata mesajını al (PistonService graceful response dönüyor)
       const apiMessage = err?.response?.data?.stderr || err?.response?.data?.error;
-      setStderr(apiMessage || "Kod çalıştırma servisine bağlanılamadı. Lütfen tekrar deneyin.");
+      const fallbackMessage = apiMessage || "Kod çalıştırma servisine bağlanılamadı. Lütfen birkaç saniye sonra tekrar deneyin.";
+      setStderr(fallbackMessage);
       setSuccess(false);
       setOutputOpen(true);
+      void LearningAPI.recordSignal({
+        topicId,
+        sessionId,
+        signalType: "IdeRunCompleted",
+        skillTag: language,
+        topicPath: quizQuestion ? "IDE > Quiz kod cevabı" : "IDE > Kod çalıştırma",
+        score: 0,
+        isPositive: false,
+        payloadJson: JSON.stringify({
+          language,
+          success: false,
+          errorKind: "frontend-api-failure",
+          message: fallbackMessage,
+          codeLength: code.length,
+          quizQuestion: Boolean(quizQuestion),
+        }),
+      }).catch(() => {});
     } finally {
       setRunning(false);
     }
-  }, [code, language, running]);
+  }, [code, language, quizQuestion, resetOutput, running, sessionId, topicId]);
 
-  const hasOutput = stdout !== null || stderr !== null;
-  const langLabel = LANGUAGE_OPTIONS.find(l => l.value === language)?.label ?? language;
+  const handleResetCode = useCallback(() => {
+    setCode(STARTER_CODE[language] ?? "");
+    resetOutput();
+  }, [language, resetOutput]);
 
   const handleSendToChat = useCallback(() => {
     if (!onSendToChat) return;
 
-    const questionContext = quizQuestion
-      ? `**Quiz Sorusu:** ${quizQuestion}\n\n`
-      : "";
+    const questionContext = quizQuestion ? `**Quiz Sorusu:** ${quizQuestion}\n\n` : "";
+    const recordTutorSignal = () => {
+      void LearningAPI.recordSignal({
+        topicId,
+        sessionId,
+        signalType: "IdeSentToTutor",
+        skillTag: language,
+        topicPath: quizQuestion ? "IDE > Quiz kod cevabı" : "IDE > Kod inceleme",
+        score: success === null ? undefined : success ? 100 : 0,
+        isPositive: success === null ? undefined : success,
+        payloadJson: JSON.stringify({
+          language,
+          hasOutput,
+          success,
+          quizQuestion: Boolean(quizQuestion),
+          stdoutLength: stdout?.length ?? 0,
+          stderrLength: stderr?.length ?? 0,
+        }),
+      }).catch(() => {});
+    };
 
     if (!hasOutput) {
-       const message = [
-         `${questionContext}İşte yazdığım ${langLabel} kodu:`,
-         "```" + language,
-         code,
-         "```",
-         "",
-         "Kodu incele ve yazdığım kadar bana geri bildirim ver veya soruya cevabımı değerlendir."
-       ].join("\n");
-       onSendToChat(message);
-       onClose?.();
-       return;
+      const message = [
+        `${questionContext}İşte yazdığım ${langLabel} kodu:`,
+        "```" + language,
+        code,
+        "```",
+        "",
+        "Kodu incele, çözüm mantığımı değerlendir ve eksik gördüğün yeri adım adım anlat.",
+      ].join("\n");
+      recordTutorSignal();
+      onSendToChat(message);
+      onClose?.();
+      return;
     }
 
-    const output = stdout || stderr || "(çıktı yok)";
-    const status = success ? "başarıyla çalıştı" : "hata verdi";
+    const status = runSucceeded ? "başarıyla çalıştı" : "hata verdi";
     const message = [
       `${questionContext}Aşağıdaki ${langLabel} kodu ${status}:`,
       "```" + language,
       code,
       "```",
       "",
-      success ? "**Çıktı:**" : "**Hata Çıktısı:**",
+      runSucceeded ? "**Çıktı:**" : "**Hata Çıktısı:**",
       "```",
-      output,
+      clipForTutor(outputText),
       "```",
       "",
-      success
-        ? "Bu kodu incele ve soruya verdiğim cevabı doğru olup olmadığına göre değerlendir."
-        : "Bu hatayı açıkla ve nasıl düzelteceğimi göster."
+      runSucceeded
+        ? "Bu kodu incele ve soruya verdiğim cevabın doğru olup olmadığını değerlendir. Daha iyi bir çözüm varsa göster."
+        : "Bu hatayı açıkla, neden olduğunu söyle ve nasıl düzelteceğimi adım adım göster.",
     ].join("\n");
 
+    recordTutorSignal();
     onSendToChat(message);
     onClose?.();
-  }, [code, stdout, stderr, success, language, onSendToChat, hasOutput, langLabel, quizQuestion, onClose]);
+  }, [code, hasOutput, langLabel, language, onClose, onSendToChat, outputText, quizQuestion, runSucceeded, sessionId, stderr, stdout, success, topicId]);
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900 h-full overflow-hidden">
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-zinc-800/50">
-        <div className="flex items-center gap-3">
-          <Terminal className="w-4 h-4 text-zinc-400" />
-          <span className="text-sm font-medium text-zinc-200">
-            İnteraktif Kod Editörü
-          </span>
-          {topicTitle && (
-            <span className="text-xs text-zinc-500 pl-2 border-l border-zinc-700">
-              {topicTitle}
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent text-[#172033]">
+      <div className="flex-shrink-0 border-b border-[#526d82]/14 bg-[#eef1f3]/78 px-4 py-3 backdrop-blur md:px-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[#172033] text-white shadow-sm shadow-slate-900/10">
+              <Terminal className="h-4 w-4" />
             </span>
-          )}
-        </div>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-[#172033]">İnteraktif Kod Editörü</p>
+              {topicTitle && <p className="truncate text-xs font-semibold text-[#667085]">{topicTitle}</p>}
+            </div>
+          </div>
 
-        {/* Language selector */}
-        <div className="flex items-center gap-3">
-          <select
-            value={language}
-            onChange={(e) => handleLanguageChange(e.target.value)}
-            className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-zinc-500 transition-colors"
-          >
-            {LANGUAGE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => { setCode(STARTER_CODE[language] ?? ""); setStdout(null); setStderr(null); setSuccess(null); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-zinc-700/50 transition-colors"
-            title="Editörü sıfırla"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={handleRun}
-            disabled={running || !code.trim()}
-            className={`
-              flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border
-              ${running || !code.trim()
-                ? "bg-zinc-800 border-zinc-700 text-zinc-500 cursor-not-allowed opacity-60"
-                : "bg-emerald-900/50 border-emerald-700/60 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 shadow-sm shadow-emerald-900/20"}
-            `}
-          >
-            {running
-              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Çalışıyor...</span></>
-              : <><Play className="w-3.5 h-3.5" /><span>Çalıştır</span></>
-            }
-          </button>
-          
-          {onSendToChat && (
-            <button
-              onClick={handleSendToChat}
-              disabled={running || !code.trim()}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-900/40 border border-amber-700/50 text-amber-200 hover:bg-amber-800/50 hover:text-amber-100 shadow-sm shadow-amber-900/20 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Kodu değerlendirmesi için eğitmene gönder"
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={language}
+              onChange={(event) => handleLanguageChange(event.target.value)}
+              className="rounded-xl border border-[#526d82]/16 bg-[#f7f4ec]/80 px-3 py-2 text-xs font-bold text-[#344054] outline-none transition focus:border-[#52768a]"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Hocaya Gönder</span>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleResetCode}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[#526d82]/14 bg-[#eef1f3]/70 px-3 py-2 text-xs font-bold text-[#667085] transition hover:bg-[#e4eaec] hover:text-[#172033]"
+              title="Editörü sıfırla"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Sıfırla</span>
             </button>
-          )}
+
+            <button
+              onClick={handleRun}
+              disabled={running || !code.trim()}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-extrabold transition-all duration-200 ${
+                running || !code.trim()
+                  ? "cursor-not-allowed border-[#526d82]/12 bg-[#e4eaec]/70 text-[#8a97a0]"
+                  : "border-[#172033]/10 bg-[#172033] text-white shadow-sm shadow-slate-900/12 hover:-translate-y-0.5 hover:bg-[#24314b]"
+              }`}
+            >
+              {running ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Çalışıyor...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-3.5 w-3.5" />
+                  <span>Kodu Çalıştır</span>
+                </>
+              )}
+            </button>
+
+            {onSendToChat && (
+              <button
+                onClick={handleSendToChat}
+                disabled={running || !code.trim()}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#8a6a33]/16 bg-[#f4ecdc]/82 px-4 py-2 text-xs font-extrabold text-[#6d4f20] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#efe1c9] disabled:cursor-not-allowed disabled:opacity-45"
+                title="Kodu değerlendirmesi için hocaya gönder"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>Hocaya Gönder</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Quiz Sorusu Banner'ı */}
       {quizQuestion && (
-        <div className="flex-shrink-0 px-6 py-3 bg-amber-950/25 border-b border-amber-900/30">
-          <p className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider mb-1">Çözmen Gereken Soru</p>
-          <p className="text-sm text-zinc-200 leading-relaxed">{quizQuestion}</p>
+        <div className="flex-shrink-0 border-b border-[#526d82]/14 bg-[#f4ecdc]/70 px-4 py-3 md:px-6">
+          <p className="mb-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a6a33]">Çözmen Gereken Soru</p>
+          <p className="text-sm leading-relaxed text-[#344054]">{quizQuestion}</p>
         </div>
       )}
 
-      {/* Editor area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <Editor
-          height="100%"
-          defaultLanguage="csharp"
-          language={MONACO_LANG[language] ?? language}
-          value={code}
-          onChange={(val) => setCode(val ?? "")}
-          onMount={(editor) => { editorRef.current = editor; }}
-          theme="vs-dark"
-          options={{
-            fontSize: 14,
-            lineHeight: 22,
-            fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-            fontLigatures: true,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-            padding: { top: 16, bottom: 16 },
-            renderLineHighlight: "line",
-            cursorBlinking: "smooth",
-            smoothScrolling: true,
-            automaticLayout: true,
-            tabSize: 4,
-            formatOnPaste: true,
-          }}
-        />
+      <div className="min-h-0 flex-1 bg-[#111827] p-2 md:p-3">
+        <div className="h-full overflow-hidden rounded-2xl border border-white/8 bg-[#0f172a] shadow-inner shadow-black/30">
+          <Editor
+            height="100%"
+            defaultLanguage="csharp"
+            language={MONACO_LANG[language] ?? language}
+            value={code}
+            onChange={(value) => setCode(value ?? "")}
+            theme="vs-dark"
+            options={{
+              fontSize: 14,
+              lineHeight: 22,
+              fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+              fontLigatures: true,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+              padding: { top: 16, bottom: 16 },
+              renderLineHighlight: "line",
+              cursorBlinking: "smooth",
+              smoothScrolling: true,
+              automaticLayout: true,
+              tabSize: 4,
+              formatOnPaste: true,
+            }}
+          />
+        </div>
       </div>
 
-      {/* Output panel */}
       <AnimatePresence initial={false}>
         {hasOutput && (
           <motion.div
@@ -277,36 +343,37 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="flex-shrink-0 border-t border-zinc-800 bg-zinc-950 overflow-hidden"
+            className="flex-shrink-0 overflow-hidden border-t border-[#526d82]/15 bg-[#eef1f3]/86"
           >
-            {/* Output header */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800/60">
+            <div className="flex items-center justify-between border-b border-[#526d82]/12 px-4 py-2">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${success ? "bg-emerald-500" : "bg-amber-500"}`} />
-                <span className="text-[11px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
-                  {success ? "Çıktı" : "Hata"} — {langLabel}
+                <span className={`grid h-6 w-6 place-items-center rounded-full ${runSucceeded ? "bg-[#d9e7de] text-[#547c61]" : "bg-[#f4e1dc] text-[#9a4e3e]"}`}>
+                  {runSucceeded ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
+                  {runSucceeded ? "Çıktı" : "Hata Çıktısı"} · {langLabel}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 {onSendToChat && (
                   <button
                     onClick={handleSendToChat}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 border border-zinc-700/50 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1 text-[11px] font-bold text-[#667085] transition hover:bg-[#efe7d6] hover:text-[#172033]"
                   >
-                    <Send className="w-3 h-3" />
-                    AI'a Sor
+                    <Send className="h-3 w-3" />
+                    Hocaya Sor
                   </button>
                 )}
                 <button
-                  onClick={() => setOutputOpen((v) => !v)}
-                  className="text-zinc-600 hover:text-zinc-400 transition-colors p-1"
+                  onClick={() => setOutputOpen((value) => !value)}
+                  className="rounded-lg p-1 text-[#98a2b3] transition hover:bg-[#d7e6ec]/60 hover:text-[#667085]"
+                  aria-label={outputOpen ? "Çıktıyı gizle" : "Çıktıyı göster"}
                 >
-                  {outputOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  {outputOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
                 </button>
               </div>
             </div>
 
-            {/* Terminal output */}
             <AnimatePresence initial={false}>
               {outputOpen && (
                 <motion.div
@@ -316,11 +383,8 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, quizQuestion,
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
-                  <pre
-                    className={`px-4 py-3 text-[13px] font-mono leading-relaxed overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap
-                      ${success ? "text-emerald-400" : "text-amber-400"}`}
-                  >
-                    {stdout || stderr || "(boş çıktı)"}
+                  <pre className={`max-h-48 overflow-y-auto overflow-x-auto whitespace-pre-wrap px-4 py-3 text-[13px] font-mono leading-relaxed ${runSucceeded ? "text-[#456f55]" : "text-[#9a4e3e]"}`}>
+                    {outputText}
                   </pre>
                 </motion.div>
               )}

@@ -6,21 +6,32 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:ui": "node scripts/smoke-ui.mjs",
+    "smoke:contracts": "node scripts/smoke-endpoints.mjs",
+    "smoke:build": "vite build",
+    "quick:build": "vite build",
+    "quick:frontend": "npm run smoke:ui && npm run smoke:contracts && npm run smoke:build",
+    "quick:smoke": "npm run smoke:ui && npm run smoke:contracts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "axios": "^1.9.0",
+    "driver.js": "^1.4.0",
     "framer-motion": "^12.0.0",
+    "katex": "^0.16.45",
     "lucide-react": "^0.511.0",
+    "mermaid": "^11.14.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hot-toast": "^2.5.2",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.10.0",
     "react-syntax-highlighter": "^16.1.1",
+    "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "wouter": "^3.7.1"
   },
   "devDependencies": {

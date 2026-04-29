@@ -117,9 +117,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   // Gerçek değerler: DB'den gelen XP ve Streak
   const totalXP      = dashStats?.totalXP      ?? 0;
   const activeStreak = dashStats?.currentStreak ?? stats?.dailyProgress.filter(d => d.total > 0).length ?? 0;
+  const learningSignalBook = dashStats?.learningSignalBook;
+  const weakSkills = learningSignalBook?.weakSkills ?? [];
+  const recentSignals = learningSignalBook?.recentSignals ?? [];
 
   return (
-    <div className="flex-1 flex flex-col bg-[#0a0a0a] h-full overflow-hidden">
+    <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
 
       {/* Tab Switcher */}
       <div className="flex-shrink-0 flex items-center gap-1 px-8 pt-6 pb-0">
@@ -127,8 +130,8 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           onClick={() => setActiveTab("karne")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
             activeTab === "karne"
-              ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-              : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+              ? "bg-[#dcecf3]/85 text-[#172033] border border-[#9ec7d9]/45 shadow-sm"
+              : "text-[#667085] hover:text-[#172033] border border-transparent"
           }`}
         >
           <Award className="w-3.5 h-3.5" />
@@ -139,15 +142,15 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
             onClick={() => setActiveTab("hud")}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               activeTab === "hud"
-                ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-                : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                ? "bg-[#dcecf3]/85 text-[#172033] border border-[#9ec7d9]/45 shadow-sm"
+                : "text-[#667085] hover:text-[#172033] border border-transparent"
             }`}
             title="Admin paneli — LLMOps İzleme"
           >
             <Cpu className="w-3.5 h-3.5" />
             Sistem Analitiği
-            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-amber-400/80 border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 rounded">
+            <span className="flex h-1.5 w-1.5 rounded-full bg-[#8fb7a2] animate-pulse" />
+            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-[#9a6b24]/80 border border-amber-500/30 bg-[#fff8ee] px-1.5 py-0.5 rounded">
               Admin
             </span>
           </button>
@@ -164,17 +167,17 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           {/* Header & Mastery Card */}
           <div className="flex items-center justify-between mb-10">
             <div>
-              <h1 className="text-2xl font-bold text-zinc-100 mb-1.5 tracking-tight">Öğrenme Karnesi</h1>
+              <h1 className="text-2xl font-bold text-[#172033] mb-1.5 tracking-tight">Öğrenme Karnesi</h1>
               <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-widest">Sistem Analitiği Aktif</p>
+                <span className="flex h-2 w-2 rounded-full bg-[#8fb7a2] animate-pulse"></span>
+                <p className="text-[11px] font-medium text-[#667085] uppercase tracking-widest">Sistem Analitiği Aktif</p>
               </div>
             </div>
             
-            <div className="hidden sm:flex items-center gap-6 bg-zinc-900/40 border border-zinc-800/80 px-6 py-4 rounded-2xl">
+            <div id="tour-global-stats" className="hidden sm:flex items-center gap-6 bg-[#f7f9fa]/68 border border-[#526d82]/14 backdrop-blur-xl px-6 py-4 rounded-2xl">
                <div className="text-right">
-                  <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-tighter mb-0.5">Global Başarı</p>
-                  <p className="text-xl font-mono font-bold text-emerald-400">%{accuracy}</p>
+                  <p className="text-[10px] text-[#667085] uppercase font-bold tracking-tighter mb-0.5">Global Başarı</p>
+                  <p className="text-xl font-mono font-bold text-[#47725d]">%{accuracy}</p>
                </div>
                {stats && <SuccessRateSparkline data={stats.dailyProgress} />}
             </div>
@@ -183,61 +186,122 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           {/* Core Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
             {/* Stat Item: XP */}
-            <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center mb-4 group-hover:bg-zinc-800 transition-colors">
-                <TrendingUp className="w-4 h-4 text-zinc-400" />
+            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
+                <TrendingUp className="w-4 h-4 text-[#667085]" />
               </div>
-              <p className="text-2xl font-bold text-zinc-100">{loading ? "—" : totalXP}</p>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase mt-1">Toplam XP</p>
+              <p className="text-2xl font-bold text-[#172033]">{loading ? "—" : totalXP}</p>
+              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Toplam XP</p>
               {gamification && (
-                <p className="text-[10px] text-zinc-600 mt-1">
+                <p className="text-[10px] text-[#98a2b3] mt-1">
                   {gamification.levelLabel} · Seviye {gamification.level}
                 </p>
               )}
             </div>
 
             {/* Stat Item: Lessons */}
-            <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center mb-4 group-hover:bg-zinc-800 transition-colors">
-                <Brain className="w-4 h-4 text-zinc-400" />
+            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
+                <Brain className="w-4 h-4 text-[#667085]" />
               </div>
-              <p className="text-2xl font-bold text-zinc-100">
+              <p className="text-2xl font-bold text-[#172033]">
                 {loading ? "—" : (totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length)}
               </p>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase mt-1">Tamamlanan Ders</p>
+              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Tamamlanan Ders</p>
             </div>
 
             {/* Stat Item: Accuracy */}
-            <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4">
-                <Target className="w-4 h-4 text-emerald-500/70" />
+            <div className="p-5 rounded-2xl bg-[#8fb7a2]/5 border border-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-[#8fb7a2]/10 flex items-center justify-center mb-4">
+                <Target className="w-4 h-4 text-[#47725d]/70" />
               </div>
-              <p className="text-2xl font-bold text-emerald-400">{loading ? "—" : `%${accuracy}`}</p>
+              <p className="text-2xl font-bold text-[#47725d]">{loading ? "—" : `%${accuracy}`}</p>
               <p className="text-[11px] font-medium text-emerald-600/80 uppercase mt-1">Doğruluk Oranı</p>
             </div>
 
             {/* Stat Item: Streak (gerçek DB verisi) */}
-            <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/10 hover:border-amber-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center mb-4">
-                <Flame className="w-4 h-4 text-amber-500/70" />
+            <div className="p-5 rounded-2xl bg-[#fff8ee]/85 border border-[#e8c46f]/28 hover:border-[#e8c46f]/45 transition-colors group">
+              <div className="w-8 h-8 rounded-lg bg-[#fff8ee] flex items-center justify-center mb-4">
+                <Flame className="w-4 h-4 text-[#9a6b24]" />
               </div>
-              <p className="text-2xl font-bold text-amber-400">{loading ? "—" : activeStreak}</p>
-              <p className="text-[11px] font-medium text-amber-600/80 uppercase mt-1">
+              <p className="text-2xl font-bold text-[#9a6b24]">{loading ? "—" : activeStreak}</p>
+              <p className="text-[11px] font-medium text-[#a8783d] uppercase mt-1">
                 {activeStreak > 1 ? `${activeStreak} Günlük Seri` : "Öğrenme Serisi"}
               </p>
             </div>
           </div>
 
+          <div className="mb-10 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+                  Öğrenci Sinyal Defteri
+                </p>
+                <h2 className="mt-1 text-base font-extrabold text-[#172033]">
+                  {learningSignalBook?.summary || "Henüz belirgin zayıf beceri sinyali yok."}
+                </h2>
+              </div>
+              <span className="rounded-full bg-[#dcecf3]/80 px-3 py-1 text-[10px] font-bold text-[#2d5870]">
+                {learningSignalBook?.totalRecentAttempts ?? 0} son deneme
+              </span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl bg-[#eef1f3]/70 p-4">
+                <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
+                  Zayıf beceriler
+                </p>
+                {weakSkills.length === 0 ? (
+                  <p className="text-xs leading-6 text-[#667085]">
+                    Quiz cevapları skill etiketiyle geldikçe burada kişisel telafi hedefleri oluşacak.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {weakSkills.slice(0, 3).map((skill) => (
+                      <div key={`${skill.skillTag}-${skill.topicPath}`} className="rounded-xl bg-[#f7f4ec]/78 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-bold text-[#172033]">{skill.skillTag || "unknown skill"}</span>
+                          <span className="text-[10px] font-mono text-[#9a6b24]">%{Math.round(skill.accuracy)}</span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#667085]">{skill.topicPath}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl bg-[#fff8ee]/76 p-4">
+                <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#8a641f]">
+                  Son öğrenme sinyalleri
+                </p>
+                {recentSignals.length === 0 ? (
+                  <p className="text-xs leading-6 text-[#667085]">
+                    “Anlamadım”, quiz cevabı, Wiki aksiyonu ve IDE çıktıları geldikçe ajan köprüsü burada görünür olur.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {recentSignals.slice(0, 3).map((signal, index) => (
+                      <div key={`${signal.signalType}-${index}`} className="flex items-center justify-between gap-3 rounded-xl bg-white/60 px-3 py-2">
+                        <span className="text-xs font-semibold text-[#172033]">{signal.signalType}</span>
+                        <span className="text-[10px] text-[#667085]">{signal.skillTag || signal.topicPath || "genel"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
+            <div id="tour-course-progress" className="lg:col-span-2">
                <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-widest flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-zinc-500" />
+                <h2 className="text-sm font-bold text-[#172033] uppercase tracking-widest flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-[#667085]" />
                   Konu İlerlemesi
                 </h2>
                 <button
                   onClick={() => onViewChange("courses")}
-                   className="text-[11px] font-bold text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors uppercase tracking-wider"
+                   className="text-[11px] font-bold text-[#667085] hover:text-[#344054] flex items-center gap-1 transition-colors uppercase tracking-wider"
                 >
                   Tümünü Gör
                   <ChevronRight className="w-3 h-3" />
@@ -245,8 +309,8 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
               </div>
 
               {topics.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-zinc-800 rounded-3xl">
-                  <p className="text-xs text-zinc-500">Henüz aktif bir öğrenme yolunuz bulunmuyor.</p>
+                <div className="py-16 text-center border border-dashed border-[#526d82]/15 rounded-3xl">
+                  <p className="text-xs text-[#667085]">Henüz aktif bir öğrenme yolunuz bulunmuyor.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -255,23 +319,23 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                     return (
                       <div
                         key={topic.id}
-                        className="p-5 rounded-2xl bg-zinc-900/30 border border-zinc-800/40 hover:bg-zinc-900/50 transition-all cursor-pointer group"
+                        className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:bg-[#f7f4ec]/50 transition-all cursor-pointer group"
                       >
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-zinc-800/50 flex items-center justify-center text-lg shadow-inner">
+                            <div className="w-10 h-10 rounded-xl bg-[#dcecf3]/55 flex items-center justify-center text-lg shadow-inner">
                               {topic.emoji}
                             </div>
                             <div>
-                              <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors">{topic.title}</p>
-                              <p className="text-[10px] text-zinc-600 uppercase font-bold tracking-tighter">{topic.category || 'GENEL'}</p>
+                              <p className="text-sm font-semibold text-[#172033] group-hover:text-white transition-colors">{topic.title}</p>
+                              <p className="text-[10px] text-[#98a2b3] uppercase font-bold tracking-tighter">{topic.category || 'GENEL'}</p>
                             </div>
                           </div>
                           <div className="text-right">
-                             <p className="text-sm font-mono font-bold text-zinc-400">%{pct}</p>
+                             <p className="text-sm font-mono font-bold text-[#667085]">%{pct}</p>
                           </div>
                         </div>
-                        <div className="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+                        <div className="w-full h-1 bg-[#dcecf3]/55 rounded-full overflow-hidden">
                            <div 
                              className="h-full bg-zinc-600 rounded-full transition-all duration-1000 group-hover:bg-zinc-400"
                              style={{ width: `${pct}%` }}
@@ -285,35 +349,36 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-sm font-bold text-zinc-200 uppercase tracking-widest flex items-center gap-2">
-                <Award className="w-4 h-4 text-zinc-500" />
+              <h2 className="text-sm font-bold text-[#172033] uppercase tracking-widest flex items-center gap-2">
+                <Award className="w-4 h-4 text-[#667085]" />
                 Hızlı Erişim
               </h2>
               
               <div className="grid grid-cols-1 gap-3">
                 <button
                   onClick={() => onViewChange("chat")}
-                  className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
+                  className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-zinc-200 group-hover:text-white transition-colors">Öğrenmeye Devam</span>
-                    <span className="text-[10px] text-zinc-500">En son kaldığın ders</span>
+                    <span className="text-xs font-bold text-[#172033] group-hover:text-white transition-colors">Öğrenmeye Devam</span>
+                    <span className="text-[10px] text-[#667085]">En son kaldığın ders</span>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <ArrowRight className="w-4 h-4 text-zinc-400" />
+                  <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
+                    <ArrowRight className="w-4 h-4 text-[#667085]" />
                   </div>
                 </button>
 
                 <button
+                  id="tour-wiki-access"
                   onClick={() => onViewChange("wiki")}
-                  className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
+                  className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                    <div className="flex flex-col">
-                    <span className="text-xs font-bold text-zinc-200">Wiki Kütüphanesi</span>
-                    <span className="text-[10px] text-zinc-500">Hafıza haritasını keşfet</span>
+                    <span className="text-xs font-bold text-[#172033]">Wiki Kütüphanesi</span>
+                    <span className="text-[10px] text-[#667085]">Hafıza haritasını keşfet</span>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <BookOpen className="w-4 h-4 text-zinc-400" />
+                  <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
+                    <BookOpen className="w-4 h-4 text-[#667085]" />
                   </div>
                 </button>
               </div>
@@ -321,7 +386,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
               {/* Tips Section */}
               <div className="p-6 rounded-3xl bg-emerald-500/5 border border-emerald-500/10">
                  <h4 className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2">Günlük İpucu</h4>
-                 <p className="text-[11px] text-zinc-400 leading-relaxed italic">
+                 <p className="text-[11px] text-[#667085] leading-relaxed italic">
                    "Öğrenilenlerin %70'i ilk 24 saat içinde unutulur. Quizleri düzenli çözerek kalıcı hafızayı güçlendir."
                  </p>
               </div>

@@ -28,7 +28,15 @@ public class ExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
+            try
+            {
+                _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
+            }
+            catch
+            {
+                // Logging provider errors must never hide the real API response.
+            }
+
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -40,6 +48,7 @@ public class ExceptionMiddleware
         var (statusCode, message) = exception switch
         {
             DailyLimitExceededException => (429, exception.Message),
+            ProviderConfigurationException => (503, exception.Message),
             NotFoundException => (404, exception.Message),
             UnauthorizedException => (401, exception.Message),
             ArgumentException => (400, exception.Message),

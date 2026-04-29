@@ -18,7 +18,7 @@ namespace Orka.API.Controllers;
 /// </summary>
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/korteks")]
 public class KorteksController : ControllerBase
 {
     private readonly IKorteksAgent         _korteks;
@@ -120,7 +120,7 @@ public class KorteksController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "[KorteksController] Senkron araştırma hatası.");
-            return StatusCode(500, new { success = false, error = ex.Message });
+            return StatusCode(500, new { success = false, error = "Korteks arastirmasi su an tamamlanamadi." });
         }
     }
 
@@ -149,10 +149,13 @@ public class KorteksController : ControllerBase
             _logger.LogError(ex, "[KorteksController] Araştırma akışı hatası.");
             try
             {
-                await Response.WriteAsync($"data: [ERROR]: {ex.Message}\n\n", ct);
+                await Response.WriteAsync("data: [ERROR]: Korteks arastirmasi su an tamamlanamadi.\n\n", ct);
                 await Response.Body.FlushAsync(ct);
             }
-            catch { }
+            catch (Exception flushEx)
+            {
+                _logger.LogDebug(flushEx, "[KorteksController] SSE error flush failed.");
+            }
         }
     }
 

@@ -15,36 +15,39 @@ public class ContextBuilder : IContextBuilder
 {
     private readonly OrkaDbContext _dbContext;
     private readonly IGroqService _groqService;
+    private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly ILogger<ContextBuilder> _logger;
     private readonly int _maxContextMessages;
     private const int SemanticTruncationThreshold = 50; // [HATA-7]: CLAUDE.md Madde 4
 
     public ContextBuilder(OrkaDbContext dbContext, IGroqService groqService,
+        IBackgroundTaskQueue backgroundQueue,
         IConfiguration configuration, ILogger<ContextBuilder> logger)
     {
         _dbContext = dbContext;
         _groqService = groqService;
+        _backgroundQueue = backgroundQueue;
         _logger = logger;
         _maxContextMessages = int.TryParse(configuration["Limits:MaxContextMessages"], out var limit) ? limit : 10;
     }
 
     public async Task<IEnumerable<Message>> BuildContextAsync(Guid topicId, Guid sessionId)
     {
-        // [HATA-7 DÜZELTMESİ]: CLAUDE.md Madde 4 — Semantik Budama (Semantic Truncation)
-        // Topic bazında toplam mesaj sayısını kontrol et
+        // [HATA-7]: Semantic truncation for long topic histories.
+        // Topic bazinda toplam mesaj sayisini kontrol et.
         var totalMessageCount = await _dbContext.Messages
             .Join(_dbContext.Sessions, m => m.SessionId, s => s.Id, (m, s) => new { m, s })
             .Where(x => x.s.TopicId == topicId)
             .CountAsync();
 
-        // 50 mesajı aşıyorsa, özet oluştur ve budanmış bağlamla devam et
+        // 50 mesaji asiyorsa ozet olustur ve budanmis baglamla devam et.
         if (totalMessageCount > SemanticTruncationThreshold)
         {
-            _logger.LogInformation("[SEMANTIC TRUNCATION] {Count} mesaj > 50 eşiği. Bağlam özetleniyor.", totalMessageCount);
+            _logger.LogInformation("[SEMANTIC TRUNCATION] {Count} mesaj > 50 esigi. Baglam ozetleniyor.", totalMessageCount);
             return await BuildTruncatedContextAsync(topicId, sessionId);
         }
 
-        // Normal akış: son N mesajı döndür
+        // Normal akis: son N mesaji dondur.
         var messages = await _dbContext.Messages
             .Where(m => m.SessionId == sessionId)
             .OrderByDescending(m => m.CreatedAt)
@@ -59,7 +62,7 @@ public class ContextBuilder : IContextBuilder
     {
         try
         {
-            // Eski mesajları al (son 10 hariç)
+            // Eski mesajlari al (son 10 haric).
             var recentMessages = await _dbContext.Messages
                 .Where(m => m.SessionId == sessionId)
                 .OrderByDescending(m => m.CreatedAt)
@@ -68,7 +71,7 @@ public class ContextBuilder : IContextBuilder
 
             recentMessages.Reverse();
 
-            // Önceki mesajları özetle (fire & forget — kullanıcıyı beklettirme)
+            // Onceki mesajlari queue uzerinden ozetle; kullaniciyi bekletmez.
             var oldMessages = await _dbContext.Messages
                 .Join(_dbContext.Sessions, m => m.SessionId, s => s.Id, (m, s) => new { m, s })
                 .Where(x => x.s.TopicId == topicId && !recentMessages.Select(r => r.Id).Contains(x.m.Id))
@@ -79,40 +82,26 @@ public class ContextBuilder : IContextBuilder
 
             if (oldMessages.Any())
             {
-                // Özetin oluşturulması arka planda (anayasal Fire & Forget)
-                _ = Task.Run(async () =>
-                {
-                    try
+                _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
+                    "context-semantic-summary",
+                    null,
+                    null,
+                    async ct =>
                     {
                         var summary = await _groqService.SummarizeSessionAsync(oldMessages);
-                        _logger.LogInformation("[SEMANTIC TRUNCATION] Özet oluşturuldu: {Length} karakter", summary.Length);
-                        // Özeti sistem mesajı olarak ekle
-                        var summaryMsg = new Message
-                        {
-                            Id = Guid.NewGuid(),
-                            SessionId = sessionId,
-                            Role = "system",
-                            Content = $"[Öğrenme Özeti]: {summary}",
-                            CreatedAt = DateTime.UtcNow,
-                            MessageType = Orka.Core.Enums.MessageType.General
-                        };
-                        // Not: Bu arka plan thread'de DbContext kullanamayız (HATA-6 önlemi)
-                        // Bu nedenle sadece log atıyoruz; gelecekte IServiceScopeFactory ile genişletilecek
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "[SEMANTIC TRUNCATION] Özet oluşturulamadı.");
-                    }
-                });
+                        _logger.LogInformation("[SEMANTIC TRUNCATION] Ozet olusturuldu: {Length} karakter", summary.Length);
+                    },
+                    MaxAttempts: 1,
+                    Timeout: TimeSpan.FromSeconds(30)));
             }
 
             return recentMessages;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[SEMANTIC TRUNCATION] Budama başarısız, normal bağlama dönülüyor.");
+            _logger.LogWarning(ex, "[SEMANTIC TRUNCATION] Budama basarisiz, normal baglama donuluyor.");
 
-            // Güvenli fallback: sadece son mesajları döndür
+            // Guvenli fallback: sadece son mesajlari dondur.
             var fallback = await _dbContext.Messages
                 .Where(m => m.SessionId == sessionId)
                 .OrderByDescending(m => m.CreatedAt)
@@ -125,7 +114,7 @@ public class ContextBuilder : IContextBuilder
 
     public Task<IEnumerable<Message>> BuildConversationContextAsync(Session session, int maxMessages = 0)
     {
-        // 0 → config'den oku; caller override edebilir
+        // 0 ise config'den oku; caller override edebilir.
         var limit = maxMessages > 0 ? maxMessages : _maxContextMessages;
 
         var result = session.Messages

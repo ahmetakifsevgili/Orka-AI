@@ -15,7 +15,6 @@ namespace Orka.Infrastructure.Services;
 
 public class TutorAgent : ITutorAgent
 {
-    private readonly IAIServiceChain _chain;
     private readonly IContextBuilder _contextBuilder;
     private readonly IAIAgentFactory _factory;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -23,21 +22,78 @@ public class TutorAgent : ITutorAgent
     private readonly IWikiService _wikiService;
     private readonly ILogger<TutorAgent> _logger;
     private readonly IRedisMemoryService _redisService;
+    private readonly ILearningSourceService _learningSourceService;
+    private readonly ILearningSignalService _learningSignals;
 
-    // Wiki context için maksimum karakter sınırı (yaklaşık 500 token)
-    private const int WikiContextMaxChars = 2000;
+    // Wiki context için maksimum karakter sınırı (yaklaşık 1000 token)
+    private const int WikiContextMaxChars = 4000;
+
+    // V4: zengin görselleştirme + voice + drill-down kuralları (interpolation'sız raw).
+    // LaTeX/JSON-style süslü parantez kaçışı bu blokta gerekmiyor.
+    private const string V4VisualizationAndVoiceBlock = """
+
+            [V4 ZENGİN GÖRSELLEŞTİRME — ZORUNLU]:
+            Anlatımını metinle sınırlama. Konunun türüne göre şu öğeleri DOĞAL OLARAK serpiştir:
+
+            1. MATEMATİK / FORMÜL → LaTeX kullan (frontend KaTeX ile render eder):
+               - Inline:  $E = mc^2$
+               - Block:   $$\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$
+               Hiçbir formülü düz metin olarak yazma; "x kare" yerine $x^2$.
+
+            2. MİMARİ / AKIŞ / İLİŞKİ → Mermaid diyagramı kullan:
+               ```mermaid
+               flowchart LR
+                 A[İstek] --> B[Auth] --> C[İş Mantığı] --> D[Veritabanı]
+               ```
+               State machine, sınıf diyagramı, sıra diyagramı için de aynı.
+
+            3. SOYUT KAVRAM → Pollinations.ai görseli embed et (öğrenci görmesi gerekirse):
+               Format: ![kısa açıklama](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT>?width=512&height=512&nologo=true)
+               Örnek: "Mitokondri hücrenin enerji santralidir. ![mitokondri kesit](https://image.pollinations.ai/prompt/cross-section%20of%20mitochondrion%20educational%20diagram?width=512&height=512&nologo=true)"
+               Karmaşık konuları açıklarken metni uzatmak yerine mutlaka görsel kullan.
+
+            4. KAYNAK / DAYANAK → Wiki veya Korteks raporundaki bilgiyi alıntılarken inline link ver:
+               "Algoritmanın temel mantığı 1936'da Turing tarafından ortaya kondu ([Wikipedia: Turing Machine](https://en.wikipedia.org/wiki/Turing_machine))."
+               Frontend bu linkleri hover preview'lı citation olarak gösterir.
+
+            [P4 GÖRSEL ÖĞRENME VALIDATOR]:
+            Cevabı göndermeden önce zihinsel kontrol yap:
+            - Konu matematik/formül içeriyorsa en az bir LaTeX formül veya adım tablosu olmalı.
+            - Konu algoritma, mimari, süreç, sistem veya workflow ise en az bir Mermaid akış/sequence/state diyagramı olmalı.
+            - Konu ezber, tarih, dil veya sınav hazırlığı ise kısa tablo, timeline, kart veya tekrar planı olmalı.
+            - Öğrenci zayıf beceri veya "anlamadım" sinyali verdiyse açıklama + somut örnek + mikro kontrol sorusu birlikte gelmeli.
+            - Uygun görsel öğe yoksa yanıtı tamamlanmış sayma; kısa ama öğretici bir görsel iskelet ekle.
+
+            [SES MODU — VOICE/PODCAST KIP]:
+            Eğer system bağlamında "[VOICE_MODE: PODCAST]" işareti varsa, çıktın iki veya üç sesli bir podcast diyaloğu olmalı:
+            - [HOCA]: derin, açıklayıcı, soru yönelten ses
+            - [ASISTAN]: meraklı, öğrencinin yerine soran ses
+            - [KONUK]: opsiyonel 3. kişi; uzman, öğrenci veya karşı görüş sesi
+            Format:
+              [HOCA]: Bugün for döngüsünü öğreneceğiz, hazır mısın?
+              [ASISTAN]: Hocam, neden döngü kullanırız ki, tek tek de yazılır?
+              [KONUK]: Ben de bunu gerçek hayatta nerede kullanacağımızı merak ediyorum.
+              [HOCA]: Harika soru — eğer 1000 satır yazman gerekirse...
+            Voice modu dışında bu etiketleri ASLA kullanma.
+
+            [DRILL-DOWN / TELAFİ MODU]:
+            Eğer lowQualityHint içinde "Öğrenci ... kez başarısız" geçiyorsa:
+            - Ana konuyu tekrar anlatma. Sadece eksik kavramı 2-3 cümlede yeniden, daha basit bir analojiyle ver.
+            - "Şimdi tekrar deneyelim mi?" diyerek kullanıcıyı tekrar quiz'e davet et.
+            - Pollinations görseli veya çok somut bir gerçek-hayat örneği şart.
+            """;
 
     public TutorAgent(
-        IAIServiceChain chain,
         IContextBuilder contextBuilder,
         IAIAgentFactory factory,
         IServiceScopeFactory scopeFactory,
         IGraderAgent grader,
         IWikiService wikiService,
         ILogger<TutorAgent> logger,
-        IRedisMemoryService redisService)
+        IRedisMemoryService redisService,
+        ILearningSourceService learningSourceService,
+        ILearningSignalService learningSignals)
     {
-        _chain = chain;
         _contextBuilder = contextBuilder;
         _factory = factory;
         _scopeFactory = scopeFactory;
@@ -45,28 +101,42 @@ public class TutorAgent : ITutorAgent
         _wikiService = wikiService;
         _logger = logger;
         _redisService = redisService;
+        _learningSourceService = learningSourceService;
+        _learningSignals = learningSignals;
     }
 
     public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
     {
-        // Faz 11+12: 5 context kaynağı paralel çekilir — herhangi biri başarısız olursa boş string döner
+        // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
+        var hasTopic = session.TopicId.HasValue;
+
         var parallelResults = await Task.WhenAll(
-            FetchUserMemoryProfileAsync(userId, session.TopicId),
+            hasTopic ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            hasTopic ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
             FetchPerformanceProfileAsync(session.Id, session.TopicId),
-            FetchWikiContextAsync(session.TopicId, userId),
+            hasTopic ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
             FetchPistonContextAsync(session.Id),
-            FetchGoldExamplesAsync(session.TopicId)
+            hasTopic ? FetchGoldExamplesAsync(session.TopicId) : Task.FromResult(string.Empty),
+            FetchLowQualityFeedbackAsync(session.Id),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content) : Task.FromResult(string.Empty),
+            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
         );
 
         var contextMessages = await contextTask;
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            memoryContext:    parallelResults[0],
-            performanceHint:  parallelResults[1],
-            wikiContext:      parallelResults[2],
-            pistonContext:    parallelResults[3],
-            goldExamples:     parallelResults[4]);
+            activeTopicContext: parallelResults[0],
+            memoryContext:      parallelResults[1],
+            performanceHint:    parallelResults[2],
+            wikiContext:        parallelResults[3],
+            pistonContext:      parallelResults[4],
+            goldExamples:       parallelResults[5],
+            lowQualityHint:     parallelResults[6],
+            notebookContext:    parallelResults[7],
+            learningSignalContext: parallelResults[8],
+            youtubeContext:     parallelResults[9]);
         var userMessage = BuildContextSummary(contextMessages);
 
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
@@ -84,14 +154,20 @@ public class TutorAgent : ITutorAgent
 
             {numberedPlan}
 
-            Kullanıcıyı sıcak karşıla, planı kısaca tanıt ve ilk adımla başlamaya davet et.
-            Yanıtın samimi, motive edici ve 3-4 cümle olsun.
+            Kullanıcıyı sıcak ve motive edici bir şekilde karşıla. Planı kapsamlıca tanıt:
+            - Her modülün ne öğreteceğini kısa bir cümleyle özetle.
+            - Öğrenciye bu yolculuğun sonunda neler yapabileceğini heyecan verici bir şekilde anlat.
+            - İlk adımla başlamaya davet et.
+            Kısa ve yüzeysel karşılama yapma; öğrencinin planın değerini hissetmesini sağla.
             [KESİN KURAL]: Yukarıdaki planda olmayan hiçbir konu başlığını asla ekleme veya önermeme.
             """;
 
         var contextMessages = await _contextBuilder.BuildConversationContextAsync(session);
         var userMessage = BuildContextSummary(contextMessages);
-        
+
+        // V4 görselleştirme: karşılama mesajında müfredatın Mermaid haritası gösterilebilsin
+        systemPrompt += V4VisualizationAndVoiceBlock;
+
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
     }
 
@@ -126,13 +202,16 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             Kullanıcı "{parentTopicTitle}" konusunu yapılandırılmış Plan Modu ile öğrenmeye başladı.
             Planını başarıyla oluşturduk ve şimdi "{lessonTitle}" alt konusunu anlatıyorsun.
 
-            [GÖREV KAPSAMI]: Bu dersi kullanıcının öğrenme potansiyelini zirveye taşıyacak şekilde anlat. 
-            - Adım 1: "Neden bu konu önemli?" (Kısa ve ilgi çekici bir giriş).
-            - Adım 2: Teknik terimleri basite indirgeyerek ve benzetmeler (analoji) kullanarak açıkla.
+            [GÖREV KAPSAMI]: Bu dersi kullanıcının öğrenme potansiyelini zirveye taşıyacak şekilde detaylı ve derinlemesine anlat.
+            - Adım 1: "Neden bu konu önemli?" (Kapsamlı ve ilgi çekici bir giriş).
+            - Adım 2: Teknik terimleri basite indirgeyerek ve benzetmeler (analoji) kullanarak açıkla, ancak teknik derinlikten ödün verme.
             - Adım 3: Gerçek dünyadan somut bir senaryo veya kod örneği ver.
-            - Dil: İçten, Türkçe ve akademik standartlardan şaşmayan bir dil kullan. Konuyu boğucu şekilde uzatma (300-400 kelime civarı tut).
+            - Dil: İçten, Türkçe ve akademik standartlardan şaşmayan bir dil kullan. Konuyu yüzeysel geçme, öğrencinin tam anlamıyla doyuma ulaşmasını sağla.
             {curriculumNote}
             """;
+
+        // V4 görselleştirme kuralları Plan Modu dersleri için de geçerli
+        systemPrompt += V4VisualizationAndVoiceBlock;
 
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, $"Konu: {lessonTitle}");
     }
@@ -161,14 +240,23 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             - Her soru bağımsız olmalı.
             - Seçenekler mantıklı çeldiriciler içermeli.
 
+            GÖRSEL SORU KURALI (ÖNEMLİ):
+            - Coğrafya, biyoloji, fizik, kimya, astronomi, geometri gibi görsel konularda soru metnine Pollinations görseli EKLE.
+            - Format: ![kısa açıklama](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT>?width=512&height=512&nologo=true)
+            - Örnek: "Aşağıdaki haritada işaretlenen bölge hangi iklim kuşağındadır?\n![dünya iklim kuşakları haritası](https://image.pollinations.ai/prompt/world%20climate%20zones%20map%20educational%20labeled?width=512&height=512&nologo=true)"
+            - Görsel gerektirmeyen salt bilgi sorularında görsel ekleme.
+            - explanation alanında da konuyu açıklarken uygun görsel veya diyagram kullanabilirsin.
+
             ÇIKTI KURALI:
             - SADECE aşağıdaki JSON dizisini döndür. Markdown tırnağı EKLEME.
             - "type" özelliği çok önemlidir. Eğer soru SADECE sözel bilgi veya kavram ölçüyorsa "multiple_choice" yap ve 4 şık ekle. Eğer soru YAZILIM/PROGRAMLAMA veya ALGORİTMA kodu yazmayı gerektiriyorsa "type": "coding" yap ve şıkları BOŞ bırak ("options": []).
             - KODLAMA SORUSU KISITI: Dizideki SON soru bir coding sorusu OLABİLİR; ancak dizinin ortasına asla coding sorusu koyma. Coding sorusu en fazla 1 tanedir ve sadece son indexte yer alır. Konu kod yazmayı hiç gerektirmiyorsa coding sorusu ekleme.
-            
+
             [
               {
                 "type": "multiple_choice", // veya "coding"
+                "quizRunId": "uuid",
+                "questionId": "uuid",
                 "question": "Soru metni",
                 "options": [
                   { "text": "...", "isCorrect": false },
@@ -177,7 +265,13 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                   { "text": "...", "isCorrect": false }
                 ],
                 "explanation": "Detaylı açıklama",
-                "topic": "{{topicTitle}}"
+                "topic": "{{topicTitle}}",
+                "skillTag": "olculen-alt-beceri",
+                "topicPath": "{{topicTitle}} > alt beceri",
+                "difficulty": "kolay|orta|zor",
+                "cognitiveType": "hatirlama|uygulama|analiz|problem_cozme",
+                "sourceHint": "wiki|korteks|ders",
+                "questionHash": "soru-ve-beceri-ozeti"
               },
               ... (TOPLAM 5 SORU)
             ]
@@ -185,7 +279,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             DİL: Türkçe.
             """;
 
-        return await _chain.GenerateWithFallbackAsync(systemPrompt, $"Konu: \"{topicTitle}\"");
+        return await _factory.CompleteChatAsync(AgentRole.Quiz, systemPrompt, $"Konu: \"{topicTitle}\"");
     }
 
     public async Task<bool> EvaluateQuizAnswerAsync(string question, string answer)
@@ -199,45 +293,244 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         // ────────────────────────────────────────────────────────────────────
 #endif
 
-        var systemPrompt = """
-            Sen bir öğretmensin. Öğrencinin cevabını değerlendir.
-            Cevap kabul edilebilir doğrulukta ise SADECE 'DOĞRU' yaz.
-            Yanlışsa SADECE 'YANLIŞ' yaz. Başka hiçbir şey yazma.
-            """;
-
-        var result = await _chain.GenerateWithFallbackAsync(
-            systemPrompt,
-            $"Soru: {question}\nÖğrenci Cevabı: {answer}");
-
-        return result.Contains("DOĞRU", StringComparison.OrdinalIgnoreCase);
+        // Eski "_chain.GenerateWithFallbackAsync" kullanimi kaldirildi.
+        // Ayni isi yapan ve cok daha optimize calisan GraderAgent devrede.
+        var isCorrect = await _grader.EvaluateAnswerAsync(question, answer, CancellationToken.None);
+        return isCorrect;
     }
 
     public async IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Faz 11+12: 5 context kaynağı paralel çekilir — herhangi biri başarısız olursa boş string döner
+        // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
+        var hasTopic = session.TopicId.HasValue;
+
         var parallelResults = await Task.WhenAll(
-            FetchUserMemoryProfileAsync(userId, session.TopicId),
+            hasTopic ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            hasTopic ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
             FetchPerformanceProfileAsync(session.Id, session.TopicId),
-            FetchWikiContextAsync(session.TopicId, userId),
+            hasTopic ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
             FetchPistonContextAsync(session.Id),
-            FetchGoldExamplesAsync(session.TopicId)
+            hasTopic ? FetchGoldExamplesAsync(session.TopicId) : Task.FromResult(string.Empty),
+            FetchLowQualityFeedbackAsync(session.Id),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content, ct) : Task.FromResult(string.Empty),
+            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
         );
 
         var contextMessages = await contextTask;
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            memoryContext:    parallelResults[0],
-            performanceHint:  parallelResults[1],
-            wikiContext:      parallelResults[2],
-            pistonContext:    parallelResults[3],
-            goldExamples:     parallelResults[4]);
+            activeTopicContext: parallelResults[0],
+            memoryContext:      parallelResults[1],
+            performanceHint:    parallelResults[2],
+            wikiContext:        parallelResults[3],
+            pistonContext:      parallelResults[4],
+            goldExamples:       parallelResults[5],
+            lowQualityHint:     parallelResults[6],
+            notebookContext:    parallelResults[7],
+            learningSignalContext: parallelResults[8]);
         var userMessage = BuildContextSummary(contextMessages);
 
-        // AIAgentFactory: GitHub Models → Groq → Gemini (otomatik failover)
+        // AIAgentFactory: Primary → Gemini → Mistral (stream failover zinciri)
         await foreach (var chunk in _factory.StreamChatAsync(AgentRole.Tutor, systemPrompt, userMessage, ct))
         {
             yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Faz 16: Bir önceki yanıt için EvaluatorAgent düşük puan (≤ 6) verdiyse
+    /// Redis'te bekleyen flag'i atomik olarak alır ve prompt'a uyarı bloğu döker.
+    /// </summary>
+    private async Task<string> FetchLowQualityFeedbackAsync(Guid sessionId)
+    {
+        try
+        {
+            var lq = await _redisService.GetAndClearLowQualityFeedbackAsync(sessionId);
+            if (lq == null) return string.Empty;
+
+            _logger.LogInformation(
+                "[TutorAgent] Düşük kalite uyarısı tüketildi. SessionId={SessionId} Score={Score}",
+                sessionId, lq.Value.score);
+
+            return $"""
+
+                [⚠️ ANLIK MÜDAHALE — ÖNCEKİ YANIT KALİTE UYARISI]:
+                Son cevabın EvaluatorAgent tarafından {lq.Value.score}/10 puanlandı.
+                Geri bildirim: {lq.Value.feedback}
+
+                [EYLEM]: Bir sonraki yanıtını şu şekilde yapısal olarak iyileştir:
+                - Anlatım derinliğini koru ama daha net ve yapılandırılmış paragraflar kullan.
+                - Karmaşık cümleleri parçala; madde işaretleri, başlıklar ve Mermaid diyagramlarıyla destekle.
+                - Öğrencinin kavrayıp kavramadığını anlamak için yanıtın sonunda kısa bir kontrol sorusu sor.
+                - Detaylı anlatımdan ödün verme; sadece sunumu iyileştir.
+                """;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] Düşük kalite flag'i okunamadı.");
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> FetchNotebookContextAsync(Guid userId, Guid? topicId, string question, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _learningSourceService.BuildTopicGroundingContextAsync(userId, topicId, question, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] NotebookLM belge bağlamı okunamadı. TopicId={TopicId}", topicId);
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> FetchLearningSignalContextAsync(Guid userId, Guid? topicId, CancellationToken ct = default)
+    {
+        if (!topicId.HasValue) return string.Empty;
+
+        try
+        {
+            var summary = await _learningSignals.GetTopicSummaryAsync(userId, topicId.Value, ct);
+            if (summary.TotalAttempts == 0 && summary.WeakSkills.Count == 0 && summary.RecentSignals.Count == 0)
+                return string.Empty;
+
+            var weakSkills = summary.WeakSkills.Count == 0
+                ? "Kayitli zayif beceri yok."
+                : string.Join("\n", summary.WeakSkills.Take(5).Select(skill =>
+                    $"- {skill.SkillTag} ({skill.TopicPath}): {skill.WrongCount}/{skill.TotalCount} zorlanma, dogruluk %{Math.Round(skill.Accuracy * 100)}"));
+
+            var recentSignals = summary.RecentSignals.Count == 0
+                ? "Yakin zamanda ogrenme sinyali yok."
+                : string.Join("\n", summary.RecentSignals.Take(5).Select(signal => $"- {signal}"));
+
+            return $"""
+
+                [OGRENCI SINYAL OZETI - KISISELLESTIRME]
+                Dogruluk: {summary.CorrectAttempts}/{summary.TotalAttempts} (%{Math.Round(summary.Accuracy * 100)})
+                Zayif beceriler:
+                {weakSkills}
+
+                Son sinyaller:
+                {recentSignals}
+
+                [EYLEM]: Cevabi bu zayif becerilere gore kur. Ogrenci takildiysa ilgili alt beceriye don,
+                kisa bir ornek ver, gerekirse mini tablo/diyagram kullan ve sonraki en iyi adimi oner.
+                """;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] Learning signal context okunamadi. TopicId={TopicId}", topicId);
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> FetchYouTubeContextAsync(Guid userId, Guid? topicId)
+    {
+        if (!topicId.HasValue) return string.Empty;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
+            var cursor = await db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == topicId.Value && t.UserId == userId);
+            Guid rootTopicId = topicId.Value;
+
+            while (cursor != null && cursor.ParentTopicId.HasValue)
+            {
+                rootTopicId = cursor.ParentTopicId.Value;
+                cursor = await db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == cursor.ParentTopicId.Value && t.UserId == userId);
+            }
+
+            var youtubeContext = await _redisService.GetYouTubeContextAsync(rootTopicId);
+            return string.IsNullOrWhiteSpace(youtubeContext)
+                ? string.Empty
+                : $"\n\n[YOUTUBE PEDAGOJİK REFERANS (Planlama Aşamasından)]:\n{youtubeContext}\n(Bu videonun anlatım stratejisini, analojilerini ve yapısını ilham almak için kullan. Direkt video linkini verme, ancak öğrenci zorlanırsa 'YouTube'da bu konuyu çok iyi anlatan videolar var' diyebilirsin.)";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] YouTube context okunamadı. TopicId={TopicId}", topicId);
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> FetchActiveTopicContextAsync(Guid userId, Guid? topicId)
+    {
+        if (!topicId.HasValue) return string.Empty;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
+            var topic = await db.Topics
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == topicId.Value && t.UserId == userId);
+            if (topic == null) return string.Empty;
+
+            var path = new List<Topic> { topic };
+            var cursor = topic;
+            while (cursor.ParentTopicId.HasValue)
+            {
+                var parent = await db.Topics
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.Id == cursor.ParentTopicId.Value && t.UserId == userId);
+                if (parent == null) break;
+                path.Insert(0, parent);
+                cursor = parent;
+            }
+
+            var root = path[0];
+            var activeLessonTitle = topic.Title;
+
+            var modules = await db.Topics
+                .AsNoTracking()
+                .Where(t => t.ParentTopicId == root.Id && t.UserId == userId)
+                .OrderBy(t => t.Order)
+                .ToListAsync();
+
+            if (modules.Count > 0)
+            {
+                var moduleIds = modules.Select(m => m.Id).ToList();
+                var leafLessons = await db.Topics
+                    .AsNoTracking()
+                    .Where(t => t.ParentTopicId.HasValue && moduleIds.Contains(t.ParentTopicId.Value) && t.UserId == userId)
+                    .OrderBy(t => t.Order)
+                    .ToListAsync();
+
+                var orderedLessons = leafLessons.Count > 0
+                    ? modules.SelectMany(m => leafLessons.Where(l => l.ParentTopicId == m.Id).OrderBy(l => l.Order)).ToList()
+                    : modules;
+
+                if (orderedLessons.Count > 0 && topic.Id == root.Id)
+                {
+                    var index = Math.Clamp(root.CompletedSections, 0, orderedLessons.Count - 1);
+                    activeLessonTitle = orderedLessons[index].Title;
+                }
+                else if (leafLessons.Count > 0 && modules.Any(m => m.Id == topic.Id))
+                {
+                    activeLessonTitle = leafLessons
+                        .Where(l => l.ParentTopicId == topic.Id)
+                        .OrderBy(l => l.Order)
+                        .Select(l => l.Title)
+                        .FirstOrDefault() ?? topic.Title;
+                }
+            }
+
+            return $"""
+
+                [AKTIF_DERS_BAGLAMI]:
+                - Secili konu yolu: {string.Join(" > ", path.Select(p => p.Title))}
+                - Aktif anlatilacak ders: {activeLessonTitle}
+                - Kullanici "devam", "basla", "anlat" gibi kisa bir mesaj yazarsa konu sorma; bu aktif ders uzerinden dogrudan anlatima basla.
+                """;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] Aktif ders baglami okunamadi. TopicId={TopicId}", topicId.Value);
+            return string.Empty;
         }
     }
 
@@ -409,11 +702,11 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
             if (!feedbackList.Any() && string.IsNullOrEmpty(topicScoreInfo) && string.IsNullOrEmpty(studentProfileInfo)) return "";
 
-            var feedbackSummary = feedbackList.Any() 
+            var feedbackSummary = feedbackList.Any()
                 ? string.Join("\n", feedbackList.Select(f => $"- {f}"))
                 : "(Session-level geri bildirim henüz yok)";
-            
-            _logger.LogInformation("[TutorAgent][Faz10+14+15] Redis'ten {Count} adet performans notu ve öğrenci profili çekildi.", 
+
+            _logger.LogInformation("[TutorAgent][Faz10+14+15] Redis'ten {Count} adet performans notu ve öğrenci profili çekildi.",
                 feedbackList.Count + (studentProfileInfo != "" ? 1 : 0));
 
             return $$"""
@@ -423,9 +716,9 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 {{feedbackSummary}}
                 {{topicScoreInfo}}
 
-                [EYLEM TALİMATI]: 
-                Eğer yukarıdaki notlarda 'düşük puan', 'uzun anlatım' veya 'anlaşılmayan kısım' uyarısı varsa; 
-                bir sonraki yanıtını ACİLEN daha sade, daha kısa ve daha empatik bir tona çek. 
+                [EYLEM TALİMATI]:
+                Eğer yukarıdaki notlarda 'düşük puan', 'uzun anlatım' veya 'anlaşılmayan kısım' uyarısı varsa;
+                bir sonraki yanıtını ACİLEN daha sade, daha kısa ve daha empatik bir tona çek.
                 Öğrencinin kafasını karıştırmadan, bu uyarılara göre tarzını optimize et.
                 {{studentProfileInfo}}
                 """;
@@ -439,48 +732,59 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
     private static string BuildContextSummary(IEnumerable<Message> context)
     {
-        var msgs = context.TakeLast(8).ToList();
+        var msgs = context.TakeLast(14).ToList();
         if (msgs.Count == 0) return "(Yeni konuşma)";
         return string.Join("\n", msgs.Select(m => $"{(m.Role?.ToLower() == "user" ? "Kullanıcı" : "Asistan")}: {m.Content}"));
     }
 
     private string BuildTutorSystemPrompt(
         bool isQuizPending,
+        string activeTopicContext = "",
         string memoryContext   = "",
         string performanceHint = "",
         string wikiContext     = "",
         string pistonContext   = "",
-        string goldExamples    = "")
+        string goldExamples    = "",
+        string lowQualityHint  = "",
+        string notebookContext = "",
+        string learningSignalContext = "",
+        string youtubeContext  = "")
     {
         var prompt = $$"""
             Sen Orka AI — Kullanıcının özel öğretmeni ve bilge bir mentorusun.
+            {{activeTopicContext}}
+            {{lowQualityHint}}
             {{memoryContext}}
             {{performanceHint}}
             {{wikiContext}}
             {{pistonContext}}
             {{goldExamples}}
+            {{notebookContext}}
+            {{learningSignalContext}}
+            {{youtubeContext}}
 
-            [TEMEL KURAL — SOHBET TARZI]:
-            Chat ekranında ASLA uzun, maddeli, ansiklopedik yanıtlar verme.
-            Özel ders hocası gibi davran: kısa cümleler kur, merak uyandır, öğrencinin düşünmesini sağla.
-            Teknik bilgileri Wiki'ye bırak; sen sadece öğrenciye özel, samimi, konuşmalı anlatım yap.
-            Yanıtların 3-6 cümle olsun. Anlatan değil, sorgulatan ol.
+            [TEMEL KURAL — ÖĞRETİM TARZI]:
+            Chat ekranında konuyu detaylı, derinlemesine ve doyurucu bir şekilde anlat. Konuları asla yüzeysel veya çok kısa (1-2 cümle) geçme.
+            Özel ders hocası gibi davran: karmaşık yapıları parçalara bölerek adım adım, net ve teknik olarak eksiksiz aktar.
+            Sistemin akışı şöyledir: Chat ekranında DETAYLI EĞİTİM verilir, Wiki ekranında ise konunun ÖZETİ tutulur. Sen detaylı eğitimden sorumlusun.
+            Anlatımını zenginleştir, mantığını ve felsefesini öğrenciye kavrat.
 
             [KİMLİK VE TON]:
-            1. Samimi, cesaretlendirici, sabırlı bir mentor gibi konuş.
-            2. Öğrencinin merakını kıvılcımla. Bir konsept anlattıktan sonra "Peki sence neden böyle?" veya "Bunu bir deneyelim mi?" gibi sorularla sürükle.
+            1. Samimi, cesaretlendirici, sabırlı ve bilgi dolu bir mentor gibi konuş.
+            2. Öğrencinin merakını kıvılcımla. Bir konsepti derinlemesine anlattıktan sonra "Peki sence neden böyle?" veya "Bunu bir deneyelim mi?" gibi sorularla sürükle.
             3. Emoji kullanımı: tutumlu ama etkili (📌 🔥 💡 gibi).
 
             [ANLATIM KURALLARI]:
-            - Konuyu anlatmak için 3-6 cümle yeterli. Özet geç, detayı öğrenci sorunca ver.
-            - Kod örneği vereceksen kısa bir parçacık ver (5-10 satır), uzun bloklar verme.
-            - "Bu konuyu tam anlamak için şunu da bilmek lazım..." gibi köprüler kur.
-            - Kullanıcı selamlama yaparsa: sıcak, kısa karşılık ver ve bir konuya davet et.
+            - Konuyu anlatırken detaya inmekten çekinme. Yüzeysel cevaplar verme.
+            - Kod örneği vereceksen işlevsel ve anlaşılır uzunlukta bloklar kullanabilirsin.
+            - "Bu konunun temelinde yatan mantık şudur..." gibi köprüler kurarak konunun kök nedenlerini açıkla.
+            - DİKKAT: Diyagramlar (Mermaid) ve Görseller (Pollinations) anlatımını çok daha güçlü kılar. Karmaşık konuları metinle boğmak yerine görsel ve diyagram kullan!
+            - Kullanıcı selamlama yaparsa: sıcak karşılık ver ve hemen güçlü bir eğitime başla.
 
             [SOHBET ÖRNEKLERİ]:
             - Kullanıcı: "nasılsın" → Sen: "Harikayım! Bugün ne öğrenmek istersin? 🚀"
-            - Kullanıcı: "JavaScript'te promise nedir?" → Sen: "Promise, JavaScript'in 'söz verme' mekanizması. Asenkron işleminiz bitince sonucu teslim etmeyi taahhüt ediyor. Peki neden ihtiyaç duyuldu sence? 🤔"
-            - Kullanıcı: "anladım" → Sen: "Harika! Pekiştirmek için küçük bir soru sorsam olur mu?"
+            - Kullanıcı: "JavaScript'te promise nedir?" → Sen: "Promise, JavaScript'in 'söz verme' mekanizmasıdır. Asenkron işlemlerde callback cehennemini çözmek için geliştirilmiştir... (Burada detaylı bir anlatım ve örnek kod verilir). Peki sence neden arka planda bekleyen işleri ana akışı durdurmadan yapmalıyız? 🤔"
+            - Kullanıcı: "anladım" → Sen: "Harika! O zaman bu mantığı pekiştirmek için şöyle bir kod yazsak nasıl olurdu? (Örnek verir)"
 
             [KODLAMA VE ALGORİTMA GÖREVLERİ (KRİTİK KURAL)]:
             Eğer kullanıcı pratik bir kodlama, algoritma problemi veya hands-on bir görev adımındaysa:
@@ -492,9 +796,12 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                ## BEKLENEN ÇIKTI
                (Beklenen sonuç)
                Ardından küçük bir başlangıç kodu (boilerplate) sağla.
-               
+
             ÖRNEK: "Harika! Şimdi bir for döngüsü yazalım. [IDE_OPEN] ## GÖREV: 1'den 10'a kadar sayıları ekrana yazan bir döngü kur."
             """;
+
+        // V4 bloğu — interpolation'sız ayrı string (LaTeX/JSON-style {} kaçışı için).
+        prompt += V4VisualizationAndVoiceBlock;
 
         if (isQuizPending)
         {

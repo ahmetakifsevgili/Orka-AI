@@ -6,29 +6,26 @@ using Orka.Core.Interfaces;
 namespace Orka.API.Controllers;
 
 /// <summary>
-/// AI sağlayıcıları için sağlık kontrolü (health check) endpoint'leri.
-/// Tüm endpoint'ler [AllowAnonymous] — auth token gerektirmez.
+/// AI provider health-check endpointleri.
+/// Tum endpointler yalnizca admin hesaplar icindir.
 /// </summary>
-[AllowAnonymous]
+[Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/test")]
 public class TestController : ControllerBase
 {
     private readonly IGroqService          _groq;
-    private readonly IAIServiceChain       _chain;
     private readonly IGitHubModelsService  _github;
     private readonly IEmbeddingService     _embedding;
     private readonly IAIAgentFactory       _factory;
 
     public TestController(
         IGroqService          groq,
-        IAIServiceChain       chain,
         IGitHubModelsService  github,
         IEmbeddingService     embedding,
         IAIAgentFactory       factory)
     {
         _groq      = groq;
-        _chain     = chain;
         _github    = github;
         _embedding = embedding;
         _factory   = factory;
@@ -42,28 +39,9 @@ public class TestController : ControllerBase
     public async Task<IActionResult> PingGroq()
         => Ok(await Ping("Groq", () => _groq.GenerateResponseAsync(PingSystem, PingUser)));
 
-    /// <summary>
-    /// AIServiceChain failover zincirini test eder.
-    /// Gerçek bir soru gönderir; hangi provider yanıt verdiyse gösterir.
-    /// </summary>
-    [HttpGet("chain-test")]
-    public async Task<IActionResult> ChainTest([FromQuery] string q = "Merhaba, nasılsın?")
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            var result = await _chain.GenerateWithFallbackAsync("Sen yardımcı bir asistansın.", q);
-            sw.Stop();
-            return Ok(new { ok = true, response = result.Trim(), latencyMs = sw.ElapsedMilliseconds });
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            return StatusCode(503, new { ok = false, error = ex.Message, latencyMs = sw.ElapsedMilliseconds });
-        }
-    }
 
-    /// <summary>GitHub Models + AIAgentFactory + Cohere Embed sağlık kontrolü.</summary>
+
+    /// <summary>GitHub Models + AIAgentFactory + Cohere Embed health check.</summary>
     [HttpGet("ping-github")]
     public async Task<IActionResult> PingGitHub()
     {
@@ -77,12 +55,12 @@ public class TestController : ControllerBase
         return Ok(new { status = "COMPLETE", results });
     }
 
-    /// <summary>AIAgentFactory failover zincirini test eder (GitHub → Groq → Gemini).</summary>
+    /// <summary>AIAgentFactory failover zincirini test eder (GitHub -> Groq -> Gemini).</summary>
     [HttpGet("ping-factory")]
     public async Task<IActionResult> PingFactory([FromQuery] string role = "Tutor")
     {
         if (!Enum.TryParse<AgentRole>(role, true, out var agentRole))
-            return BadRequest(new { error = "Geçersiz role. Değerler: Tutor, DeepPlan, Analyzer, Summarizer, Korteks" });
+            return BadRequest(new { error = "Gecersiz role. Degerler: Tutor, DeepPlan, Analyzer, Summarizer, Korteks" });
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -92,14 +70,14 @@ public class TestController : ControllerBase
             sw.Stop();
             return Ok(new { ok = true, role = agentRole.ToString(), model, response = response.Trim(), latencyMs = sw.ElapsedMilliseconds });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             sw.Stop();
-            return StatusCode(503, new { ok = false, error = ex.Message, latencyMs = sw.ElapsedMilliseconds });
+            return StatusCode(503, new { ok = false, error = "Provider saglik kontrolu tamamlanamadi.", latencyMs = sw.ElapsedMilliseconds });
         }
     }
 
-    /// <summary>Cohere Embed ping — 1024 boyutlu vektör üretimini doğrular.</summary>
+    /// <summary>Cohere Embed ping - 1024 boyutlu vektor uretimini dogrular.</summary>
     [HttpGet("ping-embed")]
     public async Task<IActionResult> PingEmbed([FromQuery] string text = "Python programlama dili")
     {
@@ -110,10 +88,10 @@ public class TestController : ControllerBase
             sw.Stop();
             return Ok(new { ok = true, model = "embed-multilingual-v3.0", dimensions = vector.Length, sampleValues = vector.Take(5), latencyMs = sw.ElapsedMilliseconds });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             sw.Stop();
-            return StatusCode(503, new { ok = false, error = ex.Message, latencyMs = sw.ElapsedMilliseconds });
+            return StatusCode(503, new { ok = false, error = "Provider saglik kontrolu tamamlanamadi.", latencyMs = sw.ElapsedMilliseconds });
         }
     }
 
@@ -126,10 +104,10 @@ public class TestController : ControllerBase
             sw.Stop();
             return new { provider, ok = true, response = resp.Trim(), latencyMs = sw.ElapsedMilliseconds };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             sw.Stop();
-            return new { provider, ok = false, error = ex.Message, latencyMs = sw.ElapsedMilliseconds };
+            return new { provider, ok = false, error = "Provider ping tamamlanamadi.", latencyMs = sw.ElapsedMilliseconds };
         }
     }
 }

@@ -25,6 +25,7 @@ public class TopicService : ITopicService
     public async Task<IEnumerable<Topic>> GetUserTopicsAsync(Guid userId)
     {
         return await _dbContext.Topics
+            .AsNoTracking()
             .Where(t => t.UserId == userId && !t.IsArchived)
             .OrderByDescending(t => t.LastAccessedAt)
             .ToListAsync();
@@ -218,6 +219,7 @@ public class TopicService : ITopicService
     public async Task<List<Topic>> GetSubTopicsAsync(Guid parentTopicId)
     {
         return await _dbContext.Topics
+            .AsNoTracking()
             .Where(t => t.ParentTopicId == parentTopicId)
             .OrderBy(t => t.Order)
             .ToListAsync();
@@ -226,6 +228,7 @@ public class TopicService : ITopicService
     public async Task<List<Topic>> GetOrderedLessonsAsync(Guid rootTopicId, Guid userId)
     {
         var children = await _dbContext.Topics
+            .AsNoTracking()
             .Where(t => t.ParentTopicId == rootTopicId && t.UserId == userId)
             .OrderBy(t => t.Order)
             .ToListAsync();
@@ -235,6 +238,7 @@ public class TopicService : ITopicService
         var childIds = children.Select(c => c.Id).ToList();
 
         var grandchildren = await _dbContext.Topics
+            .AsNoTracking()
             .Where(t => t.ParentTopicId.HasValue && childIds.Contains(t.ParentTopicId.Value) && t.UserId == userId)
             .ToListAsync();
 

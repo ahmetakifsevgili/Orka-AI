@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
@@ -6,11 +6,11 @@ using Orka.Core.Interfaces;
 namespace Orka.Infrastructure.Services;
 
 /// <summary>
-/// Judge0 CE (Community Edition) API üzerinden sandbox ortamında kod çalıştırır.
-/// Public instance: https://ce.judge0.com — API anahtarı gerektirmez.
+/// Judge0 CE (Community Edition) API Ã¼zerinden sandbox ortamÄ±nda kod Ã§alÄ±ÅŸtÄ±rÄ±r.
+/// Public instance: https://ce.judge0.com â€” API anahtarÄ± gerektirmez.
 ///
-/// Judge0 CE dökümantasyonu: https://github.com/judge0/judge0/blob/master/docs/api/submissions/README.md
-/// Status kodları: 3=Accepted, 5=TLE, 6=CompilationError, 7-12=RuntimeError, 13=InternalError
+/// Judge0 CE dÃ¶kÃ¼mantasyonu: https://github.com/judge0/judge0/blob/master/docs/api/submissions/README.md
+/// Status kodlarÄ±: 3=Accepted, 5=TLE, 6=CompilationError, 7-12=RuntimeError, 13=InternalError
 /// </summary>
 public class PistonService : IPistonService
 {
@@ -27,8 +27,8 @@ public class PistonService : IPistonService
     };
 
     /// <summary>
-    /// Orka dil adı → Judge0 CE language_id eşlemesi.
-    /// En güncel versiyonlar tercih edilir; yoksa stable sürüm kullanılır.
+    /// Orka dil adÄ± â†’ Judge0 CE language_id eÅŸlemesi.
+    /// En gÃ¼ncel versiyonlar tercih edilir; yoksa stable sÃ¼rÃ¼m kullanÄ±lÄ±r.
     /// https://ce.judge0.com/languages
     /// </summary>
     private static readonly Dictionary<string, int> LanguageIds = new(StringComparer.OrdinalIgnoreCase)
@@ -67,8 +67,8 @@ public class PistonService : IPistonService
 
             var json = await response.Content.ReadFromJsonAsync<JsonElement[]>(_jsonOpts) ?? [];
 
-            // Judge0 dil listesini Orka'nın PistonRuntime formatına dönüştür
-            // Yalnızca LanguageIds içindeki dilleri döndür (desteklediğimiz diller)
+            // Judge0 dil listesini Orka'nÄ±n PistonRuntime formatÄ±na dÃ¶nÃ¼ÅŸtÃ¼r
+            // YalnÄ±zca LanguageIds iÃ§indeki dilleri dÃ¶ndÃ¼r (desteklediÄŸimiz diller)
             var supported = new List<PistonRuntime>();
             foreach (var kvp in LanguageIds)
             {
@@ -77,7 +77,7 @@ public class PistonService : IPistonService
                 if (entry.ValueKind != JsonValueKind.Undefined)
                 {
                     var name = entry.TryGetProperty("name", out var n) ? n.GetString() ?? kvp.Key : kvp.Key;
-                    // "Python (3.12.5)" → version kısmını çıkar
+                    // "Python (3.12.5)" â†’ version kÄ±smÄ±nÄ± Ã§Ä±kar
                     var version = ExtractVersion(name);
                     supported.Add(new PistonRuntime(kvp.Key, version, []));
                 }
@@ -91,7 +91,7 @@ public class PistonService : IPistonService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Judge0 language listesi alınamadı");
+            _logger.LogError(ex, "Judge0 language listesi alÄ±namadÄ±");
             return [];
         }
     }
@@ -121,14 +121,14 @@ public class PistonService : IPistonService
             {
                 var body   = await response.Content.ReadAsStringAsync();
                 var status = (int)response.StatusCode;
-                _logger.LogWarning("Judge0 API hata: {Status} — {Body}", status, body);
+                _logger.LogWarning("Judge0 API hata: {Status} â€” {Body}", status, body);
 
                 if (status == 429)
                     return new PistonResult("",
-                        "Çok fazla istek gönderildi. Lütfen birkaç saniye bekleyip tekrar deneyin.", false);
+                        "Ã‡ok fazla istek gÃ¶nderildi. LÃ¼tfen birkaÃ§ saniye bekleyip tekrar deneyin.", false);
 
                 return new PistonResult("",
-                    $"Kod çalıştırma servisi hata döndürdü ({status}). Lütfen tekrar deneyin.", false);
+                    $"Kod Ã§alÄ±ÅŸtÄ±rma servisi hata dÃ¶ndÃ¼rdÃ¼ ({status}). LÃ¼tfen tekrar deneyin.", false);
             }
 
             var json = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOpts);
@@ -136,28 +136,28 @@ public class PistonService : IPistonService
         }
         catch (TaskCanceledException)
         {
-            _logger.LogWarning("Judge0 isteği zaman aşımına uğradı");
+            _logger.LogWarning("Judge0 isteÄŸi zaman aÅŸÄ±mÄ±na uÄŸradÄ±");
             return new PistonResult("",
-                "Kod çalıştırma zaman aşımına uğradı. Kodunuz çok uzun veya sonsuz döngü içeriyor olabilir.", false);
+                "Kod Ã§alÄ±ÅŸtÄ±rma zaman aÅŸÄ±mÄ±na uÄŸradÄ±. Kodunuz Ã§ok uzun veya sonsuz dÃ¶ngÃ¼ iÃ§eriyor olabilir.", false);
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Judge0 ağ hatası");
+            _logger.LogError(ex, "Judge0 aÄŸ hatasÄ±");
             return new PistonResult("",
-                "Kod çalıştırma servisine bağlanılamadı. İnternet bağlantınızı kontrol edin.", false);
+                "Kod Ã§alÄ±ÅŸtÄ±rma servisine baÄŸlanÄ±lamadÄ±. Ä°nternet baÄŸlantÄ±nÄ±zÄ± kontrol edin.", false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Judge0 beklenmedik hata");
-            return new PistonResult("", $"Servis hatası: {ex.Message}", false);
+            return new PistonResult("", "Kod calistirma servisinde beklenmeyen bir hata olustu. Lutfen tekrar deneyin.", false);
         }
     }
 
     /// <summary>
-    /// Judge0 CE yanıtını Orka'nın PistonResult formatına dönüştürür.
+    /// Judge0 CE yanÄ±tÄ±nÄ± Orka'nÄ±n PistonResult formatÄ±na dÃ¶nÃ¼ÅŸtÃ¼rÃ¼r.
     ///
     /// Judge0 status ID'leri:
-    ///   1 = In Queue  2 = Processing  3 = Accepted (başarı)
+    ///   1 = In Queue  2 = Processing  3 = Accepted (baÅŸarÄ±)
     ///   4 = Wrong Answer  5 = Time Limit Exceeded
     ///   6 = Compilation Error  7 = Runtime Error (SIGSEGV)
     ///   8 = SIGXFSZ  9 = SIGFPE  10 = SIGABRT  11 = NZEC  12 = Other
@@ -175,36 +175,36 @@ public class PistonService : IPistonService
             statusObj.TryGetProperty("id", out var sid))
             statusId = sid.GetInt32();
 
-        // Derleme hatası: compile_output'u stderr olarak sun
+        // Derleme hatasÄ±: compile_output'u stderr olarak sun
         if (statusId == 6)
         {
             var errMsg = string.IsNullOrWhiteSpace(compileOutput) ? stderr : compileOutput;
-            _logger.LogDebug("{Lang} derleme hatası: {Err}", language, errMsg);
+            _logger.LogDebug("{Lang} derleme hatasÄ±: {Err}", language, errMsg);
             return new PistonResult("", errMsg.TrimEnd(), false);
         }
 
-        // Zaman aşımı
+        // Zaman aÅŸÄ±mÄ±
         if (statusId == 5)
             return new PistonResult(stdout.TrimEnd(),
-                "Zaman aşımı: Kodunuz çok uzun sürdü veya sonsuz döngü içeriyor.", false);
+                "Zaman aÅŸÄ±mÄ±: Kodunuz Ã§ok uzun sÃ¼rdÃ¼ veya sonsuz dÃ¶ngÃ¼ iÃ§eriyor.", false);
 
-        // Runtime hatası (7-12, 14)
+        // Runtime hatasÄ± (7-12, 14)
         if (statusId >= 7 && statusId != 13)
         {
             var errMsg = !string.IsNullOrWhiteSpace(stderr)
                 ? stderr
-                : (!string.IsNullOrWhiteSpace(message) ? message : "Runtime hatası oluştu.");
+                : (!string.IsNullOrWhiteSpace(message) ? message : "Runtime hatasÄ± oluÅŸtu.");
             return new PistonResult(stdout.TrimEnd(), errMsg.TrimEnd(), false);
         }
 
         // Internal error (13)
         if (statusId == 13)
         {
-            _logger.LogWarning("Judge0 internal error — message: {Msg}", message);
-            return new PistonResult("", "Servis hatası oluştu. Lütfen tekrar deneyin.", false);
+            _logger.LogWarning("Judge0 internal error â€” message: {Msg}", message);
+            return new PistonResult("", "Servis hatasÄ± oluÅŸtu. LÃ¼tfen tekrar deneyin.", false);
         }
 
-        // Accepted (3) — stdout varsa başarı
+        // Accepted (3) â€” stdout varsa baÅŸarÄ±
         var success = statusId == 3 && string.IsNullOrWhiteSpace(stderr) && string.IsNullOrWhiteSpace(compileOutput);
         return new PistonResult(stdout.TrimEnd(), stderr.TrimEnd(), success);
     }
@@ -214,7 +214,7 @@ public class PistonService : IPistonService
             ? v.GetString()
             : null;
 
-    /// <summary>"Python (3.12.5)" → "3.12.5"</summary>
+    /// <summary>"Python (3.12.5)" â†’ "3.12.5"</summary>
     private static string ExtractVersion(string name)
     {
         var start = name.IndexOf('(');

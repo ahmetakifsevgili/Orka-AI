@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.Core.Constants;
 using Orka.Core.DTOs.Code;
 using Orka.Core.Interfaces;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace Orka.API.Controllers;
 
@@ -12,12 +15,18 @@ public class CodeController : ControllerBase
 {
     private readonly IPistonService _piston;
     private readonly IRedisMemoryService _redis;
+    private readonly ILearningSignalService _signals;
     private readonly ILogger<CodeController> _logger;
 
-    public CodeController(IPistonService piston, IRedisMemoryService redis, ILogger<CodeController> logger)
+    public CodeController(
+        IPistonService piston,
+        IRedisMemoryService redis,
+        ILearningSignalService signals,
+        ILogger<CodeController> logger)
     {
         _piston = piston;
         _redis  = redis;
+        _signals = signals;
         _logger = logger;
     }
 
@@ -50,7 +59,7 @@ public class CodeController : ControllerBase
         if (request.Code.Length > 50_000)
             return BadRequest(new { error = "Kod 50.000 karakteri geçemez." });
 
-        _logger.LogInformation("Kod çalıştırma isteği — dil: {Language}, boyut: {Size} karakter, stdin: {HasStdin}",
+        _logger.LogInformation("Kod çalıştırma isteği - dil: {Language}, boyut: {Size} karakter, stdin: {HasStdin}",
             request.Language, request.Code.Length, request.Stdin is not null);
 
         var result = await _piston.ExecuteAsync(
@@ -58,7 +67,7 @@ public class CodeController : ControllerBase
             request.Language ?? "csharp",
             request.Stdin);
 
-        // SessionId sağlandıysa sonucu Redis'e yaz — TutorAgent bir sonraki mesajda okur
+        // SessionId sağlandıysa sonucu Redis'e yaz; TutorAgent bir sonraki mesajda okur.
         if (request.SessionId.HasValue && result.Success)
         {
             await _redis.SetLastPistonResultAsync(
@@ -73,6 +82,27 @@ public class CodeController : ControllerBase
                 request.SessionId.Value, request.Language);
         }
 
-        return Ok(new CodeRunResponse(result.Stdout, result.Stderr, result.Success));
+        if (Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+        {
+            await _signals.RecordSignalAsync(
+                userId,
+                request.TopicId,
+                request.SessionId,
+                LearningSignalTypes.IdeRunCompleted,
+                skillTag: request.Language ?? "code",
+                topicPath: request.TopicId.HasValue ? "IDE > Kod çalıştırma" : null,
+                score: result.Success ? 100 : 0,
+                isPositive: result.Success,
+                payloadJson: JsonSerializer.Serialize(new
+                {
+                    language = request.Language ?? "csharp",
+                    success = result.Success,
+                    stdoutLength = result.Stdout?.Length ?? 0,
+                    stderrLength = result.Stderr?.Length ?? 0
+                }),
+                ct: HttpContext.RequestAborted);
+        }
+
+        return Ok(new CodeRunResponse(result.Stdout ?? string.Empty, result.Stderr ?? string.Empty, result.Success));
     }
 }

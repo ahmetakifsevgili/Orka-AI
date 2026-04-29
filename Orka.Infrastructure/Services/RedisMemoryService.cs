@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using StackExchange.Redis;
 
@@ -247,8 +248,21 @@ public class RedisMemoryService : IRedisMemoryService
 
     // ── HUD: Gerçek Zamanlı Ajan Telemetrisi ────────────────────────────────
 
-    private static readonly string[] AllAgentRoles =
-        ["Tutor", "Evaluator", "Supervisor", "Summarizer", "Korteks", "Grader", "DeepPlan"];
+    private static readonly string[] AllAgentRoles = Enum.GetNames<AgentRole>();
+    private static readonly string[] DefaultCacheMetricAreas =
+    [
+        "learning-summary",
+        "learning-recommendations",
+        "notebook-briefing",
+        "notebook-glossary",
+        "notebook-timeline",
+        "notebook-mindmap",
+        "notebook-study-cards"
+    ];
+
+    // Weakness decay süresi — öğrenci zayıf noktalarının 30 gün sonra otomatik temizlenmesi
+    // Üst-üste kayıt olan tüm profiles bu TTL ile expire eder.
+    private static readonly TimeSpan WeaknessDecayPeriod = TimeSpan.FromDays(30);
 
     public async Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null)
     {
@@ -366,6 +380,254 @@ public class RedisMemoryService : IRedisMemoryService
         {
             _logger.LogError(ex, "[Redis] Provider kullanım dağılımı okunurken hata oluştu.");
             return Enumerable.Empty<ProviderUsageStat>();
+        }
+    }
+
+    public async Task<string?> GetJsonAsync(string key)
+    {
+        try
+        {
+            var val = await _db.StringGetAsync(key);
+            return val.HasValue ? val.ToString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Cache okunamadı. Key={Key}", key);
+            return null;
+        }
+    }
+
+    public async Task SetJsonAsync(string key, string payload, TimeSpan ttl)
+    {
+        try
+        {
+            await _db.StringSetAsync(key, payload, ttl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Cache yazılamadı. Key={Key}", key);
+        }
+    }
+
+    public async Task DeleteKeyAsync(string key)
+    {
+        try
+        {
+            await _db.KeyDeleteAsync(key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Cache silinemedi. Key={Key}", key);
+        }
+    }
+
+    public async Task<long> GetTopicVersionAsync(Guid topicId)
+    {
+        try
+        {
+            var key = NotebookVersionKey(topicId);
+            var val = await _db.StringGetAsync(key);
+            return val.HasValue && long.TryParse(val.ToString(), out var version) ? version : 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Notebook version okunamadı. TopicId={TopicId}", topicId);
+            return 0;
+        }
+    }
+
+    public async Task<long> BumpTopicVersionAsync(Guid topicId, string reason)
+    {
+        try
+        {
+            var key = NotebookVersionKey(topicId);
+            var version = await _db.StringIncrementAsync(key);
+            await _db.KeyExpireAsync(key, TimeSpan.FromDays(30));
+            await RecordCacheMetricAsync("notebook-invalidation", hit: false, tool: reason);
+            _logger.LogInformation("[Redis] Notebook cache version güncellendi. TopicId={TopicId} Version={Version} Reason={Reason}",
+                topicId, version, reason);
+            return version;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Notebook version artırılamadı. TopicId={TopicId} Reason={Reason}", topicId, reason);
+            return 0;
+        }
+    }
+
+    public async Task InvalidateLearningCachesAsync(Guid userId, Guid topicId, string reason)
+    {
+        try
+        {
+            await _db.KeyDeleteAsync(new RedisKey[]
+            {
+                LearningSummaryKey(userId, topicId),
+                LearningRecommendationsKey(userId, topicId)
+            });
+            await RecordCacheMetricAsync("learning-invalidation", hit: false, tool: reason);
+            _logger.LogInformation("[Redis] Learning cache temizlendi. User={UserId} Topic={TopicId} Reason={Reason}",
+                userId, topicId, reason);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Learning cache temizlenemedi. User={UserId} Topic={TopicId}", userId, topicId);
+        }
+    }
+
+    public async Task RecordCacheMetricAsync(string area, bool hit, string? tool = null, double? latencyMs = null)
+    {
+        try
+        {
+            var normalizedArea = NormalizeMetricPart(area);
+            var normalizedTool = NormalizeMetricPart(tool ?? area);
+            var record = new CacheMetricRecord(
+                normalizedArea,
+                normalizedTool,
+                hit,
+                latencyMs,
+                DateTime.UtcNow);
+            var payload = JsonSerializer.Serialize(record);
+            var key = CacheMetricKey(normalizedArea);
+
+            await _db.ListLeftPushAsync(key, payload);
+            await _db.ListTrimAsync(key, 0, 199);
+            await _db.KeyExpireAsync(key, TimeSpan.FromHours(24));
+            await _db.SetAddAsync("orka:cache_metrics:areas", normalizedArea);
+            await _db.KeyExpireAsync("orka:cache_metrics:areas", TimeSpan.FromDays(7));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[Redis] Cache metriği yazılamadı. Area={Area}", area);
+        }
+    }
+
+    public async Task<IEnumerable<CacheMetricSummary>> GetCacheMetricsAsync()
+    {
+        try
+        {
+            var areas = (await _db.SetMembersAsync("orka:cache_metrics:areas"))
+                .Select(x => x.ToString())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Concat(DefaultCacheMetricAreas)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var summaries = new List<CacheMetricSummary>();
+            foreach (var area in areas)
+            {
+                var items = await _db.ListRangeAsync(CacheMetricKey(area), 0, 199);
+                var records = items
+                    .Select(x =>
+                    {
+                        try { return JsonSerializer.Deserialize<CacheMetricRecord>(x.ToString()); }
+                        catch { return null; }
+                    })
+                    .Where(x => x != null)
+                    .Select(x => x!)
+                    .ToList();
+
+                if (records.Count == 0)
+                {
+                    summaries.Add(new CacheMetricSummary(area, area, 0, 0, 0, 0, "—"));
+                    continue;
+                }
+
+                summaries.AddRange(records
+                    .GroupBy(r => new { r.Area, r.Tool })
+                    .Select(g =>
+                    {
+                        var hits = g.Count(x => x.Hit);
+                        var misses = g.Count() - hits;
+                        var withLatency = g.Where(x => x.LatencyMs.HasValue).Select(x => x.LatencyMs!.Value).ToList();
+                        return new CacheMetricSummary(
+                            g.Key.Area,
+                            g.Key.Tool,
+                            hits,
+                            misses,
+                            Math.Round(hits * 100.0 / g.Count(), 1),
+                            withLatency.Count == 0 ? 0 : Math.Round(withLatency.Average(), 0),
+                            g.Max(x => x.RecordedAt).ToString("O"));
+                    }));
+            }
+
+            return summaries
+                .OrderBy(s => s.Area)
+                .ThenBy(s => s.Tool)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Cache metrikleri okunamadı.");
+            return Enumerable.Empty<CacheMetricSummary>();
+        }
+    }
+
+    public async Task<RedisHealthDto> GetRedisHealthAsync()
+    {
+        var checkedAt = DateTime.UtcNow;
+        try
+        {
+            var ping = await _db.PingAsync();
+            var connected = _redis.IsConnected;
+            var endpointCount = _redis.GetEndPoints().Length;
+            return new RedisHealthDto(
+                connected,
+                Math.Round(ping.TotalMilliseconds, 2),
+                endpointCount,
+                connected ? "online" : "degraded",
+                null,
+                checkedAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Health check başarısız.");
+            return new RedisHealthDto(false, 0, 0, "offline", ex.Message, checkedAt);
+        }
+    }
+
+    public async Task<IReadOnlyList<string>> GetRecentQuestionHashesAsync(Guid userId, Guid topicId, int count = 80)
+    {
+        try
+        {
+            var key = QuizHashKey(userId, topicId);
+            var items = await _db.ListRangeAsync(key, 0, Math.Max(0, count - 1));
+            await RecordCacheMetricAsync("quiz-anti-repeat", hit: items.Length > 0, tool: "read");
+            return items
+                .Select(x => x.ToString())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(count)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Quiz hash hafızası okunamadı. User={UserId} Topic={TopicId}", userId, topicId);
+            return [];
+        }
+    }
+
+    public async Task RememberQuestionHashesAsync(Guid userId, Guid topicId, IEnumerable<string> hashes)
+    {
+        var clean = hashes
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Select(h => h.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(h => (RedisValue)h)
+            .ToArray();
+
+        if (clean.Length == 0) return;
+
+        try
+        {
+            var key = QuizHashKey(userId, topicId);
+            await _db.ListLeftPushAsync(key, clean);
+            await _db.ListTrimAsync(key, 0, 199);
+            await _db.KeyExpireAsync(key, TimeSpan.FromDays(30));
+            await RecordCacheMetricAsync("quiz-anti-repeat", hit: false, tool: "remember");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Quiz hash hafızası yazılamadı. User={UserId} Topic={TopicId}", userId, topicId);
         }
     }
 
@@ -523,9 +785,9 @@ public class RedisMemoryService : IRedisMemoryService
             // Tek kaynakta güncel durum kalsın diye SET/GET yapalım (üzerine yazsın, "yaşayan organizasyon"un "şu anki" hali)
             
             var payload = JsonSerializer.Serialize(record);
-            await _db.StringSetAsync(key, payload, TimeSpan.FromDays(30));
-            
-            _logger.LogInformation("[Redis] Öğrenci Profili güncellendi. TopicId={TopicId} Puan={Score}", topicId, understandingScore);
+            await _db.StringSetAsync(key, payload, WeaknessDecayPeriod);
+
+            _logger.LogInformation("[Redis] Öğrenci Profili güncellendi. TopicId={TopicId} Puan={Score} TTL={Days}gün", topicId, understandingScore, WeaknessDecayPeriod.TotalDays);
         }
         catch (Exception ex)
         {
@@ -552,5 +814,153 @@ public class RedisMemoryService : IRedisMemoryService
             _logger.LogError(ex, "[Redis] Öğrenci profili okunurken hata. TopicId={TopicId}", topicId);
             return null;
         }
+    }
+
+    // ── Faz 16: EvaluatorAgent → TutorAgent Anlık Müdahale ───────────────────
+
+    private record LowQualityFeedbackRecord(int Score, string Feedback, DateTime At);
+
+    public async Task SetLowQualityFeedbackAsync(Guid sessionId, int score, string feedback)
+    {
+        try
+        {
+            var key = $"orka:lowquality:{sessionId}";
+            var record = new LowQualityFeedbackRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
+            var payload = JsonSerializer.Serialize(record);
+
+            // 5 dakika TTL — bir sonraki yanıtta tüketilmezse expire olur, eski uyarılar yığılmaz.
+            await _db.StringSetAsync(key, payload, TimeSpan.FromMinutes(5));
+
+            _logger.LogInformation("[Redis] Düşük kalite uyarısı set edildi. SessionId={SessionId} Score={Score}", sessionId, score);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Düşük kalite uyarısı yazılırken hata. SessionId={SessionId}", sessionId);
+        }
+    }
+
+    public async Task<(int score, string feedback)?> GetAndClearLowQualityFeedbackAsync(Guid sessionId)
+    {
+        try
+        {
+            var key = $"orka:lowquality:{sessionId}";
+            // StringGetDelete: atomik tek-kullanımlık okuma + silme.
+            var val = await _db.StringGetDeleteAsync(key);
+
+            if (val.IsNullOrEmpty) return null;
+
+            var record = JsonSerializer.Deserialize<LowQualityFeedbackRecord>(val.ToString());
+            if (record == null) return null;
+
+            return (record.Score, record.Feedback);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Düşük kalite uyarısı okunurken hata. SessionId={SessionId}", sessionId);
+            return null;
+        }
+    }
+
+    // ── Faz 16: Korteks → Quiz/Tutor Köprüsü ─────────────────────────────────
+
+    public async Task SaveKorteksResearchReportAsync(Guid topicId, string report)
+    {
+        try
+        {
+            var key = $"orka:korteks:{topicId}";
+            // Çok büyük raporları kırp — quiz/tutor 2-3K karakter yeter.
+            var trimmed = string.IsNullOrEmpty(report)
+                ? string.Empty
+                : (report.Length > 4000 ? report[..4000] + "..." : report);
+
+            await _db.StringSetAsync(key, trimmed, TimeSpan.FromHours(2));
+            await BumpTopicVersionAsync(topicId, "korteks-report");
+            _logger.LogInformation("[Redis] Korteks raporu kaydedildi. TopicId={TopicId} Length={Length}", topicId, trimmed.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Korteks raporu yazılırken hata. TopicId={TopicId}", topicId);
+        }
+    }
+
+    public async Task<string?> GetKorteksResearchReportAsync(Guid topicId)
+    {
+        try
+        {
+            var key = $"orka:korteks:{topicId}";
+            var val = await _db.StringGetAsync(key);
+            return val.HasValue ? val.ToString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Korteks raporu okunurken hata. TopicId={TopicId}", topicId);
+            return null;
+        }
+    }
+
+    // ── YouTube RAG: Cache-First Strateji ─────────────────────────────────────
+
+    public async Task SaveYouTubeContextAsync(Guid topicId, string payload)
+    {
+        try
+        {
+            var key = $"orka:youtube:{topicId}";
+            // 24 saat TTL — YouTube içeriği sık değişmez, kota tasarrufu kritik
+            await _db.StringSetAsync(key, payload, TimeSpan.FromHours(24));
+            _logger.LogInformation("[Redis] YouTube context cache'lendi. TopicId={TopicId} Length={Length}", topicId, payload.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] YouTube context yazılırken hata. TopicId={TopicId}", topicId);
+        }
+    }
+
+    public async Task<string?> GetYouTubeContextAsync(Guid topicId)
+    {
+        try
+        {
+            var key = $"orka:youtube:{topicId}";
+            var val = await _db.StringGetAsync(key);
+            if (val.HasValue)
+            {
+                await RecordCacheMetricAsync("youtube-context", hit: true);
+                return val.ToString();
+            }
+            await RecordCacheMetricAsync("youtube-context", hit: false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] YouTube context okunurken hata. TopicId={TopicId}", topicId);
+            return null;
+        }
+    }
+
+    public static string LearningSummaryKey(Guid userId, Guid topicId) =>
+        $"orka:v1:learning:summary:{userId}:{topicId}";
+
+    public static string LearningRecommendationsKey(Guid userId, Guid topicId) =>
+        $"orka:v1:learning:recommendations:{userId}:{topicId}";
+
+    public static string NotebookToolKey(string tool, Guid userId, Guid topicId, long version) =>
+        $"orka:v1:notebook:{NormalizeMetricPart(tool)}:{userId}:{topicId}:v{version}";
+
+    private static string QuizHashKey(Guid userId, Guid topicId) =>
+        $"orka:v1:quiz:hashes:{userId}:{topicId}";
+
+    private static string NotebookVersionKey(Guid topicId) =>
+        $"orka:v1:notebook:version:{topicId}";
+
+    private static string CacheMetricKey(string area) =>
+        $"orka:v1:metrics:cache:{NormalizeMetricPart(area)}";
+
+    private static string NormalizeMetricPart(string value)
+    {
+        var clean = new string((value ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '-')
+            .ToArray());
+        return string.IsNullOrWhiteSpace(clean) ? "unknown" : clean;
     }
 }

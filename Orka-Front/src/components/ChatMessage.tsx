@@ -8,16 +8,22 @@ import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Check, Copy, BookOpen, CheckCircle } from "lucide-react";
+import "katex/dist/katex.min.css";
+import { Check, Copy, BookOpen, CheckCircle, Volume2 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
 import OrcaLogo from "./OrcaLogo";
+import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  topicId?: string;
+  sessionId?: string;
   /** QuizCard'dan gelen cevap metni; ChatPanel backend'e iletir. */
   onSubmitAnswer?: (text: string) => void;
   /** Kullanıcının gerçek adı (API'den alınır). */
@@ -59,15 +65,15 @@ function CodeBlock({
   }, [codeText]);
 
   return (
-    <div className="relative my-4 rounded-xl overflow-hidden border border-zinc-700/60 bg-[#1e1e1e]">
+    <div className="relative my-4 rounded-xl overflow-hidden border border-[#2b2b2b] bg-[#1e1e1e] shadow-md">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/80 border-b border-zinc-700/40">
-        <span className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] border-b border-[#3e3e3e]">
+        <span className="text-[11px] font-mono text-[#a0a0a0] uppercase tracking-wider">
           {language}
         </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-100 transition-colors duration-150 px-2 py-0.5 rounded hover:bg-zinc-700/50"
+          className="flex items-center gap-1.5 text-[11px] text-[#a0a0a0] hover:text-white transition-colors duration-150 px-2 py-0.5 rounded hover:bg-[#3e3e3e]"
         >
           {copied ? (
             <>
@@ -105,20 +111,137 @@ function CodeBlock({
 
 function InlineCode({ children }: { children: React.ReactNode }) {
   return (
-    <code className="text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">
+    <code className="text-[#2d5870] bg-[#eaf4f7] border border-[#dcecf3] px-1.5 py-0.5 rounded-md text-[13px] font-mono">
       {children}
     </code>
   );
 }
 
+// ── Mermaid diyagram render (lazy modül init) ──────────────────────────────
+let mermaidInitialized = false;
+async function getMermaid() {
+  const m = (await import("mermaid")).default;
+  if (!mermaidInitialized) {
+    m.initialize({
+      startOnLoad: false,
+      theme: "dark",
+      securityLevel: "loose",
+      fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      themeVariables: {
+        primaryColor: "#10b981",
+        primaryTextColor: "#e4e4e7",
+        primaryBorderColor: "#3f3f46",
+        lineColor: "#52525b",
+        secondaryColor: "#27272a",
+        tertiaryColor: "#18181b",
+        background: "#09090b",
+        mainBkg: "#18181b",
+        secondBkg: "#27272a",
+      },
+    });
+    mermaidInitialized = true;
+  }
+  return m;
+}
+
+function MermaidBlock({ code }: { code: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const idRef = useRef("m_" + Math.random().toString(36).slice(2, 9));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const m = await getMermaid();
+        const { svg } = await m.render(idRef.current, code.trim());
+        if (!cancelled && ref.current) ref.current.innerHTML = svg;
+      } catch (err) {
+        if (!cancelled && ref.current) {
+          ref.current.innerHTML = `<pre class="text-xs text-amber-400 p-3">Mermaid hata: ${(err as Error).message}</pre>`;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  return (
+    <div
+      ref={ref}
+      className="my-4 p-4 rounded-xl bg-[#f7f9fa] border border-[#dcecf3] overflow-x-auto shadow-sm"
+    />
+  );
+}
+
+// ── Inline citation link → favicon + host preview ──────────────────────────
+function CitationAnchor({ href, children }: { href?: string; children: React.ReactNode }) {
+  if (href?.startsWith("orka-source://")) {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-[11px] font-mono text-amber-300 align-baseline">
+        {children}
+      </span>
+    );
+  }
+  if (href === "orka-wiki://local" || href === "orka-web://local") {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-mono text-emerald-300 align-baseline">
+        {children}
+      </span>
+    );
+  }
+  if (!href || !/^https?:\/\//i.test(href)) {
+    return <a href={href}>{children}</a>;
+  }
+  let host = "";
+  try {
+    host = new URL(href).hostname.replace(/^www\./, "");
+  } catch {
+    host = href;
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={href}
+      className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline decoration-emerald-500/40 decoration-dotted underline-offset-2 transition"
+    >
+      {children}
+      <span
+        className="inline-flex items-center gap-1 ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-300/80 align-text-bottom"
+        aria-hidden="true"
+      >
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${host}&sz=16`}
+          alt=""
+          className="w-3 h-3 rounded-sm"
+          loading="lazy"
+        />
+        {host}
+      </span>
+    </a>
+  );
+}
+
+function withSourceLinks(content: string): string {
+  return content
+    .replace(/\[doc:([0-9a-fA-F-]{36}):p(\d+)\]/g, (_m, sourceId, page) =>
+      `[doc:p${page}](orka-source://${sourceId}/page/${page})`
+    )
+    .replace(/\[wiki(?::[^\]]+)?\]/g, "[wiki](orka-wiki://local)")
+    .replace(/\[web(?::[^\]]+)?\]/g, "[web](orka-web://local)");
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
-function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
+function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isTopicComplete = message.type === "topic_complete";
 
   // Hooks must always be called — conditional returns happen after
   const [displayedContent, setDisplayedContent] = useState(isUser ? message.content : "");
+  const [audioOpen, setAudioOpen] = useState(false);
 
   // Resolve quiz data without strict type checking (AI often forgets type indicator but sends json)
   const quizData = message.quiz ?? tryParseQuiz(message.content);
@@ -176,18 +299,18 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
         <div className="flex justify-end items-start gap-3">
           <div className="flex flex-col items-end max-w-lg">
             <div className="flex items-center gap-2 mb-1.5 flex-row-reverse">
-              <span className="text-xs font-medium text-zinc-300">{userName}</span>
-              <span className="text-[10px] text-zinc-600">
+              <span className="text-xs font-medium text-[#344054]">{userName}</span>
+              <span className="text-[10px] text-[#98a2b3]">
                 {formatTime(message.timestamp)}
               </span>
             </div>
-            <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-4 py-3">
-              <p className="text-[15px] text-zinc-100 leading-relaxed whitespace-pre-wrap">
+            <div className="bg-[#dcecf3]/80 border border-[#9ec7d9]/45 rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
+              <p className="text-[15px] text-[#172033] leading-relaxed whitespace-pre-wrap">
                 {message.content}
               </p>
             </div>
           </div>
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-zinc-700 border border-zinc-600 flex items-center justify-center mt-1 overflow-hidden">
+          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/75 border border-[#526d82]/15 flex items-center justify-center mt-1 overflow-hidden">
             <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=transparent" alt="User" className="w-full h-full object-cover" />
           </div>
         </div>
@@ -195,15 +318,15 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
         // ── AI mesajı (Boşken avatar çizilmez çünkü isThinking animasyonu dönüyor) ──
         <div className="flex items-start gap-3 max-w-full">
           {/* Avatar */}
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700/50 flex items-center justify-center mt-1">
-            <OrcaLogo className="w-3.5 h-3.5 text-zinc-300" />
+          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/75 border border-[#526d82]/15 shadow-sm flex items-center justify-center mt-1">
+            <OrcaLogo className="w-3.5 h-3.5 text-[#344054]" />
           </div>
 
           <div className="flex-1 min-w-0">
             {/* Header */}
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium text-zinc-300">Orka AI</span>
-              <span className="text-[10px] text-zinc-600">
+              <span className="text-xs font-medium text-[#344054]">Orka AI</span>
+              <span className="text-[10px] text-[#98a2b3]">
                 {formatTime(message.timestamp)}
               </span>
             </div>
@@ -225,29 +348,38 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
               if (!cleanedText && quizData) return null; // Only QuizCard
 
               return (
-                <div className="bg-zinc-800/50 border border-zinc-700/60 rounded-xl px-5 py-4 mb-3">
+                <div className="bg-white/70 border border-[#526d82]/14 rounded-[1.25rem] px-5 py-4 mb-3 shadow-[0_14px_38px_rgba(66,91,112,0.09)] backdrop-blur-xl">
                   <div
-                    className="prose prose-invert max-w-none
-                      prose-headings:text-zinc-100 prose-headings:font-semibold
-                      prose-h2:text-[17px] prose-h2:mt-5 prose-h2:mb-2 prose-h2:pb-1.5 prose-h2:border-b prose-h2:border-zinc-700/60
+                    className="prose max-w-none
+                      prose-headings:text-[#172033] prose-headings:font-semibold
+                      prose-h2:text-[17px] prose-h2:mt-5 prose-h2:mb-2 prose-h2:pb-1.5 prose-h2:border-b prose-h2:border-[#526d82]/10
                       prose-h3:text-[15px] prose-h3:mt-4 prose-h3:mb-2
-                      prose-p:text-zinc-200 prose-p:leading-relaxed prose-p:my-2.5 prose-p:text-[15px]
-                      prose-strong:text-zinc-100
-                      prose-li:text-zinc-200 prose-li:my-1 prose-li:text-[15px]
+                      prose-p:text-[#344054] prose-p:leading-relaxed prose-p:my-2.5 prose-p:text-[15px]
+                      prose-strong:text-[#172033]
+                      prose-li:text-[#344054] prose-li:my-1 prose-li:text-[15px]
                       prose-ul:my-2.5 prose-ol:my-2.5
-                      prose-a:text-zinc-300 prose-a:underline prose-a:underline-offset-2
-                      prose-blockquote:border-l-2 prose-blockquote:border-zinc-600 prose-blockquote:bg-zinc-900/50 prose-blockquote:rounded-r-lg prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:text-zinc-400 prose-blockquote:italic prose-blockquote:my-3
-                      prose-table:border-collapse prose-table:my-3 prose-table:w-full
-                      prose-thead:bg-zinc-800/60
-                      prose-th:border prose-th:border-zinc-700 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-[12px] prose-th:font-semibold prose-th:text-zinc-200 prose-th:uppercase prose-th:tracking-wider
-                      prose-td:border prose-td:border-zinc-800 prose-td:px-3 prose-td:py-2 prose-td:text-[13px] prose-td:text-zinc-300
+                      prose-a:text-[#2d5870] prose-a:underline prose-a:underline-offset-2
+                      prose-blockquote:border-l-4 prose-blockquote:border-[#9ec7d9] prose-blockquote:bg-[#f7f9fa] prose-blockquote:rounded-r-xl prose-blockquote:py-3 prose-blockquote:px-5 prose-blockquote:text-[#5f6f7b] prose-blockquote:italic prose-blockquote:my-4 prose-blockquote:shadow-sm
+                      prose-table:border-collapse prose-table:my-4 prose-table:w-full prose-table:rounded-xl prose-table:overflow-hidden prose-table:shadow-sm prose-table:border prose-table:border-[#dcecf3]
+                      prose-thead:bg-[#eaf4f7]
+                      prose-th:border-b prose-th:border-[#dcecf3] prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:text-[12px] prose-th:font-bold prose-th:text-[#2d5870] prose-th:uppercase prose-th:tracking-wider
+                      prose-td:border-b prose-td:border-[#eef1f3] prose-td:px-4 prose-td:py-3 prose-td:text-[13px] prose-td:text-[#344054]
                       prose-pre:!bg-transparent prose-pre:!border-0 prose-pre:!p-0 prose-pre:!m-0
                     "
                   >
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
                       components={{
                         code({ className, children }) {
+                          const langMatch = /language-(\w+)/.exec(className || "");
+                          const lang = langMatch?.[1];
+
+                          // V4: mermaid bloğu özel render
+                          if (lang === "mermaid") {
+                            return <MermaidBlock code={String(children)} />;
+                          }
+
                           const isBlock =
                             className?.startsWith("language-") ||
                             (typeof children === "string" && children.includes("\n"));
@@ -260,9 +392,32 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
                         pre({ children }) {
                           return <>{children}</>;
                         },
+                        a({ href, children }) {
+                          return <CitationAnchor href={href}>{children}</CitationAnchor>;
+                        },
+                        img({ src, alt }) {
+                          // Pollinations + diğer görselleri sar — yüklenmezse fallback göster
+                          return (
+                            <img
+                              src={src}
+                              alt={alt || ""}
+                              loading="lazy"
+                              className="my-4 rounded-xl border border-[#dcecf3] max-w-full bg-[#f7f9fa]"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                target.onerror = null;
+                                target.style.display = "none";
+                                const fallback = document.createElement("div");
+                                fallback.className = "my-4 rounded-xl border border-[#dcecf3] bg-[#f7f9fa] px-4 py-3 text-xs text-[#98a2b3] flex items-center gap-2";
+                                fallback.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg> Görsel yüklenemedi`;
+                                target.parentNode?.insertBefore(fallback, target.nextSibling);
+                              }}
+                            />
+                          );
+                        },
                       }}
                     >
-                      {cleanedText}
+                      {withSourceLinks(cleanedText)}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -274,6 +429,8 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
               <QuizCard
                 quiz={quizData}
                 messageId={message.id}
+                topicId={topicId}
+                sessionId={sessionId}
                 onSubmitAnswer={onSubmitAnswer}
                 onOpenIDE={onOpenIDE}
                 isBaseline={
@@ -285,8 +442,31 @@ function ChatMessageInner({ message, onSubmitAnswer, userName = "Sen", onOpenWik
                 }
               />
             )}
+
+            {/* V4: Sesli Sınıf butonu — sadece quiz olmayan ve içerik dolu AI mesajlarında */}
+            {!quizData && displayedContent.trim().length > 40 && !message.isStreaming && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => setAudioOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-zinc-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition border border-transparent hover:border-emerald-500/20"
+                  title="Bu mesajı sesli dinle"
+                >
+                  <Volume2 className="w-3 h-3" />
+                  Sesli dinle
+                </button>
+              </div>
+            )}
           </div>
         </div>
+      )}
+
+      {audioOpen && (
+        <ClassroomAudioPlayer
+          text={displayedContent}
+          topicId={topicId}
+          sessionId={sessionId}
+          onClose={() => setAudioOpen(false)}
+        />
       )}
     </div>
   );
@@ -298,6 +478,8 @@ export default memo(ChatMessageInner, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.message.isStreaming === next.message.isStreaming &&
     prev.message.type === next.message.type &&
+    prev.topicId === next.topicId &&
+    prev.sessionId === next.sessionId &&
     prev.userName === next.userName
   );
 });

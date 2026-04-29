@@ -1,353 +1,359 @@
-/*
- * Design: "Sessiz Lüks" — Premium landing page.
- * Inspired by Linear.app hero, Vercel depth, Stripe premium feel.
- * Monochrome zinc palette. Typography-driven hierarchy.
- * Sections: Hero, Features, How It Works, CTA.
- */
-
 import { Link } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowRight, BookOpen, Brain, Target, Layers, Zap, Shield } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  BrainCircuit,
+  CheckCircle2,
+  Code2,
+  FileText,
+  GraduationCap,
+  Layers3,
+  Mic2,
+  Network,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  RefreshCw
+} from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
 
-const HERO_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/hero-abstract-CJpjj4mLRnNXJor3rRcL7z.webp";
-const FEATURE_1 = "https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/landing-feature-1-Sf6RHeHu3cSRac9MjeHesk.webp";
-const FEATURE_2 = "https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/landing-feature-2-3qxTjA6Xr9goC7xUTxTr4Z.webp";
-const FEATURE_3 = "https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/landing-feature-3-KXEMA63jg54Bu92y5UBssW.webp";
-
 const fadeUp = {
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 28 },
   whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: "-50px" },
-  transition: { duration: 0.5, ease: "easeOut" as const },
+  viewport: { once: true, margin: "-80px" },
+  transition: { duration: 0.65, ease: "easeOut" as const },
 };
 
-const stagger = {
-  initial: { opacity: 0, y: 20 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true },
-} as const;
+const slide = (x: number, delay = 0) => ({
+  initial: { opacity: 0, x, y: 18 },
+  whileInView: { opacity: 1, x: 0, y: 0 },
+  viewport: { once: true, margin: "-70px" },
+  transition: { duration: 0.62, delay, ease: "easeOut" as const },
+});
+
+const modules = ["Adaptif Plan", "Otonom Wiki", "Dinamik Quiz", "NotebookLM/RAG", "Korteks", "Sesli Sınıf", "Sandbox IDE"];
+
+const featureCards = [
+  {
+    icon: BrainCircuit,
+    title: "Derin Davranış Analizi",
+    text: "Doğru/yanlış metriklerini aşar. Cevap verme sürenizden takıldığınız alt becerilere kadar mikrodavranışlarınızı işleyerek zihinsel modelinizin tam haritasını çıkarır.",
+    meta: "Mikro-Teşhis: Analitik Zayıflık Tespit Edildi",
+    className: "lg:col-span-2 orka-panel",
+  },
+  {
+    icon: FileText,
+    title: "Otonom RAG Entegrasyonu",
+    text: "Yüklediğiniz PDF'ler, bağlantılar ve kişisel notlarınız vektörel olarak indekslenir. Her cevapta ilgili referansa nokta atışı yapılır.",
+    meta: "Multi-Agent: RAG Destekli Veri Sentezi",
+    className: "orka-surface",
+  },
+  {
+    icon: Target,
+    title: "Algoritmik Beceri Sınaması",
+    text: "Ezbere dayalı soru havuzlarını unutun. Yapay zeka, doğrudan zayıf olduğunuz alt beceriyi zorlamak için her seferinde eşsiz bir senaryo üretir.",
+    meta: "Dinamik Üretim: LLM Tabanlı Senaryolar",
+    className: "orka-muted-panel",
+  },
+  {
+    icon: Network,
+    title: "Sürekli Gelişen Nöral Hafıza",
+    text: "Öğrendiğiniz, unuttuğunuz veya zorlandığınız her an, kişisel Wiki ağınıza yapısal bir bağlantı olarak kalıcı biçimde kodlanır.",
+    meta: "Knowledge Graph: Kişisel Bilgi Ağı",
+    className: "lg:col-span-2 orka-surface",
+  },
+  {
+    icon: Mic2,
+    title: "Çoklu-Ajan Senkronizasyonu",
+    text: "Hoca, Asistan ve Konuk rollerine sahip otonom ajanlar eş zamanlı çalışır. Sorduğunuz anlık bir soru, sınıfın tüm bağlamına entegre olur.",
+    meta: "Swarm Intelligence: Senkronize Temsilciler",
+    className: "orka-panel",
+  },
+  {
+    icon: Code2,
+    title: "Bağlamsal Kod Sandbox'ı",
+    text: "İzole bir kod penceresi değil; doğrudan chat ve müfredat ile senkronize çalışan güvenli bir ortam. Hata çıktılarınız anında AI asistanınıza akar.",
+    meta: "Real-Time: Çıktı ve Teşhis Akışı",
+    className: "orka-muted-panel",
+  },
+];
+
+const pipeline = [
+  "Davranış Analizi",
+  "Eksiklerin Tespiti",
+  "Müfredat Uyarlama",
+  "Kişisel Anlatım",
+  "Adaptif Sınama",
+  "Wiki Kaydı",
+];
+
+const trustItems = [
+  ["Proaktif Sistem Doğrulaması", "Tüm API endpoint'leri ve yetkilendirme katmanları, her dağıtım öncesi sentetik ajanlar tarafından otonom testlere tabi tutulur."],
+  ["Yapısal Veri Koruması", "LLM'den dönen karmaşık JSON çıktıları, katı şema doğrulayıcılarla (schema validators) kontrol edilerek arayüze kusursuz yansıtılır."],
+  ["Ajan Durum Senkronizasyonu", "Swarm içindeki rollerin (Hoca, Asistan) hafıza sızıntısı olmadan ve tam bağlamla sürece katılımı güvence altındadır."],
+  ["Güvenli Yürütme Hattı", "Kod analizleri ve hata ayıklama süreçleri, izole bir kapsayıcıda işlenir ve ajanlara doğrudan yapısal veri olarak beslenir."],
+];
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-800/50">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <OrcaLogo className="w-5 h-5 text-zinc-100" />
-            <span className="font-semibold text-sm text-zinc-100">Orka AI</span>
+    <div className="min-h-screen orka-bg text-[#172033] overflow-x-hidden">
+      <div className="pointer-events-none fixed inset-0 mist-grid opacity-35" />
+      <nav className="fixed left-0 right-0 top-0 z-50 px-4 py-4">
+        <div className="orka-glass mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl px-4 sm:px-5">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[#172033] text-white shadow-md shadow-slate-900/10">
+              <OrcaLogo className="h-5 w-5" />
+            </span>
+            <span className="text-sm font-extrabold tracking-tight">Orka AI</span>
+          </Link>
+          <div className="hidden items-center gap-6 text-xs font-semibold text-[#667085] md:flex">
+            <a href="#features" className="transition hover:text-[#172033]">Modüller</a>
+            <a href="#flow" className="transition hover:text-[#172033]">Öğrenme Akışı</a>
+            <a href="#trust" className="transition hover:text-[#172033]">Sistem Mimarisi</a>
           </div>
-          <div className="flex items-center gap-6">
-            <a href="#features" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors duration-150">
-              Özellikler
-            </a>
-            <a href="#how-it-works" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors duration-150">
-              Nasıl Çalışır?
-            </a>
-            <Link
-              href="/login"
-              className="text-xs font-medium text-zinc-950 bg-zinc-100 hover:bg-zinc-200 px-4 py-2 rounded-lg transition-colors duration-150"
-            >
-              Giriş Yap
-            </Link>
-          </div>
+          <Link href="/login" className="orka-button rounded-full px-4 py-2 text-xs font-bold">
+            Giriş Yap
+          </Link>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-20 px-6">
-        {/* Background Image */}
-        <div className="absolute inset-0 overflow-hidden">
-          <img
-            src={HERO_BG}
-            alt=""
-            className="w-full h-full object-cover opacity-30"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/60 via-zinc-950/80 to-zinc-950" />
-        </div>
-
-        <div className="relative max-w-4xl mx-auto text-center">
+      <main className="relative z-10">
+        <section className="mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-32 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:pt-40">
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 26 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
+            transition={{ duration: 0.72, ease: "easeOut" }}
           >
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 mb-8">
-              <div className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
-              <span className="text-[11px] text-zinc-400">Yapay Zeka Destekli Öğrenme Ekosistemi</span>
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1.5 text-xs font-bold text-[#2d5870] shadow-sm backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5" />
+              Orka AI v1.0 Yayında • Organization Knowledge Agent
             </div>
-
-            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-zinc-50 leading-[1.1] mb-6">
-              Her konuda uzmanlaşın
-              <br />
-              <span className="text-zinc-500">akıllı rehberlik ile</span>
+            <h1 className="font-display max-w-4xl text-5xl font-bold leading-[0.98] tracking-[-0.055em] text-[#172033] sm:text-6xl lg:text-7xl">
+              Öğrenme potansiyelinizi
+              <span className="block text-[#4f7485]">otonom bir zeka ağına dönüştürün.</span>
             </h1>
-
-            <p className="text-lg text-zinc-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-              Orka AI, siz öğrendikçe yaşayan bir bilgi haritası oluşturur. Kişiselleştirilmiş müfredat, 
-              etkileşimli quizler ve otonom araştırma agentları ile öğrenme sürecinizi hızlandırın.
+            <p className="mt-6 max-w-xl text-base leading-8 text-[#5f6f7b] sm:text-lg">
+              Orka; sıradan bir asistan değil, zihinsel modelinizi öğrenen bir yapay zeka ekosistemidir. Plan, Wiki, Quiz, NotebookLM/RAG, Korteks, Sesli Sınıf ve IDE akışını tek bir nöral hafızada birleştirir. Sadece cevap vermez; düşünme yapınızı analiz edip mükemmelliğe ulaşana kadar sistemi yeniden kurgular.
             </p>
-
-            <div className="flex items-center justify-center gap-4">
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-zinc-100 text-zinc-950 rounded-lg font-medium text-sm hover:bg-zinc-200 transition-colors duration-150"
-              >
-                Öğrenmeye Başla
-                <ArrowRight className="w-4 h-4" />
+            <div className="mt-6 flex flex-wrap gap-2">
+              {modules.map((module) => (
+                <span key={module} className="rounded-full border border-[#526d82]/12 bg-[#eef1f3]/70 px-3 py-1.5 text-[11px] font-extrabold text-[#4b5f6b]">
+                  {module}
+                </span>
+              ))}
+            </div>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/login" className="orka-button inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-extrabold">
+                Öğrenmeye Başla <ArrowRight className="h-4 w-4" />
               </Link>
-              <a
-                href="#video"
-                className="inline-flex items-center gap-2 px-6 py-3 border border-zinc-800 text-zinc-300 rounded-lg text-sm hover:bg-zinc-900 hover:border-zinc-700 transition-colors duration-150"
-              >
-                Nasıl Çalışır?
+              <a href="#features" className="inline-flex items-center justify-center gap-2 rounded-full border border-[#526d82]/15 bg-[#f7f4ec]/72 px-6 py-3 text-sm font-bold text-[#344054] shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]">
+                Sistemi Gör
               </a>
             </div>
-          </motion.div>
-
-          {/* Video Section - Moved Here for Initial Visibility */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-            className="mt-16 relative"
-            id="video"
-          >
-            <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-900 shadow-2xl shadow-zinc-950/50">
-              <video
-                className="w-full aspect-video bg-zinc-950"
-                controls
-                autoPlay
-                muted
-                loop
-                playsInline
-                poster="https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/video-keyframe-1-LvjTUMtbNfbZK9DZfshLfh.webp"
-                preload="auto"
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/orka-promo_30c32572.mp4"
-              >
-                <source src="https://d2xsxph8kpxj0f.cloudfront.net/310519663534340404/Tdyfs3EUSoXDGihDvec6L4/orka-promo_30c32572.mp4" type="video/mp4" />
-                Tarayıcınız video etiketini desteklemiyor.
-              </video>
+            <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
+              {[
+                ["20", "tanı sorusu"],
+                ["24s", "Wiki cache"],
+                ["3", "sınıf rolü"],
+              ].map(([value, label]) => (
+                <div key={label} className="orka-card rounded-2xl px-4 py-3">
+                  <p className="text-xl font-extrabold text-[#172033]">{value}</p>
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#667085]">{label}</p>
+                </div>
+              ))}
             </div>
-            {/* Subtle glow under the video */}
-            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-3/4 h-24 bg-zinc-100/10 blur-[100px] rounded-full" />
-          </motion.div>
-        </div>
-      </section>
-
-      {/* Stats Bar */}
-      <section className="border-y border-zinc-800/50 py-12 px-6">
-        <div className="max-w-4xl mx-auto grid grid-cols-3 gap-8">
-          {[
-            { value: "10K+", label: "Aktif Öğrenci" },
-            { value: "500+", label: "Mevcut Konu" },
-            { value: "95%", label: "Başarı Oranı" },
-          ].map((stat) => (
-            <motion.div key={stat.label} {...fadeUp} className="text-center">
-              <p className="text-3xl font-bold text-zinc-100">{stat.value}</p>
-              <p className="text-xs text-zinc-500 mt-1">{stat.label}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section id="features" className="py-24 px-6">
-        <div className="max-w-5xl mx-auto">
-          <motion.div {...fadeUp} className="text-center mb-16">
-            <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-3">
-              Özellikler
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-zinc-100 mb-4">
-              Etkili öğrenme için ihtiyacınız olan her şey
-            </h2>
-            <p className="text-sm text-zinc-500 max-w-lg mx-auto">
-              Yapay zeka desteği, yapılandırılmış müfredat ve bilgi yönetimini birleştiren tam kapsamlı bir öğrenme komuta merkezi.
-            </p>
           </motion.div>
 
-          {/* Feature Grid */}
-          <div className="grid grid-cols-3 gap-4 mb-16">
-            {[
-              {
-                icon: Brain,
-                title: "AI Destekli Mentorluk",
-                description: "Konseptleri derinlemesine açıklayan, kod örnekleri ve tablolarla zenginleştirilmiş akıllı diyaloglar.",
-              },
-              {
-                icon: Layers,
-                title: "Yapılandırılmış Müfredat",
-                description: "/plan komutu ile saniyeler içinde otonom öğrenme yolları oluşturun. AI sizin için hiyerarşik dersler hazırlar.",
-              },
-              {
-                icon: Target,
-                title: "İnteraktif Quizler",
-                description: "Akademik tarzda çoktan seçmeli quizler öğrenme sürecinde doğal olarak karşınıza çıkar. Başarınızı anlık takip edin.",
-              },
-              {
-                icon: BookOpen,
-                title: "Canlı Bilgi Kütüphanesi",
-                description: "Her ders için otomatik oluşturulan wiki sayfaları; anahtar noktaları, kod bloklarını ve özetleri içerir.",
-              },
-              {
-                icon: Zap,
-                title: "Kalıcı Bilgi Haritası",
-                description: "Öğrenme ilerlemeniz yan menüdeki ağaç yapısında saklanır. Neleri başardığınızı ve sıradaki adımı görün.",
-              },
-              {
-                icon: Shield,
-                title: "Kişisel Notlar",
-                description: "AI içeriğinin yanına kendi notlarınızı ekleyin. Kişisel ve yapay zeka destekli dev bir bilgi tabanı oluşturun.",
-              },
-            ].map((feature, i) => (
+          <motion.div
+            initial={{ opacity: 0, x: 34, rotate: 1.5 }}
+            animate={{ opacity: 1, x: 0, rotate: 0 }}
+            transition={{ duration: 0.78, delay: 0.12, ease: "easeOut" }}
+            className="relative"
+          >
+            <div className="absolute -left-10 top-14 h-36 w-36 rounded-full bg-[#b8d4df]/25 blur-2xl" />
+            <div className="absolute -right-8 bottom-10 h-40 w-40 rounded-full bg-[#bfd8c8]/22 blur-2xl" />
+            <div className="orka-glass relative overflow-hidden rounded-[2rem] p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#d9a9a0]" />
+                <span className="h-3 w-3 rounded-full bg-[#d9bd79]" />
+                <span className="h-3 w-3 rounded-full bg-[#92b79c]" />
+                <span className="ml-3 rounded-full bg-[#eef1f3]/76 px-3 py-1 text-[11px] font-bold text-[#667085]">orka.app/studio</span>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[0.86fr_1.14fr]">
+                <div className="rounded-3xl bg-[#172033] p-4 text-white shadow-lg shadow-slate-900/10">
+                  <div className="mb-4 flex items-center gap-2">
+                    <OrcaLogo className="h-4 w-4" />
+                    <span className="text-xs font-bold">Agent Studio</span>
+                  </div>
+                  {[
+                    ["Plan", "Adaptif Bilişsel Harita"],
+                    ["Tutor", "Derin Bağlam Analizi"],
+                    ["Quiz", "Algoritmik Zayıflık Testi"],
+                    ["Wiki", "Otonom Hafıza İndeksi"],
+                    ["Sınıf", "Çoklu-Ajan Senkronizasyonu"],
+                  ].map(([item, detail], index) => (
+                    <motion.div
+                      key={item}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.35 + index * 0.09 }}
+                      className="mb-2 rounded-2xl bg-white/8 px-3 py-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                         <span className="font-bold">{item}</span>
+                        <span className="h-2 w-2 rounded-full bg-[#a8d8ea]" />
+                      </div>
+                      <p className="mt-1 text-[11px] text-white/58">{detail}</p>
+                    </motion.div>
+                  ))}
+                </div>
+                <div className="space-y-3 rounded-3xl bg-[#eef1f3]/72 p-4">
+                  <div className="flex items-start gap-3 rounded-2xl bg-[#f7f4ec]/75 p-3">
+                    <BrainCircuit className="mt-1 h-5 w-5 text-[#52768a]" />
+                    <div>
+                      <p className="text-sm font-extrabold text-[#172033]">Öğrenci sinyali yakalandı</p>
+                      <p className="mt-1 text-xs leading-5 text-[#667085]">Mikro-davranış analizi: "Optimizasyon" kavramında yapısal boşluk saptandı. Öğrenme düğümü zayıf olarak işaretlendi ve telafi döngüsü başlatıldı.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-[#f4ecdc]/82 p-3">
+                      <BookOpen className="h-4 w-4 text-[#906c36]" />
+                      <p className="mt-3 text-xs font-bold text-[#172033]">Dinamik Telafi Entegre</p>
+                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Zihinsel modele uygun 3 yeni senaryo üretildi.</p>
+                    </div>
+                    <div className="rounded-2xl bg-[#d9e7de]/72 p-3">
+                      <CheckCircle2 className="h-4 w-4 text-[#547c61]" />
+                      <p className="mt-3 text-xs font-bold text-[#172033]">Nöral Hafıza Eklendi</p>
+                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">"Optimizasyon Açığı" kavramı kişisel Wiki'ye işlendi.</p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/64 p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#52768a]">Çoklu-Ajan Sentezi</p>
+                    <p className="mt-2 text-xs leading-5 text-[#344054]">Modelinizin zayıf noktasını hedef alarak web ve kişisel dokümanlarınızdan sentezlenmiş hibrit açıklama. <span className="font-bold text-[#2d5870]">[wiki:optimizasyon] [web:derin-öğrenme]</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        <section id="features" className="mx-auto max-w-6xl px-5 py-20">
+          <motion.div {...fadeUp} className="mb-10 max-w-2xl">
+            <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">İçerik boş değil, sistem dolu</p>
+            <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Orka modülleri birbirine öğrenme sinyali taşır.</h2>
+            <p className="mt-4 text-sm leading-7 text-[#667085]">Her kart sadece özellik anlatmaz; sistem içinde hangi veriyi ürettiğini ve öğrencinin planına nasıl döndüğünü gösterir.</p>
+          </motion.div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {featureCards.map((feature, index) => (
               <motion.div
                 key={feature.title}
-                {...stagger}
-                transition={{ duration: 0.4, delay: i * 0.08 }}
-                className="p-5 rounded-lg border border-zinc-800 bg-zinc-900/30 hover:bg-zinc-900/50 transition-colors duration-200"
+                {...slide(index % 2 === 0 ? -28 : 28, index * 0.06)}
+                className={`group min-h-[230px] rounded-[1.75rem] p-6 transition duration-300 hover:-translate-y-1 hover:shadow-lg ${feature.className}`}
               >
-                <feature.icon className="w-5 h-5 text-zinc-500 mb-3" />
-                <h3 className="text-sm font-medium text-zinc-200 mb-2">{feature.title}</h3>
-                <p className="text-xs text-zinc-500 leading-relaxed">{feature.description}</p>
+                <div className="mb-8 grid h-12 w-12 place-items-center rounded-2xl bg-[#eef1f3]/80 text-[#52768a] shadow-sm">
+                  <feature.icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-lg font-extrabold tracking-tight text-[#172033]">{feature.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-[#667085]">{feature.text}</p>
+                <p className="mt-5 rounded-2xl bg-[#eef1f3]/62 px-3 py-2 text-[11px] font-bold text-[#4f6570]">{feature.meta}</p>
               </motion.div>
             ))}
           </div>
+        </section>
 
-          {/* Feature Showcase 1 */}
-          <motion.div {...fadeUp} className="grid grid-cols-2 gap-12 items-center mb-24">
-            <div>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-3">
-                Akıllı Quizler
-              </p>
-              <h3 className="text-2xl font-bold text-zinc-100 mb-4">
-                Öğrenirken bilginizi test edin
-              </h3>
-              <p className="text-sm text-zinc-500 leading-relaxed mb-6">
-                Quizler, öğrenme seanslarınız sırasında doğal bir akışla karşınıza çıkar. AI, zorluk seviyesini ilerlemenize göre ayarlar ve güçlendirilmesi gereken alanları tespit eder.
-              </p>
-              <ul className="space-y-3">
-                {["Akademik çoktan seçmeli format", "Açıklamalı anlık geri bildirimler", "İlerleme takibi ve başarı geçmişi"].map((item) => (
-                  <li key={item} className="flex items-center gap-2 text-xs text-zinc-400">
-                    <div className="w-1 h-1 rounded-full bg-zinc-600" />
-                    {item}
-                  </li>
+        <section id="flow" className="mx-auto max-w-6xl px-5 py-20">
+          <motion.div {...fadeUp} className="orka-glass overflow-hidden rounded-[2rem] p-6 sm:p-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">Kişiselleştirilmiş Döngü</p>
+                <h2 className="font-display mt-3 text-4xl font-bold text-[#172033]">Statik müfredatları unutun; sizi anlayan bir sistem var.</h2>
+              </div>
+              <p className="max-w-md text-sm leading-7 text-[#667085]">Sistemdeki her etkileşiminiz yapay zeka tarafından işlenerek kişisel bir besleme (feedback) döngüsü yaratır. Orka, sizi rastgele konularda yormak yerine doğrudan geliştirmeye açık olduğunuz becerileri hedefler.</p>
+            </div>
+            <div className="relative mt-10">
+              {/* Arka Plan Bağlantı Çizgisi (Sadece Desktop) */}
+              <div className="absolute left-[8%] right-[8%] top-6 hidden h-0.5 bg-gradient-to-r from-transparent via-[#8ba8b5]/40 to-transparent md:block" />
+
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 md:gap-4 relative z-10">
+                {pipeline.map((step, index) => (
+                  <motion.div
+                    key={step}
+                    initial={{ opacity: 0, y: 18 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: index * 0.07 }}
+                    className="group flex flex-1 flex-col items-center text-center"
+                  >
+                    <div className="relative mb-4 grid h-12 w-12 place-items-center rounded-full border-[3px] border-white bg-[#d7e6ec] text-sm font-extrabold text-[#2d5870] shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-[#c2dce6]">
+                      {index + 1}
+                      {/* Döngü İkonu (Sadece son adımda) */}
+                      {index === pipeline.length - 1 && (
+                        <div className="absolute -right-6 top-1/2 -translate-y-1/2 hidden lg:block">
+                          <RefreshCw className="h-4 w-4 text-[#8ba8b5]" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="w-full rounded-2xl bg-[#eef1f3]/80 px-2 py-3 transition-colors duration-300 group-hover:bg-[#eaf1f4]">
+                      <p className="text-[11px] font-black leading-tight text-[#172033] sm:text-[11.5px]">
+                        {step}
+                      </p>
+                    </div>
+
+                    {/* Mobildeki dikey ok (son adım hariç) */}
+                    {index < pipeline.length - 1 && (
+                      <div className="mt-4 block md:hidden">
+                        <ArrowRight className="h-4 w-4 rotate-90 text-[#8ba8b5]/50" />
+                      </div>
+                    )}
+                    {/* Mobildeki döngü (son adım) */}
+                    {index === pipeline.length - 1 && (
+                      <div className="mt-5 flex items-center justify-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[#8ba8b5] md:hidden">
+                        <RefreshCw className="h-3 w-3" /> Döngü Tamamlanır
+                      </div>
+                    )}
+                  </motion.div>
                 ))}
-              </ul>
-            </div>
-            <div className="rounded-xl border border-zinc-800 overflow-hidden shadow-2xl">
-              <img src={FEATURE_2} alt="Quiz Arayüzü" className="w-full" />
+              </div>
             </div>
           </motion.div>
+        </section>
 
-          {/* Feature Showcase 2 */}
-          <motion.div {...fadeUp} className="grid grid-cols-2 gap-12 items-center">
-            <div className="rounded-xl border border-zinc-800 overflow-hidden order-1 shadow-2xl">
-              <img src={FEATURE_3} alt="Wiki Arayüzü" className="w-full" />
-            </div>
-            <div className="order-2">
-              <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-3">
-                Bilgi Kütüphanesi (Wiki)
-              </p>
-              <h3 className="text-2xl font-bold text-zinc-100 mb-4">
-                Size özel dijital kütüphane
-              </h3>
-              <p className="text-sm text-zinc-500 leading-relaxed mb-6">
-                Öğrendiğiniz her konu; yapılandırılmış içerikler, kod örnekleri, karşılaştırma tabloları ve anahtar çıkarımlarla kendi wiki sayfasına dönüşür. Kendi notlarınızı ekleyerek kişisel referans dünyanızı kurun.
-              </p>
-              <ul className="space-y-3">
-                {["Kod blokları içeren zengin markdown içeriği", "Hızlı tekrar için anahtar nokta özetleri", "Her ders için özel kullanıcı notları"].map((item) => (
-                  <li key={item} className="flex items-center gap-2 text-xs text-zinc-400">
-                    <div className="w-1 h-1 rounded-full bg-zinc-600" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* How It Works */}
-      <section id="how-it-works" className="py-24 px-6 border-t border-zinc-800/50">
-        <div className="max-w-4xl mx-auto">
-          <motion.div {...fadeUp} className="text-center mb-16">
-            <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-3">
-              Nasıl Çalışır?
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-zinc-100 mb-4">
-              Uzmanlığa giden üç adım
-            </h2>
-          </motion.div>
-
-          <div className="grid grid-cols-3 gap-6">
-            {[
-              {
-                step: "01",
-                title: "Konunu Seç",
-                description: "Yapay zekaya dilediğini sor veya /plan kullanarak progressive derslerden oluşan bir yol oluştur.",
-              },
-              {
-                step: "02",
-                title: "Öğren ve Uygula",
-                description: "AI açıklamalarıyla etkileşime gir, quizleri çöz ve ilerledikçe kendi bilgi kütüphaneni inşa et.",
-              },
-              {
-                step: "03",
-                title: "Takip Et ve Uzmanlaş",
-                description: "İlerlemeni bilgi haritasından izle, quiz geçmişini incele ve konunun hakimi ol.",
-              },
-            ].map((item, i) => (
-              <motion.div
-                key={item.step}
-                {...stagger}
-                transition={{ duration: 0.4, delay: i * 0.1 }}
-                className="relative"
-              >
-                <span className="text-5xl font-bold text-zinc-800/50 mb-4 block">{item.step}</span>
-                <h3 className="text-sm font-medium text-zinc-200 mb-2">{item.title}</h3>
-                <p className="text-xs text-zinc-500 leading-relaxed">{item.description}</p>
-              </motion.div>
-            ))}
+        <section id="trust" className="mx-auto max-w-6xl px-5 py-20">
+          <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
+            <motion.div {...slide(-34)}>
+              <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">Güçlü Mimari ve QA</p>
+              <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Görünmez asistanlarınız, görünür güvenilirlik.</h2>
+              <p className="mt-5 text-sm leading-8 text-[#667085]">QA ve sistem güveni, estetik kadar kritik. Çoklu ajanların veri tutarlılığı, JSON yapılarının şema denetimleri ve endpoint kontrolleri, uçtan uca otomatik test süreçleriyle garanti altındadır.</p>
+            </motion.div>
+            <motion.div {...slide(34, 0.08)} className="orka-card rounded-[2rem] p-5">
+              {trustItems.map(([title, text]) => (
+                <div key={title} className="mb-3 flex items-start gap-3 rounded-3xl bg-[#eef1f3]/68 p-4 last:mb-0">
+                  <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#172033] text-white">
+                    <ShieldCheck className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-extrabold text-[#172033]">{title}</p>
+                    <p className="mt-1 text-sm leading-6 text-[#667085]">{text}</p>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
           </div>
-        </div>
-      </section>
+        </section>
 
-
-      {/* CTA Section */}
-      <section className="py-24 px-6 border-t border-zinc-800/50">
-        <div className="max-w-3xl mx-auto text-center">
-          <motion.div {...fadeUp}>
-            <h2 className="text-3xl sm:text-4xl font-bold text-zinc-100 mb-4">
-              Öğrenmeye başlamaya hazır mısın?
-            </h2>
-            <p className="text-sm text-zinc-500 mb-8 max-w-md mx-auto">
-              Teknik konularda daha hızlı ve etkili uzmanlaşmak için Orka AI kullanan binlerce öğrenciye katılın.
-            </p>
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 px-8 py-3.5 bg-zinc-100 text-zinc-950 rounded-lg font-medium text-sm hover:bg-zinc-200 transition-colors duration-150"
-            >
-              Orka AI'yı Başlat
-              <ArrowRight className="w-4 h-4" />
+        <section className="px-5 py-20">
+          <motion.div {...fadeUp} className="orka-glass mx-auto max-w-4xl rounded-[2.25rem] p-8 text-center sm:p-12">
+            <Layers3 className="mx-auto mb-5 h-9 w-9 text-[#52768a]" />
+            <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Sizi tanıyan, sizinle gelişen bir zeka.</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-8 text-[#667085]">Sistemdeki her etkileşiminiz, yapay zekayı sadece size özel bir eğitmene dönüştürmek için sürekli bir geri bildirim döngüsü yaratır. Sınırlarınızı yeniden keşfedin.</p>
+            <Link href="/login" className="orka-button mt-8 inline-flex items-center gap-2 rounded-full px-7 py-3 text-sm font-extrabold">
+              Orka'yı Başlat <GraduationCap className="h-4 w-4" />
             </Link>
           </motion.div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-zinc-800/50 py-8 px-6">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <OrcaLogo className="w-4 h-4 text-zinc-600" />
-            <span className="text-xs text-zinc-600">Orka AI</span>
-          </div>
-          <p className="text-[10px] text-zinc-700">
-            Zeka ile inşa edildi. Uzmanlık için tasarlandı.
-          </p>
-        </div>
-      </footer>
+        </section>
+      </main>
     </div>
   );
 }

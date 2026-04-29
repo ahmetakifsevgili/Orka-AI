@@ -27,15 +27,8 @@ public class SessionService
 
     public async Task<object?> GetLatestSessionAsync(Guid topicId, Guid userId)
     {
-        var targetTopic = await _dbContext.Topics.FindAsync(topicId);
-        if (targetTopic == null) return null;
-
-        var rootId = targetTopic.ParentTopicId ?? targetTopic.Id;
-
-        var treeTopicIds = await _dbContext.Topics
-            .Where(t => t.Id == rootId || t.ParentTopicId == rootId)
-            .Select(t => t.Id)
-            .ToListAsync();
+        var treeTopicIds = await GetTopicTreeIdsAsync(topicId, userId);
+        if (treeTopicIds.Count == 0) return null;
 
         var session = await _dbContext.Sessions
             .Include(s => s.Messages)
@@ -74,5 +67,39 @@ public class SessionService
             totalCostUsd = session.TotalCostUSD,
             messages = mappedMessages
         };
+    }
+
+    private async Task<List<Guid>> GetTopicTreeIdsAsync(Guid topicId, Guid userId)
+    {
+        var topic = await _dbContext.Topics
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == topicId && t.UserId == userId);
+        if (topic == null) return new List<Guid>();
+
+        while (topic.ParentTopicId.HasValue)
+        {
+            var parent = await _dbContext.Topics
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == topic.ParentTopicId.Value && t.UserId == userId);
+            if (parent == null) break;
+            topic = parent;
+        }
+
+        var ids = new List<Guid> { topic.Id };
+        var frontier = new List<Guid> { topic.Id };
+
+        while (frontier.Count > 0)
+        {
+            var children = await _dbContext.Topics
+                .AsNoTracking()
+                .Where(t => t.ParentTopicId.HasValue && frontier.Contains(t.ParentTopicId.Value) && t.UserId == userId)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            frontier = children.Except(ids).ToList();
+            ids.AddRange(frontier);
+        }
+
+        return ids;
     }
 }

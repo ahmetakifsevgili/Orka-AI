@@ -3,20 +3,23 @@ using Orka.Core.Enums;
 namespace Orka.Core.Interfaces;
 
 /// <summary>
-/// Merkezi ajan fabrikası — her ajan rolü için doğru modeli seçer
-/// ve failover zincirini (GitHub Models → Groq → Gemini) yönetir.
+/// Merkezi ajan fabrikası — her ajan rolü için doğru provider+model kombinasyonunu seçer
+/// ve failover zincirini yönetir.
 ///
-/// Ajan → Model eşleştirmesi appsettings.json'daki
-/// AI:GitHubModels:Agents:{Role}:Model değerinden okunur.
+/// Ajan → Provider/Model eşleştirmesi appsettings.json içinde:
+///   AI:AgentRouting:{Role}:Provider, AI:AgentRouting:{Role}:Model
 /// </summary>
 public interface IAIAgentFactory
 {
     /// <summary>Verilen rol için yapılandırılmış model adını döner.</summary>
     string GetModel(AgentRole role);
 
+    /// <summary>Verilen rol için seçili provider adını döner (HUD/log için).</summary>
+    string GetProvider(AgentRole role);
+
     /// <summary>
     /// Tek seferlik chat tamamlama.
-    /// Failover: GitHub Models → Groq → Gemini
+    /// Failover: Primary → Groq → Mistral
     /// </summary>
     Task<string> CompleteChatAsync(
         AgentRole role,
@@ -26,7 +29,7 @@ public interface IAIAgentFactory
 
     /// <summary>
     /// Streaming chat — token akışı.
-    /// Failover: GitHub Models → Groq stream → Gemini stream
+    /// Failover: Primary → Gemini → Mistral
     /// </summary>
     IAsyncEnumerable<string> StreamChatAsync(
         AgentRole role,

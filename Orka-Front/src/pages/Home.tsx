@@ -18,6 +18,7 @@ import SettingsPanel from "@/components/SettingsPanel";
 import DashboardPanel from "@/components/DashboardPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
 import SplitPane from "@/components/SplitPane";
+import { usePremiumOnboarding } from "@/components/PremiumOnboardingTour";
 
 // ── F5 Sonrası Context Kalıcılığı (localStorage keys) ─────────────────────
 // Kullanıcı sayfayı yenilediğinde son aktif topic / view / wiki ekranı
@@ -44,6 +45,7 @@ function mapApiMessages(session: ApiSession | null): ChatMessage[] {
 }
 
 export default function Home() {
+  usePremiumOnboarding();
   const { loadHistoryForTopic } = useQuizHistory();
   const [topics, setTopics] = useState<ApiTopic[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
@@ -256,7 +258,7 @@ export default function Home() {
         setWikiTopicId(activeTopic.id);
         setActiveView("wiki");
       } else {
-        import("react-hot-toast").then((toast) => toast.default.error("Wiki'yi görüntülemek için önce bir konu seçmelisiniz."));
+        toast.error("Wiki'yi görüntülemek için önce bir konu seçmelisiniz.");
       }
       return;
     }
@@ -328,6 +330,8 @@ export default function Home() {
             right={
               <InteractiveIDE
                 topicTitle={activeTopic?.title}
+                topicId={activeTopic?.id}
+                sessionId={sessionId ?? undefined}
                 quizQuestion={activeQuizQuestion ?? undefined}
                 onSendToChat={handleIDESendToChat}
                 onClose={handleIDEClose}
@@ -359,7 +363,10 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-zinc-950">
+    <div className="orka-app-shell orka-bg h-screen flex overflow-hidden text-[#172033] relative">
+      <div className="pointer-events-none absolute inset-0 mist-grid opacity-35" />
+      <div className="pointer-events-none absolute left-[24rem] top-10 h-64 w-64 rounded-full bg-[#dcecf3]/70 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-10 right-14 h-72 w-72 rounded-full bg-[#ddebe3]/70 blur-3xl" />
       <LeftSidebar
         topics={topics}
         topicsLoading={topicsLoading}
@@ -372,7 +379,11 @@ export default function Home() {
         refreshTrigger={refreshTrigger}
       />
 
-      {renderMain()}
+      <div className="relative z-10 flex flex-1 overflow-hidden p-3 pl-0">
+        <div className="flex-1 overflow-hidden rounded-[2rem] bg-[#f5f7f9]/90 shadow-sm border border-white/40 backdrop-blur-2xl ring-1 ring-[#526d82]/5 flex flex-col relative">
+          {renderMain()}
+        </div>
+      </div>
     </div>
   );
 }

@@ -114,9 +114,9 @@ public class WikipediaPlugin
 
             return result.ToString();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return $"[Wikipedia erişim hatası: {ex.Message}]";
+            return "[wikipedia:degraded] Wikipedia gecici olarak kullanilamiyor.";
         }
     }
 

@@ -1,19 +1,25 @@
-using System.Text;
+﻿using System.Text;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 
 namespace Orka.Infrastructure.Services;
 
+public record ExtractedPage(int PageNumber, string Text);
+
+public record ExtractedDocument(IReadOnlyList<ExtractedPage> Pages, string? ErrorMessage = null)
+{
+    public int PageCount => Pages.Count;
+    public string FullText => string.Join("\n\n", Pages.Select(p => $"[page:{p.PageNumber}]\n{p.Text}"));
+}
+
 /// <summary>
-/// Kullanıcıdan gelen dosyaları düz metne çevirir.
+/// KullanÄ±cÄ±dan gelen dosyalarÄ± dÃ¼z metne Ã§evirir.
 /// Desteklenen formatlar: PDF, TXT, MD.
-/// Sonuç Korteks'in sistem promptuna context olarak enjekte edilir.
 /// </summary>
 public class FileExtractionService
 {
     private readonly ILogger<FileExtractionService> _logger;
 
-    // Korteks prompt'una enjekte edilecek max karakter — token limitini zorlamaz
     private const int MaxExtractChars = 8000;
 
     public FileExtractionService(ILogger<FileExtractionService> logger)
@@ -22,12 +28,23 @@ public class FileExtractionService
     }
 
     /// <summary>
-    /// Yüklenen dosyanın içeriğini düz metne çevirir.
+    /// Korteks geriye uyumluluÄŸu iÃ§in dÃ¼z metin dÃ¶ndÃ¼rÃ¼r.
     /// </summary>
-    /// <param name="fileName">Orijinal dosya adı (uzantı tespiti için)</param>
-    /// <param name="fileBytes">Dosya içeriği</param>
-    /// <returns>Düz metin veya hata mesajı</returns>
     public string Extract(string fileName, byte[] fileBytes)
+    {
+        var doc = ExtractWithPages(fileName, fileBytes);
+        if (!string.IsNullOrWhiteSpace(doc.ErrorMessage)) return doc.ErrorMessage;
+
+        var text = doc.FullText.Trim();
+        return text.Length > MaxExtractChars
+            ? text[..MaxExtractChars] + $"\n\n[...metin kesildi, ilk {MaxExtractChars} karakter gÃ¶sterildi]"
+            : text;
+    }
+
+    /// <summary>
+    /// NotebookLM kaynak pinning iÃ§in sayfa numarasÄ±nÄ± koruyarak metin Ã§Ä±karÄ±r.
+    /// </summary>
+    public ExtractedDocument ExtractWithPages(string fileName, byte[] fileBytes)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
 
@@ -35,49 +52,41 @@ public class FileExtractionService
         {
             return ext switch
             {
-                ".pdf"  => ExtractPdf(fileBytes),
-                ".txt"  => ExtractText(fileBytes),
-                ".md"   => ExtractText(fileBytes),
-                _       => $"[Desteklenmeyen dosya formatı: {ext}. PDF, TXT veya MD yükleyin.]"
+                ".pdf" => ExtractPdfPages(fileBytes),
+                ".txt" => ExtractTextPages(fileBytes),
+                ".md" => ExtractTextPages(fileBytes),
+                _ => new ExtractedDocument([], $"[Desteklenmeyen dosya formatÄ±: {ext}. PDF, TXT veya MD yÃ¼kleyin.]")
             };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[FileExtraction] {File} okunamadı.", fileName);
-            return $"[Dosya okunamadı: {ex.Message}]";
+            _logger.LogWarning(ex, "[FileExtraction] {File} okunamadÄ±.", fileName);
+            return new ExtractedDocument([], "[Dosya okunamadi. Dosya bicimini veya icerigini kontrol edip tekrar deneyin.]");
         }
     }
 
-    // ── PDF ──────────────────────────────────────────────────────────────────
-
-    private string ExtractPdf(byte[] bytes)
+    private static ExtractedDocument ExtractPdfPages(byte[] bytes)
     {
         using var doc = PdfDocument.Open(bytes);
-        var sb = new StringBuilder();
+        var pages = new List<ExtractedPage>();
 
         foreach (var page in doc.GetPages())
         {
-            sb.AppendLine(page.Text);
-            if (sb.Length > MaxExtractChars) break;
+            var text = page.Text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(text))
+                pages.Add(new ExtractedPage(page.Number, text));
         }
 
-        var text = sb.ToString().Trim();
-
-        if (string.IsNullOrWhiteSpace(text))
-            return "[PDF metni çıkarılamadı — taranmış/görüntü tabanlı PDF olabilir.]";
-
-        return text.Length > MaxExtractChars
-            ? text[..MaxExtractChars] + $"\n\n[...metin kesildi, toplam PDF içeriğinin ilk {MaxExtractChars} karakteri gösterildi]"
-            : text;
+        return pages.Count == 0
+            ? new ExtractedDocument([], "[PDF metni Ã§Ä±karÄ±lamadÄ±; taranmÄ±ÅŸ/gÃ¶rÃ¼ntÃ¼ tabanlÄ± PDF olabilir.]")
+            : new ExtractedDocument(pages);
     }
 
-    // ── TXT / MD ─────────────────────────────────────────────────────────────
-
-    private static string ExtractText(byte[] bytes)
+    private static ExtractedDocument ExtractTextPages(byte[] bytes)
     {
         var text = Encoding.UTF8.GetString(bytes).Trim();
-        return text.Length > MaxExtractChars
-            ? text[..MaxExtractChars] + $"\n\n[...metin kesildi, ilk {MaxExtractChars} karakter gösterildi]"
-            : text;
+        return string.IsNullOrWhiteSpace(text)
+            ? new ExtractedDocument([], "[Dosyada okunabilir metin bulunamadÄ±.]")
+            : new ExtractedDocument([new ExtractedPage(1, text)]);
     }
 }

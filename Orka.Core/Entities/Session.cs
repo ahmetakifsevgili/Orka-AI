@@ -27,5 +27,11 @@ public class Session
     /// <summary>Şu ana kadar doğru cevaplanan soru sayısı.</summary>
     public int BaselineCorrectCount { get; set; }
 
+    /// <summary>
+    /// Aynı alt konu için art arda telafi (remedial) denemesi sayısı.
+    /// 2+ olunca Orchestrator önkoşul dersi tetikler (sonsuz döngü engeli).
+    /// </summary>
+    public int RemedialAttemptCount { get; set; }
+
     public ICollection<Message> Messages { get; set; } = new List<Message>();
 }

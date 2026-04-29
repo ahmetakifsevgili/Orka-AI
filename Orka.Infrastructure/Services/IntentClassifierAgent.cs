@@ -90,7 +90,8 @@ public class IntentClassifierAgent : IIntentClassifierAgent
 
         try
         {
-            var response = await _factory.CompleteChatAsync(AgentRole.Analyzer, systemPrompt, userMessage, ct);
+            // Kendi rolüyle çağır (Cerebras/llama3.1-8b — hızlı + ucuz NLU). HUD'da ayrı metrik üretir.
+            var response = await _factory.CompleteChatAsync(AgentRole.IntentClassifier, systemPrompt, userMessage, ct);
             var cleanJson = response.Replace("```json", "").Replace("```", "").Trim();
 
             var parsed = JsonSerializer.Deserialize<IntentJsonFormat>(cleanJson);

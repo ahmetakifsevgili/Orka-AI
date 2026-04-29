@@ -72,7 +72,9 @@ export default function LeftSidebar({
 }: LeftSidebarProps) {
   const [, navigate] = useLocation();
   const { t } = useLanguage();
-  const [collapsed, setCollapsed] = useState(false);
+  const [isPinned, setIsPinned] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const isExpanded = isPinned || isHovered;
   const [topics, setTopics] = useState<ApiTopic[]>(initialTopics);
   const [topicsLoading, setTopicsLoading] = useState(initialLoading);
 
@@ -82,7 +84,7 @@ export default function LeftSidebar({
   const [newTopicEmoji, setNewTopicEmoji] = useState("📚");
   const [creating, setCreating] = useState(false);
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
-  
+
   // Accordion state for modules inside a generic plan
   const [expandedModuleIds, setExpandedModuleIds] = useState<Set<string>>(new Set());
 
@@ -170,20 +172,6 @@ export default function LeftSidebar({
     }
   };
 
-  if (collapsed) {
-    return (
-      <div className="w-12 bg-zinc-950 border-r border-zinc-800/50 flex flex-col items-center py-4 flex-shrink-0">
-        <button
-          onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 transition-colors duration-150 mb-4"
-          title="Genişlet"
-        >
-          <PanelLeft className="w-4 h-4" />
-        </button>
-        <OrcaLogo className="w-5 h-5 text-zinc-600" />
-      </div>
-    );
-  }
 
   // Flyout panel: hangi müfredat genişletilmiş
   const expandedPlan = topics.find(t => t.id === expandedPlanId);
@@ -202,30 +190,30 @@ export default function LeftSidebar({
         tabIndex={0}
         className={`flex flex-col items-stretch w-full px-3 py-1.5 rounded-md text-left transition-all duration-150 relative group cursor-pointer ${
           isActive
-            ? "text-zinc-100 font-medium bg-white/5 border border-white/10 shadow-sm"
-            : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30"
-        } ${isCompleted ? 'border-l-2 border-emerald-600/40 bg-zinc-800/30' : ''}`}
+            ? "text-[#172033] font-medium bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 border border-[#526d82]/5 shadow-sm"
+            : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/30"
+        } ${isCompleted ? 'border-l-2 border-[#547c61]/30 bg-[#eef1f3]/50' : ''}`}
       >
         <div className="flex items-center gap-2.5 w-full relative">
           {isCompleted ? (
-            <div className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-              <Check className="w-2.5 h-2.5 text-emerald-400 stroke-[2.5]" />
+            <div className="w-4 h-4 rounded-full bg-[#d9e7de] border border-[#547c61]/20 flex items-center justify-center">
+              <Check className="w-2.5 h-2.5 text-[#547c61] stroke-[2.5]" />
             </div>
           ) : isActive ? (
-            <div className="w-4 h-4 rounded-full bg-white/10 border border-white/20 flex items-center justify-center shadow-sm shadow-white/10 flex-shrink-0">
-              <ChevronRight className="w-2.5 h-2.5 text-white" />
+            <div className="w-4 h-4 rounded-full bg-[#f7f9fa] shadow-sm border border-[#526d82]/10 flex items-center justify-center shadow-sm shadow-white/10 flex-shrink-0">
+              <ChevronRight className="w-2.5 h-2.5 text-[#172033]" />
             </div>
           ) : (
-            <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 flex-shrink-0 ml-1" />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#b8d4df] flex-shrink-0 ml-1" />
           )}
-          <span className={`text-[12px] truncate flex-1 ${isCompleted ? 'text-zinc-400 font-medium' : isActive ? 'text-white font-medium' : 'text-zinc-500'}`}>
+          <span className={`text-[12px] truncate flex-1 ${isCompleted ? 'text-[#5f6f7b] font-medium' : isActive ? 'text-[#172033] font-medium' : 'text-[#667085]'}`}>
             {topicToRender.title}
           </span>
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); onViewChange(`wiki:${topicToRender.id}`); }}
               title="Ders Wiki'si"
-              className="opacity-0 group-hover:opacity-100 p-1 rounded text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all duration-200"
+              className="opacity-0 group-hover:opacity-100 p-1 rounded text-[#667085] hover:text-[#906c36] hover:bg-[#d9bd79]/20 transition-all duration-200"
             >
               <BookMarked className="w-3 h-3" />
             </button>
@@ -233,7 +221,7 @@ export default function LeftSidebar({
               onClick={(e) => { e.stopPropagation(); onEnterChat(topicToRender); }}
               title="Derse Başla"
               className={`opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[9px] font-medium transition-all duration-200 ${
-                isActive ? "bg-white text-zinc-900" : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
+                isActive ? "bg-[#f7f9fa] text-zinc-900" : "bg-[#d9e7de]/60 text-[#547c61] hover:bg-[#d9e7de] border border-[#547c61]/10"
               }`}
             >
               {isActive ? "Derse Git" : "Devam Et"}
@@ -241,7 +229,7 @@ export default function LeftSidebar({
           </div>
         </div>
         {!isCompleted && (topicToRender.progressPercentage ?? 0) > 0 && (
-          <div className="mt-1 ml-6 w-full h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="mt-1 ml-6 w-full h-0.5 bg-[#eef1f3] rounded-full overflow-hidden">
             <div className="h-full bg-zinc-400 transition-all duration-500" style={{ width: `${topicToRender.progressPercentage}%` }} />
           </div>
         )}
@@ -250,27 +238,37 @@ export default function LeftSidebar({
   };
 
   return (
-    <div className="flex flex-row h-full flex-shrink-0">
-      {/* ══════════ ANA SIDEBAR (260px sabit) ══════════ */}
+    <div
+      className="flex flex-row h-full flex-shrink-0 relative z-20"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* ══════════ ANA SIDEBAR (Expandable) ══════════ */}
       <motion.div
-        initial={{ width: 260 }}
-        animate={{ width: 260 }}
-        className="w-[260px] bg-zinc-950 border-r border-zinc-800/50 flex flex-col h-full flex-shrink-0"
+        initial={{ width: 64 }}
+        animate={{ width: isExpanded ? 260 : 64 }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
+        className="bg-[#f7f9fa]/90 backdrop-blur-2xl border-r border-[#526d82]/10 flex flex-col h-full flex-shrink-0 overflow-hidden shadow-sm"
       >
         {/* Header */}
         <div className="px-3 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <OrcaLogo className="w-5 h-5 text-zinc-100" />
-            <span className="text-sm font-semibold text-zinc-100 tracking-tight">
-              Orka AI
-            </span>
+            <OrcaLogo className="w-5 h-5 text-[#172033]" />
+            {isExpanded && (
+              <motion.span
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="text-sm font-semibold text-[#172033] tracking-tight whitespace-nowrap"
+              >
+                Orka AI
+              </motion.span>
+            )}
           </div>
           <button
-            onClick={() => setCollapsed(true)}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors duration-150"
-            title="Daralt"
+            onClick={() => setIsPinned(!isPinned)}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors duration-150"
+            title={isPinned ? "Daralt" : "Sabitle"}
           >
-            <PanelLeftClose className="w-4 h-4" />
+            <PanelLeftClose className={`w-4 h-4 transition-transform duration-300 ${!isPinned ? "rotate-180" : ""}`} />
           </button>
         </div>
 
@@ -289,35 +287,37 @@ export default function LeftSidebar({
             return (
               <button
                 key={item.id}
+                id={`tour-nav-${item.id}`}
                 onClick={() => item.route ? navigate(item.route) : onViewChange(item.id)}
                 className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13px] transition-colors duration-150 mb-0.5 ${
                   isActive
-                    ? "bg-zinc-800/80 text-zinc-100 font-medium"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50"
+                    ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
+                    : "text-[#5f6f7b] hover:text-[#172033] hover:bg-[#f7f9fa]/40"
                 }`}
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
-                <span className="truncate">{label}</span>
+                {isExpanded && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="truncate">{label}</motion.span>}
               </button>
             );
           })}
         </div>
 
-        <div className="mx-3 border-t border-zinc-800/50" />
+        <div className="mx-3 border-t border-[#526d82]/10" />
 
         {/* Ana Scroll View */}
         <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden min-h-0 custom-scrollbar-hide">
-          
+
           {/* 💬 SOHBET GEÇMİŞİ */}
           <div className="px-3 pt-3 flex-shrink-0 mb-3">
             <div className="flex items-center justify-between pl-2 mb-2">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">
+              <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
                 💬 Sohbet Geçmişi
               </span>
               <button
+                id="tour-new-topic"
                 onClick={() => onTopicClick(null, "chat")}
                 title="Yeni Sohbet Başlat"
-                className="w-6 h-6 flex items-center justify-center rounded-md text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-all duration-200"
+                className="w-6 h-6 flex items-center justify-center rounded-md text-zinc-600 hover:text-[#172033] hover:bg-[#eef1f3] transition-all duration-200"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -331,8 +331,8 @@ export default function LeftSidebar({
                   key={chatTopic.id}
                   className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-left transition-colors duration-150 group cursor-pointer ${
                     activeTopic?.id === chatTopic.id
-                      ? "bg-zinc-800/80 text-zinc-100 font-medium"
-                      : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50"
+                      ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
+                      : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/40"
                   }`}
                   onClick={() => onTopicClick(chatTopic, "chat")}
                 >
@@ -351,7 +351,7 @@ export default function LeftSidebar({
                         toast.success("Sohbet silindi");
                       } catch { toast.error("Silinemedi"); }
                     }}
-                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
                     title="Sohbeti Sil"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -361,12 +361,12 @@ export default function LeftSidebar({
             </div>
           </div>
 
-          <div className="mx-3 mt-1 mb-2 border-t border-zinc-800/50 opacity-50" />
+          <div className="mx-3 mt-1 mb-2 border-t border-[#526d82]/10 opacity-50" />
 
           {/* 📚 ÖĞRENME MÜFREDATLARI — sadece başlıklar, tıklayınca sağa panel açılır */}
           <div className="px-3 pt-1 pb-2 flex-shrink-0">
             <div className="flex items-center justify-between pl-2 mb-2">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">
+              <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
                 📚 Öğrenme Müfredatları
               </span>
             </div>
@@ -374,8 +374,8 @@ export default function LeftSidebar({
               {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() === 'plan').length === 0 && (
                 <p className="text-[11px] text-zinc-600 px-2 py-3 italic">Henüz müfredat yok</p>
               )}
-              {topics.filter(t => 
-                t.parentTopicId === null && 
+              {topics.filter(t =>
+                t.parentTopicId === null &&
                 (t.category || '').toLowerCase() === 'plan'
               ).map((planTopic) => {
                 const hasModules = topics.some(t => t.parentTopicId === planTopic.id);
@@ -387,8 +387,8 @@ export default function LeftSidebar({
                       isOpen
                         ? "bg-violet-900/30 text-violet-200 border border-violet-700/30 font-medium"
                         : activeTopic?.id === planTopic.id
-                          ? "bg-zinc-800/80 text-zinc-100 font-medium"
-                          : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50"
+                          ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
+                          : "text-[#5f6f7b] hover:text-[#172033] hover:bg-[#f7f9fa]/40"
                     }`}
                     onClick={() => {
                       onTopicClick(planTopic, "chat");
@@ -415,7 +415,7 @@ export default function LeftSidebar({
                           toast.success("Müfredat silindi");
                         } catch { toast.error("Silinemedi"); }
                       }}
-                      className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                      className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
                       title="Müfredatı Sil"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -428,13 +428,13 @@ export default function LeftSidebar({
         </div>
 
         {/* Footer */}
-        <div className="mt-auto border-t border-zinc-800/50 px-3 py-3 flex-shrink-0 bg-zinc-950">
+        <div className="mt-auto border-t border-[#526d82]/10 px-3 py-3 flex-shrink-0 bg-[#f7f9fa]/40 backdrop-blur-md">
           <button
             onClick={() => onViewChange("settings")}
             className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-lg text-[13px] transition-colors duration-150 ${
               activeView === "settings"
-                ? "bg-zinc-800/80 text-zinc-100 font-medium"
-                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50"
+                ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
+                : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/40"
             }`}
           >
             <Settings className="w-4 h-4 flex-shrink-0" />
@@ -451,17 +451,17 @@ export default function LeftSidebar({
             animate={{ width: 280, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="bg-zinc-950/95 border-r border-zinc-800/50 flex flex-col h-full overflow-hidden flex-shrink-0 backdrop-blur-sm"
+            className="bg-[#f7f9fa]/40 backdrop-blur-md/95 border-r border-[#526d82]/10 flex flex-col h-full overflow-hidden flex-shrink-0 backdrop-blur-sm"
           >
             {/* Panel Header */}
-            <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0">
+            <div className="px-4 py-3 border-b border-[#526d82]/10 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2 overflow-hidden flex-1">
                 <GraduationCap className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                <span className="text-sm font-semibold text-zinc-200 truncate">{expandedPlan.title}</span>
+                <span className="text-sm font-semibold text-[#172033] truncate">{expandedPlan.title}</span>
               </div>
               <button
                 onClick={() => setExpandedPlanId(null)}
-                className="w-6 h-6 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+                className="w-6 h-6 rounded-md flex items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -470,10 +470,10 @@ export default function LeftSidebar({
             {/* Progress Bar */}
             <div className="px-4 py-2 border-b border-zinc-800/30 flex-shrink-0">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-zinc-500">İlerleme</span>
-                <span className="text-[10px] text-zinc-400 font-medium">{Math.round(expandedPlan.progressPercentage || 0)}%</span>
+                <span className="text-[10px] text-[#667085]">İlerleme</span>
+                <span className="text-[10px] text-[#5f6f7b] font-medium">{Math.round(expandedPlan.progressPercentage || 0)}%</span>
               </div>
-              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-[#eef1f3] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-violet-500 to-emerald-500 transition-all duration-700"
                   style={{ width: `${expandedPlan.progressPercentage || 0}%` }}
@@ -497,25 +497,25 @@ export default function LeftSidebar({
                 return (
                   <div key={mod.id}>
                     {/* Modül Başlığı */}
-                    <div 
-                      className="flex items-center justify-between mb-1.5 px-1 py-1 rounded cursor-pointer hover:bg-zinc-800/40 transition-colors"
+                    <div
+                      className="flex items-center justify-between mb-1.5 px-1 py-1 rounded cursor-pointer hover:bg-[#eef1f3]/40 transition-colors"
                       onClick={() => toggleModule(mod.id)}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-zinc-900 border border-zinc-800/80 text-[10px]">
+                        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-[#f7f9fa]/80 border border-zinc-800/80 text-[10px]">
                           {mod.emoji || "📦"}
                         </div>
-                        <span className="text-[11px] font-semibold text-zinc-400 tracking-wide truncate uppercase">
+                        <span className="text-[11px] font-semibold text-[#5f6f7b] tracking-wide truncate uppercase">
                           {mod.title}
                         </span>
                       </div>
-                      <ChevronDown 
-                        className={`w-3.5 h-3.5 text-zinc-500 transition-transform duration-200 ${expandedModuleIds.has(mod.id) ? "rotate-180" : ""}`} 
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-[#667085] transition-transform duration-200 ${expandedModuleIds.has(mod.id) ? "rotate-180" : ""}`}
                       />
                     </div>
                     {/* Dersler - AnimatePresence can be added later, basic conditional rendering for now */}
                     {expandedModuleIds.has(mod.id) && (
-                      <div className="space-y-0.5 ml-2 pl-2 border-l border-zinc-800/50">
+                      <div className="space-y-0.5 ml-2 pl-2 border-l border-[#526d82]/10">
                         {lessons.map((lesson) => renderLesson(lesson))}
                       </div>
                     )}

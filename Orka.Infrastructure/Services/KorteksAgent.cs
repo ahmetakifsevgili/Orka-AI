@@ -45,9 +45,32 @@ public class KorteksAgent : IKorteksAgent
 
     private Kernel BuildKorteksKernel()
     {
-        var model   = _config["AI:GitHubModels:Agents:Korteks:Model"] ?? "Meta-Llama-3.1-405B-Instruct";
-        var apiKey  = _config["AI:GitHubModels:Token"]                ?? throw new InvalidOperationException("AI:GitHubModels:Token eksik.");
-        var baseUrl = _config["AI:GitHubModels:BaseUrl"]              ?? "https://models.inference.ai.azure.com";
+        // AgentRouting'den Korteks için provider+model oku (varsayılan: OpenRouter / claude-opus-4-7).
+        var provider = _config["AI:AgentRouting:Korteks:Provider"] ?? "OpenRouter";
+        var model    = _config[$"AI:AgentRouting:Korteks:Model"]
+                       ?? _config["AI:GitHubModels:Agents:Korteks:Model"]
+                       ?? "anthropic/claude-opus-4-7";
+
+        string apiKey;
+        string baseUrl;
+
+        switch (provider.ToLowerInvariant())
+        {
+            case "openrouter":
+                apiKey  = _config["AI:OpenRouter:ApiKey"] ?? throw new InvalidOperationException("AI:OpenRouter:ApiKey eksik.");
+                baseUrl = _config["AI:OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1";
+                break;
+            case "groq":
+                apiKey  = _config["AI:Groq:ApiKey"] ?? throw new InvalidOperationException("AI:Groq:ApiKey eksik.");
+                baseUrl = _config["AI:Groq:BaseUrl"] ?? "https://api.groq.com/openai/v1";
+                break;
+            default: // GitHubModels fallback
+                apiKey  = _config["AI:GitHubModels:Token"] ?? throw new InvalidOperationException("AI:GitHubModels:Token eksik.");
+                baseUrl = _config["AI:GitHubModels:BaseUrl"] ?? "https://models.inference.ai.azure.com";
+                break;
+        }
+
+        _logger.LogInformation("[Korteks] Kernel: Provider={Provider} Model={Model}", provider, model);
 
         var kernel = Kernel.CreateBuilder()
             .AddOpenAIChatCompletion(modelId: model, apiKey: apiKey, endpoint: new Uri(baseUrl))
@@ -61,13 +84,21 @@ public class KorteksAgent : IKorteksAgent
         kernel.Plugins.AddFromObject(
             _serviceProvider.GetRequiredService<WikipediaPlugin>(), "Wikipedia");
 
-        // Plugin 3: Orka topic bilgisi
+        // Plugin 3: Akademik kaynak (Semantic Scholar + ArXiv) — V4 derin doğrulama
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<AcademicSearchPlugin>(), "Academic");
+
+        // Plugin 4: Orka topic bilgisi
         kernel.Plugins.AddFromObject(
             _serviceProvider.GetRequiredService<TopicPlugin>(), "Topics");
 
-        // Plugin 4: Orka wiki (mevcut öğrenme içeriği)
+        // Plugin 5: Orka wiki (mevcut öğrenme içeriği)
         kernel.Plugins.AddFromObject(
             _serviceProvider.GetRequiredService<WikiPlugin>(), "OrkaWiki");
+
+        // Plugin 6: YouTube eğitim videosu arama ve transcript çekme
+        kernel.Plugins.AddFromObject(
+            _serviceProvider.GetRequiredService<YouTubeTranscriptPlugin>(), "YouTube");
 
         return kernel;
     }
@@ -128,12 +159,17 @@ public class KorteksAgent : IKorteksAgent
             Sen Orka AI'nın "Korteks" modülüsün — Perplexity benzeri bir derin araştırma motorusun.
             Kullanıcının verdiği konuyu o kadar derinlemesine, akademik ve çok boyutlu işle ki, çıkan sonuç bir ansiklopedi maddesi kadar doyurucu olsun.
 
-            ARAŞTIRMA SÜRECİ (bu sırayı takip et):
+            ARAŞTIRMA SÜRECI (bu sırayı takip et):
             1. WebSearch-SearchWebDeep ile konuyu 3 farklı açıdan paralel ara.
                Sorgular: [Ana kavramın detayları] / [Pratik kullanım, teknik örnekler] / [Son gelişmeler, endüstri standartları]
             2. Wikipedia-SearchWikipedia ile makaleyi bulup çek.
-            3. Toplanan bilgileri karşılaştır.
-            4. En az 6-8 paragraf uzunluğunda, son derece doyurucu ve derinlemesine yapılandırılmış bir rapor yaz.
+            3. Academic-SearchSemanticScholar ile peer-reviewed makaleler ara (V4 yeni — bilimsel iddiaları buradan doğrula).
+               Eğer konu yeni / preprint ağırlıklıysa Academic-SearchArXiv'i de kullan.
+            4. YouTube-SearchYouTubeVideos ile konuyla ilgili eğitim videoları ara.
+               En alakalı videonun transcript'ını YouTube-GetVideoTranscript ile çek.
+               Transcript varsa raporun içinde "Bu konuda şu eğitim videosu referans alınmıştır" şeklinde kaynak göster.
+            5. Toplanan bilgileri karşılaştır. Web ↔ Wikipedia ↔ Akademik makale çelişiyorsa "akademik" sürümü öncele.
+            6. En az 6-8 paragraf uzunluğunda, son derece doyurucu ve derinlemesine yapılandırılmış bir rapor yaz.
 
             ZORUNLU ÇIKTI FORMATI:
 
@@ -149,6 +185,11 @@ public class KorteksAgent : IKorteksAgent
 
             ## 📚 Kaynakça
             - [Başlık](URL) — ne tür bilgi sağladı (açıklama)
+
+            ## 🎬 Önerilen Eğitim Videoları
+            YouTube'da bulduğun alakalı eğitim videolarını buraya listele.
+            - [Video Başlığı — Kanal Adı](https://youtube.com/watch?v=ID)
+            Video bulunamadıysa veya YouTube araması başarısız olduysa bu bölümü atlayabilirsin.
 
             ## 💡 Sentez ve Sonuç
             Tüm araştırmayı bağlayan akademik bir kapanış.
@@ -166,7 +207,7 @@ public class KorteksAgent : IKorteksAgent
         chatHistory.AddUserMessage(
             $"Konu: \"{topic}\"\n\n" +
             $"Adımları sırayla uygula: önce WebSearch-SearchWebDeep ile paralel ara, " +
-            $"sonra Wikipedia-SearchWikipedia ile doğrula, ardından raporu yaz.");
+            $"sonra Wikipedia-SearchWikipedia ile doğrula, YouTube-SearchYouTubeVideos ile eğitim videosu bul, ardından raporu yaz.");
 
         var settings = new OpenAIPromptExecutionSettings
         {
@@ -222,7 +263,11 @@ public class KorteksAgent : IKorteksAgent
                     // Faz 11: TutorAgent'a "bu konu için taze araştırma var" sinyali
                     var redisService = scope.ServiceProvider.GetService<IRedisMemoryService>();
                     if (redisService != null)
+                    {
                         await redisService.SetWikiReadyAsync(topicId.Value);
+                        // Faz 16: QuizAgent + TutorAgent araştırma bağlamını okuyabilsin diye Redis'e koy.
+                        await redisService.SaveKorteksResearchReportAsync(topicId.Value, fullResponse.ToString());
+                    }
                 }
                 else
                 {

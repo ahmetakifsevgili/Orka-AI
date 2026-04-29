@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orka.Infrastructure", "Orka
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orka.API", "Orka.API\Orka.API.csproj", "{9AD3A8F2-E9AF-4420-820E-3C670C366AF9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orka.API.Tests", "Orka.API.Tests\Orka.API.Tests.csproj", "{16E45A03-50D5-43E8-8267-735027393952}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{9AD3A8F2-E9AF-4420-820E-3C670C366AF9}.Release|x64.Build.0 = Release|Any CPU
 		{9AD3A8F2-E9AF-4420-820E-3C670C366AF9}.Release|x86.ActiveCfg = Release|Any CPU
 		{9AD3A8F2-E9AF-4420-820E-3C670C366AF9}.Release|x86.Build.0 = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|x64.Build.0 = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Debug|x86.Build.0 = Debug|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|x64.ActiveCfg = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|x64.Build.0 = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|x86.ActiveCfg = Release|Any CPU
+		{16E45A03-50D5-43E8-8267-735027393952}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

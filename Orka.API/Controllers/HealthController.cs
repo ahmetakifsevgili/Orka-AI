@@ -36,9 +36,35 @@ public class HealthController : ControllerBase
     [HttpGet("ready")]
     public async Task<IActionResult> Ready()
     {
-        var result = await _healthCheckService.CheckHealthAsync(
-            r => r.Tags.Contains("ready"),
-            HttpContext.RequestAborted);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+
+        HealthReport result;
+        try
+        {
+            result = await _healthCheckService.CheckHealthAsync(
+                r => r.Tags.Contains("ready"),
+                timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(503, new
+            {
+                status = "Unhealthy",
+                duration = 2000,
+                timedOut = true,
+                checks = new[]
+                {
+                    new
+                    {
+                        name = "readiness",
+                        status = "Unhealthy",
+                        description = "Readiness checks exceeded 2 seconds.",
+                        duration = 2000.0
+                    }
+                }
+            });
+        }
 
         return result.Status == HealthStatus.Healthy
             ? Ok(BuildResponse(result))

@@ -1,7 +1,10 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Orka.Core.DTOs.Auth;
+using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
 
@@ -12,10 +15,12 @@ namespace Orka.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IConfiguration configuration)
     {
         _authService = authService;
+        _configuration = configuration;
     }
 
     [HttpPost("register")]
@@ -24,25 +29,16 @@ public class AuthController : ControllerBase
         try
         {
             var result = await _authService.RegisterAsync(request.FirstName, request.LastName, request.Email, request.Password);
-            var freeLimit = 50;
             return Ok(new AuthResponse
             {
                 Token = result.Token,
                 RefreshToken = result.RefreshToken,
-                User = new UserDto
-                {
-                    Id = result.User.Id.ToString(),
-                    Email = result.User.Email,
-                    Plan = result.User.Plan.ToString(),
-                    DailyMessageCount = result.User.DailyMessageCount,
-                    DailyLimit = freeLimit,
-                    IsAdmin = result.User.IsAdmin
-                }
+                User = ToUserDto(result.User)
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "Istek islenemedi." });
         }
     }
 
@@ -56,28 +52,20 @@ public class AuthController : ControllerBase
             {
                 Token = result.Token,
                 RefreshToken = result.RefreshToken,
-                User = new UserDto
-                {
-                    Id = result.User.Id.ToString(),
-                    Email = result.User.Email,
-                    Plan = result.User.Plan.ToString(),
-                    DailyMessageCount = result.User.DailyMessageCount,
-                    DailyLimit = result.User.Plan.ToString() == "Pro" ? 500 : 50,
-                    IsAdmin = result.User.IsAdmin
-                }
+                User = ToUserDto(result.User)
             });
         }
-        catch (NotFoundException ex)
+        catch (NotFoundException)
         {
-            return NotFound(new { message = ex.Message });
+            return NotFound(new { message = "Kayit bulunamadi." });
         }
-        catch (UnauthorizedException ex)
+        catch (UnauthorizedException)
         {
-            return Unauthorized(new { message = ex.Message });
+            return Unauthorized(new { message = "Kimlik dogrulama basarisiz." });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "Istek islenemedi." });
         }
     }
 
@@ -91,7 +79,7 @@ public class AuthController : ControllerBase
         }
         catch (Exception)
         {
-            return Unauthorized(new { message = "Geçersiz refresh token." });
+            return Unauthorized(new { message = "GeÃ§ersiz refresh token." });
         }
     }
 
@@ -100,5 +88,34 @@ public class AuthController : ControllerBase
     {
         await _authService.RevokeAsync(request.RefreshToken);
         return Ok();
+    }
+
+    private UserDto ToUserDto(User user) => new()
+    {
+        Id = user.Id.ToString(),
+        FirstName = user.FirstName,
+        LastName = user.LastName,
+        Email = user.Email,
+        Plan = user.Plan.ToString(),
+        DailyMessageCount = user.DailyMessageCount,
+        DailyLimit = GetDailyLimit(user.Plan),
+        IsAdmin = user.IsAdmin,
+        Settings = new UserSettingsDto
+        {
+            Theme = user.Theme,
+            Language = user.Language,
+            FontSize = user.FontSize,
+            QuizReminders = user.QuizReminders,
+            WeeklyReport = user.WeeklyReport,
+            NewContentAlerts = user.NewContentAlerts,
+            SoundsEnabled = user.SoundsEnabled
+        }
+    };
+
+    private int GetDailyLimit(UserPlan plan)
+    {
+        return plan == UserPlan.Pro
+            ? _configuration.GetValue("Limits:ProUserDailyMessages", 500)
+            : _configuration.GetValue("Limits:FreeUserDailyMessages", 50);
     }
 }

@@ -46,6 +46,16 @@ public class EvaluatorAgent : IEvaluatorAgent
         Guid? topicId = null,
         CancellationToken ct = default)
     {
+        var youtubeContext = "";
+        if (topicId.HasValue && agentRole == "TutorAgent")
+        {
+            var ytData = await _redisService.GetYouTubeContextAsync(topicId.Value);
+            if (!string.IsNullOrWhiteSpace(ytData))
+            {
+                youtubeContext = $"\n\n[ALTIN STANDART (YOUTUBE PEDAGOJİK REFERANS)]:\n{ytData}\n\nDİKKAT: TutorAgent'ın pedagojik kalitesini, bu popüler YouTube eğitimcisinin anlatım kalitesine (kullandığı benzetmeler, açıklık, akıcılık) ne kadar yaklaştığına bakarak değerlendir. Eğer Tutor çok yüzeysel kalmışsa pedagogy puanını acımasızca kır.";
+            }
+        }
+
         var prompt = $$"""
             Sen Orka AI için LLMOps Kalite Kontrol ajanısın. Bir ajanın ({{agentRole}}) cevabını
             üç boyutta değerlendir:
@@ -56,6 +66,7 @@ public class EvaluatorAgent : IEvaluatorAgent
 
             Her boyut için kısa gerekçeyi zihninde tut, sonra 1-10 arası "overall" (genel) puan
             üret. Eğer factual < 3 ise hallucinationRisk=true işaretle.
+            {{youtubeContext}}
 
             Öğrencinin Mesajı:
             "{{userMessage}}"

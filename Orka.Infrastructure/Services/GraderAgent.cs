@@ -17,6 +17,7 @@ public interface IGraderAgent
     /// 0 ile 1.0 arası bir "Relevancy Score" (Alaka Durumu) veya geçiş izni verir.
     /// </summary>
     Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, CancellationToken ct = default);
+    Task<bool> EvaluateAnswerAsync(string question, string answer, CancellationToken ct = default);
 }
 
 public class GraderAgent : IGraderAgent
@@ -33,32 +34,57 @@ public class GraderAgent : IGraderAgent
     public async Task<bool> IsContextRelevantAsync(string topic, string retrievedContext, CancellationToken ct = default)
     {
         var prompt = $$"""
-            Sen katı bir akademik gözlemcisin (Grader). 
+            Sen katı bir akademik gözlemcisin (Grader).
             Sana verilen 'Gelen İçerik' metninin, belirtilen 'Konu: {{topic}}' ile ne ölçüde örtüştüğünü ve doğruluğunu kontrol edeceksin.
             Eğer içerik alakasızsa, yanıltıcıysa veya çok zayıfsa 'REJECT' yaz.
             Eğer içerik faydalıysa, bağlamsal olarak yüksek bir örtüşme (Hit Rate) taşıyorsa 'APPROVE' yaz.
-            
+
             SADECE REJECT VEYA APPROVE YAZ, AÇIKLAMA YAPMA.
             """;
 
         _logger.LogInformation("[GraderAgent] Bilgi doğruluğu denetleniyor. Konu: {Topic}", topic);
-        
+
         try
         {
             var result = await _factory.CompleteChatAsync(AgentRole.Grader, prompt, $"[Gelen İçerik]\n{retrievedContext}", ct);
-            
+
             if (result.Trim().ToUpperInvariant().Contains("APPROVE"))
             {
                 _logger.LogInformation("[GraderAgent] Analiz başarılı, onay verildi.");
                 return true;
             }
-            
+
             _logger.LogWarning("[GraderAgent] Analiz başarısız (REJECT). İçerik konuyla örtüşmüyor.");
             return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[GraderAgent] Kontrol esnasında hata oluştu. Tedbir amaçlı FALSE dönülüyor.");
+            return false;
+        }
+    }
+
+    public async Task<bool> EvaluateAnswerAsync(string question, string answer, CancellationToken ct = default)
+    {
+        var prompt = """
+            Sen bir öğretmensin (Grader). Öğrencinin cevabını değerlendir.
+            Cevap kabul edilebilir doğrulukta ise SADECE 'DOĞRU' yaz.
+            Yanlışsa SADECE 'YANLIŞ' yaz. Başka hiçbir şey yazma.
+            """;
+
+        try
+        {
+            var result = await _factory.CompleteChatAsync(
+                AgentRole.Grader,
+                prompt,
+                $"Soru: {question}\nÖğrenci Cevabı: {answer}",
+                ct);
+
+            return result.Contains("DOĞRU", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[GraderAgent] Cevap değerlendirmesi esnasında hata oluştu.");
             return false;
         }
     }

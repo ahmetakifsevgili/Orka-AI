@@ -23,14 +23,26 @@ public class SkillMasteryService : ISkillMasteryService
 
     public async Task RecordMasteryAsync(Guid userId, Guid topicId, string subTopicTitle, int quizScore)
     {
-        // Idempotent: aynı kullanıcı + konu + başlık kombinasyonu zaten varsa atla
-        bool alreadyExists = await _db.SkillMasteries
-            .AnyAsync(sm => sm.UserId == userId && sm.TopicId == topicId && sm.SubTopicTitle == subTopicTitle);
+        // Upsert: aynı kullanıcı + konu + başlık zaten varsa ve yeni puan daha yüksekse güncelle
+        var existing = await _db.SkillMasteries
+            .FirstOrDefaultAsync(sm => sm.UserId == userId && sm.TopicId == topicId && sm.SubTopicTitle == subTopicTitle);
 
-        if (alreadyExists)
+        if (existing != null)
         {
-            _logger.LogInformation("[SkillMastery] Zaten mevcut, atlandı. UserId={UserId} TopicId={TopicId} Title={Title}",
-                userId, topicId, subTopicTitle);
+            if (quizScore > existing.QuizScore)
+            {
+                var oldScore = existing.QuizScore;
+                existing.QuizScore = quizScore;
+                existing.MasteredAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("[SkillMastery] Puan güncellendi. UserId={UserId} TopicId={TopicId} Title={Title} EskiScore={Old} YeniScore={New}",
+                    userId, topicId, subTopicTitle, oldScore, quizScore);
+            }
+            else
+            {
+                _logger.LogInformation("[SkillMastery] Mevcut puan ({Existing}) daha yüksek/eşit, güncelleme gerekmedi. UserId={UserId} TopicId={TopicId} Title={Title}",
+                    existing.QuizScore, userId, topicId, subTopicTitle);
+            }
             return;
         }
 

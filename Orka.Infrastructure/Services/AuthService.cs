@@ -6,11 +6,13 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Security;
 
 namespace Orka.Infrastructure.Services;
 
@@ -18,11 +20,13 @@ public class AuthService : IAuthService
 {
     private readonly OrkaDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
 
-    public AuthService(OrkaDbContext dbContext, IConfiguration configuration)
+    public AuthService(OrkaDbContext dbContext, IConfiguration configuration, IHostEnvironment environment)
     {
         _dbContext = dbContext;
         _configuration = configuration;
+        _environment = environment;
     }
 
     public async Task<(string Token, string RefreshToken, User User)> RegisterAsync(string firstName, string lastName, string email, string password)
@@ -107,17 +111,8 @@ public class AuthService : IAuthService
 
     private async Task<(string Token, string RefreshToken, User User)> GenerateTokensAsync(User user)
     {
-        var secret = _configuration["JWT:Secret"] ?? "ORKA_SECRET_KEY_NEEDS_TO_BE_AT_LEAST_32_CHARS_LONG_123456";
-        var keyKey = Encoding.UTF8.GetBytes(secret);
-        if (keyKey.Length < 32)
-        {
-            // Pad if short for testing, but inform
-            var padded = new byte[32];
-            Array.Copy(keyKey, padded, Math.Min(keyKey.Length, 32));
-            keyKey = padded;
-        }
-        var key = new SymmetricSecurityKey(keyKey);
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var key = JwtKeyResolver.Resolve(_configuration, _environment.IsDevelopment());
+        var creds = new SigningCredentials(key.SigningKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
         {

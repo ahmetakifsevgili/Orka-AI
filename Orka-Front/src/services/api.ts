@@ -21,6 +21,8 @@ export interface AuthUser {
   email: string;
   plan?: string;
   isAdmin?: boolean;
+  dailyMessageCount?: number;
+  dailyLimit?: number;
   settings?: {
     theme: string;
     language: string;
@@ -90,6 +92,15 @@ const api: AxiosInstance = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+type OrkaAxiosConfig = InternalAxiosRequestConfig & {
+  suppressErrorToast?: boolean;
+};
+
+const isAuthUrl = (url?: string) => {
+  const normalized = (url ?? "").toLowerCase();
+  return normalized.startsWith("/auth/") || normalized.startsWith("/api/auth/");
+};
+
 // Request interceptor — attach Bearer token
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = storage.getToken();
@@ -112,10 +123,10 @@ const flushQueue = (err: unknown, token: string | null = null) => {
 api.interceptors.response.use(
   (res: AxiosResponse) => res,
   async (error) => {
-    const original = error.config as InternalAxiosRequestConfig & {
+    const original = error.config as OrkaAxiosConfig & {
       _retry?: boolean;
     };
-    const isAuthRoute = original?.url?.startsWith("/Auth/");
+    const isAuthRoute = isAuthUrl(original?.url);
 
     if (error.response?.status === 401 && !isAuthRoute && !original._retry) {
       if (isRefreshing) {
@@ -141,7 +152,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post<AuthTokens>("/api/Auth/refresh", {
+        const { data } = await axios.post<AuthTokens>("/api/auth/refresh", {
           refreshToken: refresh,
         });
         localStorage.setItem(TOKEN_KEY, data.token);
@@ -163,18 +174,21 @@ api.interceptors.response.use(
     }
 
     // Global hata bildirimi (401 ve auth rotaları hariç)
-    if (!isAuthRoute) {
+    if (!isAuthRoute && !original?.suppressErrorToast) {
       const status = error.response?.status;
       const url = original?.url ?? "bilinmeyen endpoint";
       const endpointLabel = url.split("/").slice(-2).join("/");
+      const correlationId = error.response?.headers?.["x-correlation-id"];
+      const suffix = correlationId ? ` · id: ${correlationId}` : "";
 
       if (!error.response) {
         // Network error / sunucuya ulaşılamıyor
         toast.error(`Sunucuya bağlanılamıyor (${endpointLabel})`, { id: `net-${endpointLabel}` });
       } else if (status === 404) {
-        toast.error(`Hata: ${endpointLabel} bulunamadı (404)`, { id: `404-${endpointLabel}` });
+        toast.error(`Hata: ${endpointLabel} bulunamadı (404)${suffix}`, { id: `404-${endpointLabel}` });
       } else if (status && status >= 500) {
-        toast.error(`Hata: ${endpointLabel} sunucu hatası (${status})`, { id: `5xx-${endpointLabel}` });
+        const message = (error.response?.data as { message?: string } | undefined)?.message ?? "Sunucu hatası";
+        toast.error(`${endpointLabel}: ${message} (${status})${suffix}`, { id: `5xx-${endpointLabel}` });
       }
     }
 
@@ -222,7 +236,8 @@ export const TopicsAPI = {
   update: (id: string, data: Partial<{ title: string; emoji: string }>) =>
     api.patch(`/topics/${id}`, data),
   delete: (id: string) => api.delete(`/topics/${id}`),
-  getLatestSession: (id: string) => api.get(`/topics/${id}/sessions/latest`),
+  getLatestSession: (id: string) =>
+    api.get(`/topics/${id}/sessions/latest`, { suppressErrorToast: true } as OrkaAxiosConfig),
   getSubtopics: (id: string) => api.get(`/topics/${id}/subtopics`),
   getProgress: (id: string) => api.get(`/topics/${id}/progress`),
 };
@@ -259,6 +274,7 @@ export const DashboardAPI = {
   getStats: () => api.get("/dashboard/stats"),
   getRecentActivity: () => api.get("/dashboard/recent-activity"),
   getSystemHealth: () => api.get("/dashboard/system-health"),
+  getDevDiagnostics: () => api.get("/dev/diagnostics/config"),
 };
 
 export const WikiAPI = {
@@ -270,19 +286,216 @@ export const WikiAPI = {
     api.put(`/wiki/block/${blockId}`, data),
   deleteBlock: (blockId: string) => api.delete(`/wiki/block/${blockId}`),
   exportWiki: (topicId: string) => api.get(`/wiki/${topicId}/export`),
+  /**
+   * NotebookLM-tarzı Briefing Document.
+   * 1 saatlik backend cache'i vardır — peş peşe çağrılarda cache'ten döner.
+   */
+  getBriefing: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      topicTitle: string;
+      tldr: string;
+      keyTakeaways: string[];
+      suggestedQuestions: string[];
+      generatedAt: string;
+    }>(`/wiki/${topicId}/briefing`).then((r) => r.data),
+  getGlossary: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      items: Array<{ term: string; simpleExplanation: string }>;
+      generatedAt: string;
+    }>(`/wiki/${topicId}/glossary`).then((r) => r.data),
+  getTimeline: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      items: Array<{ year: string; event: string }>;
+      generatedAt: string;
+    }>(`/wiki/${topicId}/timeline`).then((r) => r.data),
+  getMindMap: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      mermaid: string;
+      nodes: Array<{ id: string; label: string; parentId?: string | null; depth: number }>;
+      generatedAt: string;
+    }>(`/wiki/${topicId}/mindmap`).then((r) => r.data),
+  getStudyCards: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      cards: Array<{ front: string; back: string; sourceHint?: string }>;
+      generatedAt: string;
+    }>(`/wiki/${topicId}/study-cards`).then((r) => r.data),
+  getRecommendations: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      items: Array<{
+        id: string;
+        recommendationType: string;
+        title: string;
+        reason: string;
+        skillTag?: string;
+        actionPrompt?: string;
+        isDone: boolean;
+        createdAt: string;
+      }>;
+      generatedAt: string;
+    }>(`/wiki/${topicId}/recommendations`).then((r) => r.data.items ?? []),
+};
+
+export const SourcesAPI = {
+  upload: (data: { topicId?: string; sessionId?: string; file: File }) => {
+    const form = new FormData();
+    if (data.topicId) form.append("topicId", data.topicId);
+    if (data.sessionId) form.append("sessionId", data.sessionId);
+    form.append("file", data.file);
+    return api.post<{
+      id: string;
+      topicId?: string;
+      sessionId?: string;
+      sourceType: string;
+      title: string;
+      fileName: string;
+      pageCount: number;
+      chunkCount: number;
+      status: string;
+      createdAt: string;
+    }>("/sources/upload", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }).then((r) => r.data);
+  },
+  getTopicSources: (topicId: string) =>
+    api.get<Array<{
+      id: string;
+      topicId?: string;
+      sessionId?: string;
+      sourceType: string;
+      title: string;
+      fileName: string;
+      pageCount: number;
+      chunkCount: number;
+      status: string;
+      createdAt: string;
+    }>>(`/sources/topic/${topicId}`).then((r) => r.data),
+  ask: (sourceId: string, question: string) =>
+    api.post<{
+      answer: string;
+      citations: Array<{
+        id: string;
+        pageNumber: number;
+        chunkIndex: number;
+        text: string;
+        highlightHint?: string;
+      }>;
+    }>(`/sources/${sourceId}/ask`, { question }).then((r) => r.data),
+  getPage: (sourceId: string, page: number) =>
+    api.get<{
+      sourceId: string;
+      pageNumber: number;
+      title: string;
+      chunks: Array<{
+        id: string;
+        pageNumber: number;
+        chunkIndex: number;
+        text: string;
+        highlightHint?: string;
+      }>;
+    }>(`/sources/${sourceId}/pages/${page}`).then((r) => r.data),
+};
+
+export const AudioOverviewAPI = {
+  create: (data: { topicId?: string; sessionId?: string }) =>
+    api.post<{
+      id: string;
+      status: string;
+      script: string;
+      speakers: string[];
+      errorMessage?: string;
+      createdAt: string;
+    }>("/audio/overview", data).then((r) => r.data),
+  streamUrl: (jobId: string) => `/api/audio/overview/${jobId}/stream`,
+};
+
+export const LearningAPI = {
+  recordSignal: (data: {
+    topicId?: string;
+    sessionId?: string;
+    signalType: string;
+    skillTag?: string;
+    topicPath?: string;
+    score?: number;
+    isPositive?: boolean;
+    payloadJson?: string;
+  }) => api.post("/learning/signal", data, { suppressErrorToast: true } as OrkaAxiosConfig),
+  getTopicSummary: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      totalAttempts: number;
+      correctAttempts: number;
+      accuracy: number;
+      weakSkills: Array<{
+        skillTag: string;
+        topicPath: string;
+        wrongCount: number;
+        totalCount: number;
+        accuracy: number;
+        lastSeenAt: string;
+      }>;
+      recentSignals: string[];
+      cache?: {
+        hit: boolean;
+        source: string;
+        generatedAt: string;
+        cachedAt?: string | null;
+        version?: number | null;
+      } | null;
+    }>(`/learning/topic/${topicId}/summary`).then((r) => r.data),
+};
+
+export const ClassroomAPI = {
+  start: (data: { topicId?: string; sessionId?: string; audioOverviewJobId?: string; transcript: string }) =>
+    api.post<{
+      id: string;
+      topicId?: string;
+      sessionId?: string;
+      audioOverviewJobId?: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    }>("/classroom/session", data).then((r) => r.data),
+  ask: (id: string, data: { question: string; activeSegment?: string }) =>
+    api.post<{
+      classroomSessionId: string;
+      interactionId?: string;
+      answer: string;
+      speakers: string[];
+    }>(`/classroom/${id}/ask`, data).then((r) => r.data),
+  getInteractionAudio: (interactionId: string) =>
+    api.get<Blob>(`/classroom/interaction/${interactionId}/audio`, {
+      responseType: "blob",
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig),
 };
 
 /**
  * QuizAPI — Quiz denemelerini backend'e kaydeder.
- * POST /Quiz/attempt endpoint'i backend'de hazır olmadığında
+ * POST /api/quiz/attempt endpoint'i backend'de hazır olmadığında
  * sessizce başarısız olur (fire-and-forget).
  */export const QuizAPI = {
   recordAttempt: (data: {
     messageId: string;
+    quizRunId?: string;
+    questionId?: string;
+    topicId?: string;
+    sessionId?: string;
     question: string;
     selectedOptionId: string;
     isCorrect: boolean;
     explanation: string;
+    skillTag?: string;
+    topicPath?: string;
+    difficulty?: string;
+    cognitiveType?: string;
+    questionHash?: string;
+    sourceRefsJson?: string;
   }) => api.post("/quiz/attempt", data),
   getGlobalStats: () => api.get("/quiz/stats"),
   getHistory: (topicId: string) => api.get(`/quiz/history/${topicId}`),
@@ -322,10 +535,15 @@ export const CodeAPI = {
    * Kodu Piston sandbox'ında çalıştırır.
    * POST /api/code/run → { stdout, stderr, success }
    */
-  run: (data: { code: string; language?: string }) =>
+  run: (data: { code: string; language?: string; sessionId?: string; topicId?: string }) =>
     api.post<{ stdout: string; stderr: string; success: boolean }>(
       "/code/run",
-      { code: data.code, language: data.language ?? "csharp" }
+      {
+        code: data.code,
+        language: data.language ?? "csharp",
+        sessionId: data.sessionId,
+        topicId: data.topicId,
+      }
     ).then((r) => r.data),
 };
 

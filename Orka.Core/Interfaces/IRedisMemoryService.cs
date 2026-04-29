@@ -79,6 +79,30 @@ public interface IRedisMemoryService
     /// </summary>
     Task<IEnumerable<ProviderUsageStat>> GetProviderUsageAsync();
 
+    // ── Cache / Health / Invalidation ───────────────────────────────────────
+
+    Task<string?> GetJsonAsync(string key);
+
+    Task SetJsonAsync(string key, string payload, TimeSpan ttl);
+
+    Task DeleteKeyAsync(string key);
+
+    Task<long> GetTopicVersionAsync(Guid topicId);
+
+    Task<long> BumpTopicVersionAsync(Guid topicId, string reason);
+
+    Task InvalidateLearningCachesAsync(Guid userId, Guid topicId, string reason);
+
+    Task RecordCacheMetricAsync(string area, bool hit, string? tool = null, double? latencyMs = null);
+
+    Task<IEnumerable<CacheMetricSummary>> GetCacheMetricsAsync();
+
+    Task<RedisHealthDto> GetRedisHealthAsync();
+
+    Task<IReadOnlyList<string>> GetRecentQuestionHashesAsync(Guid userId, Guid topicId, int count = 80);
+
+    Task RememberQuestionHashesAsync(Guid userId, Guid topicId, IEnumerable<string> hashes);
+
     // ── Faz 14: Topic-level Kümülatif Puanlama ─────────────────────────────
 
     /// <summary>
@@ -102,6 +126,51 @@ public interface IRedisMemoryService
 
     /// <summary>
     /// TutorAgent'ın kullanması için topic bazındaki son öğrenci profili notlarını çeker.
+    /// 30 günlük TTL ile expire eder (weakness decay).
     /// </summary>
     Task<(int score, string weaknesses)?> GetStudentProfileAsync(Guid topicId);
+
+    // ── Faz 16: Anlık Müdahale (EvaluatorAgent → TutorAgent) ────────────────
+
+    /// <summary>
+    /// EvaluatorAgent düşük puan (≤ 6) verdiğinde TutorAgent'ın bir sonraki cevabında
+    /// stil düzeltmesi için ham feedback'i kısa bir bayrakla saklar.
+    /// Key: orka:lowquality:{sessionId} | TTL: 5 dk (tek-kullanımlık).
+    /// </summary>
+    Task SetLowQualityFeedbackAsync(Guid sessionId, int score, string feedback);
+
+    /// <summary>
+    /// TutorAgent prompt enjekte ettikten sonra okuduğu flag'i atomik olarak siler
+    /// (StringGetDelete) — aynı uyarı iki kez kullanılmaz.
+    /// </summary>
+    Task<(int score, string feedback)?> GetAndClearLowQualityFeedbackAsync(Guid sessionId);
+
+    // ── Faz 16: Korteks → Quiz Köprüsü ──────────────────────────────────────
+
+    /// <summary>
+    /// KorteksAgent araştırma raporunun özetini topicId için saklar.
+    /// QuizAgent ve TutorAgent quiz üretirken bu bağlamı enjekte eder.
+    /// Key: orka:korteks:{topicId} | TTL: 2 saat.
+    /// </summary>
+    Task SaveKorteksResearchReportAsync(Guid topicId, string report);
+
+    /// <summary>
+    /// Topic için kaydedilmiş Korteks raporunu döndürür. Yoksa null.
+    /// </summary>
+    Task<string?> GetKorteksResearchReportAsync(Guid topicId);
+
+    // ── YouTube RAG: Cache-First Strateji ────────────────────────────────────
+
+    /// <summary>
+    /// YouTube video arama sonuçları ve transcript'i topicId için cache'ler.
+    /// DeepPlan oluşturma veya TutorAgent ilk ders anında yazılır.
+    /// Key: orka:youtube:{topicId} | TTL: 24 saat.
+    /// </summary>
+    Task SaveYouTubeContextAsync(Guid topicId, string payload);
+
+    /// <summary>
+    /// Topic için cache'lenmiş YouTube context'i döndürür. Yoksa null.
+    /// TutorAgent her mesajda API çağırmak yerine buradan okur (kota tasarrufu).
+    /// </summary>
+    Task<string?> GetYouTubeContextAsync(Guid topicId);
 }

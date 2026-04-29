@@ -34,8 +34,8 @@ function SettingsSection({ title, icon, children }: {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2.5 mb-4">
-        <span className="text-zinc-400">{icon}</span>
-        <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+        <span className="text-[#667085]">{icon}</span>
+        <h3 className="text-sm font-semibold text-[#172033]">{title}</h3>
       </div>
       <div className="space-y-1">{children}</div>
     </div>
@@ -49,10 +49,10 @@ function ToggleRow({ label, description, checked, onChange }: {
   onChange: (val: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-zinc-800/30 transition-colors duration-150">
+    <div className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[#dcecf3]/70/30 transition-colors duration-150">
       <div>
-        <p className="text-sm text-zinc-300">{label}</p>
-        {description && <p className="text-[11px] text-zinc-500 mt-0.5">{description}</p>}
+        <p className="text-sm text-[#344054]">{label}</p>
+        {description && <p className="text-[11px] text-[#667085] mt-0.5">{description}</p>}
       </div>
       <button
         onClick={() => onChange(!checked)}
@@ -64,7 +64,7 @@ function ToggleRow({ label, description, checked, onChange }: {
         role="switch"
       >
         <div
-          className={`w-4 h-4 rounded-full bg-zinc-100 absolute top-[3px] transition-transform duration-200 shadow-sm ${
+          className={`w-4 h-4 rounded-full bg-[#172033] absolute top-[3px] transition-transform duration-200 shadow-sm ${
             checked ? "translate-x-[20px]" : "translate-x-[3px]"
           }`}
         />
@@ -80,8 +80,8 @@ function OptionRow<T extends string>({ label, value, options, onChange }: {
   onChange: (val: T) => void;
 }) {
   return (
-    <div className="px-4 py-3 rounded-xl hover:bg-zinc-800/30 transition-colors duration-150">
-      <p className="text-sm text-zinc-300 mb-2.5">{label}</p>
+    <div className="px-4 py-3 rounded-xl hover:bg-[#dcecf3]/70/30 transition-colors duration-150">
+      <p className="text-sm text-[#344054] mb-2.5">{label}</p>
       <div className="flex gap-2 flex-wrap">
         {options.map((opt) => (
           <button
@@ -89,8 +89,8 @@ function OptionRow<T extends string>({ label, value, options, onChange }: {
             onClick={() => onChange(opt.key)}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 border ${
               value === opt.key
-                ? "bg-zinc-100 text-zinc-950 border-transparent shadow-sm"
-                : "bg-zinc-800/60 text-zinc-400 border-zinc-700/50 hover:text-zinc-200 hover:border-zinc-600"
+                ? "bg-[#172033] text-white border-transparent shadow-sm"
+                : "bg-[#dcecf3]/62 text-[#667085] border-[#526d82]/18/50 hover:text-[#172033] hover:border-zinc-600"
             }`}
           >
             {value === opt.key && <Check className="w-3 h-3" />}
@@ -223,36 +223,36 @@ export default function SettingsPanel() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900 h-full overflow-hidden">
+    <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto w-full px-6 py-8">
 
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-xl font-bold text-zinc-100 mb-1">{t("settings")}</h1>
-            <p className="text-sm text-zinc-500">Tercihlerinizi ve profilinizi yönetin</p>
+            <h1 className="text-xl font-bold text-[#172033] mb-1">{t("settings")}</h1>
+            <p className="text-sm text-[#667085]">Tercihlerinizi ve profilinizi yönetin</p>
           </div>
 
           {/* ── PROFILE ── */}
           <SettingsSection title={t("profile") || "Profil"} icon={<User className="w-4 h-4" />}>
             {/* Avatar + Info Row */}
-            <div className="px-4 py-4 rounded-xl bg-zinc-800/30 border border-zinc-800/50">
+            <div className="px-4 py-4 rounded-xl bg-[#dcecf3]/70/30 border border-[#526d82]/14">
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-14 h-14 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-                  <span className="text-lg font-semibold text-zinc-300">
+                <div className="w-14 h-14 rounded-full bg-[#dcecf3]/70 border border-[#526d82]/18 flex items-center justify-center">
+                  <span className="text-lg font-semibold text-[#344054]">
                     {profile.firstName?.[0]?.toUpperCase() || user?.firstName?.[0]?.toUpperCase() || "U"}
                   </span>
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-zinc-200">
+                  <p className="text-sm font-medium text-[#172033]">
                     {user ? `${user.firstName} ${user.lastName}`.trim() : "Yükleniyor..."}
                   </p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{user?.email}</p>
+                  <p className="text-xs text-[#667085] mt-0.5">{user?.email}</p>
                 </div>
                 <span className={`text-[10px] font-semibold px-2 py-1 rounded-md ${
                   user?.plan === "Pro"
                     ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                    : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+                    : "bg-[#dcecf3]/70 text-[#667085] border border-[#526d82]/18"
                 }`}>
                   {user?.plan || "Free"}
                 </span>
@@ -260,31 +260,31 @@ export default function SettingsPanel() {
 
               {/* Editable Name Fields */}
               <div className="flex flex-col gap-1.5 mt-3">
-                <label className="text-xs text-zinc-400 font-medium">Kullanıcı Adı</label>
+                <label className="text-xs text-[#667085] font-medium">Kullanıcı Adı</label>
                 <input
                   type="text"
                   value={profile.firstName}
                   onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
                   onBlur={handleProfileChange}
-                  className="bg-zinc-950/50 border border-zinc-700/80 rounded-lg px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500 transition-colors"
+                  className="bg-[#f7f9fa]/62 border border-[#526d82]/22 rounded-lg px-3 py-2 text-sm text-[#172033] outline-none focus:border-zinc-500 transition-colors"
                   placeholder="Kullanıcı adı girin"
                 />
               </div>
 
               {/* Email (readonly) */}
               <div className="flex flex-col gap-1.5 mt-3">
-                <label className="text-xs text-zinc-400 font-medium">E-posta (Değiştirilemez)</label>
+                <label className="text-xs text-[#667085] font-medium">E-posta (Değiştirilemez)</label>
                 <input
                   type="email"
                   value={user?.email || ""}
                   disabled
-                  className="bg-zinc-950/50 border border-zinc-800/80 opacity-60 rounded-lg px-3 py-2 text-sm text-zinc-400 outline-none cursor-not-allowed"
+                  className="bg-[#f7f9fa]/62 border border-[#526d82]/18 opacity-60 rounded-lg px-3 py-2 text-sm text-[#667085] outline-none cursor-not-allowed"
                 />
               </div>
             </div>
           </SettingsSection>
 
-          <div className="border-t border-zinc-800/50 mb-6" />
+          <div className="border-t border-[#526d82]/14 mb-6" />
 
           {/* ── APPEARANCE ── */}
           <SettingsSection title={t("appearance") || "Görünüm"} icon={<Palette className="w-4 h-4" />}>
@@ -296,11 +296,11 @@ export default function SettingsPanel() {
             />
           </SettingsSection>
 
-          <div className="border-t border-zinc-800/50 mb-6" />
+          <div className="border-t border-[#526d82]/14 mb-6" />
 
           {/* ── ACCOUNT & SECURITY ── */}
           <SettingsSection title={t("account_security") || "Hesap ve Güvenlik"} icon={<Shield className="w-4 h-4" />}>
-            <div className="px-4 py-3 text-[12px] text-zinc-500 leading-relaxed">
+            <div className="px-4 py-3 text-[12px] text-[#667085] leading-relaxed">
               Hesabınızı sildiğinizde tüm sohbet geçmişiniz, oluşturduğunuz planlar ve wiki sayfaları kalıcı olarak silinecektir. Bu işlem geri alınamaz.
             </div>
             <div className="px-4 pb-2">
@@ -317,7 +317,7 @@ export default function SettingsPanel() {
                    <div className="flex gap-2">
                      <button
                         onClick={() => setShowConfirmDelete(false)}
-                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-[#344054] bg-[#dcecf3]/70 hover:bg-zinc-700 transition-colors"
                      >
                         İptal
                      </button>
@@ -335,16 +335,16 @@ export default function SettingsPanel() {
           </SettingsSection>
 
           {/* Footer */}
-          <div className="mt-8 pt-6 border-t border-zinc-800/50 flex items-center justify-between">
+          <div className="mt-8 pt-6 border-t border-[#526d82]/14 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <OrcaLogo className="w-4 h-4 text-zinc-600" />
-              <span className="text-[11px] text-zinc-600">Orka AI v1.0</span>
+              <OrcaLogo className="w-4 h-4 text-[#98a2b3]" />
+              <span className="text-[11px] text-[#98a2b3]">Orka AI v1.0</span>
             </div>
             <div className="flex gap-4">
-              <button className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors">
+              <button className="text-[11px] text-[#98a2b3] hover:text-[#667085] transition-colors">
                 Privacy Policy
               </button>
-              <button className="text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors">
+              <button className="text-[11px] text-[#98a2b3] hover:text-[#667085] transition-colors">
                 Terms of Service
               </button>
             </div>

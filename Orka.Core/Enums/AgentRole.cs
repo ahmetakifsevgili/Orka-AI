@@ -12,5 +12,12 @@ public enum AgentRole
     Korteks,
     Supervisor,
     Grader,
-    Evaluator
+    Evaluator,
+    IntentClassifier,
+    TieredPlanner,
+    Quiz,
+    Diagnostic,
+    Remedial,
+    Visual,
+    Classroom
 }

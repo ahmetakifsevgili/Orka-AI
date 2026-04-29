@@ -42,7 +42,7 @@ public class WikiController : ControllerBase
     {
         var userId = GetUserId();
         var page = await _wikiService.GetWikiPageAsync(pageId, userId);
-        if (page == null) return NotFound(new { message = "Sayfa bulunamadı." });
+        if (page == null) return NotFound(new { message = "Sayfa bulunamadÄ±." });
 
         return Ok(new
         {
@@ -83,14 +83,14 @@ public class WikiController : ControllerBase
             await _wikiService.DeleteWikiBlockAsync(blockId, userId);
             return Ok();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = "Istek islenemedi." });
         }
     }
 
     /// <summary>
-    /// Konunun tüm Wiki içeriğini tek bir Markdown string olarak döner (export/print için).
+    /// Konunun tÃ¼m Wiki iÃ§eriÄŸini tek bir Markdown string olarak dÃ¶ner (export/print iÃ§in).
     /// </summary>
     [HttpGet("{topicId}/export")]
     public async Task<IActionResult> ExportWiki(Guid topicId)
@@ -100,7 +100,7 @@ public class WikiController : ControllerBase
         {
             var content = await _wikiService.GetWikiFullContentAsync(topicId, userId);
             if (string.IsNullOrWhiteSpace(content))
-                return NotFound(new { message = "Bu konu için henüz wiki içeriği oluşturulmamış." });
+                return NotFound(new { message = "Bu konu iÃ§in henÃ¼z wiki iÃ§eriÄŸi oluÅŸturulmamÄ±ÅŸ." });
 
             return Ok(new
             {
@@ -111,14 +111,117 @@ public class WikiController : ControllerBase
                 content
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { message = ex.Message });
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
         }
     }
 
     /// <summary>
-    /// Wiki içeriğinden soru cevaplama (mevcut ajan).
+    /// NotebookLM-tarzÄ± "Briefing Document" â€” okumadan Ã¶nce hÄ±zlÄ± bakÄ±ÅŸ.
+    /// Wiki + Korteks raporundan TL;DR + 5 anahtar Ã§Ä±karÄ±m + 3 Ã¶neri soru.
+    /// 1 saatlik in-memory cache.
+    /// </summary>
+    [HttpGet("{topicId}/briefing")]
+    public async Task<IActionResult> GetBriefing(Guid topicId, [FromServices] ISummarizerAgent summarizer)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var briefing = await summarizer.GenerateBriefingAsync(topicId, userId, HttpContext.RequestAborted);
+            return Ok(new
+            {
+                topicId,
+                topicTitle         = briefing.TopicTitle,
+                tldr               = briefing.TLDR,
+                keyTakeaways       = briefing.KeyTakeaways,
+                suggestedQuestions = briefing.SuggestedQuestions,
+                generatedAt        = briefing.GeneratedAt
+            });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    [HttpGet("{topicId}/glossary")]
+    public async Task<IActionResult> GetGlossary(Guid topicId, [FromServices] ISummarizerAgent summarizer)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var items = await summarizer.GenerateGlossaryAsync(topicId, userId, HttpContext.RequestAborted);
+            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    [HttpGet("{topicId}/timeline")]
+    public async Task<IActionResult> GetTimeline(Guid topicId, [FromServices] ISummarizerAgent summarizer)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var items = await summarizer.GenerateTimelineAsync(topicId, userId, HttpContext.RequestAborted);
+            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    [HttpGet("{topicId}/mindmap")]
+    public async Task<IActionResult> GetMindMap(Guid topicId, [FromServices] ISummarizerAgent summarizer)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var map = await summarizer.GenerateMindMapAsync(topicId, userId, HttpContext.RequestAborted);
+            return Ok(new { topicId, mermaid = map.Mermaid, nodes = map.Nodes, generatedAt = DateTime.UtcNow });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    [HttpGet("{topicId}/study-cards")]
+    public async Task<IActionResult> GetStudyCards(Guid topicId, [FromServices] ISummarizerAgent summarizer)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var cards = await summarizer.GenerateStudyCardsAsync(topicId, userId, HttpContext.RequestAborted);
+            return Ok(new { topicId, cards, generatedAt = DateTime.UtcNow });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    [HttpGet("{topicId}/recommendations")]
+    public async Task<IActionResult> GetRecommendations(Guid topicId, [FromServices] ILearningSignalService signals)
+    {
+        var userId = GetUserId();
+        try
+        {
+            var items = await signals.GetRecommendationsAsync(userId, topicId, HttpContext.RequestAborted);
+            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
+        }
+    }
+
+    /// <summary>
+    /// Wiki iÃ§eriÄŸinden soru cevaplama (mevcut ajan).
     /// </summary>
     [HttpPost("{topicId}/chat")]
     public async Task AskWikiQuestion(Guid topicId, [FromBody] WikiChatRequest request, [FromServices] IWikiAgent wikiAgent)
@@ -139,9 +242,9 @@ public class WikiController : ControllerBase
     }
 
     /// <summary>
-    /// Korteks ile derin araştırma — Wiki Copilot.
-    /// Wiki belgesi yetersizse, Korteks internetten araştırma yapar.
-    /// Frontend'e SSE stream olarak adım adım bilgi akar.
+    /// Korteks ile derin araÅŸtÄ±rma â€” Wiki Copilot.
+    /// Wiki belgesi yetersizse, Korteks internetten araÅŸtÄ±rma yapar.
+    /// Frontend'e SSE stream olarak adÄ±m adÄ±m bilgi akar.
     /// </summary>
     [HttpPost("{topicId}/research")]
     public async Task KorteksResearch(Guid topicId, [FromBody] WikiChatRequest request, [FromServices] IKorteksAgent korteks)
@@ -181,4 +284,3 @@ public class UpdateBlockRequest
     public string? Title { get; set; }
     public string? Content { get; set; }
 }
-

@@ -31,7 +31,7 @@ public class UpdateSettingsRequest
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/user")]
 public class UserController : ControllerBase
 {
     private readonly OrkaDbContext _dbContext;
@@ -63,6 +63,7 @@ public class UserController : ControllerBase
             lastName = user.LastName,
             email = user.Email,
             plan = user.Plan.ToString(),
+            isAdmin = user.IsAdmin,
             storageUsedMB = user.StorageUsedMB,
             storageLimitMB = user.StorageLimitMB,
             dailyMessageCount = user.DailyMessageCount,

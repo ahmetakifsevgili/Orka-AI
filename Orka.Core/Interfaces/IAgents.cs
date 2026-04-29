@@ -55,7 +55,36 @@ public interface IAnalyzerAgent
 public interface ISummarizerAgent
 {
     Task SummarizeAndSaveWikiAsync(Guid sessionId, Guid topicId, Guid userId);
+
+    /// <summary>
+    /// NotebookLM-tarzı "Briefing Document" — wiki içeriğinden 5-7 maddelik
+    /// kısa özet + ana fikirler + öneri çıkarır. Cache'lenir (1 saat).
+    /// Kullanılan kaynak: tüm wiki blockları + Korteks raporu (varsa).
+    /// </summary>
+    Task<BriefingDocument> GenerateBriefingAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<Orka.Core.DTOs.GlossaryItemDto>> GenerateGlossaryAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<Orka.Core.DTOs.TimelineItemDto>> GenerateTimelineAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    Task<Orka.Core.DTOs.MindMapDto> GenerateMindMapAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<Orka.Core.DTOs.StudyCardDto>> GenerateStudyCardsAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<Orka.Core.DTOs.StudyRecommendationDto>> GenerateRecommendationsAsync(Guid topicId, Guid userId, CancellationToken ct = default);
+
+    void InvalidateNotebookTools(Guid topicId);
 }
+
+/// <summary>
+/// NotebookLM-tarzı kısa "okumadan önce göz at" kartı.
+/// </summary>
+public record BriefingDocument(
+    string TopicTitle,
+    string TLDR,
+    IReadOnlyList<string> KeyTakeaways,
+    IReadOnlyList<string> SuggestedQuestions,
+    DateTime GeneratedAt);
 
 public interface IQuizAgent
 {

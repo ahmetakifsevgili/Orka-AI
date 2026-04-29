@@ -28,17 +28,20 @@ public class QuizAgent : IQuizAgent
     private readonly IGraderAgent _grader;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<QuizAgent> _logger;
+    private readonly IRedisMemoryService _redis;
 
     public QuizAgent(
         IAIAgentFactory factory,
         IGraderAgent grader,
         IServiceScopeFactory scopeFactory,
-        ILogger<QuizAgent> logger)
+        ILogger<QuizAgent> logger,
+        IRedisMemoryService redis)
     {
         _factory      = factory;
         _grader       = grader;
         _scopeFactory = scopeFactory;
         _logger       = logger;
+        _redis        = redis;
     }
 
     public async Task GeneratePendingQuizAsync(Guid sessionId, Guid topicId, Guid userId)
@@ -65,6 +68,21 @@ public class QuizAgent : IQuizAgent
             ? session.Summary
             : string.Join("\n", session.Messages.TakeLast(8).Select(m => $"{m.Role}: {m.Content}"));
 
+        // ── Faz 17: YouTube Distractor (Çeldirici) Üretimi ────────────────────
+        string youtubeDistractorBlock = "";
+        try
+        {
+            var ytData = await _redis.GetYouTubeContextAsync(topicId);
+            if (!string.IsNullOrWhiteSpace(ytData))
+            {
+                youtubeDistractorBlock = $"\n[YOUTUBE ÇELDİRİCİ REFERANSI]:\nEkteki pedagojik referansta ({ytData}), hocanın 'bunu hep karıştırıyorsunuz', 'buraya dikkat edin' dediği zor noktaları tespit et. Çoktan seçmeli soruların YANLIŞ ŞIKLARINI (çeldiricilerini) bu yaygın hatalara göre kurgula.\n";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[QuizAgent] YouTube context okunamadı, standart çeldiriciler kullanılacak.");
+        }
+
         // ── Quiz Üretim Prompt'u ──────────────────────────────────────────────
         var systemPrompt = $$"""
             Sen Orka AI'nın sınav üretmekle görevli Pedagoji Uzmanısın.
@@ -73,6 +91,7 @@ public class QuizAgent : IQuizAgent
             [{{quizLevelType.ToUpper()}}]
             {{minQuestions}} ile {{maxQuestions}} arasında soru hazırla.
             Konunun derinliğine ve kapsamına göre bu aralıkta kaç soru gerekiyorsa o kadar üret.
+            {{youtubeDistractorBlock}}
 
             KALİTE KURALLARI:
             - Her soru, ders içeriğinde gerçekten işlenmiş kavramları sormalıdır.
@@ -105,7 +124,7 @@ public class QuizAgent : IQuizAgent
         try
         {
             _logger.LogInformation("[QuizAgent] {Level} soruları üretiliyor. Konu: {Topic}", quizLevelType, topicTitle);
-            questions = await _factory.CompleteChatAsync(AgentRole.Grader, systemPrompt, userPrompt);
+            questions = await _factory.CompleteChatAsync(AgentRole.Quiz, systemPrompt, userPrompt);
         }
         catch (Exception ex)
         {
@@ -132,7 +151,7 @@ public class QuizAgent : IQuizAgent
 
             try
             {
-                questions = await _factory.CompleteChatAsync(AgentRole.Grader, fallbackPrompt, userPrompt);
+                questions = await _factory.CompleteChatAsync(AgentRole.Quiz, fallbackPrompt, userPrompt);
                 _logger.LogInformation("[QuizAgent] Yedek soru seti oluşturuldu.");
             }
             catch (Exception ex)

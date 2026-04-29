@@ -43,3 +43,27 @@ public record ProviderUsageStat(
     double Percentage,      // Toplam çağrıların % kaçı bu provider
     double AvgLatencyMs
 );
+
+public record RedisHealthDto(
+    bool IsConnected,
+    double PingMs,
+    int EndpointCount,
+    string Status,
+    string? LastError,
+    DateTime CheckedAt);
+
+public record CacheMetricRecord(
+    string Area,
+    string Tool,
+    bool Hit,
+    double? LatencyMs,
+    DateTime RecordedAt);
+
+public record CacheMetricSummary(
+    string Area,
+    string Tool,
+    int HitCount,
+    int MissCount,
+    double HitRatePct,
+    double AvgLatencyMs,
+    string LastEventAt);

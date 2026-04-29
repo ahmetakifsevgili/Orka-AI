@@ -85,7 +85,9 @@
       "Bash(echo \"TS_OK_EXIT_$?\")",
       "WebSearch",
       "WebFetch(domain:www.promptfoo.dev)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "PowerShell(Get-NetTCPConnection *)"
     ]
   }
 }

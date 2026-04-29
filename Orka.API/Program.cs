@@ -7,12 +7,19 @@ using Microsoft.OpenApi.Models;
 using Orka.API.Middleware;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Security;
 using Orka.Infrastructure.Services;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Windows EventLog provider local dev'de yetki hatasıyla request'i düşürebiliyor.
+// API'nin hata döndürmesini log yazma yetkisine bağımlı bırakmıyoruz.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -88,6 +95,14 @@ builder.Services.AddScoped<IGraderAgent, GraderAgent>();
 builder.Services.AddScoped<IEvaluatorAgent, EvaluatorAgent>();
 builder.Services.AddScoped<ISkillMasteryService, SkillMasteryService>();
 builder.Services.AddScoped<IIntentClassifierAgent, IntentClassifierAgent>();
+builder.Services.AddScoped<ILearningSourceService, LearningSourceService>();
+builder.Services.AddScoped<IAudioOverviewService, AudioOverviewService>();
+builder.Services.AddScoped<ILearningSignalService, LearningSignalService>();
+builder.Services.AddScoped<IClassroomService, ClassroomService>();
+builder.Services.AddScoped<IEdgeTtsService, EdgeTtsService>();
+builder.Services.AddSingleton<BackgroundTaskQueue>();
+builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 
 // LLMOps: Token/Cost Estimator (Dashboard maliyet verisi için)
 builder.Services.AddSingleton<ITokenCostEstimator, TokenCostEstimator>();
@@ -97,6 +112,8 @@ builder.Services.AddScoped<WikiPlugin>();
 builder.Services.AddScoped<TopicPlugin>();
 builder.Services.AddScoped<TavilySearchPlugin>();
 builder.Services.AddScoped<WikipediaPlugin>();
+builder.Services.AddScoped<AcademicSearchPlugin>();
+builder.Services.AddScoped<YouTubeTranscriptPlugin>();
 
 // Korteks dosya çıkarma servisi
 builder.Services.AddScoped<FileExtractionService>();
@@ -110,7 +127,7 @@ builder.Services.AddMediatR(cfg => {
 // ── Named HttpClients + Microsoft.Extensions.Http.Resilience ──────────────────
 // AddStandardResilienceHandler → retry (exp backoff) + circuit breaker + timeout
 // PooledConnectionLifetime = 2 dk → DNS değişikliklerini yakalar, Socket Exhaustion'ı önler.
-// HttpClient timeout'ları AIServiceChain'deki 10s WaitAsync ile tutarlı: 15s yeterli.
+// HttpClient timeout'ları: 15-20s arası uygun.
 builder.Services.AddHttpClient("GitHubModels", c => c.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
@@ -142,7 +159,41 @@ builder.Services.AddHttpClient("Groq", c => c.Timeout = TimeSpan.FromSeconds(15)
         o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     });
 
-// Google Gemini — AIServiceChain Fallback
+// Mistral — AIAgentFactory 4. seviye failover
+builder.Services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    })
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.MaxRetryAttempts          = 1;
+        o.Retry.Delay                     = TimeSpan.FromMilliseconds(300);
+        o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(20);
+    });
+
+// OpenRouter — Korteks claude-opus-4-7 + diğer agent fallbacks
+builder.Services.AddHttpClient("OpenRouter", c => c.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+// Cerebras — IntentClassifier (hafif, hızlı)
+builder.Services.AddHttpClient("Cerebras", c => c.Timeout = TimeSpan.FromSeconds(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+// SambaNova — Evaluator için DeepSeek-V3.1 / Llama-3.3 70B (eleştirel zeka)
+builder.Services.AddHttpClient("SambaNova", c => c.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+// Google Gemini Fallback
 builder.Services.AddHttpClient("Gemini", c => c.Timeout = TimeSpan.FromSeconds(12))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
@@ -179,6 +230,17 @@ builder.Services.AddHttpClient("Wikipedia", c =>
         PooledConnectionLifetime = TimeSpan.FromMinutes(2)
     });
 
+// YouTube — KorteksAgent eğitim videosu arama ve transcript çekme
+builder.Services.AddHttpClient("YouTube", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(15);
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
 // Judge0 CE — Sandbox kod çalıştırma (public instance, token gerekmez)
 // emkc.org/piston 15 Şubat 2026'dan itibaren whitelist-only oldu; Judge0 CE'ye geçildi.
 // Public instance: https://ce.judge0.com
@@ -202,9 +264,10 @@ builder.Services.AddScoped<IAIAgentFactory, AIAgentFactory>();
 
 builder.Services.AddScoped<IGroqService, GroqService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
-
-// Servis-arası failover zinciri: Groq → Gemini
-builder.Services.AddScoped<IAIServiceChain, AIServiceChain>();
+builder.Services.AddScoped<IMistralService, MistralService>();
+builder.Services.AddScoped<IOpenRouterService, OpenRouterService>();
+builder.Services.AddScoped<ICerebrasService, CerebrasService>();
+builder.Services.AddScoped<ISambaNovaService, SambaNovaService>();
 
 // ── SEMANTIC KERNEL SETUP ──────────────────────────────────────────────────
 builder.Services.AddScoped<Kernel>(sp =>
@@ -228,6 +291,9 @@ builder.Services.AddScoped<Kernel>(sp =>
     kernel.Plugins.AddFromObject(sp.GetRequiredService<WikiPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<TopicPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<TavilySearchPlugin>());
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<WikipediaPlugin>());
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<AcademicSearchPlugin>());
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>());
             
     return kernel;
 });
@@ -238,7 +304,7 @@ builder.Services.AddScoped<IChaosContext, ChaosContext>();
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JWT");
-var secretKey = jwtSettings.GetValue<string>("Secret") ?? throw new Exception("JWT Secret eksik.");
+var jwtKey = JwtKeyResolver.Resolve(builder.Configuration, builder.Environment.IsDevelopment());
 
 builder.Services.AddAuthentication(options =>
 {
@@ -255,7 +321,7 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSettings["Issuer"],
         ValidAudience = jwtSettings["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        IssuerSigningKey = jwtKey.SigningKey,
         ClockSkew = TimeSpan.Zero
     };
 });
@@ -272,11 +338,25 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Uygulama başladığında bekleyen migration'ları otomatik uygula
-using (var scope = app.Services.CreateScope())
+// Migration hatasi Swagger/health'i dusurmesin. Local dev'de gerekirse
+// Database:AutoMigrateOnStartup=true yapilarak eski davranis acilabilir.
+var autoMigrateOnStartup = builder.Configuration.GetValue(
+    "Database:AutoMigrateOnStartup",
+    builder.Environment.IsProduction());
+
+if (autoMigrateOnStartup)
 {
-    var db = scope.ServiceProvider.GetRequiredService<Orka.Infrastructure.Data.OrkaDbContext>();
-    db.Database.Migrate();
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex,
+            "Database auto migration failed. API continues so Swagger and health endpoints stay available.");
+    }
 }
 
 // CorrelationId ilk sıraya gelmeli — tüm sonraki middleware'ler ID'yi kullanabilsin
@@ -299,3 +379,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

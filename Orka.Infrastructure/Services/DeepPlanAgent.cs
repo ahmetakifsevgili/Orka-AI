@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System;
+using Orka.Infrastructure.SemanticKernel.Plugins;
 
 namespace Orka.Infrastructure.Services;
 
@@ -25,6 +26,7 @@ public class DeepPlanAgent : IDeepPlanAgent
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISupervisorAgent _supervisor;
     private readonly IGraderAgent _grader;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DeepPlanAgent> _logger;
 
     public DeepPlanAgent(
@@ -32,23 +34,25 @@ public class DeepPlanAgent : IDeepPlanAgent
         IServiceScopeFactory scopeFactory,
         ISupervisorAgent supervisor,
         IGraderAgent grader,
+        IServiceProvider serviceProvider,
         ILogger<DeepPlanAgent> logger)
     {
-        _factory      = factory;
-        _scopeFactory = scopeFactory;
-        _supervisor   = supervisor;
-        _grader       = grader;
-        _logger       = logger;
+        _factory          = factory;
+        _scopeFactory     = scopeFactory;
+        _supervisor       = supervisor;
+        _grader           = grader;
+        _serviceProvider  = serviceProvider;
+        _logger           = logger;
     }
 
     public async Task<List<Topic>> GenerateAndSaveDeepPlanAsync(
         Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null)
     {
-        var modules = await GenerateModulesAsync(topicTitle, userLevel, researchContext, failedTopics);
+        var modules = await GenerateModulesAsync(parentTopicId, topicTitle, userLevel, researchContext, failedTopics);
         return await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
     }
 
-    private async Task<List<ModuleDefinition>> GenerateModulesAsync(string topicTitle, string userLevel, string? researchContext = null, string? failedTopics = null)
+    private async Task<List<ModuleDefinition>> GenerateModulesAsync(Guid parentTopicId, string topicTitle, string userLevel, string? researchContext = null, string? failedTopics = null)
     {
         _logger.LogInformation("[DeepPlan] Multi-Agent RAG döngüsü başlıyor. Konu: {Topic}", topicTitle);
 
@@ -78,6 +82,10 @@ public class DeepPlanAgent : IDeepPlanAgent
             failedTopicsDiagnostic = $"\n\n[DİKKAT - MİKRO TEŞHİS (ZAYIFLIK Analizi)]:\nÖğrenci şu konularda HATA YAPMIŞ veya zorlanmış: {failedTopics}.\nMüfredatı eksiksiz ve kapsamlı çıkar, ANCAK öğrencinin eksik olduğu bu konulara matkapla (drill) in! Bu kavramlar geçtiğinde müfredata ekstra 'Uygulamalı Örnekler', 'Derinlemesine Analiz' ve 'Pratik Lab' alt modülleri ekle. Diğer bildiği konularda standart anlatımla geç.";
         }
 
+        // 3. YouTube Eğitim Videosu Referansı (en popüler eğitimcinin anlatım yapısı)
+        var youtubeReference = await FetchYouTubeEducationalReferenceAsync(parentTopicId, topicTitle);
+        var domainGuidance = BuildDomainPlanningGuidance(topicTitle);
+
         var systemPrompt = $$"""
             Sen akademik seviyede bir 'Müfredat Mimarı (Curriculum Architect)' botusun.
             Görev: Verilen konuyu profesyonel, kapsamlı ve konunun doğasına uygun bir müfredata dönüştürmek.
@@ -85,6 +93,8 @@ public class DeepPlanAgent : IDeepPlanAgent
             Konunun Alanı / Kategorisi: {{intentCategory}}
             {{contextInfo}}
             {{failedTopicsDiagnostic}}
+            {{youtubeReference}}
+            {{domainGuidance}}
 
             ORGANİZASYON KURALI (KRİTİK — KONUYA GÖRE AKILLI YAPILANDIR):
             - Kullanıcı cümlesinden (Örn: "C# çalışmak istiyorum") ASIL KONUYU çıkar ("C# Programlama"). Kesinlikle "Selamlaşma", "İstek", "Giriş" gibi konulardan bahsetme!
@@ -130,6 +140,12 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
 
         _logger.LogError("[DeepPlan] JSON parse tüm denemelerde başarısız. Kapsamlı Fallback uygulanıyor.");
+        var domainFallback = BuildDomainFallbackModules(topicTitle, massive: false);
+        if (domainFallback != null)
+        {
+            return domainFallback;
+        }
+
         // Gelişmiş Dinamik Fallback (Sıradan olmaktan arındırılmış)
         return new List<ModuleDefinition>
         {
@@ -139,6 +155,162 @@ public class DeepPlanAgent : IDeepPlanAgent
         };
     }
 
+    private enum PlanDomain
+    {
+        General,
+        Exam,
+        Algorithm,
+        Math,
+        Language
+    }
+
+    private static PlanDomain DetectPlanDomain(string topicTitle)
+    {
+        var text = (topicTitle ?? string.Empty).ToLowerInvariant();
+
+        if (ContainsAny(text, "hackerrank", "leetcode", "algoritma", "algorithm", "data structure", "veri yap", "competitive", "coding interview", "two pointer", "dynamic programming"))
+            return PlanDomain.Algorithm;
+
+        if (ContainsAny(text, "kpss", "yks", "tyt", "ayt", "ales", "dgs", "lgs", "sınav", "sinav", "deneme", "genel yetenek", "genel kultur", "genel kültür"))
+            return PlanDomain.Exam;
+
+        if (ContainsAny(text, "matematik", "olasılık", "olasilik", "kombinasyon", "permütasyon", "permutasyon", "türev", "turev", "integral", "geometri", "cebir", "problem"))
+            return PlanDomain.Math;
+
+        if (ContainsAny(text, "ielts", "toefl", "yds", "yökdil", "yokdil", "ingilizce", "almanca", "fransızca", "fransizca", "language", "speaking", "konuşma", "konusma", "dil öğren", "dil ogren"))
+            return PlanDomain.Language;
+
+        return PlanDomain.General;
+    }
+
+    private static string BuildDomainPlanningGuidance(string topicTitle)
+    {
+        return DetectPlanDomain(topicTitle) switch
+        {
+            PlanDomain.Exam => """
+
+            [DOMAIN SABLONU - SINAV HAZIRLIK]
+            - Plan; konu anlatımı, ölçme, Deneme, Yanlis analizi ve tekrar döngüsünü birlikte taşımalıdır.
+            - Her modülde konuya özgü alt kazanım, örnek soru tipi, süre stratejisi ve telafi çalışması bulunmalıdır.
+            - KPSS/YKS/benzeri sınavlarda jenerik başlık kullanma; paragraf, problem, tarih kronolojisi, vatandaşlık veya alan kazanımı gibi somut dersler üret.
+            """,
+            PlanDomain.Algorithm => """
+
+            [DOMAIN SABLONU - ALGORITMA / HACKERRANK]
+            - Plan; pattern temelli ilerlemelidir: arrays, two pointers, sliding window, stack/queue, graph, Dynamic Programming ve complexity.
+            - Her modülde IDE pratiği, test case okuma, edge-case analizi ve HackerRank tarzı problem çözümü bulunmalıdır.
+            - Sadece teori verme; kodlama becerisi, yanlış çözüm teşhisi ve mikro refactor alıştırmaları ekle.
+            """,
+            PlanDomain.Math => """
+
+            [DOMAIN SABLONU - MATEMATIK]
+            - Plan; Formulun sezgisel anlamı, adım adım örnek, Karma problem çözümü ve yanlış türü analiziyle ilerlemelidir.
+            - Her modül kavram, işlem, problem dili, görsel/diagram ve Telafi mini quiz dengesini taşımalıdır.
+            - Öğrencinin zayıf alt becerisi varsa aynı kazanımı daha fazla örnek ve mikro kontrol sorusuyla pekiştir.
+            """,
+            PlanDomain.Language => """
+
+            [DOMAIN SABLONU - DIL OGRENIMI]
+            - Plan; kelime, gramer, dinleme, telaffuz, writing ve speaking prompt pratiklerini birlikte taşımalıdır.
+            - Spaced Repetition tekrarları, Speaking Prompt görevleri ve kısa role-play alıştırmaları ekle.
+            - Dil öğreniminde sadece kural anlatma; aktif üretim, hata düzeltme ve seviye uyumlu günlük pratik ver.
+            """,
+            _ => string.Empty
+        };
+    }
+
+    private static List<ModuleDefinition>? BuildDomainFallbackModules(string topicTitle, bool massive)
+    {
+        var title = string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
+        var modules = DetectPlanDomain(title) switch
+        {
+            PlanDomain.Exam => new List<ModuleDefinition>
+            {
+                new($"{title} Kazanım Haritası ve Sınav Stratejisi", "🎯", new List<string> { "Sınav kapsamını alt kazanımlara bölme", "Zaman yönetimi ve Deneme okuma stratejisi", "Yanlis analizi defteri kurma" }),
+                new("Paragraf ve Sözel Akıl Yürütme Atölyesi", "📚", new List<string> { "Paragraf ana fikir ve çıkarım soruları", "Çeldirici seçenekleri ayıklama", "Süre baskısında okuma tekniği" }),
+                new("Matematik Problem Çözme Rotası", "🧮", new List<string> { "Temel işlem ve oran-orantı problemleri", "Karma problem dili çözümleme", "Hatalı çözümden geri izleme" }),
+                new("Deneme, Yanlis Analizi ve Telafi Döngüsü", "🔁", new List<string> { "Deneme sonrası skill bazlı rapor", "Yanlis kümelerine göre tekrar planı", "Mikro quiz ile mastery kontrolü" })
+            },
+            PlanDomain.Algorithm => new List<ModuleDefinition>
+            {
+                new("Problem Okuma ve Complexity Temeli", "🧠", new List<string> { "Input-output sözleşmesini çıkarma", "Big-O sezgisi ve sınır analizi", "Edge-case listesi hazırlama" }),
+                new("Two Pointers ve Sliding Window Patternleri", "🧭", new List<string> { "Two Pointers karar ağacı", "Sliding Window sabit/değişken pencere", "HackerRank test case simülasyonu" }),
+                new("Stack, Queue ve Graph Traversal Pratiği", "🕸️", new List<string> { "Stack ile parantez ve monoton yapı", "BFS/DFS karar noktaları", "IDE içinde debug ve iz sürme" }),
+                new("Dynamic Programming ve Optimizasyon", "⚙️", new List<string> { "State tanımı ve transition yazma", "Memoization vs tabulation", "Yanlış DP modelini refactor etme" })
+            },
+            PlanDomain.Math => new List<ModuleDefinition>
+            {
+                new($"{title} Kavram Sezgisi", "📐", new List<string> { "Formulun nereden geldiğini görselleştirme", "Temel sembol ve işlem dili", "Kavram yanılgısı kontrol soruları" }),
+                new("Adım Adım Problem Çözme", "✍️", new List<string> { "Verilen-istenen ayrıştırma", "Problem tipini sınıflandırma", "Karma örneği küçük parçalara bölme" }),
+                new("Uygulamalı Soru Setleri", "🧮", new List<string> { "Kolaydan zora örnek zinciri", "Çeldirici işlem hataları", "Zamanlı mini quiz" }),
+                new("Telafi ve Mastery Kontrolü", "🔁", new List<string> { "Yanlış skill için Telafi dersi", "Mikro kontrol sorusu", "Benzer ama tekrar etmeyen problem üretimi" })
+            },
+            PlanDomain.Language => new List<ModuleDefinition>
+            {
+                new("Telaffuz ve Temel İfade Kalıpları", "🗣️", new List<string> { "Günlük ifade setleri", "Telaffuz farkındalığı", "Kısa tekrar kartları" }),
+                new("Grammar in Context", "📘", new List<string> { "Seviye uyumlu gramer yapıları", "Yanlış cümle düzeltme", "Mini writing görevi" }),
+                new("Speaking Prompt ve Role-play", "🎙️", new List<string> { "Speaking Prompt ile cevap kurma", "Hoca-asistan role-play pratiği", "Akıcılık ve kelime seçimi feedback'i" }),
+                new("Spaced Repetition ve Aktif Hatırlama", "🔁", new List<string> { "Spaced Repetition kelime döngüsü", "Dinleme sonrası özet çıkarma", "Haftalık mastery konuşması" })
+            },
+            _ => null
+        };
+
+        if (modules != null && massive)
+        {
+            modules.Add(new($"{title} Kişisel Pekiştirme Laboratuvarı", "🧪", new List<string> { "Zayıf beceriye özel ek çalışma", "Kaynaklı açıklama ve örnek", "Mikro quiz kapanış kontrolü" }));
+        }
+
+        return modules;
+    }
+
+    private static bool ContainsAny(string text, params string[] keywords)
+    {
+        return keywords.Any(keyword => text.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<string> FetchYouTubeEducationalReferenceAsync(Guid parentTopicId, string topicTitle)
+    {
+        try
+        {
+            var youtubePlugin = _serviceProvider.GetService<YouTubeTranscriptPlugin>();
+            if (youtubePlugin == null) return string.Empty;
+
+            var redis = _serviceProvider.GetService<IRedisMemoryService>();
+
+            _logger.LogInformation("[DeepPlan] YouTube pedagojik referans aranıyor: {Topic}", topicTitle);
+
+            var searchResult = await youtubePlugin.SearchYouTubeVideos(topicTitle);
+            if (searchResult.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase) ||
+                searchResult.Contains("hata", StringComparison.OrdinalIgnoreCase))
+                return string.Empty;
+
+            var match = System.Text.RegularExpressions.Regex.Match(searchResult, @"VideoId:\s*`([^`]+)`");
+            if (!match.Success) return string.Empty;
+
+            var videoId = match.Groups[1].Value;
+            var transcript = await youtubePlugin.GetVideoTranscript(videoId);
+            if (transcript.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase))
+                return string.Empty;
+
+            if (redis != null)
+            {
+                var payload = JsonSerializer.Serialize(new {
+                    Search = searchResult,
+                    BestVideoId = videoId,
+                    Transcript = transcript
+                });
+                await redis.SaveYouTubeContextAsync(parentTopicId, payload);
+            }
+
+            return $"\n\n[YOUTUBE EĞİTİM REFERANSI (KOPYALAMA İÇİN DEĞİL, ANLATIM YAPISI İÇİN)]:\n{transcript}\n\nLütfen yukarıdaki popüler eğitim videosunun anlatım sırasını, konuları nasıl böldüğünü ve pedagojik akışını incele. Müfredatı oluştururken bu popüler yapıyı referans al (kopyalama, ilham al).";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[DeepPlan] YouTube referans çekme başarısız.");
+            return string.Empty;
+        }
+    }
+
     /// <summary>LLM çıktısını modül/ders yapısına parse eder. Başarısız olursa null döndürür.</summary>
     private static List<ModuleDefinition>? ParseModuleStructure(string raw)
     {
@@ -146,7 +318,7 @@ public class DeepPlanAgent : IDeepPlanAgent
         {
             var s = raw.IndexOf('{');
             var e = raw.LastIndexOf('}');
-            if (s >= 0 && e > s) 
+            if (s >= 0 && e > s)
             {
                 var cleaned = raw[s..(e + 1)];
                 using var doc = JsonDocument.Parse(cleaned);
@@ -171,7 +343,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             }
         }
         catch { /* yoksay, null dönecek */ }
-        
+
         return null;
     }
 
@@ -266,7 +438,7 @@ public class DeepPlanAgent : IDeepPlanAgent
         var systemPrompt = $$"""
             Sen bir 'Eğitim Tanılama Uzmanı (Educational Diagnostician)' botusun.
             Görevin: Kullanıcının '{{topicTitle}}' konusundaki bilgi seviyesini EN İNCE AYRINTISINA KADAR tespit etmek için 20 soru hazırlamak.
-            
+
             SORU DAĞILIMI VE DERİNLİK (Toplam 20 Soru):
             - 1-4: TEMEL KAVRAMLAR (Başlangıç seviyesi, terminoloji kontrolü)
             - 5-10: UYGULAMA VE SENARYO (Orta seviye, "nasıl yapılır?" ve kod okuma)
@@ -278,7 +450,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             - Yanlış seçenekler (çeldiriciler) mantıklı ve kafa karıştırıcı olmalı.
             - Çıktı SADECE saf JSON dizisi olmalıdır.
             - "type" alanı çok önemlidir. Eğer soru sözel ve kavramsal bir bilgiyse "multiple_choice" (4 şık ekle), ALGORİTMA VEYA KODLAMA gerektiriyorsa "coding" (şıkları boş bırak) yap.
-            
+
             [
               {
                 "type": "multiple_choice", // veya "coding"

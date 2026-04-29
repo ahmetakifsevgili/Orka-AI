@@ -11,10 +11,19 @@ export interface QuizOption {
 
 export interface QuizData {
   type?: "multiple_choice" | "coding";
+  quizRunId?: string;
+  questionId?: string;
   question: string;
   options: QuizOption[];
   explanation: string;
   topic?: string;
+  skillTag?: string;
+  topicPath?: string;
+  difficulty?: string;
+  cognitiveType?: string;
+  sourceHint?: string;
+  questionHash?: string;
+  sourceRefs?: string[];
 }
 
 export interface ChatMessage {
@@ -46,10 +55,20 @@ export interface WikiContent {
 export interface QuizAttempt {
   id: string;
   messageId: string;
+  quizRunId?: string;
+  questionId?: string;
+  topicId?: string;
+  sessionId?: string;
   question: string;
   selectedOptionId: string;
   isCorrect: boolean;
   explanation: string;
+  skillTag?: string;
+  topicPath?: string;
+  difficulty?: string;
+  cognitiveType?: string;
+  questionHash?: string;
+  sourceRefsJson?: string;
   timestamp: Date;
 }
 
@@ -133,6 +152,25 @@ export interface ApiDashboardStats {
   progressPercentage: number;
   wikisCount: number;
   activity: Array<{ date: string; count: number }>;
+  learningSignalBook?: {
+    summary: string;
+    totalRecentAttempts: number;
+    weakSkills: Array<{
+      skillTag: string;
+      topicPath: string;
+      wrongCount: number;
+      totalCount: number;
+      accuracy: number;
+      lastSeenAt: string;
+    }>;
+    recentSignals: Array<{
+      signalType: string;
+      skillTag?: string;
+      topicPath?: string;
+      isPositive?: boolean;
+      createdAt: string;
+    }>;
+  };
 }
 
 /** Gamification stats — /api/user/gamification */
@@ -165,10 +203,18 @@ export interface ApiSubtopics {
 /** Single quiz attempt from backend — /api/quiz/history/{topicId} */
 export interface ApiQuizHistoryItem {
   id: string;
+  quizRunId?: string;
+  questionId?: string;
   question: string;
   userAnswer: string;
   isCorrect: boolean;
   explanation: string;
+  skillTag?: string;
+  topicPath?: string;
+  difficulty?: string;
+  cognitiveType?: string;
+  questionHash?: string;
+  sourceRefsJson?: string;
   createdAt: string;
 }
 

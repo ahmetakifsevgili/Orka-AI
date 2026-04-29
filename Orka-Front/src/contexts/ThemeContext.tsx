@@ -33,10 +33,11 @@ function resolveTheme(theme: Theme): "dark" | "light" {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    return (localStorage.getItem("orka_theme") as Theme) || "Dark";
+    const saved = localStorage.getItem("orka_theme") as Theme | null;
+    return saved === "System" ? "System" : "Light";
   });
   const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">(() =>
-    resolveTheme((localStorage.getItem("orka_theme") as Theme) || "Dark")
+    resolveTheme((localStorage.getItem("orka_theme") as Theme) === "System" ? "System" : "Light")
   );
 
   const setTheme = (newTheme: Theme) => {
