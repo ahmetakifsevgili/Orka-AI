@@ -9,9 +9,10 @@ Kişiselleştirilmiş çok-ajanlı AI öğrenme platformu.  Tek kişilik mühend
 **AI** GitHub Models (Primary) → Groq → Gemini (fallback) ·
 **Cache/Telemetri** Redis · **API** `http://localhost:5065/api`
 
-## Altın Kural — Token Ekonomisi
+## Altın Kural — Uçtan Uca Takip & Token Ekonomisi
 
-**Her dosyayı açma. Her klasörü listeleme.**
+**1. YAMA YAPMA, KÖK NEDENİ ÇÖZ:** İzole yamalar eklemek yerine zincirleme etki analizi (Call-Graph Tracking) yap. Hatanın kök nedenini bul ve mimari bütünlüğü koru.
+**2. Her dosyayı açma. Her klasörü listeleme.**
 Bir işe başlamadan önce:
 1. Hangi katman etkileniyor? → İlgili rule dosyası otomatik yüklenir (path-scoped).
 2. Sadece düzeltilecek dosyayı oku.  Çevresindeki klasörü tarama.
@@ -23,9 +24,10 @@ Rule dosyaları `.claude/rules/` altındadır, YAML frontmatter ile **path-scope
 
 | Dosya | Otomatik yüklendiği yollar |
 |---|---|
-| `backend.md` | `Orka.API/**`, `Orka.Core/**`, `Orka.Infrastructure/**` |
+| `backend.md` | `Orka.API/**`, `Orka.Core/Interfaces/**` |
+| `database.md`| `Orka.Infrastructure/Data/**`, `Orka.Core/Entities/**`, `Migrations/**` |
 | `frontend.md` | `Orka-Front/src/**` |
-| `llmops.md` | `Orka.Infrastructure/Services/*Agent*.cs`, `scripts/llm-eval/**` |
+| `agents.md` | `Orka.Infrastructure/Services/*Agent*.cs`, `SemanticKernel/**`, `scripts/llm-eval/**` |
 | `security.md` | `Orka.API/Controllers/AuthController.cs`, JWT/Auth dosyaları |
 | `testing.md` | `scripts/**`, `*.ps1`, `tests/**` |
 

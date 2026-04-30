@@ -11,7 +11,10 @@ globs:
 alwaysApply: false
 ---
 
-# LLMOps Kuralları — Ajan, Değerlendirici, Telemetri
+# Zeka ve Swarm Kuralları (agents.md)
+
+> [!IMPORTANT]
+> **Mimari Prompt ve Davranış Anayasası:** Ajanların kişiliği, liyakat tabanlı rotalama prensipleri ve YouTube/NotebookLM gibi RAG entegrasyonlarının detayları için her zaman `docs/architecture/ORKA_MASTER_GUIDE.md` referans alınacaktır. Bu dosya (agents.md) sadece operasyonel/kodlama metriklerini içerir.
 
 ## Multi-Dimensional Evaluator Şeması
 
