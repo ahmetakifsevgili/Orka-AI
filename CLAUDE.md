@@ -1,94 +1,35 @@
-# Orka AI — Claude Code Kılavuzu
+# Orka AI — Claude Code & AI Asistan Anayasası
 
-Kişiselleştirilmiş çok-ajanlı AI öğrenme platformu.  Tek kişilik mühendis (Ahmet) tarafından geliştirilir — zamanı azdır, iterasyon ucuz olmalıdır.
+Orka AI, 12-ajanlı (Swarm) bir eğitim platformudur. Bu belge, bu projeye dokunan tüm yapay zeka asistanlarının (Claude, Cursor, Copilot) uyması gereken **katı davranış kurallarını** içerir.
 
-## Stack (tek satır)
+## 👑 1. AI DAVRANIŞ BİÇİMİ (Persona & Kurallar)
 
-**Backend** .NET 8 · EF Core + SQL LocalDB · JWT · MediatR · Semantic Kernel ·
-**Frontend** React 19 · Vite 6 · Tailwind v4 · Wouter ·
-**AI** GitHub Models (Primary) → Groq → Gemini (fallback) ·
-**Cache/Telemetri** Redis · **API** `http://localhost:5065/api`
+1. **Kök Nedeni Çöz (Root-Cause First):** "Yama yama" (patch-by-patch) iş yapma. Bir dosyayı değiştiriyorsan, o dosyanın tetiklediği tüm zinciri (call-graph) analiz et. İzole `catch` blokları veya `null` check'lerle hata susturma.
+2. **Mimariyi Koru:** Yeni bir özellik eklerken var olan 12-ajanlı yapıyı (`ORKA_MASTER_GUIDE.md`) bozma. Yeni ajan eklerken daima `AIAgentFactory` üzerinden geçir.
+3. **Konuşma, Kod Yaz (No Yapping):** Uzun uzun "şöyle yaptım, böyle yaptım" deme. Sorunu tespit et ve **eksiksiz tam kod bloğunu** ver. Kodları `// ... (mevcut kodlar)` şeklinde bölme, kullanıcının kopyala-yapıştır yapabileceği tam dosyayı veya tam fonksiyonu ver.
+4. **Token Ekonomisi:** Yalnızca senden istenen dosyayı oku. `ls`, `tree` gibi komutlarla tüm dizini tarama.
 
-## Altın Kural — Uçtan Uca Takip & Token Ekonomisi
+## 🧭 2. KURAL YÜKLEME HARİTASI (Path-Scoped Rules)
 
-**1. YAMA YAPMA, KÖK NEDENİ ÇÖZ:** İzole yamalar eklemek yerine zincirleme etki analizi (Call-Graph Tracking) yap. Hatanın kök nedenini bul ve mimari bütünlüğü koru.
-**2. Her dosyayı açma. Her klasörü listeleme.**
-Bir işe başlamadan önce:
-1. Hangi katman etkileniyor? → İlgili rule dosyası otomatik yüklenir (path-scoped).
-2. Sadece düzeltilecek dosyayı oku.  Çevresindeki klasörü tarama.
-3. Değişken ismini biliyorsan → `Grep`. Dosya yolunu biliyorsan → `Read`.
+Projede farklı klasörlere dokunduğunda aşağıdaki kurallar otomatik yüklenir. İki farklı katmana dokunuyorsan her ikisini de oku.
 
-## Kural Yükleme Haritası
+| Kural Dosyası | İlgili Katmanlar (Globs) | Odak Noktası |
+|---|---|---|
+| `backend.md` | `Orka.API/**`, `Orka.Core/**` | .NET 8 API, DI, Exception Middleware, MediatR |
+| `database.md`| `Orka.Infrastructure/Data/**`, `Entities/**` | EF Core, SQL Server LocalDB, Redis, Migrations |
+| `frontend.md`| `Orka-Front/src/**` | React 19, Tailwind v4, Component kısıtlamaları |
+| `agents.md`  | `Services/*Agent*.cs`, `SemanticKernel/**` | LLM Failover, Evaluator Skorlaması, Swarm Mantığı |
 
-Rule dosyaları `.claude/rules/` altındadır, YAML frontmatter ile **path-scoped** yüklenirler — doğru rule, doğru zamanda gelir.
+## 🏗️ 3. REFERANS DOKÜMANLAR
 
-| Dosya | Otomatik yüklendiği yollar |
-|---|---|
-| `backend.md` | `Orka.API/**`, `Orka.Core/Interfaces/**` |
-| `database.md`| `Orka.Infrastructure/Data/**`, `Orka.Core/Entities/**`, `Migrations/**` |
-| `frontend.md` | `Orka-Front/src/**` |
-| `agents.md` | `Orka.Infrastructure/Services/*Agent*.cs`, `SemanticKernel/**`, `scripts/llm-eval/**` |
-| `security.md` | `Orka.API/Controllers/AuthController.cs`, JWT/Auth dosyaları |
-| `testing.md` | `scripts/**`, `*.ps1`, `tests/**` |
+- **Sistem Mimarisi ve Karakter:** `docs/architecture/ORKA_MASTER_GUIDE.md`
+- **UML Haritası:** `docs/architecture/ORKA_SYSTEM_ARCHITECTURE.md`
+- **Tam Sağlık Testi:** `node scripts/healthcheck.mjs`
+- **Admin Yetkisi Verme:** `sqlcmd -S "(localdb)\mssqllocaldb" -d OrkaDb -i scripts/promote_admin.sql`
 
-Her iki tarafı birden etkileyen özellikler için her iki ilgili rule'u oku.
-
-## Doğrulama Disiplini (sırayla)
-
-```bash
-# 1) Backend
-dotnet build Orka.API/Orka.API.csproj      # 0 hata şart
-
-# 2) Frontend
-cd Orka-Front && npx tsc --noEmit          # 0 hata şart
-
-# 3) Tam sistem sağlık testi (backend ayakta olmalı)
-node scripts/healthcheck.mjs                # PASS/FAIL/BONUS raporu
-```
-
-**Commit atmadan önce** 1+2 zorunlu, 3 önerilir.  Uyarılar mevcuttu ve sayıları artmıyorsa kabul edilebilir.
-
-## Çalıştırma
-
-```bash
-# Backend (ayrı terminalde)
-dotnet run --project Orka.API
-
-# Frontend (ayrı terminalde)
-cd Orka-Front && npm run dev
-```
-
-## Mimari Özet
-
-```
-Orka.Core/          Entity · Interface · Enum · DTO · Event  (bağımlılık YOK)
-Orka.Infrastructure Servis impl · DbContext · SK Plugin · Agent
-Orka.API            Controller · Middleware · Program.cs (tüm DI kayıtları)
-Orka-Front/src/
-  components/       UI bileşenleri
-  pages/            Route-level sayfalar
-  services/api.ts   Tek Axios instance + tüm API namespace'leri
-  lib/types.ts      Tüm shared TS tipleri
-  contexts/         React Context provider'ları
-```
-
-**Bağımlılık yönü:** API → Infrastructure → Core.  Core asla Infrastructure'a bakmaz.
-
-## Kritik Operasyonel Notlar
-
-- **Admin erişimi:** LLMOps HUD yalnızca `User.IsAdmin = true` hesaplara açıktır.  Geliştirici hesabını admin yapmak için: `sqlcmd -S "(localdb)\mssqllocaldb" -d OrkaDb -i scripts/promote_admin.sql`.
-- **API anahtarları:** `appsettings.json`'da DEĞİLDİR — `dotnet user-secrets` içinde saklanır.  Sekreti görmek: `cd Orka.API && dotnet user-secrets list`.
-- **Migration eklerken:** `cd Orka.Infrastructure && dotnet ef migrations add <İsim> --startup-project ../Orka.API`.
-- **Task.Run fire-and-forget yok:** Tüm arkaplan işleri `try/catch + ILogger` wrapper'ında.
-- **Gradient/neon/red-blue-purple yasak** — palet: zinc + emerald (başarı) + amber (uyarı).
-
-## CLAUDE.local.md
-
-Kişisel not/tercihlerin varsa `CLAUDE.local.md` dosyasına yaz — otomatik okunur ve gitignore'dur, commit'lenmez.
-
-## Kişisel Referanslar
-
-- **Docs:** `docs/architecture/` (Mimari harita ve Master Prompt)
-- **Admin promote:** `scripts/promote_admin.sql`
-- **Sağlık denetimi:** `node scripts/healthcheck.mjs` (aşağıda detay)
-- **LLMOps eval:** `scripts/llm-eval/` (promptfoo config)
+## 🚀 4. GİT STANDARTLARI
+Tüm commit mesajları "Semantic Commit" standardına uyacaktır:
+- `feat:` (Yeni özellik)
+- `fix:` (Hata düzeltmesi, uçtan uca test edilmiş)
+- `chore:` (Temizlik, konfigürasyon, ruleset)
+- `refactor:` (Kod yapısı değişimi)

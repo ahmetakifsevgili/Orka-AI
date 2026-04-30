@@ -9,16 +9,16 @@ alwaysApply: false
 
 # Veritabanı ve Önbellek Kuralları — EF Core / LocalDB / Redis
 
-## 1. Mimari Kısıtlamalar
-- **Veritabanı:** `(localdb)\mssqllocaldb` üzerinden SQL Server kullanılmaktadır. Sadece Windows/LocalDB uyumlu SQL syntax'ları geçerlidir.
-- **ORM:** Entity Framework Core 8 kullanılmaktadır. Linq sorguları optimize edilmeli ve gereksiz "N+1" sorgu problemlerinden kaçınılmalıdır.
-- **Cache:** Dağıtık önbellek ve LLM Telemetrisi için Redis kullanılmaktadır (`Orka.Infrastructure/Services/RedisMemoryService.cs`).
+## 1. Veritabanı Mimarisi (EF Core)
+- **LocalDB Uyumu:** Orka, `(localdb)\mssqllocaldb` kullanır. Yazdığınız LINQ sorguları SQL Server provider'ına uygun olmalıdır (Örn: client-side evaluation hatasına sebep olacak C# kodları yazmaktan kaçının).
+- **Asenkron İşlemler:** EF Core tarafında `ToList()`, `FirstOrDefault()` YASAKTIR. Sadece `ToListAsync()`, `FirstOrDefaultAsync()` kullanılacaktır.
+- **N+1 Problemi:** Bağımlı verileri (örneğin kullanıcının kayıtlı olduğu sınıflar) çekerken mutlaka `.Include()` kullanılmalıdır.
+- **Tracking:** Sadece okuma (Read-Only) yapılan sorgularda performansı artırmak için daima `.AsNoTracking()` eklenmelidir.
 
 ## 2. Migration Disiplini
-- Yeni bir alan veya tablo eklendiğinde `Orka.Core/Entities` güncellenmeli, ardından `Orka.Infrastructure` dizininde şu komut çalıştırılmalıdır:
-  `dotnet ef migrations add <Isim> --startup-project ../Orka.API`
-- Entity'lere eklenen yeni property'ler olabildiğince `required` veya nullable `?` tipinde açıkça belirtilmelidir.
+- Yeni bir Entity eklediğinde veya değiştirdiğinde, her zaman önce `Orka.Core/Entities` güncellenir. Sonra `Orka.Infrastructure` içinden `dotnet ef migrations add <Isim> --startup-project ../Orka.API` komutu çalıştırılır.
+- Kodları manuel `DROP TABLE` veya raw SQL ile bozmayın, her şey Code-First ilerler.
 
-## 3. Asenkron İşlemler ve DB Context
-- Tüm EF Core çağrıları kesinlikle `Async` olmak zorundadır (`ToListAsync()`, `FirstOrDefaultAsync()`).
-- `OrkaDbContext` dependency injection ile Scoped olarak gelir. Arka plan işlerinde (Background Services) veya asenkron event'lerde DbContext kullanılacaksa, mutlaka yeni bir Scope yaratılmalıdır (`IServiceScopeFactory.CreateScope()`).
+## 3. Önbellek (Redis) Kuralları
+- Token/Oturum durumları ve LLM Telemetrisi, Redis üzerinden asenkron yönetilir (`RedisMemoryService.cs`).
+- Redis key'lerinde her zaman `orka:` öneki (prefix) zorunludur. (Örn: `orka:session:123`, `orka:metrics:TutorAgent`).
