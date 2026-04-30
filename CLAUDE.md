@@ -74,7 +74,7 @@ Orka-Front/src/
 
 ## Kritik Operasyonel Notlar
 
-- **Admin erişimi:** LLMOps HUD yalnızca `User.IsAdmin = true` hesaplara açıktır.  Geliştirici hesabını admin yapmak için: `sqlcmd -S "(localdb)\mssqllocaldb" -d OrkaDb -i promote_admin.sql`.
+- **Admin erişimi:** LLMOps HUD yalnızca `User.IsAdmin = true` hesaplara açıktır.  Geliştirici hesabını admin yapmak için: `sqlcmd -S "(localdb)\mssqllocaldb" -d OrkaDb -i scripts/promote_admin.sql`.
 - **API anahtarları:** `appsettings.json`'da DEĞİLDİR — `dotnet user-secrets` içinde saklanır.  Sekreti görmek: `cd Orka.API && dotnet user-secrets list`.
 - **Migration eklerken:** `cd Orka.Infrastructure && dotnet ef migrations add <İsim> --startup-project ../Orka.API`.
 - **Task.Run fire-and-forget yok:** Tüm arkaplan işleri `try/catch + ILogger` wrapper'ında.
@@ -86,7 +86,7 @@ Kişisel not/tercihlerin varsa `CLAUDE.local.md` dosyasına yaz — otomatik oku
 
 ## Kişisel Referanslar
 
-- **Docs:** `docs/architecture/` (PDF + MD mimari dosyaları), `docs/plans/` (fazlar & strateji)
-- **Admin promote:** `promote_admin.sql`
+- **Docs:** `docs/architecture/` (Mimari harita ve Master Prompt)
+- **Admin promote:** `scripts/promote_admin.sql`
 - **Sağlık denetimi:** `node scripts/healthcheck.mjs` (aşağıda detay)
 - **LLMOps eval:** `scripts/llm-eval/` (promptfoo config)
