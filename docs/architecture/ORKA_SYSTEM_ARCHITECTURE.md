@@ -130,8 +130,9 @@ graph TD
     KA -->|"Embedding Sor"| C["Cohere V3"]
     C -->|"Vektör Sorgusu"| VDB[("Vektör DB")]
     VDB --"İlgili Parçalar"--> KA
-    KA -->|"Wikipedia / Google Search"| WEB
-    KA --"Derlenmiş Veri"--> WA["WikiAgent"]
+    KA -->|"Wikipedia / Academic Search"| WEB["🌐 Web RAG"]
+    KA -->|"Video Transkript Analizi"| YT["📺 YouTube Transcript Plugin"]
+    WEB & YT --"Derlenmiş Veri"--> WA["WikiAgent"]
     WA -->|"Öğrenci Dostu Dil"| G["Grader"]
 ```
 
