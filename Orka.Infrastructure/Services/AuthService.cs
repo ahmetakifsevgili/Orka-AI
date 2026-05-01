@@ -33,7 +33,7 @@ public class AuthService : IAuthService
     {
         var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (existingUser != null)
-            throw new Exception("Bu email adresi zaten kullanımda.");
+            throw new BadRequestException("Bu email adresi zaten kullanımda.");
 
         var freeStorageMb = double.Parse(_configuration["Limits:FreeStorageMB"] ?? "3072");
 
@@ -161,4 +161,9 @@ public class NotFoundException : Exception
 public class UnauthorizedException : Exception
 {
     public UnauthorizedException(string message) : base(message) { }
+}
+
+public class BadRequestException : Exception
+{
+    public BadRequestException(string message) : base(message) { }
 }

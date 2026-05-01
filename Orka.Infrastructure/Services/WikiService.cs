@@ -104,7 +104,7 @@ public class WikiService : IWikiService
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
         var page = await db.WikiPages.FirstOrDefaultAsync(w => w.Id == pageId && w.UserId == userId)
-            ?? throw new Exception("Wiki sayfası bulunamadı.");
+            ?? throw new NotFoundException("Wiki sayfası bulunamadı.");
 
         var maxOrder = await db.WikiBlocks
             .Where(b => b.WikiPageId == pageId)
@@ -158,7 +158,7 @@ public class WikiService : IWikiService
         if (block == null) return;
 
         if (block.BlockType != WikiBlockType.UserNote)
-            throw new Exception("Sadece kullanıcı notları silinebilir.");
+            throw new BadRequestException("Sadece kullanıcı notları silinebilir.");
 
         db.WikiBlocks.Remove(block);
         await db.SaveChangesAsync();

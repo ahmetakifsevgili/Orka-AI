@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs.Auth;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
@@ -16,71 +17,54 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IAuthService authService, IConfiguration configuration)
+    public AuthController(
+        IAuthService authService,
+        IConfiguration configuration,
+        ILogger<AuthController> logger)
     {
         _authService = authService;
         _configuration = configuration;
+        _logger = logger;
     }
 
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        try
+        _logger.LogInformation("[Auth] Register attempt Email={Email}", request.Email);
+
+        var result = await _authService.RegisterAsync(
+            request.FirstName, request.LastName, request.Email, request.Password);
+
+        return Ok(new AuthResponse
         {
-            var result = await _authService.RegisterAsync(request.FirstName, request.LastName, request.Email, request.Password);
-            return Ok(new AuthResponse
-            {
-                Token = result.Token,
-                RefreshToken = result.RefreshToken,
-                User = ToUserDto(result.User)
-            });
-        }
-        catch (Exception)
-        {
-            return BadRequest(new { message = "Istek islenemedi." });
-        }
+            Token = result.Token,
+            RefreshToken = result.RefreshToken,
+            User = ToUserDto(result.User)
+        });
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        try
+        _logger.LogInformation("[Auth] Login attempt Email={Email}", request.Email);
+
+        var result = await _authService.LoginAsync(request.Email, request.Password);
+
+        return Ok(new AuthResponse
         {
-            var result = await _authService.LoginAsync(request.Email, request.Password);
-            return Ok(new AuthResponse
-            {
-                Token = result.Token,
-                RefreshToken = result.RefreshToken,
-                User = ToUserDto(result.User)
-            });
-        }
-        catch (NotFoundException)
-        {
-            return NotFound(new { message = "Kayit bulunamadi." });
-        }
-        catch (UnauthorizedException)
-        {
-            return Unauthorized(new { message = "Kimlik dogrulama basarisiz." });
-        }
-        catch (Exception)
-        {
-            return BadRequest(new { message = "Istek islenemedi." });
-        }
+            Token = result.Token,
+            RefreshToken = result.RefreshToken,
+            User = ToUserDto(result.User)
+        });
     }
 
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
     {
-        try
-        {
-            var result = await _authService.RefreshAsync(request.RefreshToken);
-            return Ok(new { token = result.Token, refreshToken = result.RefreshToken });
-        }
-        catch (Exception)
-        {
-            return Unauthorized(new { message = "GeÃ§ersiz refresh token." });
-        }
+        var result = await _authService.RefreshAsync(request.RefreshToken);
+        return Ok(new { token = result.Token, refreshToken = result.RefreshToken });
     }
 
     [HttpPost("logout")]

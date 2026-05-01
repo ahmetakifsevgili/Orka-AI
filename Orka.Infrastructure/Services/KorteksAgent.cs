@@ -162,13 +162,19 @@ public class KorteksAgent : IKorteksAgent
             ARAŞTIRMA SÜRECI (bu sırayı takip et):
             1. WebSearch-SearchWebDeep ile konuyu 3 farklı açıdan paralel ara.
                Sorgular: [Ana kavramın detayları] / [Pratik kullanım, teknik örnekler] / [Son gelişmeler, endüstri standartları]
-            2. Wikipedia-SearchWikipedia ile makaleyi bulup çek.
-            3. Academic-SearchSemanticScholar ile peer-reviewed makaleler ara (V4 yeni — bilimsel iddiaları buradan doğrula).
-               Eğer konu yeni / preprint ağırlıklıysa Academic-SearchArXiv'i de kullan.
+            2. Wikipedia-SearchWikipedia ile lead section + ana tanımı çek.
+               Tarihsel/biyografik/coğrafi konularda Wikipedia OTORİTE kaynaktır — başlangıç bağlamını oradan kur.
+               Eğer Wikipedia'da uygun makale yoksa açıkça belirt; uydurma.
+            3. Academic-SearchSemanticScholar ile peer-reviewed makaleler ara — bilimsel/sayısal/teknik ZORUNLU.
+               Hangi iddiaya geliyorsa: "Çalışmalar gösteriyor ki…", "Şu yıl şu istatistik…", "Şu mekanizma çalışıyor…"
+               → Bu iddiaları Semantic Scholar veya ArXiv referansıyla mühürle.
+               Konu yeni/preprint ağırlıklıysa Academic-SearchArXiv'i de kullan.
+               Akademik kaynağa ulaşılamadığında "akademik doğrulama bulunamadı" yaz, üretme.
             4. YouTube-SearchYouTubeVideos ile konuyla ilgili eğitim videoları ara.
                En alakalı videonun transcript'ını YouTube-GetVideoTranscript ile çek.
                Transcript varsa raporun içinde "Bu konuda şu eğitim videosu referans alınmıştır" şeklinde kaynak göster.
-            5. Toplanan bilgileri karşılaştır. Web ↔ Wikipedia ↔ Akademik makale çelişiyorsa "akademik" sürümü öncele.
+            5. Toplanan bilgileri karşılaştır. ÇELİŞKİ ÖNCELİĞİ: Akademik > Wikipedia > Web.
+               İki kaynak çelişiyorsa "akademik" sürümü öncele; uzlaşmazlık varsa ⚠️ bölümünde her iki sürümü yaz.
             6. En az 6-8 paragraf uzunluğunda, son derece doyurucu ve derinlemesine yapılandırılmış bir rapor yaz.
 
             ZORUNLU ÇIKTI FORMATI:

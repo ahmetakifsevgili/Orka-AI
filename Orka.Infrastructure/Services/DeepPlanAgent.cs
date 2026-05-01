@@ -333,7 +333,7 @@ public class DeepPlanAgent : IDeepPlanAgent
     }
 
     /// <summary>LLM çıktısını modül/ders yapısına parse eder. Başarısız olursa null döndürür.</summary>
-    private static List<ModuleDefinition>? ParseModuleStructure(string raw)
+    private List<ModuleDefinition>? ParseModuleStructure(string raw)
     {
         try
         {
@@ -361,9 +361,24 @@ public class DeepPlanAgent : IDeepPlanAgent
                 }
 
                 if (modules.Count >= 2) return modules;
+
+                _logger.LogWarning(
+                    "[DeepPlan] Module structure parsed but module count below threshold. ModuleCount={Count}",
+                    modules.Count);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "[DeepPlan] Module structure JSON envelope not found. RawSnippet={Snippet}",
+                    raw.Length > 200 ? raw[..200] : raw);
             }
         }
-        catch { /* yoksay, null dönecek */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[DeepPlan] Module structure parse failed; phase will return null. RawSnippet={Snippet}",
+                raw.Length > 200 ? raw[..200] : raw);
+        }
 
         return null;
     }

@@ -25,6 +25,11 @@ public static class LearningSignalTypes
     public const string MisconceptionDetected = "MisconceptionDetected";
     public const string TeachingMoveApplied = "TeachingMoveApplied";
     public const string SourceCitationMissing = "SourceCitationMissing";
+    public const string LessonFocused = "LessonFocused";
+    public const string WikiRailOpened = "WikiRailOpened";
+    public const string ContextActionClicked = "ContextActionClicked";
+    public const string SourceCitationOpened = "SourceCitationOpened";
+    public const string RemedialActionStarted = "RemedialActionStarted";
 
     public static readonly IReadOnlyCollection<string> All =
     [
@@ -46,7 +51,12 @@ public static class LearningSignalTypes
         NotebookSourceUsed,
         MisconceptionDetected,
         TeachingMoveApplied,
-        SourceCitationMissing
+        SourceCitationMissing,
+        LessonFocused,
+        WikiRailOpened,
+        ContextActionClicked,
+        SourceCitationOpened,
+        RemedialActionStarted
     ];
 
     public static string Normalize(string? value)

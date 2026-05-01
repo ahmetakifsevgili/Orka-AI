@@ -83,7 +83,10 @@ public class ChatController : ControllerBase
                 request.Content,
                 request.TopicId,
                 request.SessionId,
-                request.IsPlanMode);
+                request.IsPlanMode,
+                request.FocusTopicId,
+                request.FocusTopicPath,
+                request.FocusSourceRef);
 
             return Ok(response);
         }
@@ -94,7 +97,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("stream")]
-    public async Task StreamMessage([FromBody] SendMessageRequest request)
+    public async Task StreamMessage([FromBody] SendMessageRequest request, CancellationToken cancellationToken)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var limit = await TryConsumeDailyMessageAsync(userId);
@@ -102,17 +105,17 @@ public class ChatController : ControllerBase
         {
             Response.StatusCode = 429;
             Response.ContentType = "application/json";
-            await Response.WriteAsJsonAsync(new { message = "Gunluk mesaj limitine ulasildi.", dailyLimit = limit.Limit });
+            await Response.WriteAsJsonAsync(new { message = "Gunluk mesaj limitine ulasildi.", dailyLimit = limit.Limit }, cancellationToken);
             return;
         }
-        
+
         Guid sid;
         Guid? createdTopicId = null;
         try
         {
             var session = await _agentOrchestrator.GetOrCreateSessionAsync(userId, request.TopicId, request.SessionId, request.Content);
-            if (session == null) throw new Exception("Oturum baslatilamadi.");
-            
+            if (session == null) throw new BadRequestException("Oturum baslatilamadi.");
+
             sid = session.Id;
             createdTopicId = session.TopicId;
 
@@ -129,8 +132,12 @@ public class ChatController : ControllerBase
 
             // Initial heartbeat forces headers to be flushed to client immediately.
             // Without this, GetResponse() blocks until the first AI chunk (up to 90s if primary model retries).
-            await Response.WriteAsync(": connected\n\n");
-            await Response.Body.FlushAsync();
+            await Response.WriteAsync(": connected\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return; // client disconnect
         }
         catch (Exception ex)
         {
@@ -146,20 +153,29 @@ public class ChatController : ControllerBase
                 request.Content,
                 request.TopicId,
                 sid,
-                request.IsPlanMode))
+                request.IsPlanMode,
+                request.FocusTopicId,
+                request.FocusTopicPath,
+                request.FocusSourceRef))
             {
+                if (cancellationToken.IsCancellationRequested) break;
                 var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
-                await Response.WriteAsync($"data: {safeChunk}\n\n");
-                await Response.Body.FlushAsync();
+                await Response.WriteAsync($"data: {safeChunk}\n\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Client disconnect; sıradan akış sonu, error frame yazma.
+            _logger.LogDebug("[Chat] Stream client disconnected; ending gracefully.");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "StreamMessage akisi kesildi.");
             try
             {
-                await Response.WriteAsync("data: [ERROR]: AI baglantisi su an tamamlanamadi.\n\n");
-                await Response.Body.FlushAsync();
+                await Response.WriteAsync("data: [ERROR]: AI baglantisi su an tamamlanamadi.\n\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
             }
             catch (Exception flushEx)
             {

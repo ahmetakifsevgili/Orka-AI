@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Orka.Core.Constants;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
@@ -18,30 +19,41 @@ public class DashboardController : ControllerBase
     private readonly OrkaDbContext _dbContext;
     private readonly IRedisMemoryService _redis;
     private readonly IWebHostEnvironment _environment;
+    private readonly ILogger<DashboardController> _logger;
 
-    public DashboardController(OrkaDbContext dbContext, IRedisMemoryService redis, IWebHostEnvironment environment)
+    public DashboardController(
+        OrkaDbContext dbContext,
+        IRedisMemoryService redis,
+        IWebHostEnvironment environment,
+        ILogger<DashboardController> logger)
     {
         _dbContext = dbContext;
         _redis = redis;
         _environment = environment;
+        _logger = logger;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats()
+    public async Task<IActionResult> GetStats(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
 
-        var user = await _dbContext.Users.FindAsync(userId);
-        var totalXP = user?.TotalXP ?? 0;
-        var currentStreak = user?.CurrentStreak ?? 0;
+        var userStats = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.TotalXP, u.CurrentStreak })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var totalXP = userStats?.TotalXP ?? 0;
+        var currentStreak = userStats?.CurrentStreak ?? 0;
 
         var allTopics = await _dbContext.Topics
             .AsNoTracking()
             .Where(t => t.UserId == userId && t.ParentTopicId == null)
             .Select(t => new { t.ProgressPercentage, t.IsArchived })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var completedTopics = allTopics.Count(t => t.ProgressPercentage >= 100);
         var activeLearning = allTopics.Count(t => t.ProgressPercentage > 0 && t.ProgressPercentage < 100);
@@ -51,7 +63,7 @@ public class DashboardController : ControllerBase
             .AsNoTracking()
             .Where(t => t.UserId == userId)
             .Select(t => new { t.TotalSections, t.CompletedSections })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var totalSections = sectionData.Sum(t => t.TotalSections);
         var completedSections = sectionData.Sum(t => t.CompletedSections);
@@ -59,19 +71,21 @@ public class DashboardController : ControllerBase
             ? Math.Round((double)completedSections / totalSections * 100, 1)
             : 0.0;
 
+        // 7 günlük aktivite — SQL-side GroupBy.
+        // EF Core SQL Server provider, m.CreatedAt.Date'i CONVERT(date, [m].[CreatedAt]) olarak çevirir;
+        // tüm satırları çekmek yerine günlük count'lar projeksiyonla döner.
         var weekAgo = DateTime.UtcNow.Date.AddDays(-7);
-        var recentMessages = await _dbContext.Messages
+        var activity = await _dbContext.Messages
             .AsNoTracking()
             .Where(m => m.UserId == userId && m.CreatedAt >= weekAgo)
-            .OrderBy(m => m.CreatedAt)
-            .ToListAsync();
-
-        var activity = recentMessages
             .GroupBy(m => m.CreatedAt.Date)
             .Select(g => new { date = g.Key, count = g.Count() })
-            .ToList();
+            .OrderBy(g => g.date)
+            .ToListAsync(cancellationToken);
 
-        var wikisCount = await _dbContext.WikiPages.CountAsync(w => w.UserId == userId);
+        var wikisCount = await _dbContext.WikiPages
+            .AsNoTracking()
+            .CountAsync(w => w.UserId == userId, cancellationToken);
         var recentQuizAttempts = await _dbContext.QuizAttempts
             .AsNoTracking()
             .Where(a => a.UserId == userId)
@@ -84,7 +98,7 @@ public class DashboardController : ControllerBase
                 a.IsCorrect,
                 a.CreatedAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var weakSkills = recentQuizAttempts
             .GroupBy(a => string.IsNullOrWhiteSpace(a.SkillTag)
@@ -123,7 +137,7 @@ public class DashboardController : ControllerBase
                 s.IsPositive,
                 createdAt = s.CreatedAt.ToString("O")
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return Ok(new
         {
@@ -150,7 +164,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("recent-activity")]
-    public async Task<IActionResult> GetRecentActivity()
+    public async Task<IActionResult> GetRecentActivity(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
 
@@ -160,43 +174,49 @@ public class DashboardController : ControllerBase
             .OrderByDescending(t => t.LastAccessedAt)
             .Take(5)
             .Select(t => new { t.Id, t.Title, t.Emoji, t.LastAccessedAt })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return Ok(recentTopics);
     }
 
     [HttpGet("system-health")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> GetSystemHealth()
+    public async Task<IActionResult> GetSystemHealth(CancellationToken cancellationToken)
     {
         // Admin HUD is system-wide. Per-user learning dashboard remains /stats.
-        var totalTokens = await _dbContext.Sessions
+        // Sessions aggregate: tokens + cost + count + last date — tek round-trip.
+        var sessionAgg = await _dbContext.Sessions
             .AsNoTracking()
-            .SumAsync(s => (int?)s.TotalTokensUsed) ?? 0;
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                TotalTokens = g.Sum(s => (int?)s.TotalTokensUsed) ?? 0,
+                TotalCostUSD = g.Sum(s => (decimal?)s.TotalCostUSD) ?? 0m,
+                Count = g.Count(),
+                LastDate = (DateTime?)g.Max(s => s.CreatedAt)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var totalCostUSD = await _dbContext.Sessions
+        var totalTokens = sessionAgg?.TotalTokens ?? 0;
+        var totalCostUSD = sessionAgg?.TotalCostUSD ?? 0m;
+        var sessionCount = sessionAgg?.Count ?? 0;
+        var lastSessionDate = sessionAgg?.LastDate;
+
+        // Mastery count + ortalama tek projeksiyonda.
+        var masteryAgg = await _dbContext.SkillMasteries
             .AsNoTracking()
-            .SumAsync(s => (decimal?)s.TotalCostUSD) ?? 0m;
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Avg = (double?)g.Average(sm => (double)sm.QuizScore)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var masteryCount = await _dbContext.SkillMasteries
-            .AsNoTracking()
-            .CountAsync();
-
-        var averageMastery = await _dbContext.SkillMasteries
-            .AsNoTracking()
-            .Select(sm => (double?)sm.QuizScore)
-            .AverageAsync() ?? 0.0;
-
+        var masteryCount = masteryAgg?.Count ?? 0;
         var pedagogyScore = masteryCount > 0
-            ? Math.Round(averageMastery, 1)
+            ? Math.Round(masteryAgg!.Avg ?? 0.0, 1)
             : 0.0;
-
-        var sessionCount = await _dbContext.Sessions.CountAsync();
-        var lastSessionDate = await _dbContext.Sessions
-            .AsNoTracking()
-            .OrderByDescending(s => s.CreatedAt)
-            .Select(s => (DateTime?)s.CreatedAt)
-            .FirstOrDefaultAsync();
 
         var sqlEvals = await _dbContext.AgentEvaluations
             .AsNoTracking()
@@ -209,7 +229,7 @@ public class DashboardController : ControllerBase
                 e.EvaluatorFeedback,
                 e.CreatedAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var agentQuality = sqlEvals
             .GroupBy(e => e.AgentRole)
@@ -245,10 +265,20 @@ public class DashboardController : ControllerBase
             ? Math.Round(sqlEvals.Average(e => (double)e.EvaluationScore), 2)
             : 0.0;
 
-        var agentMetrics = (await _redis.GetSystemMetricsAsync()).ToList();
-        var providerUsage = (await _redis.GetProviderUsageAsync()).ToList();
-        var redisHealth = await _redis.GetRedisHealthAsync();
-        var cacheMetrics = (await _redis.GetCacheMetricsAsync()).ToList();
+        // Redis çağrıları DbContext'ten bağımsız — paralelleştir.
+        var agentMetricsTask = _redis.GetSystemMetricsAsync();
+        var providerUsageTask = _redis.GetProviderUsageAsync();
+        var redisHealthTask = _redis.GetRedisHealthAsync();
+        var cacheMetricsTask = _redis.GetCacheMetricsAsync();
+
+        await Task.WhenAll(agentMetricsTask, providerUsageTask, redisHealthTask, cacheMetricsTask);
+
+        var agentMetrics = agentMetricsTask.Result.ToList();
+        var providerUsage = providerUsageTask.Result.ToList();
+        var redisHealth = redisHealthTask.Result;
+        var cacheMetrics = cacheMetricsTask.Result.ToList();
+
+        // DbContext bağımlı çağrılar — sequential (DbContext thread-safe değil).
         var learningOps = await BuildLearningOpsAsync();
         var endpointHealth = await BuildEndpointHealthAsync(redisHealth);
 
@@ -388,8 +418,11 @@ public class DashboardController : ControllerBase
             var canConnect = await _dbContext.Database.CanConnectAsync(HttpContext.RequestAborted);
             return new { canConnect, error = (string?)null };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex,
+                "[Dashboard] Database readiness check failed Provider={Provider}",
+                _dbContext.Database.ProviderName);
             return new { canConnect = false, error = "Database readiness check failed." };
         }
     }
