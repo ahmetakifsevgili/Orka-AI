@@ -144,7 +144,9 @@ export default function SettingsPanel() {
         newContent: s.newContentAlerts ?? false,
         sounds: s.soundsEnabled ?? true,
       });
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.error("[SettingsPanel] UserAPI.getMe (load settings) failed:", err);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

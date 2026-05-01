@@ -56,7 +56,9 @@ export default function Courses() {
   useEffect(() => {
     TopicsAPI.getAll()
       .then((r) => setTopics(r.data ?? []))
-      .catch(() => {})
+      .catch((err: unknown) => {
+        console.error("[Courses] TopicsAPI.getAll failed:", err);
+      })
       .finally(() => setLoading(false));
   }, []);
 

@@ -101,7 +101,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         setLanguageState(lang);
         localStorage.setItem("orka_language", lang);
       }
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.error("[LanguageContext] UserAPI.getMe failed:", err);
+    });
   }, []);
 
   const setLanguage = (lang: Language) => {

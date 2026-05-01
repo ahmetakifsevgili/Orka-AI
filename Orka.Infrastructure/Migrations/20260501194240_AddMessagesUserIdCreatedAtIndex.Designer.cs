@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Orka.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Orka.Infrastructure.Data;
 namespace Orka.Infrastructure.Migrations
 {
     [DbContext(typeof(OrkaDbContext))]
-    partial class OrkaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501194240_AddMessagesUserIdCreatedAtIndex")]
+    partial class AddMessagesUserIdCreatedAtIndex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -122,39 +125,6 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("UserId", "TopicId", "CreatedAt");
 
                     b.ToTable("AudioOverviewJobs");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.Bookmark", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Note")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Tag")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MessageId");
-
-                    b.HasIndex("UserId", "CreatedAt");
-
-                    b.HasIndex("UserId", "MessageId")
-                        .IsUnique();
-
-                    b.ToTable("Bookmarks");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.ClassroomInteraction", b =>
@@ -1118,25 +1088,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("Session");
 
                     b.Navigation("Topic");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.Bookmark", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.Message", "Message")
-                        .WithMany()
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Message");
 
                     b.Navigation("User");
                 });

@@ -1,400 +1,532 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
+  Activity,
+  ArrowRight,
+  Award,
   BookOpen,
   Brain,
-  Target,
-  Flame,
-  TrendingUp,
-  ArrowRight,
-  ChevronRight,
-  Activity,
-  Award,
+  Code2,
   Cpu,
+  Flame,
+  Lightbulb,
+  MessageSquare,
+  Sparkles,
+  Target,
+  TrendingUp,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
-import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
+import type { ActiveLearningContext, ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification, ContextRailTab } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
+import SkillTreePanel from "@/components/SkillTreePanel";
 
 interface DashboardPanelProps {
   topics: ApiTopic[];
   onViewChange: (view: string) => void;
+  onFocusTopic?: (topic: ApiTopic, options?: { tab?: ContextRailTab; intent?: ActiveLearningContext["intent"] }) => void;
 }
 
-/** 
- * Custom Sparkline Component
- * UX Mandate: No heavy chart libs, premium SVG feel.
- */
-function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] }) {
-  if (!data || data.length < 2) return null;
-  
-  const width = 200;
-  const height = 40;
-  const padding = 5;
-  
-  const maxVal = 100;
-  const minVal = 0;
-  
-  const points = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * (width - 2 * padding) + padding;
-    const y = height - ((d.accuracy - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding;
-    return `${x},${y}`;
-  }).join(" ");
+type TabId = "karne" | "hud" | "agac";
+
+// ARCH: clampPercent defined BEFORE any component that uses it
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function LevelProgressCard({ gamification, loading }: { gamification: ApiGamification | null; loading: boolean }) {
+  if (loading || !gamification) return <MetricCard icon={TrendingUp} label="Toplam XP" value="..." tone="blue" />;
+
+  // BUG-1 FIX: correct percentage = xpInLevel / totalXpPerLevel
+  const totalInLevel = gamification.xpInLevel + gamification.xpToNextLevel;
+  const pct = clampPercent(totalInLevel > 0 ? (gamification.xpInLevel / totalInLevel) * 100 : 0);
 
   return (
-    <div className="relative group">
-      <svg width={width} height={height} className="overflow-visible">
-        {/* Shadow path for depth */}
-        <polyline
-          points={points}
-          fill="none"
-          stroke="rgba(16, 185, 129, 0.1)"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Main path */}
-        <polyline
-          points={points}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-emerald-500/80"
-        />
-        {/* End dot */}
-        <circle 
-          cx={(width - padding)} 
-          cy={height - ((data[data.length-1].accuracy - minVal) / (maxVal - minVal)) * (height - 2 * padding) - padding}
-          r="3"
-          className="fill-emerald-400 stroke-emerald-950 stroke-2"
-        />
-      </svg>
+    <div className="rounded-[1.35rem] border border-[#526d82]/12 bg-[#f4f7f7]/72 p-5 shadow-[0_10px_28px_rgba(66,91,112,0.06)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(66,91,112,0.08)]">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#dcecf3]/78 text-[#2d5870] shadow-inner">
+            <Award className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#667085]">Seviye {gamification.level}</p>
+            <p className="text-lg font-black tracking-tight text-[#172033]">{gamification.levelLabel}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-black tracking-tight text-[#2d5870]">{gamification.totalXP} XP</p>
+        </div>
+      </div>
+      <div className="mt-5">
+        <div className="flex justify-between px-1 text-[10px] font-extrabold uppercase tracking-wider text-[#8a97a0]">
+          <span>{gamification.xpInLevel} XP</span>
+          <span>Sonraki seviyeye {gamification.xpToNextLevel} XP</span>
+        </div>
+        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e1e9ea]/80 shadow-inner">
+          <div className="h-full rounded-full bg-gradient-to-r from-[#8fb7a2] to-[#547c61] transition-all duration-1000" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
     </div>
   );
 }
 
-export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
-  const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
-  // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
+function SuccessRateSparkline({ data }: { data?: ApiGlobalStats["dailyProgress"] }) {
+  if (!data || data.length < 2) return <div className="h-10 rounded-xl bg-[#e7ecec]/70" />;
+
+  const width = 220;
+  const height = 48;
+  const padding = 6;
+  const points = data
+    .map((item, index) => {
+      const x = (index / (data.length - 1)) * (width - 2 * padding) + padding;
+      const y = height - (clampPercent(item.accuracy) / 100) * (height - 2 * padding) - padding;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+      <polyline points={points} fill="none" stroke="rgba(84,124,97,0.14)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={points} fill="none" stroke="#547c61" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={width - padding} cy={height - (clampPercent(data[data.length - 1].accuracy) / 100) * (height - 2 * padding) - padding} r="4" fill="#547c61" stroke="#f7f4ec" strokeWidth="3" />
+    </svg>
+  );
+}
+
+function WeeklyActivityBars({ data }: { data?: ApiDashboardStats["activity"] }) {
+  // Son 7 günü tam doldurmak için boş günleri 0 ile besler.
+  const filled = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const buckets: Array<{ date: string; count: number; label: string }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const isoDate = d.toISOString().slice(0, 10);
+      const found = data?.find((a) => a.date.slice(0, 10) === isoDate);
+      const dayLabel = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][d.getDay()];
+      buckets.push({ date: isoDate, count: found?.count ?? 0, label: dayLabel });
+    }
+    return buckets;
+  }, [data]);
+
+  const max = Math.max(1, ...filled.map((b) => b.count));
+  const total = filled.reduce((acc, b) => acc + b.count, 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-end gap-1.5 h-20">
+        {filled.map((bucket) => {
+          const heightPct = (bucket.count / max) * 100;
+          const isToday = bucket.count > 0 && bucket === filled[filled.length - 1];
+          return (
+            <div key={bucket.date} className="flex flex-1 flex-col items-center gap-1">
+              <div className="flex-1 flex items-end w-full">
+                <div
+                  className={`w-full rounded-t-md transition-all ${isToday ? "bg-[#547c61]" : "bg-[#8fb7a2]/55"}`}
+                  style={{ height: `${Math.max(4, heightPct)}%` }}
+                  title={`${bucket.date}: ${bucket.count} mesaj`}
+                />
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-[#667085]">{bucket.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] font-semibold text-[#667085]">
+        Bu hafta toplam <span className="font-black text-[#172033]">{total}</span> mesaj.
+      </p>
+    </div>
+  );
+}
+
+function MetricCard({ icon: Icon, label, value, helper, tone = "blue" }: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  helper?: string;
+  tone?: "blue" | "sage" | "paper";
+}) {
+  const toneClass = {
+    blue: "bg-[#dcecf3]/78 text-[#2d5870]",
+    sage: "bg-[#ddebe3]/78 text-[#547c61]",
+    paper: "bg-[#fff8ee]/86 text-[#8a641f]",
+  }[tone];
+
+  return (
+    <div className="rounded-[1.35rem] border border-[#526d82]/12 bg-[#f4f7f7]/72 p-4 shadow-[0_10px_28px_rgba(66,91,112,0.06)] backdrop-blur-xl">
+      <div className={`mb-4 grid h-9 w-9 place-items-center rounded-2xl ${toneClass}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-2xl font-black tracking-tight text-[#172033]">{value}</p>
+      <p className="mt-1 text-[11px] font-black uppercase tracking-[0.15em] text-[#667085]">{label}</p>
+      {helper && <p className="mt-1 text-[11px] font-semibold text-[#8a97a0]">{helper}</p>}
+    </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, description }: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-4 flex items-start justify-between gap-4">
+      <div>
+        <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+          <Icon className="h-3.5 w-3.5" />
+          {title}
+        </div>
+        {description && <p className="mt-1 max-w-2xl text-sm leading-6 text-[#667085]">{description}</p>}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ title, body, action, onAction }: { title: string; body: string; action: string; onAction: () => void }) {
+  return (
+    <div className="rounded-[1.5rem] border border-dashed border-[#526d82]/18 bg-[#eef1f3]/54 p-8 text-center">
+      <p className="text-sm font-extrabold text-[#172033]">{title}</p>
+      <p className="mx-auto mt-2 max-w-md text-xs leading-6 text-[#667085]">{body}</p>
+      <button onClick={onAction} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[#172033] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#24314b]">
+        {action}
+        <ArrowRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function TopicProgressRow({ topic, onFocusTopic }: { topic: ApiTopic; onFocusTopic?: (topic: ApiTopic) => void }) {
+  const pct = clampPercent(topic.totalSections ? ((topic.completedSections || 0) / topic.totalSections) * 100 : topic.progressPercentage || 0);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onFocusTopic?.(topic)}
+      className="group w-full rounded-[1.35rem] border border-[#526d82]/11 bg-[#f7f4ec]/58 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#9ec7d9]/45 hover:bg-[#f7f9fa]/84 hover:shadow-[0_14px_30px_rgba(66,91,112,0.08)]"
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-[#dcecf3]/70 text-lg shadow-inner">
+            {topic.emoji || "O"}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-extrabold text-[#172033]">{topic.title}</p>
+            <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-[#8a97a0]">{topic.category || "Genel"}</p>
+          </div>
+        </div>
+        <span className="rounded-full bg-[#eef1f3]/86 px-3 py-1 text-xs font-black text-[#2d5870]">%{pct}</span>
+      </div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e1e9ea]">
+        <div className="h-full rounded-full bg-gradient-to-r from-[#8fb7a2] to-[#9ec7d9] transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+    </button>
+  );
+}
+
+export default function DashboardPanel({ topics, onViewChange, onFocusTopic }: DashboardPanelProps) {
+  const { attempts: sessionAttempts } = useQuizHistory();
   const isAdmin = storage.getUser()?.isAdmin === true;
-  const [activeTab, setActiveTab] = useState<"karne" | "hud">("karne");
+  const [activeTab, setActiveTab] = useState<TabId>("karne");
   const [stats, setStats] = useState<ApiGlobalStats | null>(null);
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Quiz istatistikleri (doğruluk oranı, sparkline)
-    QuizAPI.getGlobalStats()
-      .then(res => setStats(res.data))
-      .catch(err => console.error("Quiz stats fetch error:", err));
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
 
-    // Gamification (seviye, xpToNextLevel, levelLabel)
-    UserAPI.getGamification()
-      .then(res => setGamification(res.data as ApiGamification))
-      .catch(err => console.error("Gamification fetch error:", err));
+    Promise.allSettled([
+      QuizAPI.getGlobalStats(),
+      UserAPI.getGamification(),
+      DashboardAPI.getStats(),
+    ])
+      .then(([quizResult, gamificationResult, dashboardResult]) => {
+        if (!active) return;
 
-    // Dashboard istatistikleri (XP, Streak, gerçek tamamlama verileri)
-    DashboardAPI.getStats()
-      .then(res => setDashStats(res.data as ApiDashboardStats))
-      .catch(err => console.error("Dashboard stats fetch error:", err))
-      .finally(() => setLoading(false));
-  }, [sessionAttempts.length]); // Quiz tamamlandığında yenile
+        if (quizResult.status === "fulfilled") setStats(quizResult.value.data as ApiGlobalStats);
+        if (gamificationResult.status === "fulfilled") setGamification(gamificationResult.value.data as ApiGamification);
+        if (dashboardResult.status === "fulfilled") setDashStats(dashboardResult.value.data as ApiDashboardStats);
 
-  const correctCount = stats?.correctAnswers ?? 0;
-  const totalQuizzes = stats?.totalQuizzes ?? 0;
-  const accuracy = stats?.accuracy ?? 0;
+        if ([quizResult, gamificationResult, dashboardResult].every((result) => result.status === "rejected")) {
+          setLoadError("Dashboard verileri alınamadı. Bağlantıyı kontrol edip tekrar deneyin.");
+        }
+      })
+      .catch((err) => {
+        console.error("Dashboard fetch error:", err);
+        if (active) setLoadError("Dashboard verileri alınamadı. Bağlantıyı kontrol edip tekrar deneyin.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-  const totalLessons = dashStats?.totalSections ?? topics.reduce(
-    (sum, t) => sum + (t.totalSections ?? 0), 0
-  );
-  const completedLessons = dashStats?.completedSections ?? topics.reduce(
-    (sum, t) => sum + (t.completedSections ?? 0), 0
-  );
+    return () => { active = false; };
+  }, [sessionAttempts.length]);
 
-  // Gerçek değerler: DB'den gelen XP ve Streak
-  const totalXP      = dashStats?.totalXP      ?? 0;
-  const activeStreak = dashStats?.currentStreak ?? stats?.dailyProgress.filter(d => d.total > 0).length ?? 0;
   const learningSignalBook = dashStats?.learningSignalBook;
   const weakSkills = learningSignalBook?.weakSkills ?? [];
   const recentSignals = learningSignalBook?.recentSignals ?? [];
+  const accuracy = clampPercent(stats?.accuracy ?? 0);
+  const totalLessons = dashStats?.totalSections ?? topics.reduce((sum, topic) => sum + (topic.totalSections ?? 0), 0);
+  const completedLessons = dashStats?.completedSections ?? topics.reduce((sum, topic) => sum + (topic.completedSections ?? 0), 0);
+  // DEAD-3 REMOVED: totalXP was unused after LevelProgressCard took over
+  const activeStreak = dashStats?.currentStreak ?? gamification?.currentStreak ?? 0;
+  const progress = clampPercent(dashStats?.progressPercentage ?? (totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0));
+  const activeLearningCount = dashStats?.activeLearning ?? topics.length;
 
-  return (
-    <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
+  const nextAction = useMemo(() => {
+    if (weakSkills[0]) {
+      return {
+        label: "🎯 Günün Meydan Okuması",
+        title: `${weakSkills[0].skillTag || "Bir beceri"} üzerine telafi iyi olur`,
+        body: weakSkills[0].topicPath || "Son quiz sinyallerine göre kısa bir tekrar ve mikro quiz öneriliyor.",
+        action: "Telafi sohbeti aç",
+        view: "chat",
+        icon: Target,
+      };
+    }
+    if (topics.length > 0) {
+      return {
+        label: "Bugünkü Öğrenme Kokpiti",
+        title: "Bugün bir dersi tamamlamak en iyi hamle",
+        body: "Aktif konuna dön, kısa bir anlatım al ve ardından 3 soruluk mini kontrol yap.",
+        action: "Derse devam et",
+        view: "chat",
+        icon: Brain,
+      };
+    }
+    return {
+      label: "Bugünkü Öğrenme Kokpiti",
+      title: "İlk öğrenme yolunu oluşturalım",
+      body: "Bir hedef yaz, Orka bunu plan, quiz, wiki ve telafi zincirine dönüştürsün.",
+      action: "Yeni hedef yaz",
+      view: "chat",
+      icon: Sparkles,
+    };
+  }, [topics.length, weakSkills]);
+  const NextActionIcon = nextAction.icon;
+  const focusFirstTopic = (tab: ContextRailTab = "wiki", intent: ActiveLearningContext["intent"] = "lesson") => {
+    if (topics[0] && onFocusTopic) {
+      onFocusTopic(topics[0], { tab, intent });
+      return;
+    }
+    onViewChange("chat");
+  };
 
-      {/* Tab Switcher */}
-      <div className="flex-shrink-0 flex items-center gap-1 px-8 pt-6 pb-0">
-        <button
-          onClick={() => setActiveTab("karne")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "karne"
-              ? "bg-[#dcecf3]/85 text-[#172033] border border-[#9ec7d9]/45 shadow-sm"
-              : "text-[#667085] hover:text-[#172033] border border-transparent"
-          }`}
-        >
-          <Award className="w-3.5 h-3.5" />
-          Öğrenme Karnesi
-        </button>
-        {isAdmin && (
-          <button
-            onClick={() => setActiveTab("hud")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === "hud"
-                ? "bg-[#dcecf3]/85 text-[#172033] border border-[#9ec7d9]/45 shadow-sm"
-                : "text-[#667085] hover:text-[#172033] border border-transparent"
-            }`}
-            title="Admin paneli — LLMOps İzleme"
-          >
-            <Cpu className="w-3.5 h-3.5" />
-            Sistem Analitiği
-            <span className="flex h-1.5 w-1.5 rounded-full bg-[#8fb7a2] animate-pulse" />
-            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-[#9a6b24]/80 border border-amber-500/30 bg-[#fff8ee] px-1.5 py-0.5 rounded">
-              Admin
-            </span>
-          </button>
-        )}
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === "hud" && isAdmin ? (
-        <SystemHealthHUD />
-      ) : (
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto w-full px-8 py-10">
-          
-          {/* Header & Mastery Card */}
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h1 className="text-2xl font-bold text-[#172033] mb-1.5 tracking-tight">Öğrenme Karnesi</h1>
-              <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-[#8fb7a2] animate-pulse"></span>
-                <p className="text-[11px] font-medium text-[#667085] uppercase tracking-widest">Sistem Analitiği Aktif</p>
-              </div>
-            </div>
-            
-            <div id="tour-global-stats" className="hidden sm:flex items-center gap-6 bg-[#f7f9fa]/68 border border-[#526d82]/14 backdrop-blur-xl px-6 py-4 rounded-2xl">
-               <div className="text-right">
-                  <p className="text-[10px] text-[#667085] uppercase font-bold tracking-tighter mb-0.5">Global Başarı</p>
-                  <p className="text-xl font-mono font-bold text-[#47725d]">%{accuracy}</p>
-               </div>
-               {stats && <SuccessRateSparkline data={stats.dailyProgress} />}
-            </div>
-          </div>
-
-          {/* Core Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-            {/* Stat Item: XP */}
-            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
-                <TrendingUp className="w-4 h-4 text-[#667085]" />
-              </div>
-              <p className="text-2xl font-bold text-[#172033]">{loading ? "—" : totalXP}</p>
-              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Toplam XP</p>
-              {gamification && (
-                <p className="text-[10px] text-[#98a2b3] mt-1">
-                  {gamification.levelLabel} · Seviye {gamification.level}
-                </p>
-              )}
-            </div>
-
-            {/* Stat Item: Lessons */}
-            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
-                <Brain className="w-4 h-4 text-[#667085]" />
-              </div>
-              <p className="text-2xl font-bold text-[#172033]">
-                {loading ? "—" : (totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length)}
-              </p>
-              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Tamamlanan Ders</p>
-            </div>
-
-            {/* Stat Item: Accuracy */}
-            <div className="p-5 rounded-2xl bg-[#8fb7a2]/5 border border-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#8fb7a2]/10 flex items-center justify-center mb-4">
-                <Target className="w-4 h-4 text-[#47725d]/70" />
-              </div>
-              <p className="text-2xl font-bold text-[#47725d]">{loading ? "—" : `%${accuracy}`}</p>
-              <p className="text-[11px] font-medium text-emerald-600/80 uppercase mt-1">Doğruluk Oranı</p>
-            </div>
-
-            {/* Stat Item: Streak (gerçek DB verisi) */}
-            <div className="p-5 rounded-2xl bg-[#fff8ee]/85 border border-[#e8c46f]/28 hover:border-[#e8c46f]/45 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#fff8ee] flex items-center justify-center mb-4">
-                <Flame className="w-4 h-4 text-[#9a6b24]" />
-              </div>
-              <p className="text-2xl font-bold text-[#9a6b24]">{loading ? "—" : activeStreak}</p>
-              <p className="text-[11px] font-medium text-[#a8783d] uppercase mt-1">
-                {activeStreak > 1 ? `${activeStreak} Günlük Seri` : "Öğrenme Serisi"}
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-10 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
-                  Öğrenci Sinyal Defteri
-                </p>
-                <h2 className="mt-1 text-base font-extrabold text-[#172033]">
-                  {learningSignalBook?.summary || "Henüz belirgin zayıf beceri sinyali yok."}
-                </h2>
-              </div>
-              <span className="rounded-full bg-[#dcecf3]/80 px-3 py-1 text-[10px] font-bold text-[#2d5870]">
-                {learningSignalBook?.totalRecentAttempts ?? 0} son deneme
-              </span>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl bg-[#eef1f3]/70 p-4">
-                <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
-                  Zayıf beceriler
-                </p>
-                {weakSkills.length === 0 ? (
-                  <p className="text-xs leading-6 text-[#667085]">
-                    Quiz cevapları skill etiketiyle geldikçe burada kişisel telafi hedefleri oluşacak.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {weakSkills.slice(0, 3).map((skill) => (
-                      <div key={`${skill.skillTag}-${skill.topicPath}`} className="rounded-xl bg-[#f7f4ec]/78 px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-xs font-bold text-[#172033]">{skill.skillTag || "unknown skill"}</span>
-                          <span className="text-[10px] font-mono text-[#9a6b24]">%{Math.round(skill.accuracy)}</span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-[#667085]">{skill.topicPath}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl bg-[#fff8ee]/76 p-4">
-                <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#8a641f]">
-                  Son öğrenme sinyalleri
-                </p>
-                {recentSignals.length === 0 ? (
-                  <p className="text-xs leading-6 text-[#667085]">
-                    “Anlamadım”, quiz cevabı, Wiki aksiyonu ve IDE çıktıları geldikçe ajan köprüsü burada görünür olur.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {recentSignals.slice(0, 3).map((signal, index) => (
-                      <div key={`${signal.signalType}-${index}`} className="flex items-center justify-between gap-3 rounded-xl bg-white/60 px-3 py-2">
-                        <span className="text-xs font-semibold text-[#172033]">{signal.signalType}</span>
-                        <span className="text-[10px] text-[#667085]">{signal.skillTag || signal.topicPath || "genel"}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div id="tour-course-progress" className="lg:col-span-2">
-               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-bold text-[#172033] uppercase tracking-widest flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#667085]" />
-                  Konu İlerlemesi
-                </h2>
-                <button
-                  onClick={() => onViewChange("courses")}
-                   className="text-[11px] font-bold text-[#667085] hover:text-[#344054] flex items-center gap-1 transition-colors uppercase tracking-wider"
-                >
-                  Tümünü Gör
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-
-              {topics.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-[#526d82]/15 rounded-3xl">
-                  <p className="text-xs text-[#667085]">Henüz aktif bir öğrenme yolunuz bulunmuyor.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {topics.slice(0, 4).map((topic) => {
-                    const pct = topic.totalSections ? Math.round((topic.completedSections || 0) / topic.totalSections * 100) : 0;
-                    return (
-                      <div
-                        key={topic.id}
-                        className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:bg-[#f7f4ec]/50 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-[#dcecf3]/55 flex items-center justify-center text-lg shadow-inner">
-                              {topic.emoji}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-[#172033] group-hover:text-white transition-colors">{topic.title}</p>
-                              <p className="text-[10px] text-[#98a2b3] uppercase font-bold tracking-tighter">{topic.category || 'GENEL'}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-sm font-mono font-bold text-[#667085]">%{pct}</p>
-                          </div>
-                        </div>
-                        <div className="w-full h-1 bg-[#dcecf3]/55 rounded-full overflow-hidden">
-                           <div 
-                             className="h-full bg-zinc-600 rounded-full transition-all duration-1000 group-hover:bg-zinc-400"
-                             style={{ width: `${pct}%` }}
-                           />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-6">
-              <h2 className="text-sm font-bold text-[#172033] uppercase tracking-widest flex items-center gap-2">
-                <Award className="w-4 h-4 text-[#667085]" />
-                Hızlı Erişim
-              </h2>
-              
-              <div className="grid grid-cols-1 gap-3">
-                <button
-                  onClick={() => onViewChange("chat")}
-                  className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
-                >
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033] group-hover:text-white transition-colors">Öğrenmeye Devam</span>
-                    <span className="text-[10px] text-[#667085]">En son kaldığın ders</span>
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <ArrowRight className="w-4 h-4 text-[#667085]" />
-                  </div>
-                </button>
-
-                <button
-                  id="tour-wiki-access"
-                  onClick={() => onViewChange("wiki")}
-                  className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
-                >
-                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033]">Wiki Kütüphanesi</span>
-                    <span className="text-[10px] text-[#667085]">Hafıza haritasını keşfet</span>
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                    <BookOpen className="w-4 h-4 text-[#667085]" />
-                  </div>
-                </button>
-              </div>
-
-              {/* Tips Section */}
-              <div className="p-6 rounded-3xl bg-emerald-500/5 border border-emerald-500/10">
-                 <h4 className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2">Günlük İpucu</h4>
-                 <p className="text-[11px] text-[#667085] leading-relaxed italic">
-                   "Öğrenilenlerin %70'i ilk 24 saat içinde unutulur. Quizleri düzenli çözerek kalıcı hafızayı güçlendir."
-                 </p>
-              </div>
-            </div>
+  if (activeTab === "hud" && isAdmin) {
+    return (
+      <div className="flex h-full flex-col bg-transparent">
+        <div className="flex-shrink-0 px-6 pt-5">
+          {/* UI-2 FIX: HUD tab bar now includes all tabs for consistent navigation */}
+          <div className="inline-flex rounded-2xl border border-[#526d82]/12 bg-[#eef1f3]/72 p-1">
+            <button onClick={() => setActiveTab("karne")} className="rounded-xl px-4 py-2 text-xs font-extrabold text-[#667085] transition hover:text-[#172033]">Öğrenme Karnesi</button>
+            <button onClick={() => setActiveTab("agac")} className="rounded-xl px-4 py-2 text-xs font-extrabold text-[#667085] transition hover:text-[#172033]">Yetenek Ağacı</button>
+            <button className="rounded-xl bg-[#172033] px-4 py-2 text-xs font-extrabold text-white shadow-sm">Sistem Analitiği</button>
           </div>
         </div>
+        <SystemHealthHUD />
       </div>
-      )}
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-transparent">
+      <div className="flex-shrink-0 px-4 pt-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#526d82]/10 bg-[#eef1f3]/62 p-1 backdrop-blur-xl">
+          <button onClick={() => setActiveTab("karne")} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${activeTab === "karne" ? "bg-[#f7f4ec] text-[#172033] shadow-sm" : "text-[#667085] hover:text-[#172033]"}`}>
+            <Award className="h-3.5 w-3.5" />
+            Öğrenme Karnesi
+          </button>
+          <button onClick={() => setActiveTab("agac")} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${activeTab === "agac" ? "bg-[#f7f4ec] text-[#172033] shadow-sm" : "text-[#667085] hover:text-[#172033]"}`}>
+            <Sparkles className="h-3.5 w-3.5" />
+            Yetenek Ağacı
+          </button>
+          {isAdmin && (
+            <button onClick={() => setActiveTab("hud")} className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold text-[#667085] transition hover:text-[#172033]">
+              <Cpu className="h-3.5 w-3.5" />
+              Sistem Analitiği
+              <span className="h-1.5 w-1.5 rounded-full bg-[#8fb7a2]" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+          {activeTab === "agac" ? (
+            <SkillTreePanel topics={topics} onFocusTopic={(selected) => onFocusTopic?.(selected, { tab: "wiki", intent: "lesson" })} />
+          ) : (
+            <>
+              <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28 }}
+            className="rounded-[2rem] border border-[#526d82]/12 bg-[#f7f4ec]/74 p-5 shadow-[0_18px_55px_rgba(66,91,112,0.08)] backdrop-blur-2xl lg:p-7"
+          >
+            <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
+              <div className="flex min-h-[260px] flex-col justify-between rounded-[1.5rem] border border-[#526d82]/10 bg-[#f7f9fa]/76 p-5">
+                <div>
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#dcecf3]/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#2d5870]">
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    {nextAction.label}
+                  </div>
+                  <h1 className="max-w-2xl text-2xl font-black tracking-tight text-[#172033] sm:text-3xl">
+                    {nextAction.title}
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-[#667085]">{nextAction.body}</p>
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <button onClick={() => focusFirstTopic(weakSkills[0] ? "practice" : "wiki", weakSkills[0] ? "practice" : "lesson")} className="inline-flex items-center gap-2 rounded-2xl bg-[#172033] px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#24314b]">
+                    <NextActionIcon className="h-4 w-4" />
+                    {nextAction.action}
+                  </button>
+                  <button onClick={() => focusFirstTopic("wiki", "review")} id="tour-wiki-access" className="inline-flex items-center gap-2 rounded-2xl border border-[#526d82]/12 bg-[#eef1f3]/82 px-5 py-3 text-sm font-extrabold text-[#344054] transition hover:-translate-y-0.5 hover:bg-[#e4eaec]">
+                    <BookOpen className="h-4 w-4" />
+                    Wiki hafızasına bak
+                  </button>
+                </div>
+              </div>
+
+              <div id="tour-global-stats" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <LevelProgressCard gamification={gamification} loading={loading} />
+                <MetricCard icon={Flame} label="Öğrenme Serisi" value={loading ? "..." : activeStreak} helper={activeStreak > 0 ? `${activeStreak} günlük ritim` : "Bugün başlatılabilir"} tone="paper" />
+              </div>
+            </div>
+          </motion.section>
+
+          {loadError && (
+            <div className="rounded-2xl border border-[#c77b6b]/22 bg-[#f4e1dc]/72 p-4 text-sm font-semibold text-[#9a4e3e]">
+              {loadError}
+            </div>
+          )}
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard icon={Target} label="Doğruluk" value={loading ? "..." : `%${accuracy}`} helper={`${stats?.correctAnswers ?? 0}/${stats?.totalQuizzes ?? 0} doğru cevap`} tone="sage" />
+            <MetricCard icon={Brain} label="Ders İlerlemesi" value={loading ? "..." : `${completedLessons}/${totalLessons || 0}`} helper={`Genel ilerleme %${progress}`} tone="blue" />
+            <MetricCard icon={Activity} label="Aktif Öğrenme" value={loading ? "..." : activeLearningCount} helper="Canlı topic ve sinyal" tone="paper" />
+            <div className="rounded-[1.35rem] border border-[#526d82]/12 bg-[#f4f7f7]/72 p-4 shadow-[0_10px_28px_rgba(66,91,112,0.06)] backdrop-blur-xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#667085]">7 Günlük doğruluk</p>
+              <div className="mt-4">
+                <SuccessRateSparkline data={stats?.dailyProgress} />
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+            <div className="rounded-[1.35rem] border border-[#526d82]/12 bg-[#f4f7f7]/72 p-5 shadow-[0_10px_28px_rgba(66,91,112,0.06)] backdrop-blur-xl">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#667085]">Bu hafta etkinliğin</p>
+                <span className="text-[10px] font-bold text-[#8a97a0]">son 7 gün</span>
+              </div>
+              {loading ? (
+                <div className="h-20 rounded-xl bg-[#e7ecec]/70 animate-pulse" />
+              ) : (
+                <WeeklyActivityBars data={dashStats?.activity} />
+              )}
+            </div>
+            <div className="rounded-[1.35rem] border border-[#526d82]/12 bg-[#f4f7f7]/72 p-5 shadow-[0_10px_28px_rgba(66,91,112,0.06)] backdrop-blur-xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.15em] text-[#667085]">Son 200 quiz cevabı</p>
+              <div className="mt-3">
+                <p className="text-3xl font-black tracking-tight text-[#172033]">
+                  {loading ? "..." : (learningSignalBook?.totalRecentAttempts ?? 0)}
+                </p>
+                <p className="mt-1 text-[11px] font-semibold text-[#667085]">
+                  {weakSkills.length > 0
+                    ? `${weakSkills.length} beceri zayıf etiketlendi.`
+                    : "Henüz belirgin zayıf beceri yok."}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+            <div id="tour-learning-signals" className="rounded-[2rem] border border-[#526d82]/12 bg-[#f7f9fa]/74 p-5 shadow-[0_14px_38px_rgba(66,91,112,0.07)] backdrop-blur-2xl lg:p-6">
+              <SectionHeader icon={Sparkles} title="Öğrenci Sinyal Defteri" description={learningSignalBook?.summary || "Quiz cevapları, IDE çıktıları, Wiki aksiyonları ve 'anlamadım' sinyalleri burada kişisel öğrenme haritasına dönüşür."} />
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-[1.35rem] bg-[#eef1f3]/70 p-4">
+                  <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">Zayıf beceriler</p>
+                  {weakSkills.length === 0 ? (
+                    <p className="text-xs leading-6 text-[#667085]">Henüz güçlü bir zayıf beceri sinyali yok. Bir quiz çözdüğünde burası kişiselleşir.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {weakSkills.slice(0, 4).map((skill) => (
+                        <div key={`${skill.skillTag}-${skill.topicPath}`} className="rounded-2xl border border-[#526d82]/10 bg-[#f7f4ec]/78 px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate text-xs font-extrabold text-[#172033]">{skill.skillTag || "Etiketsiz beceri"}</span>
+                            <span className="rounded-full bg-[#fff8ee] px-2 py-0.5 text-[10px] font-black text-[#8a641f]">%{clampPercent(skill.accuracy)}</span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-5 text-[#667085]">{skill.topicPath || "Genel konu"}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-[1.35rem] bg-[#fff8ee]/72 p-4">
+                  <p className="mb-3 text-[11px] font-black uppercase tracking-[0.16em] text-[#8a641f]">Son öğrenme sinyalleri</p>
+                  {recentSignals.length === 0 ? (
+                    <p className="text-xs leading-6 text-[#667085]">Anlamadım, quiz cevabı, Wiki tıklaması ve IDE gönderimi geldikçe ajan köprüsü burada görünür olur.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {recentSignals.slice(0, 5).map((signal, index) => (
+                        <div key={`${signal.signalType}-${signal.createdAt}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[#f7f9fa]/72 px-3 py-2">
+                          <span className="truncate text-xs font-extrabold text-[#172033]">{signal.signalType}</span>
+                          <span className="truncate text-[10px] font-semibold text-[#667085]">{signal.skillTag || signal.topicPath || "genel"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-[#526d82]/12 bg-[#eef1f3]/62 p-5 shadow-[0_14px_38px_rgba(66,91,112,0.06)] backdrop-blur-2xl lg:p-6">
+              <SectionHeader icon={Award} title="Hızlı aksiyonlar" description="Kokpit sadece rapor değil; bir sonraki hamleyi başlatır." />
+              <div className="grid gap-3">
+                <button onClick={() => focusFirstTopic("wiki", "lesson")} className="flex items-center justify-between rounded-[1.25rem] border border-[#526d82]/10 bg-[#f7f9fa]/76 p-4 text-left transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]">
+                  <span>
+                    <span className="block text-sm font-extrabold text-[#172033]">Öğrenmeye devam et</span>
+                    <span className="mt-1 block text-xs text-[#667085]">Aktif topic üzerinden tutor ile ilerle.</span>
+                  </span>
+                  <MessageSquare className="h-4 w-4 text-[#52768a]" />
+                </button>
+                <button onClick={() => onViewChange("ide")} className="flex items-center justify-between rounded-[1.25rem] border border-[#526d82]/10 bg-[#f7f9fa]/76 p-4 text-left transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]">
+                  <span>
+                    <span className="block text-sm font-extrabold text-[#172033]">Kod editörünü aç</span>
+                    <span className="mt-1 block text-xs text-[#667085]">Çıktıyı hocaya gönder, hata sinyali yazılsın.</span>
+                  </span>
+                  <Code2 className="h-4 w-4 text-[#52768a]" />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section id="tour-course-progress" className="rounded-[2rem] border border-[#526d82]/12 bg-[#f7f9fa]/70 p-5 shadow-[0_14px_38px_rgba(66,91,112,0.06)] backdrop-blur-2xl lg:p-6">
+            <SectionHeader icon={Activity} title="Konu ilerlemesi" description="Açık ders yolların, tamamlanma oranı ve sakin ilerleme ritmi." />
+            {topics.length === 0 ? (
+              <EmptyState title="Henüz öğrenme yolun yok" body="Chat ekranına bir hedef yaz; Orka bunu plan, wiki, quiz ve telafi zincirine dönüştürsün." action="İlk hedefi yaz" onAction={() => onViewChange("chat")} />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {topics.slice(0, 6).map((topic) => (
+                  <TopicProgressRow
+                    key={topic.id}
+                    topic={topic}
+                    onFocusTopic={(selected) => onFocusTopic?.(selected, { tab: "wiki", intent: "lesson" })}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
