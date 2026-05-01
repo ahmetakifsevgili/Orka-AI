@@ -50,9 +50,11 @@ Orka-Front/refactor.py
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/local/
+.claude/skills/
 
 # ── Test & denetim çıktıları ──────────────────────────────────────────────────
 scripts/reports/
 scripts/llm-eval/output/
 *.log
 !.claude/*.log
+Orka.API/dotnet_log.txt
