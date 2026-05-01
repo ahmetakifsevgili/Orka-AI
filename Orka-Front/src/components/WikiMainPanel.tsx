@@ -948,6 +948,25 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                             )}
 
                             {sourcePage && (
+                              <>
+                              <div data-testid="source-evidence-trust-strip" className="mb-3 grid gap-2 sm:grid-cols-3">
+                                <div className="rounded-xl border border-emerald-500/18 bg-emerald-500/8 px-3 py-2">
+                                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#47725d]">Kaynak güveni</div>
+                                  <div className="mt-1 text-[11px] font-semibold text-[#344054]">Metin chunk + sayfa eşleşti</div>
+                                </div>
+                                <div className="rounded-xl border border-amber-500/18 bg-amber-500/8 px-3 py-2">
+                                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8a6a33]">Citation trail</div>
+                                  <div className="mt-1 text-[11px] font-semibold text-[#344054]">
+                                    {focusedChunkId ? "Odak chunk kilitlendi" : "İlk güçlü kanıt vurgulanıyor"}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 px-3 py-2">
+                                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">Pekiştir</div>
+                                  <div className="mt-1 text-[11px] font-semibold text-[#344054]">
+                                    {sourcePage.chunks.length} parça Copilot'a gönderilebilir
+                                  </div>
+                                </div>
+                              </div>
                               <div className="grid gap-3 md:grid-cols-[0.34fr_0.66fr]">
                                 <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 p-3">
                                   <div className="flex aspect-[3/4] flex-col items-center justify-center rounded-lg border border-dashed border-[#8a6a33]/24 bg-[#f7f4ec]/80 text-center">
@@ -999,6 +1018,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                                   })}
                                 </div>
                               </div>
+                              </>
                             )}
                           </div>
                         )}

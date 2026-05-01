@@ -30,12 +30,18 @@ public class EvaluatorAgent : IEvaluatorAgent
     private readonly ILogger<EvaluatorAgent> _logger;
 
     private readonly IRedisMemoryService _redisService;
+    private readonly IEducatorCoreService _educatorCore;
 
-    public EvaluatorAgent(IAIAgentFactory factory, ILogger<EvaluatorAgent> logger, IRedisMemoryService redisService)
+    public EvaluatorAgent(
+        IAIAgentFactory factory,
+        ILogger<EvaluatorAgent> logger,
+        IRedisMemoryService redisService,
+        IEducatorCoreService educatorCore)
     {
         _factory = factory;
         _logger = logger;
         _redisService = redisService;
+        _educatorCore = educatorCore;
     }
 
     public async Task<(int score, string feedback)> EvaluateInteractionAsync(
@@ -52,7 +58,19 @@ public class EvaluatorAgent : IEvaluatorAgent
             var ytData = await _redisService.GetYouTubeContextAsync(topicId.Value);
             if (!string.IsNullOrWhiteSpace(ytData))
             {
-                youtubeContext = $"\n\n[ALTIN STANDART (YOUTUBE PEDAGOJİK REFERANS)]:\n{ytData}\n\nDİKKAT: TutorAgent'ın pedagojik kalitesini, bu popüler YouTube eğitimcisinin anlatım kalitesine (kullandığı benzetmeler, açıklık, akıcılık) ne kadar yaklaştığına bakarak değerlendir. Eğer Tutor çok yüzeysel kalmışsa pedagogy puanını acımasızca kır.";
+                var teachingReference = await _educatorCore.NormalizeTeachingReferenceAsync(topicId.Value, ytData, ct);
+                if (teachingReference != null)
+                {
+                    youtubeContext = $"""
+
+                        [YOUTUBE PEDAGOGY QUALITY REFERENCE - NOT FACTUAL GROUNDING]
+                        Source: [youtube:{teachingReference.SourceId}] Status: {teachingReference.Status}
+                        Teaching flow: {teachingReference.TeachingFlow}
+                        Common mistakes: {string.Join(" | ", teachingReference.CommonMistakes.Take(4))}
+                        Evaluate whether TutorAgent used clear sequencing, examples, analogies, and misconception repair.
+                        Do not reward unsupported factual claims merely because they sound like the video.
+                        """;
+                }
             }
         }
 

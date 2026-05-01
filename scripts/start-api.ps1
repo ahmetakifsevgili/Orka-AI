@@ -1,5 +1,6 @@
 param(
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$InMemoryDatabase
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,7 +23,12 @@ if (-not $NoBuild) {
 Remove-Item -Force $log -ErrorAction SilentlyContinue
 
 $project = Join-Path $repo "Orka.API\Orka.API.csproj"
-$cmd = "/c cd /d `"$repo`" && set ASPNETCORE_ENVIRONMENT=Development && `"C:\Program Files\dotnet\dotnet.exe`" run --project `"$project`" --launch-profile http --no-build > `"$log`" 2>&1"
+$databaseEnv = ""
+if ($InMemoryDatabase) {
+    $databaseEnv = " && set `"Database__Provider=InMemory`" && set `"Database__InMemoryName=OrkaDevSmoke`""
+}
+
+$cmd = "/c cd /d `"$repo`" && set `"ASPNETCORE_ENVIRONMENT=Development`"$databaseEnv && `"C:\Program Files\dotnet\dotnet.exe`" run --project `"$project`" --launch-profile http --no-build > `"$log`" 2>&1"
 Start-Process -FilePath "cmd.exe" -ArgumentList $cmd -WindowStyle Hidden
 
 Write-Host "Orka API starting. LOG=$log"

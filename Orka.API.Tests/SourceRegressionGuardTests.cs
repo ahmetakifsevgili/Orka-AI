@@ -27,6 +27,7 @@ public sealed class SourceRegressionGuardTests
             "Orka-Front/src/components/InteractiveIDE.tsx",
             "Orka-Front/src/components/QuizCard.tsx",
             "Orka-Front/src/components/RichMarkdown.tsx",
+            "Orka-Front/src/components/SystemHealthHUD.tsx",
             "Orka-Front/src/components/WikiMainPanel.tsx",
             "Orka-Front/src/pages/Landing.tsx",
             "Orka-Front/src/pages/Login.tsx",
@@ -171,6 +172,9 @@ public sealed class SourceRegressionGuardTests
         Assert.DoesNotContain("ex.Message", testController);
 
         Assert.Contains("IServiceScopeFactory", classroomService);
+        Assert.Contains("AiAnswerTimeout", classroomService);
+        Assert.Contains("GenerateClassroomAnswerOrFallbackAsync", classroomService);
+        Assert.Contains("BuildProviderFallbackDialogue", classroomService);
         Assert.Contains("TtsTimeout", classroomService);
         Assert.Contains("QueueAudioGeneration(interaction.Id, answer)", classroomService);
         Assert.DoesNotContain("await TryAttachAudioAsync", classroomService);
@@ -225,6 +229,51 @@ public sealed class SourceRegressionGuardTests
     }
 
     [Fact]
+    public void P6EducatorCore_WiresSourceGroundingAndTeachingReference()
+    {
+        var program = ReadRepoText("Orka.API/Program.cs");
+        var educatorCore = ReadRepoText("Orka.Infrastructure/Services/EducatorCoreService.cs");
+        var tutor = ReadRepoText("Orka.Infrastructure/Services/TutorAgent.cs");
+        var quiz = ReadRepoText("Orka.Infrastructure/Services/QuizAgent.cs");
+        var evaluator = ReadRepoText("Orka.Infrastructure/Services/EvaluatorAgent.cs");
+        var sources = ReadRepoText("Orka.Infrastructure/Services/LearningSourceService.cs");
+        var dashboard = ReadRepoText("Orka.API/Controllers/DashboardController.cs");
+        var hud = ReadRepoText("Orka-Front/src/components/SystemHealthHUD.tsx");
+        var signalTypes = ReadRepoText("Orka.Core/Constants/LearningSignalTypes.cs");
+        var educatorDtos = ReadRepoText("Orka.Core/DTOs/EducatorDtos.cs");
+
+        Assert.Contains("IEducatorCoreService, EducatorCoreService", program);
+        Assert.Contains("TeacherContext", educatorDtos);
+        Assert.Contains("TeachingReference", educatorDtos);
+        Assert.Contains("SourceUsage", educatorDtos);
+        Assert.Contains("MisconceptionSignal", educatorDtos);
+        Assert.Contains("EducatorQualityScore", educatorDtos);
+
+        Assert.Contains("BuildTeacherContextAsync", educatorCore);
+        Assert.Contains("NormalizeTeachingReferenceAsync", educatorCore);
+        Assert.Contains("YOUTUBE TEACHING REFERENCE - PEDAGOGY ONLY", educatorCore);
+        Assert.Contains("Do not treat YouTube as a factual source", educatorCore);
+        Assert.Contains("SourceCitationMissing", educatorCore);
+
+        Assert.Contains("educatorCoreContext", tutor);
+        Assert.Contains("RecordAnswerQualitySignalsAsync", tutor);
+        Assert.Contains("BuildYouTubeDistractorBlock", quiz);
+        Assert.Contains("YOUTUBE PEDAGOGY QUALITY REFERENCE - NOT FACTUAL GROUNDING", evaluator);
+        Assert.Contains("source-ask-answer-without-doc-citation", sources);
+        Assert.Contains("educatorCoreSignals", dashboard);
+        Assert.Contains("EducatorCore -> Tutor", dashboard);
+        Assert.Contains("citationMissing", dashboard);
+        Assert.Contains("educatorCore?:", hud);
+        Assert.Contains("EducatorCore", hud);
+
+        Assert.Contains("YouTubeReferenceUsed", signalTypes);
+        Assert.Contains("NotebookSourceUsed", signalTypes);
+        Assert.Contains("MisconceptionDetected", signalTypes);
+        Assert.Contains("TeachingMoveApplied", signalTypes);
+        Assert.Contains("SourceCitationMissing", signalTypes);
+    }
+
+    [Fact]
     public void PublicToolFallbacks_DoNotLeakRawExceptionMessages()
     {
         string[] files =
@@ -255,8 +304,11 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("OrkaLocalDB", devSettings);
         Assert.Contains("TrustServerCertificate=True", devSettings);
         Assert.Contains("orka-db-backup", resetScript);
-        Assert.Contains("dotnet ef database update", resetScript);
-        Assert.Contains("sqllocaldb start", resetScript);
+        Assert.Contains("Invoke-NativeChecked \"dotnet\"", resetScript);
+        Assert.Contains("\"database\"", resetScript);
+        Assert.Contains("\"update\"", resetScript);
+        Assert.Contains("Invoke-NativeChecked \"sqllocaldb\"", resetScript);
+        Assert.Contains("\"start\"", resetScript);
         Assert.Contains("Database readiness check returned false", diagnostics);
     }
 

@@ -34,8 +34,11 @@ Thumbs.db
 
 # ── Geliştirici scratch / geçici dosyalar ────────────────────────────────────
 scratch/
+.tmp/
 .dotnet-home/
 Orka-Front/refactor.py
+*.mdf
+*.ldf
 
 # ── Ortam değişkenleri ────────────────────────────────────────────────────────
 .env

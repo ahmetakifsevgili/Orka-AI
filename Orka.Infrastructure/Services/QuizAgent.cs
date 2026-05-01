@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
@@ -29,19 +30,22 @@ public class QuizAgent : IQuizAgent
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<QuizAgent> _logger;
     private readonly IRedisMemoryService _redis;
+    private readonly IEducatorCoreService _educatorCore;
 
     public QuizAgent(
         IAIAgentFactory factory,
         IGraderAgent grader,
         IServiceScopeFactory scopeFactory,
         ILogger<QuizAgent> logger,
-        IRedisMemoryService redis)
+        IRedisMemoryService redis,
+        IEducatorCoreService educatorCore)
     {
         _factory      = factory;
         _grader       = grader;
         _scopeFactory = scopeFactory;
         _logger       = logger;
         _redis        = redis;
+        _educatorCore = educatorCore;
     }
 
     public async Task GeneratePendingQuizAsync(Guid sessionId, Guid topicId, Guid userId)
@@ -75,7 +79,9 @@ public class QuizAgent : IQuizAgent
             var ytData = await _redis.GetYouTubeContextAsync(topicId);
             if (!string.IsNullOrWhiteSpace(ytData))
             {
-                youtubeDistractorBlock = $"\n[YOUTUBE ÇELDİRİCİ REFERANSI]:\nEkteki pedagojik referansta ({ytData}), hocanın 'bunu hep karıştırıyorsunuz', 'buraya dikkat edin' dediği zor noktaları tespit et. Çoktan seçmeli soruların YANLIŞ ŞIKLARINI (çeldiricilerini) bu yaygın hatalara göre kurgula.\n";
+                var teachingReference = await _educatorCore.NormalizeTeachingReferenceAsync(topicId, ytData);
+                if (teachingReference != null)
+                    youtubeDistractorBlock = BuildYouTubeDistractorBlock(teachingReference);
             }
         }
         catch (Exception ex)
@@ -175,5 +181,28 @@ public class QuizAgent : IQuizAgent
         {
             _logger.LogError(ex, "[QuizAgent] Soru kaydetme başarısız.");
         }
+    }
+
+    private static string BuildYouTubeDistractorBlock(TeachingReference reference)
+    {
+        var mistakes = reference.CommonMistakes.Count == 0
+            ? "No explicit common mistakes were extracted; infer likely misconceptions from the lesson context."
+            : string.Join("\n", reference.CommonMistakes.Select(m => $"- {m}"));
+
+        var examples = reference.Examples.Count == 0
+            ? "Use only examples from the lesson context."
+            : string.Join("\n", reference.Examples.Select(e => $"- {e}"));
+
+        return $"""
+
+            [YOUTUBE PEDAGOGY REFERENCE - DISTRACTOR QUALITY ONLY]
+            Source: [youtube:{reference.SourceId}] Status: {reference.Status}
+            Use this only to improve wrong options, misconception coverage, and practice style.
+            Do not ask questions about unsupported video facts.
+            Common mistakes to turn into distractors:
+            {mistakes}
+            Example style to mirror:
+            {examples}
+            """;
     }
 }

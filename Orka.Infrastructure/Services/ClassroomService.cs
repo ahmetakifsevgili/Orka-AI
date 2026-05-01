@@ -14,6 +14,7 @@ namespace Orka.Infrastructure.Services;
 
 public class ClassroomService : IClassroomService
 {
+    private static readonly TimeSpan AiAnswerTimeout = TimeSpan.FromSeconds(7);
     private static readonly TimeSpan TtsTimeout = TimeSpan.FromSeconds(8);
 
     private readonly OrkaDbContext _db;
@@ -112,8 +113,7 @@ public class ClassroomService : IClassroomService
             {{question}}
             """;
 
-        var answer = await _factory.CompleteChatAsync(AgentRole.Classroom, systemPrompt, userPrompt, ct);
-        answer = NormalizeDialogue(answer);
+        var answer = await GenerateClassroomAnswerOrFallbackAsync(systemPrompt, userPrompt, question, segment);
         var interaction = new ClassroomInteraction
         {
             Id = Guid.NewGuid(),
@@ -145,6 +145,40 @@ public class ClassroomService : IClassroomService
         _logger.LogInformation("[Classroom] Student question answered. Classroom={ClassroomId}", classroom.Id);
         return new ClassroomAskResultDto(classroom.Id, interaction.Id, answer, ParseSpeakers(answer));
     }
+
+    private async Task<string> GenerateClassroomAnswerOrFallbackAsync(
+        string systemPrompt,
+        string userPrompt,
+        string question,
+        string? segment)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(AiAnswerTimeout);
+            var answer = await _factory.CompleteChatAsync(AgentRole.Classroom, systemPrompt, userPrompt, timeout.Token);
+            return NormalizeDialogue(answer);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[Classroom] AI answer unavailable within {TimeoutSeconds}s. Returning structured fallback.",
+                AiAnswerTimeout.TotalSeconds);
+            return BuildProviderFallbackDialogue(question, segment);
+        }
+    }
+
+    private static string BuildProviderFallbackDialogue(string question, string? segment)
+    {
+        var safeQuestion = Trim(question ?? string.Empty, 220);
+        var safeSegment = Trim(segment ?? string.Empty, 280);
+        return NormalizeDialogue($"""
+            [HOCA]: Canli AI saglayicisi su an yavas yanit verdi. Sinif akisi bozulmasin diye guvenli kisa tekrar moduna geciyorum.
+            [ASISTAN]: Ogrencinin sorusu: {safeQuestion}
+            [HOCA]: Takildigin aktif bolum su kisimla ilgili: {safeSegment}
+            [KONUK]: Devam etmek icin once bu bolumu kendi cumlenle tekrar et, sonra hocadan tek bir adimi orneklemesini iste.
+            """);
+    }
+
     private void QueueAudioGeneration(Guid interactionId, string answer)
     {
         _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(

@@ -71,6 +71,7 @@ addCheck("Wiki actions create learning signals", wiki.includes("recordWikiAction
 addCheck("Notebook tools refresh after source activity", wiki.includes("notebookRefreshTick") && wiki.includes("setNotebookRefreshTick"));
 addCheck("Wiki source graph visible", wiki.includes("Kaynak graf") && wiki.includes("sourceGraph"));
 addCheck("Wiki source evidence panel visible", wiki.includes("Kaynak Kan") && wiki.includes("sourceCitations") && wiki.includes("handleSourcePageNav"));
+addCheck("Wiki source evidence trust strip visible", wiki.includes("source-evidence-trust-strip") && wiki.includes("Citation trail") && wiki.includes("Kaynak güveni"));
 
 const richMarkdown = read("src/components/RichMarkdown.tsx");
 addCheck("Citation clicks are observable", richMarkdown.includes("onCitationClick") && richMarkdown.includes("citationKind") === false);

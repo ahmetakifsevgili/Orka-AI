@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Constants;
@@ -253,6 +254,22 @@ public class LearningSourceService : ILearningSourceService
             """;
 
         var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userPrompt, ct);
+        if (!Regex.IsMatch(answer, $@"\[doc:{sourceId}:p\d+\]", RegexOptions.IgnoreCase))
+        {
+            await _signals.RecordSignalAsync(
+                userId,
+                source.TopicId,
+                source.SessionId,
+                LearningSignalTypes.SourceCitationMissing,
+                payloadJson: JsonSerializer.Serialize(new
+                {
+                    sourceId,
+                    question,
+                    reason = "source-ask-answer-without-doc-citation"
+                }),
+                ct: ct);
+        }
+
         await _signals.RecordSignalAsync(
             userId,
             source.TopicId,

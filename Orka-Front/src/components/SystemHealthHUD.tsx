@@ -76,6 +76,15 @@ interface LearningOps {
   totalSignals: number;
   signalCounts: Array<{ signalType: string; count: number }>;
   topWeakSkills: Array<{ skillTag: string; count: number }>;
+  educatorCore?: {
+    signals: number;
+    citationMissing: number;
+    youtubeReferenceUsed: number;
+    notebookSourceUsed: number;
+    misconceptionDetected: number;
+    teachingMoveApplied: number;
+    status: "healthy" | "watch" | "idle";
+  };
   quizAttempts: number;
   quizAccuracyPct: number;
   unknownSkillRatePct: number;
@@ -294,6 +303,14 @@ export default function SystemHealthHUD() {
     if (data.learningOps.repeatedQuestionRatePct >= 10) {
       items.push({ title: "Quiz tekrar riski", detail: `Soru hash tekrar orani %${data.learningOps.repeatedQuestionRatePct}.`, tone: "amber", icon: RotateCcw });
     }
+    if (data.learningOps.educatorCore?.status === "watch") {
+      items.push({
+        title: "EducatorCore citation",
+        detail: `${data.learningOps.educatorCore.citationMissing} cevapta kaynak etiketi eksigi yakalandi.`,
+        tone: "amber",
+        icon: AlertTriangle,
+      });
+    }
     if (data.cache.hitRatePct > 0 && data.cache.hitRatePct < 35) {
       items.push({ title: "Cache isabeti dusuk", detail: `Genel hit rate %${data.cache.hitRatePct}; invalidation fazla agresif olabilir.`, tone: "amber", icon: Database });
     }
@@ -332,6 +349,8 @@ export default function SystemHealthHUD() {
   const sortedProviders = [...data.modelMix].sort((a, b) => providerMeta(a.provider).rank - providerMeta(b.provider).rank);
   const redisTone = data.redis.isConnected ? "emerald" : "red";
   const endpointHealth = data.endpointHealth;
+  const educatorCore = data.learningOps.educatorCore;
+  const educatorTone = educatorCore?.status === "healthy" ? "emerald" : educatorCore?.status === "watch" ? "amber" : "zinc";
 
   return (
     <div className="h-full flex-1 overflow-hidden bg-transparent text-[#172033]">
@@ -367,12 +386,13 @@ export default function SystemHealthHUD() {
             ))}
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard icon={Server} label="Redis" value={data.redis.status} hint={`${data.redis.pingMs}ms ping · ${data.redis.endpointCount} endpoint`} tone={redisTone} />
             <MetricCard icon={CheckCircle2} label="Auth/Swagger" value={endpointHealth?.swagger.enabled ? "Hazir" : "Dev only"} hint={endpointHealth ? `${endpointHealth.apiBaseUrl} · ${endpointHealth.swagger.json}` : "Endpoint kontrati bekleniyor"} tone={endpointHealth?.health.database.canConnect === false ? "red" : "emerald"} />
             <MetricCard icon={Cpu} label="Ajan online" value={`${onlineAgents}/${data.agents.length}`} hint="Yeni Quiz, Diagnostic, Remedial, Visual ve Classroom rolleri dahil." tone="emerald" />
             <MetricCard icon={Database} label="Cache hit rate" value={`%${data.cache.hitRatePct}`} hint={`${data.cache.totalHits} hit · ${data.cache.totalMisses} miss`} tone={data.cache.hitRatePct >= 50 ? "emerald" : data.cache.hitRatePct > 0 ? "amber" : "zinc"} />
             <MetricCard icon={Brain} label="Learning signal" value={data.learningOps.totalSignals} hint={`Son ${data.learningOps.windowDays} gun · ${data.learningOps.quizAttempts} quiz cevabi`} tone="sky" />
+            <MetricCard icon={Sparkles} label="EducatorCore" value={educatorCore?.status ?? "idle"} hint={`P6 sinyal ${educatorCore?.signals ?? 0} · citation eksigi ${educatorCore?.citationMissing ?? 0}`} tone={educatorTone} />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-5">

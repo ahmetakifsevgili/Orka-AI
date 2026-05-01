@@ -20,6 +20,11 @@ public static class LearningSignalTypes
     public const string RemediationStarted = "RemediationStarted";
     public const string RemediationCompleted = "RemediationCompleted";
     public const string LessonCompleted = "LessonCompleted";
+    public const string YouTubeReferenceUsed = "YouTubeReferenceUsed";
+    public const string NotebookSourceUsed = "NotebookSourceUsed";
+    public const string MisconceptionDetected = "MisconceptionDetected";
+    public const string TeachingMoveApplied = "TeachingMoveApplied";
+    public const string SourceCitationMissing = "SourceCitationMissing";
 
     public static readonly IReadOnlyCollection<string> All =
     [
@@ -36,7 +41,12 @@ public static class LearningSignalTypes
         IdeSentToTutor,
         RemediationStarted,
         RemediationCompleted,
-        LessonCompleted
+        LessonCompleted,
+        YouTubeReferenceUsed,
+        NotebookSourceUsed,
+        MisconceptionDetected,
+        TeachingMoveApplied,
+        SourceCitationMissing
     ];
 
     public static string Normalize(string? value)

@@ -14,6 +14,8 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 var builder = WebApplication.CreateBuilder(args);
+var databaseProvider = builder.Configuration["Database:Provider"] ?? "SqlServer";
+var useInMemoryDatabase = databaseProvider.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
 
 // Windows EventLog provider local dev'de yetki hatasıyla request'i düşürebiliyor.
 // API'nin hata döndürmesini log yazma yetkisine bağımlı bırakmıyoruz.
@@ -50,7 +52,15 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddDbContext<OrkaDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (useInMemoryDatabase)
+    {
+        options.UseInMemoryDatabase(builder.Configuration["Database:InMemoryName"] ?? "OrkaDevSmoke");
+        return;
+    }
+
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 // Redis (Muhabbir) Entegrasyonu
 string redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
@@ -67,7 +77,7 @@ builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks()
     .AddRedis(redisConnection, name: "redis", tags: new[] { "ready" },
               timeout: TimeSpan.FromSeconds(3))
-    .AddDbContextCheck<OrkaDbContext>(name: "sql-server", tags: new[] { "ready" });
+    .AddDbContextCheck<OrkaDbContext>(name: useInMemoryDatabase ? "in-memory-db" : "sql-server", tags: new[] { "ready" });
 
 // Services
 builder.Services.AddScoped<IRedisMemoryService, RedisMemoryService>();
@@ -95,6 +105,7 @@ builder.Services.AddScoped<IGraderAgent, GraderAgent>();
 builder.Services.AddScoped<IEvaluatorAgent, EvaluatorAgent>();
 builder.Services.AddScoped<ISkillMasteryService, SkillMasteryService>();
 builder.Services.AddScoped<IIntentClassifierAgent, IntentClassifierAgent>();
+builder.Services.AddScoped<IEducatorCoreService, EducatorCoreService>();
 builder.Services.AddScoped<ILearningSourceService, LearningSourceService>();
 builder.Services.AddScoped<IAudioOverviewService, AudioOverviewService>();
 builder.Services.AddScoped<ILearningSignalService, LearningSignalService>();
@@ -344,7 +355,7 @@ var autoMigrateOnStartup = builder.Configuration.GetValue(
     "Database:AutoMigrateOnStartup",
     builder.Environment.IsProduction());
 
-if (autoMigrateOnStartup)
+if (autoMigrateOnStartup && !useInMemoryDatabase)
 {
     try
     {

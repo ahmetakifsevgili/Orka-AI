@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public class TutorAgent : ITutorAgent
     private readonly IRedisMemoryService _redisService;
     private readonly ILearningSourceService _learningSourceService;
     private readonly ILearningSignalService _learningSignals;
+    private readonly IEducatorCoreService _educatorCore;
 
     // Wiki context için maksimum karakter sınırı (yaklaşık 1000 token)
     private const int WikiContextMaxChars = 4000;
@@ -92,7 +94,8 @@ public class TutorAgent : ITutorAgent
         ILogger<TutorAgent> logger,
         IRedisMemoryService redisService,
         ILearningSourceService learningSourceService,
-        ILearningSignalService learningSignals)
+        ILearningSignalService learningSignals,
+        IEducatorCoreService educatorCore)
     {
         _contextBuilder = contextBuilder;
         _factory = factory;
@@ -103,6 +106,7 @@ public class TutorAgent : ITutorAgent
         _redisService = redisService;
         _learningSourceService = learningSourceService;
         _learningSignals = learningSignals;
+        _educatorCore = educatorCore;
     }
 
     public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
@@ -125,6 +129,16 @@ public class TutorAgent : ITutorAgent
         );
 
         var contextMessages = await contextTask;
+        var teacherContext = await _educatorCore.BuildTeacherContextAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            content,
+            parallelResults[7],
+            parallelResults[3],
+            parallelResults[8],
+            parallelResults[9]);
+
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
             activeTopicContext: parallelResults[0],
@@ -136,10 +150,12 @@ public class TutorAgent : ITutorAgent
             lowQualityHint:     parallelResults[6],
             notebookContext:    parallelResults[7],
             learningSignalContext: parallelResults[8],
-            youtubeContext:     parallelResults[9]);
+            educatorCoreContext: teacherContext.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
 
-        return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
+        var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
+        await _educatorCore.RecordAnswerQualitySignalsAsync(userId, session.TopicId, session.Id, answer, teacherContext);
+        return answer;
     }
 
     public async Task<string> GetDeepPlanWelcomeAsync(
@@ -314,10 +330,22 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             hasTopic ? FetchGoldExamplesAsync(session.TopicId) : Task.FromResult(string.Empty),
             FetchLowQualityFeedbackAsync(session.Id),
             hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content, ct) : Task.FromResult(string.Empty),
-            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
+            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty),
+            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
         );
 
         var contextMessages = await contextTask;
+        var teacherContext = await _educatorCore.BuildTeacherContextAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            content,
+            parallelResults[7],
+            parallelResults[3],
+            parallelResults[8],
+            parallelResults[9],
+            ct);
+
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
             activeTopicContext: parallelResults[0],
@@ -328,14 +356,25 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             goldExamples:       parallelResults[5],
             lowQualityHint:     parallelResults[6],
             notebookContext:    parallelResults[7],
-            learningSignalContext: parallelResults[8]);
+            learningSignalContext: parallelResults[8],
+            educatorCoreContext: teacherContext.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
 
         // AIAgentFactory: Primary → Gemini → Mistral (stream failover zinciri)
+        var answerBuffer = new StringBuilder();
         await foreach (var chunk in _factory.StreamChatAsync(AgentRole.Tutor, systemPrompt, userMessage, ct))
         {
+            answerBuffer.Append(chunk);
             yield return chunk;
         }
+
+        await _educatorCore.RecordAnswerQualitySignalsAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            answerBuffer.ToString(),
+            teacherContext,
+            CancellationToken.None);
     }
 
     /// <summary>
@@ -444,10 +483,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 cursor = await db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == cursor.ParentTopicId.Value && t.UserId == userId);
             }
 
-            var youtubeContext = await _redisService.GetYouTubeContextAsync(rootTopicId);
-            return string.IsNullOrWhiteSpace(youtubeContext)
-                ? string.Empty
-                : $"\n\n[YOUTUBE PEDAGOJİK REFERANS (Planlama Aşamasından)]:\n{youtubeContext}\n(Bu videonun anlatım stratejisini, analojilerini ve yapısını ilham almak için kullan. Direkt video linkini verme, ancak öğrenci zorlanırsa 'YouTube'da bu konuyu çok iyi anlatan videolar var' diyebilirsin.)";
+            return await _redisService.GetYouTubeContextAsync(rootTopicId) ?? string.Empty;
         }
         catch (Exception ex)
         {
@@ -748,7 +784,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         string lowQualityHint  = "",
         string notebookContext = "",
         string learningSignalContext = "",
-        string youtubeContext  = "")
+        string educatorCoreContext = "")
     {
         var prompt = $$"""
             Sen Orka AI — Kullanıcının özel öğretmeni ve bilge bir mentorusun.
@@ -761,7 +797,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             {{goldExamples}}
             {{notebookContext}}
             {{learningSignalContext}}
-            {{youtubeContext}}
+            {{educatorCoreContext}}
 
             [TEMEL KURAL — ÖĞRETİM TARZI]:
             Chat ekranında konuyu detaylı, derinlemesine ve doyurucu bir şekilde anlat. Konuları asla yüzeysel veya çok kısa (1-2 cümle) geçme.

@@ -450,9 +450,34 @@ public class DashboardController : ControllerBase
         var remediationCompleted = signalCounts.FirstOrDefault(x => x.signalType == LearningSignalTypes.RemediationCompleted)?.count ?? 0;
         var signalCountMap = signalCounts.ToDictionary(x => x.signalType, x => x.count, StringComparer.OrdinalIgnoreCase);
         var countSignal = (string signalType) => signalCountMap.TryGetValue(signalType, out var count) ? count : 0;
+        var educatorCoreSignals =
+            countSignal(LearningSignalTypes.YouTubeReferenceUsed) +
+            countSignal(LearningSignalTypes.NotebookSourceUsed) +
+            countSignal(LearningSignalTypes.MisconceptionDetected) +
+            countSignal(LearningSignalTypes.TeachingMoveApplied);
+        var citationMissing = countSignal(LearningSignalTypes.SourceCitationMissing);
 
         var bridgeHealth = new[]
         {
+            new
+            {
+                key = "educator-core",
+                label = "EducatorCore -> Tutor",
+                status = educatorCoreSignals == 0
+                    ? "idle"
+                    : citationMissing > 0 ? "watch" : "healthy",
+                detail = educatorCoreSignals == 0
+                    ? "P6 egitimci cekirdegi henuz canli sinyal almadi."
+                    : $"YouTube pedagojisi, Notebook kaynaklari, misconception ve teaching move sinyalleri: {educatorCoreSignals}. Citation eksigi: {citationMissing}.",
+                signals = new[]
+                {
+                    LearningSignalTypes.YouTubeReferenceUsed,
+                    LearningSignalTypes.NotebookSourceUsed,
+                    LearningSignalTypes.MisconceptionDetected,
+                    LearningSignalTypes.TeachingMoveApplied,
+                    LearningSignalTypes.SourceCitationMissing
+                }.Select(signalType => new { signalType, count = countSignal(signalType) }).ToList()
+            },
             new
             {
                 key = "quiz",
@@ -533,6 +558,16 @@ public class DashboardController : ControllerBase
             totalSignals = signalCounts.Sum(x => x.count),
             signalCounts,
             topWeakSkills,
+            educatorCore = new
+            {
+                signals = educatorCoreSignals,
+                citationMissing,
+                youtubeReferenceUsed = countSignal(LearningSignalTypes.YouTubeReferenceUsed),
+                notebookSourceUsed = countSignal(LearningSignalTypes.NotebookSourceUsed),
+                misconceptionDetected = countSignal(LearningSignalTypes.MisconceptionDetected),
+                teachingMoveApplied = countSignal(LearningSignalTypes.TeachingMoveApplied),
+                status = educatorCoreSignals == 0 ? "idle" : citationMissing > 0 ? "watch" : "healthy"
+            },
             quizAttempts = totalAttempts,
             quizAccuracyPct = totalAttempts == 0 ? 0 : Math.Round(attempts.Count(a => a.IsCorrect) * 100.0 / totalAttempts, 1),
             unknownSkillRatePct = totalAttempts == 0 ? 0 : Math.Round(unknownSkillCount * 100.0 / totalAttempts, 1),

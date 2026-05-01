@@ -292,17 +292,38 @@ public class DeepPlanAgent : IDeepPlanAgent
             if (transcript.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase))
                 return string.Empty;
 
+            var payload = JsonSerializer.Serialize(new {
+                Search = searchResult,
+                BestVideoId = videoId,
+                Transcript = transcript
+            });
+
+            Orka.Core.DTOs.TeachingReference? teachingReference = null;
+
             if (redis != null)
             {
-                var payload = JsonSerializer.Serialize(new {
-                    Search = searchResult,
-                    BestVideoId = videoId,
-                    Transcript = transcript
-                });
                 await redis.SaveYouTubeContextAsync(parentTopicId, payload);
+
+                var educatorCore = _serviceProvider.GetService<IEducatorCoreService>();
+                if (educatorCore != null)
+                    teachingReference = await educatorCore.NormalizeTeachingReferenceAsync(parentTopicId, payload);
             }
 
-            return $"\n\n[YOUTUBE EĞİTİM REFERANSI (KOPYALAMA İÇİN DEĞİL, ANLATIM YAPISI İÇİN)]:\n{transcript}\n\nLütfen yukarıdaki popüler eğitim videosunun anlatım sırasını, konuları nasıl böldüğünü ve pedagojik akışını incele. Müfredatı oluştururken bu popüler yapıyı referans al (kopyalama, ilham al).";
+            if (teachingReference != null)
+            {
+                return $"""
+
+                    [YOUTUBE EDUCATOR REFERENCE - PLANNING STYLE ONLY]
+                    Source: [youtube:{teachingReference.SourceId}] Status: {teachingReference.Status}
+                    Teaching flow: {teachingReference.TeachingFlow}
+                    Examples: {string.Join(" | ", teachingReference.Examples.Take(4))}
+                    Common mistakes: {string.Join(" | ", teachingReference.CommonMistakes.Take(4))}
+                    Practice ideas: {string.Join(" | ", teachingReference.PracticeIdeas.Take(4))}
+                    Use this to improve curriculum sequence and remedial practice. Do not copy video content or treat it as factual proof.
+                    """;
+            }
+
+            return $"\n\n[YOUTUBE EDUCATOR REFERENCE - PLANNING STYLE ONLY]:\n{transcript}\nUse this only for teaching sequence and examples; do not treat it as factual proof.";
         }
         catch (Exception ex)
         {
