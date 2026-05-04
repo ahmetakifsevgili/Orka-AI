@@ -26,8 +26,6 @@ public class LearningSourceService : ILearningSourceService
     private readonly ILogger<LearningSourceService> _logger;
 
     private const int ApproxChunkChars = 2200;
-    private const int MaxContextChars = 7000;
-
     public LearningSourceService(
         OrkaDbContext db,
         FileExtractionService extractor,
@@ -220,6 +218,11 @@ public class LearningSourceService : ILearningSourceService
         var citations = chunks
             .Select(c => new SourceChunkDto(c.Id, c.PageNumber, c.ChunkIndex, c.Text, c.HighlightHint))
             .ToList();
+        if (chunks.Count == 0)
+        {
+            await RecordSourceAskedAsync(userId, source, question, citationCount: 0, ct);
+            return new SourceAskResultDto(NotebookSourceContextFormatter.SourceMissingAnswer(), citations);
+        }
 
         var wiki = source.TopicId.HasValue
             ? await SafeWikiAsync(source.TopicId.Value, userId)
@@ -228,7 +231,7 @@ public class LearningSourceService : ILearningSourceService
             ? await _redis.GetKorteksResearchReportAsync(source.TopicId.Value) ?? string.Empty
             : string.Empty;
 
-        var sourceContext = BuildSourceContext(chunks);
+        var sourceContext = NotebookSourceContextFormatter.BuildSourceContext(chunks);
         var systemPrompt = $"""
             Sen Orka AI'nin belgeye kilitli (Strict Document Grounding) öğrenme ajanısın.
 
@@ -270,18 +273,7 @@ public class LearningSourceService : ILearningSourceService
                 ct: ct);
         }
 
-        await _signals.RecordSignalAsync(
-            userId,
-            source.TopicId,
-            source.SessionId,
-            LearningSignalTypes.SourceAsked,
-            payloadJson: JsonSerializer.Serialize(new
-            {
-                sourceId = source.Id,
-                question,
-                citationCount = citations.Count
-            }),
-            ct: ct);
+        await RecordSourceAskedAsync(userId, source, question, citations.Count, ct);
 
         return new SourceAskResultDto(answer, citations);
     }
@@ -302,7 +294,7 @@ public class LearningSourceService : ILearningSourceService
             [NOTEBOOKLM BELGE BAĞLAMI - KAYNAK ZORUNLU]:
             Aşağıdaki belge parçalarını kullanırsan her ilgili cümlenin sonuna ilgili parçanın gerçek [doc:...:p...] etiketini aynen ekle.
             Belgede olmayan bilgiyi belgeye mal etme; gerekiyorsa Wiki/Korteks diye ayır.
-            {{BuildSourceContext(chunks)}}
+            {{NotebookSourceContextFormatter.BuildSourceContext(chunks)}}
             """;
     }
 
@@ -362,16 +354,7 @@ public class LearningSourceService : ILearningSourceService
             }
         }
 
-        var words = question
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(w => w.Length > 2)
-            .Select(w => w.ToLowerInvariant())
-            .Distinct()
-            .ToList();
-        if (words.Count == 0) return 0;
-
-        var text = chunk.Text.ToLowerInvariant();
-        return words.Count(w => text.Contains(w, StringComparison.Ordinal)) / (float)words.Count;
+        return NotebookSourceContextFormatter.ScoreLexical(chunk, question);
     }
 
     private static IEnumerable<SourceChunk> BuildChunks(Guid sourceId, IReadOnlyList<ExtractedPage> pages)
@@ -400,19 +383,6 @@ public class LearningSourceService : ILearningSourceService
         }
     }
 
-    private static string BuildSourceContext(IEnumerable<SourceChunk> chunks)
-    {
-        var sb = new StringBuilder();
-        foreach (var chunk in chunks)
-        {
-            sb.AppendLine($"[doc:{chunk.LearningSourceId}:p{chunk.PageNumber}] chunk:{chunk.ChunkIndex}");
-            sb.AppendLine(chunk.Text);
-            sb.AppendLine();
-            if (sb.Length > MaxContextChars) break;
-        }
-        return sb.ToString();
-    }
-
     private async Task<string> SafeWikiAsync(Guid topicId, Guid userId)
     {
         try
@@ -437,4 +407,25 @@ public class LearningSourceService : ILearningSourceService
 
     private static LearningSourceSummaryDto ToSummary(LearningSource s) =>
         new(s.Id, s.TopicId, s.SessionId, s.SourceType, s.Title, s.FileName, s.PageCount, s.ChunkCount, s.Status, s.CreatedAt);
+
+    private async Task RecordSourceAskedAsync(
+        Guid userId,
+        LearningSource source,
+        string question,
+        int citationCount,
+        CancellationToken ct)
+    {
+        await _signals.RecordSignalAsync(
+            userId,
+            source.TopicId,
+            source.SessionId,
+            LearningSignalTypes.SourceAsked,
+            payloadJson: JsonSerializer.Serialize(new
+            {
+                sourceId = source.Id,
+                question,
+                citationCount
+            }),
+            ct: ct);
+    }
 }

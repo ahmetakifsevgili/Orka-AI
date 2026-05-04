@@ -49,6 +49,10 @@ public class SourcesController : ControllerBase
         {
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "Depolama limitine ulasildi." });
         }
+        catch (InvalidOperationException)
+        {
+            return BadRequest(new { message = "Kaynak yukleme istegi gecersiz." });
+        }
     }
 
     [HttpGet("topic/{topicId:guid}")]
@@ -64,8 +68,15 @@ public class SourcesController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Question))
             return BadRequest(new { message = "Soru boş olamaz." });
 
-        var result = await _sources.AskAsync(GetUserId(), sourceId, request.Question, HttpContext.RequestAborted);
-        return Ok(result);
+        try
+        {
+            var result = await _sources.AskAsync(GetUserId(), sourceId, request.Question, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
     }
 
     [HttpGet("{sourceId:guid}/pages/{page:int}")]

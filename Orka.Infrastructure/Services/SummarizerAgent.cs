@@ -371,6 +371,7 @@ public class SummarizerAgent : ISummarizerAgent
                 _logger.LogInformation("[WikiCurator] Sade ama yapısal yedek wiki üretildi.");
             }
 
+            summary = WikiAdaptiveMetadataFormatter.EnsureSourceTagsPresent(summary, sourceBackedWikiBlock);
             session.Summary = summary;
             await wikiService.AutoUpdateWikiAsync(topicId, summary, "Otomatik Oluşturulan Öğrenci Dostu Wiki", "GitHubModels-WikiArchitect");
             await db.SaveChangesAsync();
