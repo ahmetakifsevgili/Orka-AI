@@ -13,9 +13,11 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
-import { Check, Copy, BookOpen, CheckCircle, Volume2 } from "lucide-react";
+import { Check, Copy, BookOpen, CheckCircle, Volume2, Bookmark, BookmarkCheck } from "lucide-react";
+import toast from "react-hot-toast";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 import { tryParseQuiz } from "@/lib/quizParser";
+import { BookmarksAPI } from "@/services/api";
 import QuizCard from "./QuizCard";
 import OrcaLogo from "./OrcaLogo";
 import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
@@ -242,6 +244,25 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
   // Hooks must always be called — conditional returns happen after
   const [displayedContent, setDisplayedContent] = useState(isUser ? message.content : "");
   const [audioOpen, setAudioOpen] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
+
+  const isPersistedMessage = !message.id.startsWith("local-");
+
+  const handleBookmark = useCallback(async () => {
+    if (!isPersistedMessage || bookmarkBusy) return;
+    setBookmarkBusy(true);
+    try {
+      const result = await BookmarksAPI.create({ messageId: message.id });
+      setBookmarked(true);
+      toast.success(result.alreadyExisted ? "Zaten kayıtlıydı." : "Mesaj kaydedildi.");
+    } catch (err: unknown) {
+      console.error("[ChatMessage] Bookmark create failed:", err);
+      toast.error("Mesaj kaydedilemedi.");
+    } finally {
+      setBookmarkBusy(false);
+    }
+  }, [isPersistedMessage, bookmarkBusy, message.id]);
 
   // Resolve quiz data without strict type checking (AI often forgets type indicator but sends json)
   const quizData = message.quiz ?? tryParseQuiz(message.content);
@@ -432,6 +453,7 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
                 topicId={topicId}
                 sessionId={sessionId}
                 onSubmitAnswer={onSubmitAnswer}
+                onOpenWiki={onOpenWiki}
                 onOpenIDE={onOpenIDE}
                 isBaseline={
                     message.content.includes("akademik") ||
@@ -454,6 +476,21 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
                   <Volume2 className="w-3 h-3" />
                   Sesli dinle
                 </button>
+                {isPersistedMessage && (
+                  <button
+                    onClick={handleBookmark}
+                    disabled={bookmarkBusy || bookmarked}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] transition border border-transparent ${
+                      bookmarked
+                        ? "text-amber-500 bg-amber-500/10 border-amber-500/20"
+                        : "text-zinc-500 hover:text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/20"
+                    } ${bookmarkBusy ? "opacity-60 cursor-wait" : ""}`}
+                    title={bookmarked ? "Kaydedildi" : "Bu mesajı kaydet"}
+                  >
+                    {bookmarked ? <BookmarkCheck className="w-3 h-3" /> : <Bookmark className="w-3 h-3" />}
+                    {bookmarked ? "Kaydedildi" : "Kaydet"}
+                  </button>
+                )}
               </div>
             )}
           </div>

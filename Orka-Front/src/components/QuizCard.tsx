@@ -22,6 +22,7 @@ interface QuizCardProps {
   onSubmitAnswer?: (formattedAnswer: string) => void;
   isBaseline?: boolean;
   onOpenIDE?: (question?: string) => void;
+  onOpenWiki?: (topicId: string) => void;
 }
 
 const OPTION_LABELS = ["A", "B", "C", "D", "E", "F"];
@@ -34,7 +35,7 @@ const stableQuestionHash = (quiz: QuizData) =>
     .replace(/\s+/g, " ")
     .slice(0, 180);
 
-export default function QuizCard({ quiz, messageId, topicId, sessionId, onSubmitAnswer, onOpenIDE, isBaseline = false }: QuizCardProps) {
+export default function QuizCard({ quiz, messageId, topicId, sessionId, onSubmitAnswer, onOpenIDE, onOpenWiki, isBaseline = false }: QuizCardProps) {
   const isArray = Array.isArray(quiz);
   // Güvenlik: coding soruları daima dizinin sonuna alınır ki IDE submission akışı
   // orta konumda kalıp QuizCard'ı kitlemesin. Backend prompt kısıtı ana savunma,
@@ -394,6 +395,15 @@ export default function QuizCard({ quiz, messageId, topicId, sessionId, onSubmit
                 {currentQuiz.explanation ?? ""}
               </ReactMarkdown>
             </div>
+            {!isCorrectAnswer && topicId && onOpenWiki && (
+              <button
+                type="button"
+                onClick={() => onOpenWiki(topicId)}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#e8c46f]/35 bg-[#fff8ee] px-3 py-1.5 text-[11px] font-extrabold text-[#8a641f] transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]"
+              >
+                Bu konuyu sağ Wiki'de aç
+              </button>
+            )}
           </motion.div>
         )}
         {recordError && (

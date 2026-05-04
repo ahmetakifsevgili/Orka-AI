@@ -6,7 +6,7 @@
  *   3. Korteks Derin Araştırma (YENİ — internetten araştırma)
  */
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X,
@@ -32,6 +32,7 @@ import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, WikiAPI, storage } from "@/services/api";
+import type { ContextRailTab } from "@/lib/types";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
@@ -48,8 +49,15 @@ interface WikiPage {
 }
 
 interface WikiMainPanelProps {
+  /** IDE'den gelen mesaj — mount sonrası otomatik gönderilir ve sıfırlanır. */
+  pendingMessage?: string | null;
+  /** pendingMessage tüketildikten sonra parent'i bilgilendirir */
+  onPendingMessageConsumed?: () => void;
   topicId: string;
   onClose: () => void;
+  variant?: "full" | "rail";
+  activeRailTab?: ContextRailTab;
+  onSendToChat?: (message: string) => void;
 }
 
 interface CopilotMessage {
@@ -97,7 +105,13 @@ interface MindMapNode {
 
 const MAX_POLL_ATTEMPTS = 20; // 20 × 3s = 60 saniye maksimum bekleme
 
-export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) {
+export default function WikiMainPanel({
+  topicId,
+  onClose,
+  variant = "full",
+  activeRailTab = "wiki",
+  onSendToChat,
+}: WikiMainPanelProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -250,7 +264,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
   const pageContent =
     activePage?.blocks?.map((b) => b.content).join("\n\n") ?? "";
 
-  // Wiki blok'ları yüklendiğinde Briefing çek (1 saatlik backend cache var)
+  // Wiki blokları yüklendiğinde Briefing çek (1 saatlik backend cache var)
   useEffect(() => {
     if (!activePage?.blocks || activePage.blocks.length === 0) {
       setBriefing(null);
@@ -267,8 +281,9 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
           });
         }
       })
-      .catch(() => {
-        // Sessiz başarısızlık — briefing kart gösterilmez
+      .catch((err: unknown) => {
+        // Briefing kartı opsiyoneldir; başarısızlıkta gizlenir ama gözlemlenebilir.
+        console.warn("[WikiMainPanel] getBriefing failed:", err);
         setBriefing(null);
       })
       .finally(() => setBriefingLoading(false));
@@ -289,6 +304,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
 
   useEffect(() => {
     refreshSources();
+    // Yeni topic modu aktifleştirildiğinde reset at
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
@@ -417,7 +433,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
     }
   };
 
-  const recordWikiAction = (action: string, label: string, payload?: Record<string, unknown>) => {
+  const recordWikiAction = useCallback((action: string, label: string, payload?: Record<string, unknown>) => {
     void LearningAPI.recordSignal({
       topicId,
       signalType: "WikiActionClicked",
@@ -425,8 +441,10 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
       topicPath: `Wiki > ${action}`,
       isPositive: true,
       payloadJson: JSON.stringify({ action, label, ...(payload ?? {}) }),
-    }).catch(() => {});
-  };
+    }).catch((err: unknown) => {
+      console.error("[WikiMainPanel] recordSignal WikiActionClicked failed:", err);
+    });
+  }, [topicId]);
 
   const handleSelectSource = (source: LearningSource) => {
     setActiveSource(source);
@@ -444,12 +462,20 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
   // Önerilen soruyu Copilot'a doldur
   const handleSuggestedQuestion = (question: string) => {
     recordWikiAction("recommendation-to-copilot", question);
+    if (onSendToChat) {
+      onSendToChat(question);
+      return;
+    }
     setShowCopilot(true);
     setInput(question);
   };
 
   const askAbout = (label: string) => {
     recordWikiAction("ask-about", label);
+    if (onSendToChat) {
+      onSendToChat(`${label} konusunu kaynaklara göre açıkla ve ilişkili noktaları göster.`);
+      return;
+    }
     setShowCopilot(true);
     setInput(`${label} konusunu kaynaklara göre açıkla ve ilişkili noktaları göster.`);
   };
@@ -469,8 +495,17 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
       density: sources.length === 0 ? 0 : Math.round(totalChunks / Math.max(totalPages, 1)),
     };
   }, [sources]);
+  const isRail = variant === "rail";
+  const activeRailLabel =
+    activeRailTab === "sources"
+      ? "Kaynaklar"
+      : activeRailTab === "practice"
+      ? "Pekiştir"
+      : activeRailTab === "notes"
+      ? "Notlar"
+      : "Wiki";
 
-  // ─── Copilot Send ────────────────────────────────────────
+  // Copilot Send
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
     const userQ = input.trim();
@@ -514,6 +549,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
             try {
               const json = JSON.parse(str);
               if (json.content) {
+                // Konu tamamlanma sinyali — frontend'e wiki kısayol butonu göstermek için
                 aiContent += json.content;
               } else {
                 aiContent += str;
@@ -548,7 +584,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
     }
   };
 
-  // ─── Render ──────────────────────────────────────────────
+  // Render
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -557,20 +593,20 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
       transition={{ duration: 0.2 }}
       className="flex-1 flex bg-transparent overflow-hidden relative"
     >
-      {/* ─── LEFT PANE: WIKI CONTENT ─── */}
+      {/* LEFT PANE: WIKI CONTENT */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#526d82]/15 bg-[#f7f9fa]/62 backdrop-blur-sm z-10">
-          <div className="flex flex-col gap-1 min-w-0 pr-8">
+        <div className={`${isRail ? "px-4 py-3" : "px-6 py-4"} flex items-center justify-between flex-shrink-0 border-b border-[#526d82]/15 bg-[#f7f9fa]/62 backdrop-blur-sm z-10`}>
+          <div className="flex flex-col gap-1 min-w-0 pr-4">
             <div className="flex items-center gap-1.5 text-xs text-[#667085] truncate font-medium tracking-wide">
-              <span>Müfredat Haritası</span>
+              <span>{isRail ? activeRailLabel : "Müfredat Haritası"}</span>
               <span className="text-zinc-700">/</span>
               <span className="text-[#344054] truncate">
                 {activePage?.title || "Konu"}
               </span>
             </div>
-            <h3 className="text-xl font-bold text-[#172033] truncate flex items-center gap-2.5">
-              <BookOpen className="w-5 h-5 text-[#667085]" />
+            <h3 className={`${isRail ? "text-base" : "text-xl"} font-bold text-[#172033] truncate flex items-center gap-2.5`}>
+              <BookOpen className={`${isRail ? "w-4 h-4" : "w-5 h-5"} text-[#667085]`} />
               <span>{activePage?.title || "Wiki"}</span>
             </h3>
           </div>
@@ -585,7 +621,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto px-8 lg:px-16 py-8 sidebar-scrollbar scroll-smooth">
+        <div className={`flex-1 overflow-y-auto ${isRail ? "px-4 py-4" : "px-8 lg:px-16 py-8"} sidebar-scrollbar scroll-smooth`}>
           {loading && (
             <div className="flex flex-col items-center justify-center h-40 gap-3">
               <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
@@ -616,9 +652,9 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
           )}
 
           {!loading && activePage && (
-            <div className="max-w-4xl mx-auto pb-12">
+            <div className={`${isRail ? "max-w-none" : "max-w-4xl mx-auto"} pb-12`}>
               <div className="mb-8">
-                <h1 className="text-2xl md:text-3xl font-extrabold text-[#172033] tracking-tight">
+                <h1 className={`${isRail ? "text-xl" : "text-2xl md:text-3xl"} font-extrabold text-[#172033] tracking-tight`}>
                   {activePage.title}
                 </h1>
               </div>
@@ -655,7 +691,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                             </div>
                             <ul className="space-y-1.5">
                               {briefing.keyTakeaways.map((kt, i) => (
-                                <li key={i} className="flex gap-2 text-sm text-[#344054] leading-snug">
+                                <li key={`takeaway-${i}`} className="flex gap-2 text-sm text-[#344054] leading-snug">
                                   <span className="text-[#47725d] font-mono text-xs mt-0.5">{i + 1}.</span>
                                   <span>{kt}</span>
                                 </li>
@@ -671,7 +707,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                             <div className="flex flex-wrap gap-2">
                               {briefing.suggestedQuestions.map((q, i) => (
                                 <button
-                                  key={i}
+                                  key={`q-${i}-${q.slice(0, 32)}`}
                                   onClick={() => handleSuggestedQuestion(q)}
                                   className="text-xs px-3 py-1.5 rounded-full bg-[#f7f9fa]/68 hover:bg-[#dcecf3]/70 border border-[#526d82]/15 hover:border-[#8fb7a2]/40 text-[#344054] hover:text-[#47725d] transition"
                                 >
@@ -693,33 +729,33 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-sky-400" />
                       <span className="text-xs font-semibold uppercase tracking-widest text-sky-300">
-                        Kisisel Pekistirme
+                        Kişisel Pekiştirme
                       </span>
                     </div>
                     {learningCache && (
                       <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-sky-200">
-                        {learningCache.hit ? "Redis hizli hafiza" : "SQL canli"} · {learningCache.source}
+                        {learningCache.hit ? "Redis hızlı hafıza" : "SQL canlı"} · {learningCache.source}
                       </span>
                     )}
                   </div>
                   <div className="px-5 py-4 grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="text-xs font-semibold text-[#667085] uppercase tracking-wide mb-2">
-                        Zorlandigin Yerler
+                        Zorlandığın Yerler
                       </div>
                       {weakSkills.length === 0 ? (
-                        <p className="text-sm text-[#667085]">Henuz konu bazli zayiflik sinyali yok.</p>
+                        <p className="text-sm text-[#667085]">Henüz konu bazlı zayıflık sinyali yok.</p>
                       ) : (
                         <div className="space-y-2">
                           {weakSkills.slice(0, 4).map((skill) => (
                             <button
                               key={skill.skillTag}
-                              onClick={() => handleSuggestedQuestion(`${skill.topicPath || skill.skillTag} konusunu telafi dersi gibi anlat; once neden zorlandigimi acikla, sonra 1 ornek, 1 mini diagram ve 3 mikro soru ver.`)}
+                              onClick={() => handleSuggestedQuestion(`${skill.topicPath || skill.skillTag} konusunu telafi dersi gibi anlat; önce neden zorlandığımı açıkla, sonra 1 örnek, 1 mini diyagram ve 3 mikro soru ver.`)}
                               className="w-full text-left rounded-lg border border-[#526d82]/15 bg-[#f7f9fa]/66 px-3 py-2 hover:border-[#9ec7d9]/50 transition"
                             >
                               <div className="text-sm text-[#172033]">{skill.skillTag}</div>
                               <div className="text-[11px] text-[#667085]">
-                                {skill.wrongCount}/{skill.totalCount} hata, dogruluk %{Math.round(skill.accuracy * 100)}
+                                {skill.wrongCount}/{skill.totalCount} hata, doğruluk %{Math.round(skill.accuracy * 100)}
                               </div>
                               <div className="mt-2 inline-flex rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-[#52768a]">
                                 Telafi dersi başlat
@@ -731,10 +767,10 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     </div>
                     <div>
                       <div className="text-xs font-semibold text-[#667085] uppercase tracking-wide mb-2">
-                        Pekistirme Onerileri
+                        Pekiştirme Önerileri
                       </div>
                       {recommendations.length === 0 ? (
-                        <p className="text-sm text-[#667085]">Quiz veya sinif sinyali geldikce burada ozel oneriler olusur.</p>
+                        <p className="text-sm text-[#667085]">Quiz veya sınıf sinyali geldikçe burada özel öneriler oluşur.</p>
                       ) : (
                         <div className="space-y-2">
                           {recommendations.slice(0, 4).map((rec) => (
@@ -800,7 +836,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                       <div className="rounded-2xl border border-[#526d82]/14 bg-[#f7f4ec]/64 p-3">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8a6a33]">Kaynak grafı</div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8a6a33]">Kaynak grafi</div>
                             <p className="mt-1 text-[11px] text-[#667085]">
                               {sources.length} kaynak · {sourceGraph.totalPages} sayfa · {sourceGraph.totalChunks} chunk · yoğunluk {sourceGraph.density}/sayfa
                             </p>
@@ -1396,7 +1432,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
 
               {messages.map((msg, i) => (
                 <div
-                  key={i}
+                  key={`msg-${i}-${msg.role}`}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
@@ -1407,7 +1443,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     }`}
                   >
                     <RichMarkdown
-                      content={msg.content || "…"}
+                      content={msg.content || "â€¦"}
                       onSourceClick={handleSourceClick}
                       onCitationClick={handleCitationClick}
                       className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-p:leading-relaxed prose-headings:text-sm prose-headings:mb-1.5 prose-headings:mt-3 prose-li:my-1 prose-code:text-[#47725d] prose-code:text-[13px] prose-a:text-[#47725d]"
@@ -1461,7 +1497,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
       </AnimatePresence>
 
       {/* Closed State FAB */}
-      {!showCopilot && (
+      {!showCopilot && !onSendToChat && (
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -1495,7 +1531,7 @@ function WikiGeneratingSkeleton() {
         <div className="ml-auto flex gap-1">
           {[0, 1, 2].map((i) => (
             <span
-              key={i}
+              key={`dot-${i}`}
               className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce"
               style={{ animationDelay: `${i * 150}ms` }}
             />
@@ -1510,7 +1546,7 @@ function WikiGeneratingSkeleton() {
 
         {/* Block skeletons */}
         {[1, 0.8, 0.9, 0.7].map((w, i) => (
-          <div key={i} className="rounded-xl border border-[#526d82]/15 bg-[#f7f9fa]/58 p-5 space-y-3">
+          <div key={`skel-${i}`} className="rounded-xl border border-[#526d82]/15 bg-[#f7f9fa]/58 p-5 space-y-3">
             <div className="h-3.5 rounded bg-[#dcecf3]/70/70 animate-pulse" style={{ width: `${w * 40}%` }} />
             <div className="h-3 rounded bg-[#dcecf3]/55 animate-pulse w-full" />
             <div className="h-3 rounded bg-[#dcecf3]/55 animate-pulse" style={{ width: `${w * 80}%` }} />

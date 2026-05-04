@@ -30,6 +30,7 @@ public class OrkaDbContext : DbContext
     public DbSet<LearningSource> LearningSources { get; set; } = null!;
     public DbSet<SourceChunk> SourceChunks { get; set; } = null!;
     public DbSet<AudioOverviewJob> AudioOverviewJobs { get; set; } = null!;
+    public DbSet<Bookmark> Bookmarks { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -287,6 +288,28 @@ public class OrkaDbContext : DbContext
         // Message: oturum mesaj listesi + sıralama
         modelBuilder.Entity<Message>()
             .HasIndex(m => new { m.SessionId, m.CreatedAt });
+
+        // Message: kullanıcı bazlı 7-günlük aktivite (Dashboard /stats hot path).
+        modelBuilder.Entity<Message>()
+            .HasIndex(m => new { m.UserId, m.CreatedAt });
+
+        // Bookmark: kullanıcı listesi sıralı, mesaj cascade.
+        modelBuilder.Entity<Bookmark>()
+            .HasIndex(b => new { b.UserId, b.CreatedAt });
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.Message)
+            .WithMany()
+            .HasForeignKey(b => b.MessageId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.User)
+            .WithMany()
+            .HasForeignKey(b => b.UserId)
+            .OnDelete(DeleteBehavior.Restrict); // user silinirse bookmark'lar iz bırakır
+        // Aynı kullanıcının aynı mesaja iki kez bookmark koymasını engelle.
+        modelBuilder.Entity<Bookmark>()
+            .HasIndex(b => new { b.UserId, b.MessageId })
+            .IsUnique();
 
         // WikiPage: konu bazlı wiki içerik yükleme
         modelBuilder.Entity<WikiPage>()

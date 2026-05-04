@@ -76,7 +76,7 @@ public class RedisMemoryService : IRedisMemoryService
     /// Bir Redis list entry'sini insan okur formatına çevirir.
     /// JSON ise deserialize, değilse ham string (eski format) olarak döner.
     /// </summary>
-    private static string NormalizeFeedbackEntry(string raw)
+    private string NormalizeFeedbackEntry(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
 
@@ -89,7 +89,11 @@ public class RedisMemoryService : IRedisMemoryService
                 if (rec is not null)
                     return $"[{rec.At:HH:mm:ss}] Puan: {rec.Score} - Not: {rec.Feedback}";
             }
-            catch { /* bozuksa raw döner */ }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex,
+                    "[Redis] EvaluatorRecord parse failed; falling back to raw payload.");
+            }
         }
 
         return raw; // eski format (backward compat)
@@ -233,8 +237,12 @@ public class RedisMemoryService : IRedisMemoryService
                 .Where(x => x.HasValue)
                 .Select(x =>
                 {
-                    try   { return JsonSerializer.Deserialize<GoldExample>(x.ToString()); }
-                    catch { return null; }
+                    try { return JsonSerializer.Deserialize<GoldExample>(x.ToString()); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "[Redis] GoldExample parse skipped.");
+                        return null;
+                    }
                 })
                 .Where(x => x != null)
                 .Select(x => x!);
@@ -307,7 +315,11 @@ public class RedisMemoryService : IRedisMemoryService
                     .Select(x =>
                     {
                         try { return JsonSerializer.Deserialize<AgentCallRecord>(x.ToString()); }
-                        catch { return null; }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "[Redis] AgentCallRecord parse skipped (per-agent metrics).");
+                            return null;
+                        }
                     })
                     .Where(r => r != null)
                     .Select(r => r!)
@@ -356,7 +368,10 @@ public class RedisMemoryService : IRedisMemoryService
                         var rec = JsonSerializer.Deserialize<AgentCallRecord>(item!);
                         if (rec is not null) allRecords.Add(rec);
                     }
-                    catch { /* skip malformed */ }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "[Redis] AgentCallRecord parse skipped (provider usage aggregation).");
+                    }
                 }
             }
 
@@ -520,7 +535,11 @@ public class RedisMemoryService : IRedisMemoryService
                     .Select(x =>
                     {
                         try { return JsonSerializer.Deserialize<CacheMetricRecord>(x.ToString()); }
-                        catch { return null; }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "[Redis] CacheMetricRecord parse skipped. Area={Area}", area);
+                            return null;
+                        }
                     })
                     .Where(x => x != null)
                     .Select(x => x!)
@@ -671,7 +690,7 @@ public class RedisMemoryService : IRedisMemoryService
     /// Hem yeni JSON hem de eski ham-string formatı destekler (migration güvenliği).
     /// Yeni kayıtlar JSON, eski kayıtlar "[HH:mm:ss] Puan: X - Not: Y" olarak duruyor olabilir.
     /// </summary>
-    private static bool TryParseEvaluatorEntry(string raw, out EvaluatorLogEntry entry)
+    private bool TryParseEvaluatorEntry(string raw, out EvaluatorLogEntry entry)
     {
         entry = default!;
         if (string.IsNullOrWhiteSpace(raw)) return false;
@@ -688,7 +707,11 @@ public class RedisMemoryService : IRedisMemoryService
                     return true;
                 }
             }
-            catch { /* fallback */ }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex,
+                    "[Redis] EvaluatorRecord parse failed; falling back to legacy string format.");
+            }
         }
 
         // 2) Eski string formatı (backward compat)
@@ -753,7 +776,11 @@ public class RedisMemoryService : IRedisMemoryService
                         var rec = JsonSerializer.Deserialize<TopicScoreRecord>(x.ToString());
                         return rec?.Score ?? 0;
                     }
-                    catch { return 0; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "[Redis] TopicScoreRecord parse skipped.");
+                        return 0;
+                    }
                 })
                 .Where(s => s > 0)
                 .ToList();

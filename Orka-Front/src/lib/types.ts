@@ -37,6 +37,28 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
+export type ContextRailTab = "wiki" | "sources" | "practice" | "notes";
+
+export interface ActiveLearningContext {
+  topicId?: string;
+  topicTitle?: string;
+  parentTopicId?: string;
+  parentTitle?: string;
+  focusTopicId?: string;
+  focusTitle?: string;
+  focusPath?: string;
+  focusSourceRef?: string;
+  intent?: "lesson" | "practice" | "review" | "code" | "source";
+}
+
+export interface RightRailState {
+  isOpen: boolean;
+  tab: ContextRailTab;
+  topicId?: string;
+  title?: string;
+  sourceRef?: string;
+}
+
 export interface SubLesson {
   id: string;
   title: string;

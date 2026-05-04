@@ -245,6 +245,9 @@ export const ChatAPI = {
   sendMessage: (data: {
     topicId?: string;
     sessionId?: string;
+    focusTopicId?: string;
+    focusTopicPath?: string;
+    focusSourceRef?: string;
     content: string;
     isPlanMode?: boolean;
   }) => api.post("/chat/message", data),
@@ -252,6 +255,9 @@ export const ChatAPI = {
   streamMessage: async (data: {
     topicId?: string;
     sessionId?: string;
+    focusTopicId?: string;
+    focusTopicPath?: string;
+    focusSourceRef?: string;
     content: string;
     isPlanMode?: boolean;
   }) => {
@@ -412,6 +418,28 @@ export const AudioOverviewAPI = {
       createdAt: string;
     }>("/audio/overview", data).then((r) => r.data),
   streamUrl: (jobId: string) => `/api/audio/overview/${jobId}/stream`,
+};
+
+export interface BookmarkItem {
+  id: string;
+  messageId: string;
+  topicId?: string | null;
+  topicTitle?: string | null;
+  note?: string | null;
+  tag?: string | null;
+  messageRole: string;
+  messageSnippet: string;
+  messageCreatedAt: string;
+  createdAt: string;
+}
+
+export const BookmarksAPI = {
+  list: () => api.get<BookmarkItem[]>("/bookmarks").then((r) => r.data),
+  create: (data: { messageId: string; note?: string; tag?: string }) =>
+    api.post<{ id: string; alreadyExisted: boolean }>("/bookmarks", data).then((r) => r.data),
+  update: (id: string, data: { note?: string; tag?: string }) =>
+    api.patch<{ id: string }>(`/bookmarks/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/bookmarks/${id}`),
 };
 
 export const LearningAPI = {

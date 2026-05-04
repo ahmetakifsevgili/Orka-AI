@@ -70,7 +70,7 @@ public class TopicService : ITopicService
     public async Task<List<WikiPage>> GenerateAndApplyPlanAsync(Guid topicId, string intent = "genel öğrenme", string level = "Beginner")
     {
         var topic = await _dbContext.Topics.FindAsync(topicId)
-            ?? throw new Exception("Konu bulunamadı.");
+            ?? throw new NotFoundException("Konu bulunamadı.");
 
         topic.LanguageLevel = level;
         topic.CurrentPhase = TopicPhase.Planning;

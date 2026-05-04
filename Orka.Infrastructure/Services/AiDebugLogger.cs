@@ -39,6 +39,10 @@ public static class AiDebugLogger
 
     private static string Now => DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
 
+    /// <summary>
+    /// Diske debug log yazımı uygulama davranışını kırmamalı; disk dolu, izin reddi
+    /// veya yarış durumlarında sessizce yutulur (bilinçli tasarım kararı).
+    /// </summary>
     private static void AppendSafe(string content)
     {
         try
@@ -46,6 +50,9 @@ public static class AiDebugLogger
             Directory.CreateDirectory(LogDir);
             File.AppendAllText(LogFile, content + Environment.NewLine);
         }
-        catch { /* Loglama asla uygulamayı kırmamalı */ }
+        catch
+        {
+            // Bilinçli sessizlik: log altyapısı arızası uygulamayı kırmamalı.
+        }
     }
 }

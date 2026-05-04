@@ -41,18 +41,31 @@ function Assert-HasValue {
     }
 }
 
-Write-Host "[live-user-smoke] Diagnostics..."
-$diagnostics = Invoke-Json -Method GET -Url "$BaseUrl/api/dev/diagnostics/config" -TimeoutSec 25
-if (-not $diagnostics.database.canConnect) {
-    $dbError = $diagnostics.database.error
-    if ([string]::IsNullOrWhiteSpace([string]$dbError)) { $dbError = "no detailed error returned" }
-    throw "Database is not connectable; live user smoke requires SQL readiness. Provider=$($diagnostics.database.provider); Error=$dbError"
+Write-Host "[live-user-smoke] Readiness..."
+$ready = Invoke-Json -Method GET -Url "$BaseUrl/health/ready" -TimeoutSec 25
+if ($ready.status -ne "Healthy") {
+    $checks = @($ready.checks | ForEach-Object { "$($_.name)=$($_.status)" }) -join ", "
+    throw "API is not ready; live user smoke requires DB/Redis readiness. Status=$($ready.status); Checks=$checks"
 }
 
-$configuredProviders = @($diagnostics.providers | Where-Object { $_.configured })
-$hasConfiguredAiProvider = $IncludeAi -and $configuredProviders.Count -gt 0
-if ($configuredProviders.Count -eq 0) {
-    Write-Warning "No AI provider key is configured. AI chat/source ask/TTS quality must be tested after keys are added."
+$configuredProviders = @()
+$hasConfiguredAiProvider = [bool]$IncludeAi
+try {
+    Write-Host "[live-user-smoke] Diagnostics provider preflight..."
+    $diagnostics = Invoke-Json -Method GET -Url "$BaseUrl/api/dev/diagnostics/config" -TimeoutSec 25
+    $configuredProviders = @($diagnostics.providers | Where-Object { $_.configured })
+    $hasConfiguredAiProvider = $IncludeAi -and $configuredProviders.Count -gt 0
+    if ($configuredProviders.Count -eq 0) {
+        Write-Warning "No AI provider key is configured. AI chat/source ask/TTS quality must be tested after keys are added."
+    }
+}
+catch {
+    if ($IncludeAi) {
+        Write-Warning "Diagnostics provider preflight is unavailable or admin-only; continuing because -IncludeAi was passed."
+    }
+    else {
+        Write-Warning "Diagnostics provider preflight is unavailable or admin-only. Pass -IncludeAi after provider keys/network are confirmed."
+    }
 }
 
 Write-Host "[live-user-smoke] Auth register/login..."

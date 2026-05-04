@@ -8,7 +8,7 @@
  *  - onTopicCreated prop'u destructuring'e eklendi
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Plus,
@@ -28,6 +28,7 @@ import {
   Code2,
   Trash2,
   LayoutDashboard,
+  Bookmark,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -40,6 +41,7 @@ interface LeftSidebarProps {
   topics: ApiTopic[];
   topicsLoading: boolean;
   activeTopic: ApiTopic | null;
+  activeFocusTopicId?: string;
   onTopicClick: (topic: ApiTopic | null, defaultMode?: "plan" | "chat") => void;
   onEnterChat: (topic: ApiTopic) => void;
   onTopicCreated: (topic: ApiTopic) => void;
@@ -47,14 +49,17 @@ interface LeftSidebarProps {
   onViewChange: (view: string) => void;
   /** ChatPanel'dan AI yanıtı geldiğinde artar; topic listesini yeniden çeker. */
   refreshTrigger: number;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 // NAV_ITEMS: label artık t() ile çevriliyor, statik label kaldırıldı
 const NAV_ITEMS = [
-  { id: "chat",    icon: Home,          labelKey: "home",    route: null },
-  { id: "dashboard", icon: LayoutDashboard, labelKey: "Dashboard", route: null },
-  { id: "wiki",    icon: BookMarked,    labelKey: "wiki",    route: null },
-  { id: "ide",     icon: Code2,         labelKey: "ide",     route: null },
+  { id: "chat",      icon: Home,            labelKey: "home",        route: null },
+  { id: "dashboard", icon: LayoutDashboard, labelKey: "Dashboard",   route: null },
+  { id: "wiki",      icon: BookMarked,      labelKey: "wiki",        route: null },
+  { id: "ide",       icon: Code2,           labelKey: "ide",         route: null },
+  { id: "bookmarks", icon: Bookmark,        labelKey: "Kayıtlarım", route: null },
 ];
 
 const EMOJI_SUGGESTIONS = ["📚", "🧠", "💻", "🔬", "🎨", "🗣️", "🏛️", "⚡", "🌍", "🎯"];
@@ -63,12 +68,15 @@ export default function LeftSidebar({
   topics: initialTopics,
   topicsLoading: initialLoading,
   activeTopic,
+  activeFocusTopicId,
   onTopicClick,
   onEnterChat,
   onTopicCreated,
   activeView,
   onViewChange,
   refreshTrigger,
+  isOpen,
+  onClose,
 }: LeftSidebarProps) {
   const [, navigate] = useLocation();
   const { t } = useLanguage();
@@ -88,14 +96,14 @@ export default function LeftSidebar({
   // Accordion state for modules inside a generic plan
   const [expandedModuleIds, setExpandedModuleIds] = useState<Set<string>>(new Set());
 
-  const toggleModule = (modId: string) => {
+  const toggleModule = useCallback((modId: string) => {
     setExpandedModuleIds(prev => {
       const next = new Set(prev);
       if (next.has(modId)) next.delete(modId);
       else next.add(modId);
       return next;
     });
-  };
+  }, []);
 
   // initialTopics VE initialLoading değişince local state'i sync et
   useEffect(() => {
@@ -173,14 +181,20 @@ export default function LeftSidebar({
   };
 
 
-  // Flyout panel: hangi müfredat genişletilmiş
-  const expandedPlan = topics.find(t => t.id === expandedPlanId);
-  const expandedModules = expandedPlan
-    ? topics.filter(t => t.parentTopicId === expandedPlan.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0))
-    : [];
+  // Flyout panel: hangi müfredat genişletilmiş — topics değişmedikçe cache'le.
+  const expandedPlan = useMemo(
+    () => topics.find(t => t.id === expandedPlanId),
+    [topics, expandedPlanId]
+  );
+  const expandedModules = useMemo(
+    () => expandedPlan
+      ? topics.filter(t => t.parentTopicId === expandedPlan.id).sort((a, b) => ((a as any).order || 0) - ((b as any).order || 0))
+      : [],
+    [topics, expandedPlan]
+  );
 
   const renderLesson = (topicToRender: ApiTopic) => {
-    const isActive = activeTopic?.id === topicToRender.id;
+    const isActive = activeFocusTopicId === topicToRender.id || activeTopic?.id === topicToRender.id;
     const isCompleted = topicToRender.isMastered || topicToRender.progressPercentage === 100;
     return (
       <div
@@ -238,15 +252,32 @@ export default function LeftSidebar({
   };
 
   return (
-    <div
-      className="flex flex-row h-full flex-shrink-0 relative z-20"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <>
+      {/* Mobile Overlay Backdrop */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      <div
+        className={`
+          flex flex-row h-full flex-shrink-0 relative z-50
+          ${isOpen ? "fixed inset-y-0 left-0" : "hidden md:flex"}
+        `}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
       {/* ══════════ ANA SIDEBAR (Expandable) ══════════ */}
       <motion.div
         initial={{ width: 64 }}
-        animate={{ width: isExpanded ? 260 : 64 }}
+        animate={{ width: (isExpanded || isOpen) ? 260 : 64 }}
         transition={{ duration: 0.2, ease: "easeInOut" }}
         className="bg-[#f7f9fa]/90 backdrop-blur-2xl border-r border-[#526d82]/10 flex flex-col h-full flex-shrink-0 overflow-hidden shadow-sm"
       >
@@ -254,7 +285,7 @@ export default function LeftSidebar({
         <div className="px-3 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <OrcaLogo className="w-5 h-5 text-[#172033]" />
-            {isExpanded && (
+            {(isExpanded || isOpen) && (
               <motion.span
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="text-sm font-semibold text-[#172033] tracking-tight whitespace-nowrap"
@@ -263,13 +294,23 @@ export default function LeftSidebar({
               </motion.span>
             )}
           </div>
-          <button
-            onClick={() => setIsPinned(!isPinned)}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors duration-150"
-            title={isPinned ? "Daralt" : "Sabitle"}
-          >
-            <PanelLeftClose className={`w-4 h-4 transition-transform duration-300 ${!isPinned ? "rotate-180" : ""}`} />
-          </button>
+          <div className="flex items-center gap-1">
+            {isOpen && (
+              <button
+                onClick={onClose}
+                className="md:hidden w-7 h-7 rounded-md flex items-center justify-center text-[#667085] hover:bg-[#eef1f3]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={() => setIsPinned(!isPinned)}
+              className="hidden md:flex w-7 h-7 rounded-md items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors duration-150"
+              title={isPinned ? "Daralt" : "Sabitle"}
+            >
+              <PanelLeftClose className={`w-4 h-4 transition-transform duration-300 ${!isPinned ? "rotate-180" : ""}`} />
+            </button>
+          </div>
         </div>
 
         {/* Nav */}
@@ -282,6 +323,7 @@ export default function LeftSidebar({
               if (item.labelKey === "courses") return t("courses") || "Kurslar";
               if (item.labelKey === "wiki") return t("wiki") || "Wiki";
               if (item.labelKey === "ide") return "Kod Editörü";
+              if (item.labelKey === "Kayıtlarım") return "Kayıtlarım";
               return item.labelKey;
             })();
             return (
@@ -296,7 +338,7 @@ export default function LeftSidebar({
                 }`}
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
-                {isExpanded && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="truncate">{label}</motion.span>}
+                {(isExpanded || isOpen) && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="truncate">{label}</motion.span>}
               </button>
             );
           })}
@@ -526,6 +568,7 @@ export default function LeftSidebar({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+      </div>
+    </>
   );
 }

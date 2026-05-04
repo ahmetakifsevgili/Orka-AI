@@ -1,15 +1,18 @@
-import { useCallback, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import Editor from "@monaco-editor/react";
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Code2,
   Loader2,
   Play,
   RotateCcw,
   Send,
   Terminal,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CodeAPI, LearningAPI } from "@/services/api";
@@ -24,7 +27,7 @@ interface InteractiveIDEProps {
   sessionId?: string;
   /** Algoritmik quiz sorusu görev kartı olarak gösterilir. */
   quizQuestion?: string;
-  /** IDE kapanma callback'i quiz gönderildikten sonra çağrılır. */
+  /** IDE kapanma callback'i chat'e dönüş için çağrılır. */
   onClose?: () => void;
 }
 
@@ -110,6 +113,17 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
   const runSucceeded = success === true;
   const outputText = formatRunOutput(stdout, stderr);
 
+  useEffect(() => {
+    if (!onClose) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const resetOutput = useCallback(() => {
     setStdout(null);
     setStderr(null);
@@ -155,7 +169,9 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
           codeLength: code.length,
           quizQuestion: Boolean(quizQuestion),
         }),
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        console.error("[InteractiveIDE] recordSignal IdeRunCompleted failed:", err);
+      });
     } finally {
       setRunning(false);
     }
@@ -187,7 +203,9 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
           stdoutLength: stdout?.length ?? 0,
           stderrLength: stderr?.length ?? 0,
         }),
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        console.error("[InteractiveIDE] recordSignal IdeSentToTutor failed:", err);
+      });
     };
 
     if (!hasOutput) {
@@ -229,28 +247,42 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent text-[#172033]">
-      <div className="flex-shrink-0 border-b border-[#526d82]/14 bg-[#eef1f3]/78 px-4 py-3 backdrop-blur md:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex-shrink-0 border-b border-[#526d82]/12 bg-[#f4f7f7]/82 px-4 py-3 backdrop-blur-xl md:px-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[#172033] text-white shadow-sm shadow-slate-900/10">
+            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#172033] text-white shadow-sm shadow-slate-900/10">
               <Terminal className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-extrabold text-[#172033]">İnteraktif Kod Editörü</p>
-              {topicTitle && <p className="truncate text-xs font-semibold text-[#667085]">{topicTitle}</p>}
+              <p className="text-sm font-black tracking-tight text-[#172033]">İnteraktif Kod Editörü</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#667085]">
+                <span>{topicTitle || "Serbest çalışma"}</span>
+                <span className="h-1 w-1 rounded-full bg-[#b8c4cc]" />
+                <span>{langLabel}</span>
+                <span className="hidden rounded-full bg-[#dcecf3]/72 px-2 py-0.5 text-[#2d5870] sm:inline-flex">Escape ile kapanır</span>
+              </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-[#eef1f3]/76 px-3 py-2 text-xs font-extrabold text-[#344054] transition hover:-translate-y-0.5 hover:bg-[#e4eaec]"
+                title="Sohbete dön"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Sohbete Dön</span>
+              </button>
+            )}
+
             <select
               value={language}
               onChange={(event) => handleLanguageChange(event.target.value)}
-              className="rounded-xl border border-[#526d82]/16 bg-[#f7f4ec]/80 px-3 py-2 text-xs font-bold text-[#344054] outline-none transition focus:border-[#52768a]"
+              className="rounded-xl border border-[#526d82]/16 bg-[#f7f4ec]/82 px-3 py-2 text-xs font-bold text-[#344054] outline-none transition focus:border-[#52768a]"
             >
               {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
 
@@ -272,28 +304,30 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                   : "border-[#172033]/10 bg-[#172033] text-white shadow-sm shadow-slate-900/12 hover:-translate-y-0.5 hover:bg-[#24314b]"
               }`}
             >
-              {running ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Çalışıyor...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5" />
-                  <span>Kodu Çalıştır</span>
-                </>
-              )}
+              {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              <span>{running ? "Çalışıyor..." : "Kodu Çalıştır"}</span>
             </button>
 
             {onSendToChat && (
               <button
                 onClick={handleSendToChat}
                 disabled={running || !code.trim()}
-                className="inline-flex items-center gap-2 rounded-xl border border-[#8a6a33]/16 bg-[#f4ecdc]/82 px-4 py-2 text-xs font-extrabold text-[#6d4f20] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#efe1c9] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#8a6a33]/16 bg-[#fff8ee]/86 px-4 py-2 text-xs font-extrabold text-[#6d4f20] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#efe1c9] disabled:cursor-not-allowed disabled:opacity-45"
                 title="Kodu değerlendirmesi için hocaya gönder"
               >
                 <Send className="h-3.5 w-3.5" />
                 <span>Hocaya Gönder</span>
+              </button>
+            )}
+
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="grid h-9 w-9 place-items-center rounded-xl border border-[#526d82]/12 bg-[#f7f4ec]/74 text-[#667085] transition hover:bg-[#f4e1dc] hover:text-[#9a4e3e]"
+                aria-label="Kapat"
+                title="Kapat"
+              >
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -301,14 +335,19 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
       </div>
 
       {quizQuestion && (
-        <div className="flex-shrink-0 border-b border-[#526d82]/14 bg-[#f4ecdc]/70 px-4 py-3 md:px-6">
-          <p className="mb-1 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a6a33]">Çözmen Gereken Soru</p>
-          <p className="text-sm leading-relaxed text-[#344054]">{quizQuestion}</p>
+        <div className="flex-shrink-0 border-b border-[#526d82]/12 bg-[#fff8ee]/74 px-4 py-3 md:px-5">
+          <div className="rounded-2xl border border-[#e8c46f]/24 bg-[#f7f4ec]/72 p-4">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#8a641f]">
+              <Code2 className="h-3.5 w-3.5" />
+              Görev Kartı
+            </div>
+            <p className="text-sm leading-relaxed text-[#344054]">{quizQuestion}</p>
+          </div>
         </div>
       )}
 
       <div className="min-h-0 flex-1 bg-[#111827] p-2 md:p-3">
-        <div className="h-full overflow-hidden rounded-2xl border border-white/8 bg-[#0f172a] shadow-inner shadow-black/30">
+        <div className="h-full overflow-hidden rounded-2xl border border-white/10 bg-[#0f172a] shadow-inner shadow-black/30">
           <Editor
             height="100%"
             defaultLanguage="csharp"
@@ -347,8 +386,8 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
           >
             <div className="flex items-center justify-between border-b border-[#526d82]/12 px-4 py-2">
               <div className="flex items-center gap-2">
-                <span className={`grid h-6 w-6 place-items-center rounded-full ${runSucceeded ? "bg-[#d9e7de] text-[#547c61]" : "bg-[#f4e1dc] text-[#9a4e3e]"}`}>
-                  {runSucceeded ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                <span className={`grid h-7 w-7 place-items-center rounded-full ${runSucceeded ? "bg-[#d9e7de] text-[#547c61]" : "bg-[#f4e1dc] text-[#9a4e3e]"}`}>
+                  {runSucceeded ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
                 </span>
                 <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
                   {runSucceeded ? "Çıktı" : "Hata Çıktısı"} · {langLabel}
@@ -358,7 +397,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                 {onSendToChat && (
                   <button
                     onClick={handleSendToChat}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1 text-[11px] font-bold text-[#667085] transition hover:bg-[#efe7d6] hover:text-[#172033]"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-[#f7f4ec]/74 px-3 py-1 text-[11px] font-bold text-[#667085] transition hover:bg-[#efe7d6] hover:text-[#172033]"
                   >
                     <Send className="h-3 w-3" />
                     Hocaya Sor

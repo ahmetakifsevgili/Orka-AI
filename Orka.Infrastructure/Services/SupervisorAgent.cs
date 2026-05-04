@@ -70,7 +70,13 @@ public class SupervisorAgent : ISupervisorAgent
             if (cleaned.Contains("ART"))         return "ART";
             return "GENERAL";
         }
-        catch { return "GENERAL"; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[Supervisor] Intent classification failed; defaulting to GENERAL. MessagePreview={Preview}",
+                userMessage.Length > 120 ? userMessage[..120] : userMessage);
+            return "GENERAL";
+        }
     }
 
     /// <summary>

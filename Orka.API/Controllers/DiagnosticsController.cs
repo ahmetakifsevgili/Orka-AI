@@ -4,12 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 
 namespace Orka.API.Controllers;
 
-[AllowAnonymous]
+[Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/dev/diagnostics")]
 public class DiagnosticsController : ControllerBase
@@ -18,17 +19,20 @@ public class DiagnosticsController : ControllerBase
     private readonly IWebHostEnvironment _environment;
     private readonly OrkaDbContext _dbContext;
     private readonly IRedisMemoryService _redis;
+    private readonly ILogger<DiagnosticsController> _logger;
 
     public DiagnosticsController(
         IConfiguration configuration,
         IWebHostEnvironment environment,
         OrkaDbContext dbContext,
-        IRedisMemoryService redis)
+        IRedisMemoryService redis,
+        ILogger<DiagnosticsController> logger)
     {
         _configuration = configuration;
         _environment = environment;
         _dbContext = dbContext;
         _redis = redis;
+        _logger = logger;
     }
 
     [HttpGet("config")]
@@ -86,8 +90,12 @@ public class DiagnosticsController : ControllerBase
                     : "Database readiness check returned false. Check SQL LocalDB instance, connection string, and migration state."
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex,
+                "[Diagnostics] Database readiness check failed Provider={Provider}",
+                _dbContext.Database.ProviderName);
+
             return new
             {
                 canConnect = false,

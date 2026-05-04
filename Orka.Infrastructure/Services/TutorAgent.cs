@@ -736,9 +736,9 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 }
             }
 
-            if (!feedbackList.Any() && string.IsNullOrEmpty(topicScoreInfo) && string.IsNullOrEmpty(studentProfileInfo)) return "";
+            if (feedbackList.Count == 0 && string.IsNullOrEmpty(topicScoreInfo) && string.IsNullOrEmpty(studentProfileInfo)) return "";
 
-            var feedbackSummary = feedbackList.Any()
+            var feedbackSummary = feedbackList.Count > 0
                 ? string.Join("\n", feedbackList.Select(f => $"- {f}"))
                 : "(Session-level geri bildirim henüz yok)";
 

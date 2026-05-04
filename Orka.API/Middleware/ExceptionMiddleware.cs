@@ -51,6 +51,7 @@ public class ExceptionMiddleware
             ProviderConfigurationException => (503, exception.Message),
             NotFoundException => (404, exception.Message),
             UnauthorizedException => (401, exception.Message),
+            BadRequestException => (400, exception.Message),
             ArgumentException => (400, exception.Message),
             TimeoutException => (504, "İşlem zaman aşımına uğradı. Yapay zeka servisleri şu an yoğun olabilir."),
             System.Text.Json.JsonException => (422, "Veri işleme hatası. Yapay zeka yanıtı beklenmedik bir formatta döndü."),

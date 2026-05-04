@@ -39,6 +39,10 @@ interface ChatPanelProps {
   /** Backend yanıtı yeni bir topic oluşturduysa (null topic modunda) çağrılır. */
   onTopicAutoCreated?: (topicId: string) => void;
   currentSubtopic?: { title: string; index: number; total: number; progress: number } | null;
+  focusTopicId?: string;
+  focusTitle?: string;
+  focusPath?: string;
+  focusSourceRef?: string;
   defaultMode?: "plan" | "chat";
   /** IDE'den gelen mesaj — mount sonrası otomatik gönderilir ve sıfırlanır. */
   pendingMessage?: string | null;
@@ -59,6 +63,10 @@ export default function ChatPanel({
   onTopicsRefresh,
   onTopicAutoCreated,
   currentSubtopic,
+  focusTopicId,
+  focusTitle,
+  focusPath,
+  focusSourceRef,
   defaultMode = "chat",
   pendingMessage,
   onPendingMessageConsumed,
@@ -83,6 +91,8 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // IDE → Chat mesaj tetikleyici için sendMessage ref'i
   const sendMessageRef = useRef<((content: string) => void) | null>(null);
+  const focusedLessonTitle = focusTitle || currentSubtopic?.title;
+  const focusedLessonPath = focusPath || focusedLessonTitle;
 
   // Fetch user info
   useEffect(() => {
@@ -94,10 +104,12 @@ export default function ChatPanel({
       const fullName = `${first} ${last}`.trim() || "User";
       setUserName(fullName);
       setUserInitial(first?.[0]?.toUpperCase() || "U");
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.error("[ChatPanel] UserAPI.getMe failed:", err);
+    });
   }, []);
 
-  // ── Thinking state rotator ─────────────────────────────────────────────
+  // ── Thinking state rotator ───────────────────────────────────────────────────
   useEffect(() => {
     if (!isThinking) return;
     const currentStates = isPlanMode ? PLANNING_THINKING_STATES : THINKING_STATES;
@@ -112,7 +124,7 @@ export default function ChatPanel({
     return () => clearInterval(id);
   }, [isThinking, isPlanMode]);
 
-  // ── Auto-scroll (only if user is near bottom) ───────────────────────────
+  // ── Auto-scroll (only if user is near bottom) ──────────────────────────────
   const isNearBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
 
@@ -147,7 +159,7 @@ export default function ChatPanel({
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
-  // ── Core send logic ────────────────────────────────────────────────────
+  // ── Core send logic ──────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -183,6 +195,9 @@ export default function ChatPanel({
         const response = await ChatAPI.streamMessage({
           topicId: activeTopic?.id ?? undefined,
           sessionId: sessionId ?? undefined,
+          focusTopicId,
+          focusTopicPath: focusPath,
+          focusSourceRef,
           content,
           isPlanMode: isPlanMode,
         });
@@ -227,8 +242,6 @@ export default function ChatPanel({
                   );
                   return;
                 }
-
-                // [THINKING:... ] chunk'ları — chat'e yazma, sadece thinking state güncelle
                 if (data.startsWith("[THINKING:")) {
                   const thinkingText = data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, "");
                   setThinkingState(thinkingText);
@@ -337,6 +350,9 @@ export default function ChatPanel({
       isPlanMode,
       activeTopic,
       sessionId,
+      focusTopicId,
+      focusPath,
+      focusSourceRef,
       onSessionStart,
       setMessages,
       onTopicsRefresh,
@@ -357,7 +373,7 @@ export default function ChatPanel({
     onPendingMessageConsumed?.();
   }, [pendingMessage]);
 
-  // ── Korteks stream send ────────────────────────────────────────────────
+  // ——— Korteks stream send ————————————————————————————————————————————————————
   const sendKorteksMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -432,7 +448,7 @@ export default function ChatPanel({
     [isThinking, activeTopic, setMessages, onTopicsRefresh]
   );
 
-  // ── Textarea send ──────────────────────────────────────────────────────
+  // ——— Textarea send ————————————————————————————————————————————————————————————
   const handleSend = useCallback(
     (text?: string) => {
       const content = (text ?? input).trim();
@@ -448,7 +464,7 @@ export default function ChatPanel({
     [input, isKorteksMode, sendMessage, sendKorteksMessage]
   );
 
-  // ── Quiz answer callback ───────────────────────────────────────────────
+  // ——— Quiz answer callback ————————————————————————————————————————————————————
   const handleQuizAnswer = useCallback(
     (formattedAnswer: string) => {
       sendMessage(formattedAnswer);
@@ -470,7 +486,7 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
-  // ── Session loading spinner ────────────────────────────────────────────
+  // ——— Session loading spinner —————————————————————————————————————————————————
   if (sessionLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#f7f9fa] h-full">
@@ -490,7 +506,7 @@ export default function ChatPanel({
   return (
     <div className="flex-1 flex flex-col bg-[#f7f9fa] h-full overflow-hidden">
       {/* Topic Header — topic varsa adını, yoksa AI assistant markasını göster */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#526d82]/10/50">
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#526d82]/10">
         <div className="flex items-center gap-2.5">
           {activeTopic ? (
             <>
@@ -498,16 +514,20 @@ export default function ChatPanel({
               <span className="text-sm font-medium text-[#172033]">
                 {activeTopic.title}
               </span>
-              {currentSubtopic && (
+              {focusedLessonTitle && (
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l border-[#526d82]/10">
                   <span className="text-[11px] text-[#667085]">{'>'}</span>
-                  <span className="text-xs text-[#344054]">{currentSubtopic.title}</span>
-                  <div className="flex items-center gap-1.5 ml-2">
-                    <div className="w-16 h-1 bg-[#eef1f3] rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500/60 transition-all duration-500" style={{ width: `${currentSubtopic.progress}%` }} />
+                  <span className="max-w-[18rem] truncate text-xs text-[#344054]" title={focusedLessonPath}>
+                    {focusedLessonTitle}
+                  </span>
+                  {currentSubtopic && (
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <div className="w-16 h-1 bg-[#eef1f3] rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500/60 transition-all duration-500" style={{ width: `${currentSubtopic.progress}%` }} />
+                      </div>
+                      <span className="text-[9px] text-[#8ba8b5]">{currentSubtopic.index}/{currentSubtopic.total}</span>
                     </div>
-                    <span className="text-[9px] text-[#8ba8b5]">{currentSubtopic.index}/{currentSubtopic.total}</span>
-                  </div>
+                  )}
                 </div>
               )}
             </>
@@ -523,7 +543,7 @@ export default function ChatPanel({
         <div className="flex items-center gap-4">
           {activeTopic && (
             <button
-              onClick={() => onOpenWiki(activeTopic.id)}
+              onClick={() => onOpenWiki(focusTopicId ?? activeTopic.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#344054] hover:text-[#172033] hover:bg-[#eef1f3] transition-colors duration-150"
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -536,7 +556,7 @@ export default function ChatPanel({
 
       {/* Aktif Konu Göstergesi (U1) */}
       <AnimatePresence>
-        {currentSubtopic && (
+        {focusedLessonTitle && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -547,10 +567,11 @@ export default function ChatPanel({
               <BookOpen className="w-4 h-4 text-emerald-500" />
               <div className="flex items-center gap-2 text-xs font-medium">
                 <span className="text-[#344054]">{activeTopic?.title}</span>
-                <span className="text-[#8ba8b5]">❯</span>
-                <span className="text-[#172033]">{currentSubtopic.title}</span>
+                <span className="text-[#8ba8b5]">›</span>
+                <span className="text-[#172033]">{focusedLessonTitle}</span>
               </div>
 
+              {currentSubtopic && (
               <div className="flex items-center gap-2 ml-4 pl-4 border-l border-[#526d82]/10">
                 <div className="text-[10px] text-[#667085] font-mono">
                   {currentSubtopic.index} / {currentSubtopic.total}
@@ -562,6 +583,7 @@ export default function ChatPanel({
                   />
                 </div>
               </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -569,7 +591,7 @@ export default function ChatPanel({
 
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
-        <div className="max-w-3xl mx-auto w-full px-6 py-8">
+        <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-4 md:py-8">
           {messages.length === 0 ? (
             <WelcomeState onPromptClick={(p) => handleSend(p)} />
           ) : (
@@ -612,7 +634,7 @@ export default function ChatPanel({
 
       {/* Floating Input Frame — Claude/Gemini Style */}
       <div className="flex-shrink-0 relative pointer-events-none">
-        <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
+        <div className="max-w-3xl mx-auto w-full px-3 md:px-6 pb-4 md:pb-8 pt-2 pointer-events-auto">
           <motion.div
             layout
             initial={false}
@@ -632,10 +654,12 @@ export default function ChatPanel({
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isKorteksMode
-                    ? "Arastirmamı istediğin konuyu yaz, web'de derinlemesine arastırayım..."
+                    ? "Arastırmamı istediğin konuyu yaz, web'de derinlemesine arastırayım..."
                     : isPlanMode
                     ? "Bana bir konu ver, senin icin en güncel müfredatı olusturayım..."
-                    : "Bir sey sor veya müfredat olusturmak icin Plan Modu'nu ac..."
+                    : focusedLessonTitle
+                    ? `${focusedLessonTitle} hakkında sor; wiki ve kaynaklar yanında açık.`
+                    : "Bir sey sor veya müfredat oluşturmak icin Plan Modu'nu ac..."
                 }
                 rows={1}
                 disabled={isThinking}
@@ -712,7 +736,7 @@ export default function ChatPanel({
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void }) {
   return (
@@ -739,7 +763,7 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
           Ya da araştırma asistanı <code className="text-[#344054] bg-[#eef1f3] px-1.5 py-0.5 rounded text-[11px] font-mono border border-[#526d82]/10">Korteks</code> ile web'in derinliklerine inerek sorularınıza detaylı cevaplar bulun.
         </p>
 
-        <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10/50 bg-[#f7f9fa]/30 w-fit mx-auto">
+        <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10 bg-[#f7f9fa]/30 w-fit mx-auto">
           <Sparkles className="w-3 h-3 text-[#344054]" />
           <span className="text-[10px] font-medium text-[#667085] tracking-wide uppercase">
             SOLID Thinking Engine Ready

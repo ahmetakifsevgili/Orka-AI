@@ -62,10 +62,34 @@ builder.Services.AddDbContext<OrkaDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
-// Redis (Muhabbir) Entegrasyonu
+// Redis (Muhabbir) Entegrasyonu — startup-friendly lazy factory.
+// Eskiden Connect() çağrısı sync olup DNS resolve hatasında boot uzayabiliyordu.
+// Şimdi: ilk resolve'da connect; AbortOnConnectFail=false + retry + ExponentialRetry ile
+// network hiccup'ları otomatik recover edilir, startup bloklanmaz.
 string redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379,abortConnect=false";
-builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
-    StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnection));
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+    var options = StackExchange.Redis.ConfigurationOptions.Parse(redisConnection);
+    options.AbortOnConnectFail = false;
+    options.ConnectRetry = 3;
+    options.ConnectTimeout = 2000;
+    options.ReconnectRetryPolicy = new StackExchange.Redis.ExponentialRetry(1500);
+
+    try
+    {
+        return StackExchange.Redis.ConnectionMultiplexer.Connect(options);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex,
+            "[Redis] Initial connect failed; deferring with built-in reconnect policy. Connection={Connection}",
+            redisConnection);
+        // AbortOnConnectFail=false sayesinde Connect, başarısızlıkta exception atmasa da
+        // multiplexer döndürür; arka planda reconnect dener.
+        return StackExchange.Redis.ConnectionMultiplexer.Connect(options);
+    }
+});
 
 // ── Observability: Correlation ID (Faz 10) ───────────────────────────────────
 // Scoped: her HTTP request kendi CorrelationId taşıyıcısını alır.
@@ -315,7 +339,9 @@ builder.Services.AddScoped<IChaosContext, ChaosContext>();
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JWT");
-var jwtKey = JwtKeyResolver.Resolve(builder.Configuration, builder.Environment.IsDevelopment());
+using var startupLoggerFactory = LoggerFactory.Create(b => b.AddConsole());
+var startupLogger = startupLoggerFactory.CreateLogger("Orka.Startup");
+var jwtKey = JwtKeyResolver.Resolve(builder.Configuration, builder.Environment.IsDevelopment(), startupLogger);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -337,17 +363,36 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+var corsAllowedOrigins = builder.Environment.IsDevelopment()
+    ? new[]
+    {
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174"
+    }
+    : builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("OrkaCors", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(corsAllowedOrigins)
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 
 var app = builder.Build();
+
+if (!app.Environment.IsDevelopment() && corsAllowedOrigins.Length == 0)
+{
+    app.Logger.LogWarning(
+        "[CORS] Production'da Cors:AllowedOrigins boş; tüm cross-origin istekleri reddedilecek.");
+}
 
 // Migration hatasi Swagger/health'i dusurmesin. Local dev'de gerekirse
 // Database:AutoMigrateOnStartup=true yapilarak eski davranis acilabilir.
@@ -373,6 +418,23 @@ if (autoMigrateOnStartup && !useInMemoryDatabase)
 // CorrelationId ilk sıraya gelmeli — tüm sonraki middleware'ler ID'yi kullanabilsin
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
+
+// Security headers — defense-in-depth (clickjacking, MIME-sniff, XSS, leak controls).
+// HSTS sadece production'da: dev'de https zorunlu olmadığı için browser cache'i bozmasın.
+app.Use(async (ctx, next) =>
+{
+    var headers = ctx.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+    await next();
+});
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 
 if (app.Environment.IsDevelopment())
 {

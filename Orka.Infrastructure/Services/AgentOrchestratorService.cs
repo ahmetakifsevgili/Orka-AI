@@ -105,7 +105,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
     }
 
-    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false)
+    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(
+        Guid userId,
+        string content,
+        Guid? topicId,
+        Guid? sessionId,
+        bool isPlanMode = false,
+        Guid? focusTopicId = null,
+        string? focusTopicPath = null,
+        string? focusSourceRef = null)
     {
         // SESSION - Controller already called GetOrCreateSessionAsync and passed the real sessionId.
         // We MUST NOT call it again here or we will create a second topic every time.
@@ -124,6 +132,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             yield return "Oturum bulunamadı.";
             yield break;
         }
+
+        var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
 
         // Kullanıcı mesajını kaydet (duplike önleme: son mesaj aynı değilse)
         var lastMsg = session.Messages?.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
@@ -229,7 +239,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 }
                 else // QuizPending
                 {
-                    syncResponse = await HandleLearningStateAsync(userId, content, session);
+                    syncResponse = await HandleLearningStateAsync(userId, tutorContent, session);
                     syncMsgId = await SaveAiMessage(session, userId, syncResponse);
                 }
             }
@@ -270,7 +280,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         // Varsayılan: Normal ders anlatımı - gerçek zamanlı STREAM
         bool isQuizPending = session.CurrentState == SessionState.QuizPending;
-        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, content, session, isQuizPending))
+        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, tutorContent, session, isQuizPending))
         {
             fullResponse += chunk;
             yield return chunk;
@@ -282,6 +292,50 @@ public class AgentOrchestratorService : IAgentOrchestrator
             var msgId = await SaveAiMessage(session, userId, fullResponse);
             TriggerBackgroundTasks(session, userId, content, fullResponse, msgId);
         }
+    }
+
+    private async Task<string> BuildFocusedTutorContentAsync(
+        string content,
+        Guid? focusTopicId,
+        string? focusTopicPath,
+        string? focusSourceRef)
+    {
+        if (!focusTopicId.HasValue && string.IsNullOrWhiteSpace(focusTopicPath) && string.IsNullOrWhiteSpace(focusSourceRef))
+            return content;
+
+        string? focusTitle = null;
+        if (focusTopicId.HasValue)
+        {
+            focusTitle = await _db.Topics
+                .AsNoTracking()
+                .Where(t => t.Id == focusTopicId.Value)
+                .Select(t => t.Title)
+                .FirstOrDefaultAsync();
+        }
+
+        var focusLine = !string.IsNullOrWhiteSpace(focusTopicPath)
+            ? focusTopicPath!.Trim()
+            : focusTitle;
+
+        var context = new List<string>
+        {
+            "[ORKA_CONTEXT]",
+            "Kullanıcı ana sohbet içinde belirli bir ders/alt dal bağlamından geldi.",
+        };
+
+        if (!string.IsNullOrWhiteSpace(focusLine))
+            context.Add($"Aktif odak: {focusLine}");
+
+        if (focusTopicId.HasValue)
+            context.Add($"FocusTopicId: {focusTopicId.Value}");
+
+        if (!string.IsNullOrWhiteSpace(focusSourceRef))
+            context.Add($"Kaynak/citation odağı: {focusSourceRef}");
+
+        context.Add("Yanıtı bu odağa göre ver; genel konuya dağılma. Kaynak kullanıyorsan citation etiketlerini koru.");
+        context.Add("[/ORKA_CONTEXT]");
+
+        return string.Join(Environment.NewLine, context) + Environment.NewLine + Environment.NewLine + content;
     }
 
     private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId, string agentRole = "TutorAgent")
@@ -509,7 +563,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
         return aiMsg.Id;
     }
 
-    public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false)
+    public async Task<ChatMessageResponse> ProcessMessageAsync(
+        Guid userId,
+        string content,
+        Guid? topicId,
+        Guid? sessionId,
+        bool isPlanMode = false,
+        Guid? focusTopicId = null,
+        string? focusTopicPath = null,
+        string? focusSourceRef = null)
     {
         // -- DEEP PLAN MODE - bypass normal agent routing ----
         if (isPlanMode)
@@ -518,9 +580,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         Session? session = await GetOrCreateSessionAsync(userId, topicId, sessionId, content);
-        if (session == null) throw new Exception("Oturum oluşturulamadı veya SmallTalk.");
+        if (session == null) throw new BadRequestException("Oturum oluşturulamadı veya SmallTalk.");
 
         bool isNewTopic = !session.Messages.Any();
+        var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
 
         // 1. SAVE USER MESSAGE
         var userMsg = new Message
@@ -547,7 +610,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (isNewTopic)
         {
             // İlk mesaj: doğal TutorAgent yanıtı + ince plan teklifi ipucu
-            var responseTask = _tutorAgent.GetResponseAsync(userId, content, session, false);
+            var responseTask = _tutorAgent.GetResponseAsync(userId, tutorContent, session, false);
             aiResponse = responseTask != null ? await responseTask : "Yanıt üretilemedi.";
             aiResponse += "\n\n---\n*İstersen `/plan` yazarak bu konu için yapılandırılmış bir müfredat planı da oluşturabilirim.*";
         }
@@ -578,8 +641,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             aiResponse = session.CurrentState switch
             {
                 SessionState.Learning or SessionState.QuizPending => await HandleLearningStateAsync(
-                    userId, content, session),
-                _ => await _tutorAgent.GetResponseAsync(userId, content, session, false)
+                    userId, tutorContent, session),
+                _ => await _tutorAgent.GetResponseAsync(userId, tutorContent, session, false)
             };
         }
 
@@ -1169,15 +1232,17 @@ public class AgentOrchestratorService : IAgentOrchestrator
             topic.Id, topic.Title, userId, userLevel, topic.PhaseMetadata, failedTopics);
         await _db.Entry(topic).ReloadAsync();
 
-        // Modül -> Ders hiyerarşisini veritabanından çek
+        // Modül -> Ders hiyerarşisini veritabanından çek (read-only render → AsNoTracking).
         var modules = await _db.Topics
+            .AsNoTracking()
             .Where(t => t.ParentTopicId == topic.Id)
             .OrderBy(t => t.Order)
             .ToListAsync();
 
-        // Her modülün altındaki dersleri çek
+        // Her modülün altındaki dersleri çek (read-only render → AsNoTracking).
         var moduleIds = modules.Select(m => m.Id).ToList();
         var lessonsByModule = await _db.Topics
+            .AsNoTracking()
             .Where(t => t.ParentTopicId != null && moduleIds.Contains(t.ParentTopicId.Value))
             .OrderBy(t => t.Order)
             .ToListAsync();
@@ -1259,7 +1324,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     /// Quiz yanıtından ```quiz JSON bloğunu parse eder, sadece soru metnini döndürür.
     /// JSON bulunamazsa tüm yanıtı döndürür.
     /// </summary>
-    private static string ExtractQuizQuestionText(string response)
+    private string ExtractQuizQuestionText(string response)
     {
         try
         {
@@ -1288,14 +1353,20 @@ public class AgentOrchestratorService : IAgentOrchestrator
             using var doc2 = System.Text.Json.JsonDocument.Parse(jsonStr);
             return doc2.RootElement.GetProperty("question").GetString() ?? response;
         }
-        catch { return response; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[Orchestrator] Quiz question extraction failed; returning raw response. Snippet={Snippet}",
+                response.Length > 200 ? response[..200] : response);
+            return response;
+        }
     }
 
     /// <summary>
     /// 5 soruluk JSON array'den N'inci soruyu (0-tabanlı) tek JSON nesnesi olarak döndürür.
     /// Frontend'in quiz kartı olarak render edebilmesi için ```quiz ``` bloğu ile sarılır.
     /// </summary>
-    private static string ExtractNthQuizFromArray(string allQuizJson, int index)
+    private string ExtractNthQuizFromArray(string allQuizJson, int index)
     {
         try
         {
@@ -1313,8 +1384,18 @@ public class AgentOrchestratorService : IAgentOrchestrator
             {
                 return arr[index].GetRawText();
             }
+
+            _logger.LogWarning(
+                "[Orchestrator] Quiz array index out of range. Index={Index} Count={Count}",
+                index, arr.Count);
         }
-        catch { /* fallback */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[Orchestrator] Quiz array parse failed; using fallback question. Index={Index} Snippet={Snippet}",
+                index,
+                allQuizJson.Length > 200 ? allQuizJson[..200] : allQuizJson);
+        }
 
         // Fallback: boş soru
         return """{"question": "Bu soru yüklenemedi.", "options": [{"text": "Devam et", "isCorrect": true}], "explanation": "Teknik bir sorun oluştu."}""";
