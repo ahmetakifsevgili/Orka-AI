@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System;
+using System.Globalization;
+using Orka.Core.DTOs.Korteks;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 
 namespace Orka.Infrastructure.Services;
@@ -26,6 +28,9 @@ public class DeepPlanAgent : IDeepPlanAgent
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISupervisorAgent _supervisor;
     private readonly IGraderAgent _grader;
+    private readonly IKorteksAgent _korteks;
+    private readonly IPlanResearchCompressor _planResearchCompressor;
+    private readonly IAdaptiveLearningContextBuilder _adaptiveBuilder;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DeepPlanAgent> _logger;
 
@@ -34,6 +39,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         IServiceScopeFactory scopeFactory,
         ISupervisorAgent supervisor,
         IGraderAgent grader,
+        IKorteksAgent korteks,
+        IPlanResearchCompressor planResearchCompressor,
+        IAdaptiveLearningContextBuilder adaptiveBuilder,
         IServiceProvider serviceProvider,
         ILogger<DeepPlanAgent> logger)
     {
@@ -41,6 +49,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         _scopeFactory     = scopeFactory;
         _supervisor       = supervisor;
         _grader           = grader;
+        _korteks          = korteks;
+        _planResearchCompressor = planResearchCompressor;
+        _adaptiveBuilder  = adaptiveBuilder;
         _serviceProvider  = serviceProvider;
         _logger           = logger;
     }
@@ -48,15 +59,111 @@ public class DeepPlanAgent : IDeepPlanAgent
     public async Task<List<Topic>> GenerateAndSaveDeepPlanAsync(
         Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null)
     {
-        var modules = await GenerateModulesAsync(parentTopicId, topicTitle, userLevel, researchContext, failedTopics);
-        return await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
+        var result = await GenerateAndSaveDeepPlanWithGroundingAsync(parentTopicId, topicTitle, userId, userLevel, researchContext, failedTopics);
+        return result.Topics;
     }
 
-    private async Task<List<ModuleDefinition>> GenerateModulesAsync(Guid parentTopicId, string topicTitle, string userLevel, string? researchContext = null, string? failedTopics = null)
+    public async Task<DeepPlanGenerationWithGroundingResultDto> GenerateAndSaveDeepPlanWithGroundingAsync(
+        Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null)
+    {
+        DeepPlanGroundingMetadataDto? grounding = null;
+        var modules = await GenerateModulesAsync(parentTopicId, topicTitle, userId, userLevel, researchContext, failedTopics, g => grounding = g);
+        var topics = await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
+        return new DeepPlanGenerationWithGroundingResultDto { Topics = topics, Grounding = grounding };
+    }
+
+    public async Task<DeepPlanGenerationWithGroundingResultDto> GenerateAndSaveDeepPlanFromDiagnosticAsync(
+        Guid parentTopicId,
+        string topicTitle,
+        Guid userId,
+        string compressedResearchPromptBlock,
+        string diagnosticQuizSummary,
+        string userLevel = "Bilinmiyor")
+    {
+        DeepPlanGroundingMetadataDto? grounding = null;
+        var modules = await GenerateModulesAsync(
+            parentTopicId,
+            topicTitle,
+            userId,
+            userLevel,
+            researchContext: null,
+            failedTopics: null,
+            setGrounding: g => grounding = g,
+            precompressedResearchPromptBlock: compressedResearchPromptBlock,
+            diagnosticQuizSummary: diagnosticQuizSummary);
+        modules = ApplyDiagnosticTraceability(modules, DiagnosticWeaknessSummary.Parse(diagnosticQuizSummary));
+        var topics = await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
+        return new DeepPlanGenerationWithGroundingResultDto { Topics = topics, Grounding = grounding };
+    }
+
+    private async Task<List<ModuleDefinition>> GenerateModulesAsync(Guid parentTopicId, string topicTitle, Guid userId, string userLevel, string? researchContext = null, string? failedTopics = null, Action<DeepPlanGroundingMetadataDto?>? setGrounding = null, string? precompressedResearchPromptBlock = null, string? diagnosticQuizSummary = null)
     {
         _logger.LogInformation("[DeepPlan] Multi-Agent RAG döngüsü başlıyor. Konu: {Topic}", topicTitle);
 
+        // 0. Sprint 1: Otonom Keşif Fazı (Korteks Entegrasyonu)
+        // Eğer dışarıdan hazır bir araştırma raporu gelmemişse, Korteks'i sahaya sür.
+        DeepPlanGroundingMetadataDto? groundingMetadata = null;
+        CompressedPlanResearchContextDto? compressedResearchContext = null;
+        string compressedResearchPromptBlock = precompressedResearchPromptBlock ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(researchContext) && string.IsNullOrWhiteSpace(compressedResearchPromptBlock))
+        {
+            try
+            {
+                _logger.LogInformation("[DeepPlan] Mevcut araştırma verisi bulunamadı. Korteks derin keşif motoru tetikleniyor...");
+                var korteksResult = await _korteks.RunResearchWithEvidenceAsync(topicTitle, userId, parentTopicId);
+                groundingMetadata = ToDeepPlanGrounding(korteksResult);
+                compressedResearchContext = _planResearchCompressor.Compress(korteksResult);
+                compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearchContext);
+                _logger.LogInformation(
+                    "[DeepPlan] Korteks keşfi sıkıştırıldı. Mode={GroundingMode} Sources={SourceCount} BlockLen={Len}",
+                    compressedResearchContext.GroundingMode,
+                    compressedResearchContext.SourceCount,
+                    compressedResearchPromptBlock.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[DeepPlan] Korteks araştırması başarısız oldu. Planlama mevcut bilgilerle devam edecek.");
+                groundingMetadata = new DeepPlanGroundingMetadataDto
+                {
+                    GroundingMode = GroundingMode.BlockedProvider,
+                    SourceCount = 0,
+                    IsFallback = true,
+                    ProviderWarnings = [ex.Message]
+                };
+                var blockedResearch = new KorteksResearchResultDto
+                {
+                    Topic = topicTitle,
+                    TopicId = parentTopicId,
+                    GroundingMode = GroundingMode.BlockedProvider,
+                    ProviderFailures = [ex.Message],
+                    IsFallback = true,
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+                compressedResearchContext = _planResearchCompressor.Compress(blockedResearch);
+                compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearchContext);
+            }
+        }
+
         // 1. Durum Sınıflandırması (Supervisor Node)
+        if (!string.IsNullOrWhiteSpace(researchContext) && groundingMetadata == null)
+        {
+            var proseOnlyResearch = new KorteksResearchResultDto
+            {
+                Topic = topicTitle,
+                TopicId = parentTopicId,
+                Report = researchContext,
+                GroundingMode = GroundingMode.FallbackInternalKnowledge,
+                Warnings = ["Research context was provided as prose without structured source evidence."],
+                IsFallback = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            groundingMetadata = ToDeepPlanGrounding(proseOnlyResearch);
+            compressedResearchContext = _planResearchCompressor.Compress(proseOnlyResearch);
+            compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearchContext);
+            researchContext = null;
+        }
+
         var intentCategory = await _supervisor.ClassifyIntentAsync(topicTitle);
         _logger.LogInformation("[DeepPlan] Katman: Supervisor -> Kategori: {Category}", intentCategory);
 
@@ -68,13 +175,31 @@ public class DeepPlanAgent : IDeepPlanAgent
             var isRelevant = await _grader.IsContextRelevantAsync(topicTitle, researchContext);
             if (isRelevant)
             {
-                contextInfo = $"\n\n[ARAŞTIRMA VERİLERİ (GÜNCEL BİLGİ KAYNAĞI)]:\n{researchContext}\n\nLütfen yukarıdaki güncel verileri kullanarak konuyu mantıksal ve pedagojik bölümlere ayır.";
+                contextInfo = string.Empty;
             }
             else
             {
                 _logger.LogWarning("[DeepPlan] Grader REDDETTİ. Hallucination veya alakasız context engellendi. (Sıfır bilgi ile devam ediliyor)");
             }
         }
+
+        // ── Sprint 2: Mikro-Teşhis (Baseline Analizi) ─────────────────────
+        if (!string.IsNullOrWhiteSpace(compressedResearchPromptBlock))
+        {
+            contextInfo = $"\n\n{compressedResearchPromptBlock}\n\nBu sıkıştırılmış araştırma bağlamını yalnızca konu kapsamı, güncellik ve kaynak farkındalığı desteği olarak kullan.";
+        }
+
+        var baselineDiagnostic = !string.IsNullOrWhiteSpace(diagnosticQuizSummary)
+            ? diagnosticQuizSummary
+            : await AnalyzeBaselineQuizResultsAsync(parentTopicId, userId);
+        if (!string.IsNullOrWhiteSpace(baselineDiagnostic))
+        {
+            _logger.LogInformation("[DeepPlan] Baseline mikro-teşhis raporu hazırlandı.");
+        }
+
+        // Faz 17: Yapılandırılmış Adaptif Bağlam (Personalization v1)
+        var adaptiveContext = await _adaptiveBuilder.BuildAsync(userId, parentTopicId, topicTitle, userLevel);
+        var adaptivePromptSection = BuildAdaptivePromptSection(adaptiveContext);
 
         string failedTopicsDiagnostic = "";
         if (!string.IsNullOrWhiteSpace(failedTopics))
@@ -92,33 +217,46 @@ public class DeepPlanAgent : IDeepPlanAgent
             Mevcut kullanıcının bilgi seviyesi: {{userLevel}}
             Konunun Alanı / Kategorisi: {{intentCategory}}
             {{contextInfo}}
+
+            [MİKRO-TEŞHİS RAPORU - ÖĞRENCİNİN ZAYIFLIKLARI]:
+            {{baselineDiagnostic}}
+
+            {{adaptivePromptSection}}
+
             {{failedTopicsDiagnostic}}
             {{youtubeReference}}
             {{domainGuidance}}
 
-            ORGANİZASYON KURALI (KRİTİK — KONUYA GÖRE AKILLI YAPILANDIR):
+            ORGANİZASYON KURALI (TEŞHİS ODAKLI MİMARİ):
+            - [SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI] içindeki bounded Korteks bulgularını konu kapsamı/güncellik desteği olarak kullan; [ADAPTIF ÖĞRENME BAĞLAMI] önceliklidir.
+            - [MİKRO-TEŞHİS RAPORU] ve [ADAPTIF ÖĞRENME BAĞLAMI] içindeki zayıf noktaları plana "Derinlemesine İyileştirme" veya "Pratik Lab" dersleri olarak ekle.
+            - Tekrar eden hata paternlerine (Mistake Patterns) yönelik ekstra pekiştirme modülleri öner.
+            - SRS / Gözden Geçirme baskısı olan becerileri müfredatın başına veya ilgili modüllere 'Hızlı Tekrar' olarak serpiştir.
+            - Öğrencinin zaten bildiği (başarılı olduğu) kısımları müfredatta 'Hızlı Özet' veya 'Hatırlatma' olarak daralt.
             - Kullanıcı cümlesinden (Örn: "C# çalışmak istiyorum") ASIL KONUYU çıkar ("C# Programlama"). Kesinlikle "Selamlaşma", "İstek", "Giriş" gibi konulardan bahsetme!
             - Programlama/teknoloji → "Temel Yapı Taşları → Uygulama Becerileri → İleri Düzey" yaklaşımı
             - Tarih/toplum → "Dönemsel sıralama" veya "Tematik gruplama"
             - Bilim/matematik → "Teorik temeller → Uygulamalı konular → İleri araştırma"
-            - Sanat/dil → "Temel İfadeler → Dil Bilgisi → İleri Seviye Konuşma"
-
-            MODÜL VE DERS İSİMLENDİRME KURALI (ŞİDDETLİ UYARI):
-            - "Bölüm 1", "Modül 1", "Giriş", "Genel Bakış", "Temel Kavramlar", "Sonuç", "Uygulama", "Selamlaşma" gibi JENERİK, İÇİ BOŞ BAŞLIKLAR KESİNLİKLE YASAKTIR!
-            - Modül başlıkları temanın teknik ve mantıksal özeti olmalı (Örn: JS için "Veri Tipleri ve Fonksiyonel Yaklaşım").
-            - Ders (Topic) başlıkları tamamen spesifik olmalı (Örn: "Primitive vs Reference Type Farkları").
-            - Müfredat SADECE seçilen uzmanlık alanının profesyonel teknik içeriğiyle dolu olmalıdır.
-            - Her modülde 2 ile 4 arası DERS konusu olsun. Toplam 3 ile 5 MODÜL üret.
-            - Kullanıcının seviyesi '{{userLevel}}' olduğu için içerik yoğunluğunu buna göre ayarla.
+            - Her ders için o derste ölçülecek ana beceriyi `skillTag` olarak belirle.
+            - Her ders için bir `intent` belirle:
+              * "Core": Standart müfredat akışı.
+              * "DeepDive": [ADAPTIF ÖĞRENME BAĞLAMI] içindeki bir 'WeakConcept' (Zayıf Kavram) için derinlemesine teorik anlatım.
+              * "PracticeLab": Procedural/İşlemsel hata paternlerine yönelik adım adım uygulama veya kodlama laboratuvarı.
+              * "QuickReview": SRS baskısı olan veya daha önce başarısız olunan konuların hızlı tekrarı.
+              * "Remediation": Kavram yanılgılarını (Conceptual) düzeltmek için özel olarak tasarlanmış telafi dersi.
+              * "Assessment": Modül sonu veya kritik kavram sonrası ölçme-değerlendirme (küçük bir sınav gibi).
 
             ÇIKTI KURALI (KESİNLİKLE UYULACAK):
-            SADECE aşağıdaki JSON formatını döndür. Markdown, açıklama veya başka metin EKLEME. ` ```json ` bloklarını bile kullanmadan direkt { ile başlayan JSON ver.
+            SADECE aşağıdaki JSON formatını döndür. Markdown veya açıklama EKLEME.
             {
               "modules": [
                 {
-                  "title": "Spesifik Modül Başlığı",
+                  "title": "Modül Başlığı",
                   "emoji": "🧱",
-                  "topics": ["Spesifik Ders 1", "Spesifik Ders 2"]
+                  "lessons": [
+                    { "title": "Ders Başlığı 1", "skillTag": "beceri-etiketi-1", "intent": "Core" },
+                    { "title": "Ders Başlığı 2", "skillTag": "beceri-etiketi-2", "intent": "DeepDive" }
+                  ]
                 }
               ]
             }
@@ -134,6 +272,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             var parsedModules = ParseModuleStructure(raw);
             if (parsedModules != null)
             {
+                setGrounding?.Invoke(groundingMetadata);
                 return parsedModules;
             }
             _logger.LogWarning("[DeepPlan] Parse hatası (Deneme {Attempt}/2). Çıktı: {Raw}", attempt, raw.Length > 200 ? raw[..200] + "..." : raw);
@@ -143,15 +282,17 @@ public class DeepPlanAgent : IDeepPlanAgent
         var domainFallback = BuildDomainFallbackModules(topicTitle, massive: false);
         if (domainFallback != null)
         {
+            setGrounding?.Invoke(groundingMetadata);
             return domainFallback;
         }
 
         // Gelişmiş Dinamik Fallback (Sıradan olmaktan arındırılmış)
+        setGrounding?.Invoke(groundingMetadata);
         return new List<ModuleDefinition>
         {
-            new($"{topicTitle} Sistem Yapısı ve Metodoloji", "🧱", new List<string> { $"{topicTitle} Çekirdek Mimarisi", $"{topicTitle} Kurulum ve Parametre Yönetimi" }),
-            new($"{topicTitle} Süreç İşletimi ve Entegrasyon", "⚙️", new List<string> { $"{topicTitle} Veri İşleme Metotları", $"{topicTitle} Endüstriyel Senaryo Analizi" }),
-            new($"{topicTitle} Uzmanlık ve Performans Ayarları", "🚀", new List<string> { $"{topicTitle} Kaynak Optimizasyon Teknikleri", $"{topicTitle} İleri Düzey Problem Çözme" })
+            new($"{topicTitle} Sistem Yapısı", "🧱", new List<LessonDefinition> { new($"{topicTitle} Çekirdek Mimarisi", "basics"), new($"{topicTitle} Kurulum", "setup") }),
+            new($"{topicTitle} Süreç İşletimi", "⚙️", new List<LessonDefinition> { new($"{topicTitle} Veri İşleme", "process"), new($"{topicTitle} Senaryo Analizi", "analysis") }),
+            new($"{topicTitle} Performans Ayarları", "🚀", new List<LessonDefinition> { new($"{topicTitle} Optimizasyon", "optimization"), new($"{topicTitle} Problem Çözme", "troubleshooting") })
         };
     }
 
@@ -226,38 +367,38 @@ public class DeepPlanAgent : IDeepPlanAgent
         {
             PlanDomain.Exam => new List<ModuleDefinition>
             {
-                new($"{title} Kazanım Haritası ve Sınav Stratejisi", "🎯", new List<string> { "Sınav kapsamını alt kazanımlara bölme", "Zaman yönetimi ve Deneme okuma stratejisi", "Yanlis analizi defteri kurma" }),
-                new("Paragraf ve Sözel Akıl Yürütme Atölyesi", "📚", new List<string> { "Paragraf ana fikir ve çıkarım soruları", "Çeldirici seçenekleri ayıklama", "Süre baskısında okuma tekniği" }),
-                new("Matematik Problem Çözme Rotası", "🧮", new List<string> { "Temel işlem ve oran-orantı problemleri", "Karma problem dili çözümleme", "Hatalı çözümden geri izleme" }),
-                new("Deneme, Yanlis Analizi ve Telafi Döngüsü", "🔁", new List<string> { "Deneme sonrası skill bazlı rapor", "Yanlis kümelerine göre tekrar planı", "Mikro quiz ile mastery kontrolü" })
+                new($"{title} Kazanım Haritası", "🎯", new List<LessonDefinition> { new("Sınav kapsamı", "strategy"), new("Zaman yönetimi", "timing") }),
+                new("Paragraf Atölyesi", "📚", new List<LessonDefinition> { new("Ana fikir", "reading"), new("Çeldiriciler", "logic") }),
+                new("Matematik Rotası", "🧮", new List<LessonDefinition> { new("Problem çözme", "math"), new("Hata izleme", "analysis") }),
+                new("Deneme Döngüsü", "🔁", new List<LessonDefinition> { new("Skill raporu", "mastery"), new("Tekrar planı", "remediation") })
             },
             PlanDomain.Algorithm => new List<ModuleDefinition>
             {
-                new("Problem Okuma ve Complexity Temeli", "🧠", new List<string> { "Input-output sözleşmesini çıkarma", "Big-O sezgisi ve sınır analizi", "Edge-case listesi hazırlama" }),
-                new("Two Pointers ve Sliding Window Patternleri", "🧭", new List<string> { "Two Pointers karar ağacı", "Sliding Window sabit/değişken pencere", "HackerRank test case simülasyonu" }),
-                new("Stack, Queue ve Graph Traversal Pratiği", "🕸️", new List<string> { "Stack ile parantez ve monoton yapı", "BFS/DFS karar noktaları", "IDE içinde debug ve iz sürme" }),
-                new("Dynamic Programming ve Optimizasyon", "⚙️", new List<string> { "State tanımı ve transition yazma", "Memoization vs tabulation", "Yanlış DP modelini refactor etme" })
+                new("Problem Okuma", "🧠", new List<LessonDefinition> { new("Input-output analizi", "complexity"), new("Edge-case listesi", "testing") }),
+                new("Pointers & Window", "🧭", new List<LessonDefinition> { new("Two Pointers", "algo"), new("Sliding Window", "algo") }),
+                new("Traversal Pratiği", "🕸️", new List<LessonDefinition> { new("BFS/DFS", "graph"), new("Debug teknikleri", "ide") }),
+                new("DP & Optimizasyon", "⚙️", new List<LessonDefinition> { new("State tanımı", "dp"), new("Memoization", "optimization") })
             },
             PlanDomain.Math => new List<ModuleDefinition>
             {
-                new($"{title} Kavram Sezgisi", "📐", new List<string> { "Formulun nereden geldiğini görselleştirme", "Temel sembol ve işlem dili", "Kavram yanılgısı kontrol soruları" }),
-                new("Adım Adım Problem Çözme", "✍️", new List<string> { "Verilen-istenen ayrıştırma", "Problem tipini sınıflandırma", "Karma örneği küçük parçalara bölme" }),
-                new("Uygulamalı Soru Setleri", "🧮", new List<string> { "Kolaydan zora örnek zinciri", "Çeldirici işlem hataları", "Zamanlı mini quiz" }),
-                new("Telafi ve Mastery Kontrolü", "🔁", new List<string> { "Yanlış skill için Telafi dersi", "Mikro kontrol sorusu", "Benzer ama tekrar etmeyen problem üretimi" })
+                new($"{title} Kavram Sezgisi", "📐", new List<LessonDefinition> { new("Formül görselleştirme", "concept"), new("İşlem dili", "notation") }),
+                new("Adım Adım Çözüm", "✍️", new List<LessonDefinition> { new("Verilen-istenen ayrımı", "logic"), new("Tip sınıflandırma", "pattern") }),
+                new("Uygulama Setleri", "🧮", new List<LessonDefinition> { new("Örnek zinciri", "practice"), new("Zamanlı mini quiz", "assessment") }),
+                new("Mastery Kontrolü", "🔁", new List<LessonDefinition> { new("Hatalı skill telafisi", "remediation"), new("Tekrar etmeyen örnekler", "mastery") })
             },
             PlanDomain.Language => new List<ModuleDefinition>
             {
-                new("Telaffuz ve Temel İfade Kalıpları", "🗣️", new List<string> { "Günlük ifade setleri", "Telaffuz farkındalığı", "Kısa tekrar kartları" }),
-                new("Grammar in Context", "📘", new List<string> { "Seviye uyumlu gramer yapıları", "Yanlış cümle düzeltme", "Mini writing görevi" }),
-                new("Speaking Prompt ve Role-play", "🎙️", new List<string> { "Speaking Prompt ile cevap kurma", "Hoca-asistan role-play pratiği", "Akıcılık ve kelime seçimi feedback'i" }),
-                new("Spaced Repetition ve Aktif Hatırlama", "🔁", new List<string> { "Spaced Repetition kelime döngüsü", "Dinleme sonrası özet çıkarma", "Haftalık mastery konuşması" })
+                new("Temel İfadeler", "🗣️", new List<LessonDefinition> { new("Günlük kalıplar", "vocabulary"), new("Telaffuz farkındalığı", "pronunciation") }),
+                new("Grammar in Context", "📘", new List<LessonDefinition> { new("Bağlamsal yapılar", "grammar"), new("Hata düzeltme", "writing") }),
+                new("Speaking & Role-play", "🎙️", new List<LessonDefinition> { new("Diyalog kurma", "speaking"), new("Feedback analizi", "fluency") }),
+                new("Active Recall", "🔁", new List<LessonDefinition> { new("Spaced repetition", "memory"), new("Haftalık kapanış", "review") })
             },
             _ => null
         };
 
         if (modules != null && massive)
         {
-            modules.Add(new($"{title} Kişisel Pekiştirme Laboratuvarı", "🧪", new List<string> { "Zayıf beceriye özel ek çalışma", "Kaynaklı açıklama ve örnek", "Mikro quiz kapanış kontrolü" }));
+            modules.Add(new($"{title} Pekiştirme Laboratuvarı", "🧪", new List<LessonDefinition> { new("Zayıf beceri çalışması", "remediation"), new("Kapanış kontrolü", "assessment") }));
         }
 
         return modules;
@@ -289,8 +430,6 @@ public class DeepPlanAgent : IDeepPlanAgent
 
             var videoId = match.Groups[1].Value;
             var transcript = await youtubePlugin.GetVideoTranscript(videoId);
-            if (transcript.Contains("bulunamadı", StringComparison.OrdinalIgnoreCase))
-                return string.Empty;
 
             var payload = JsonSerializer.Serialize(new {
                 Search = searchResult,
@@ -311,15 +450,22 @@ public class DeepPlanAgent : IDeepPlanAgent
 
             if (teachingReference != null)
             {
+                var playlistsInfo = "";
+                try {
+                    using var doc = JsonDocument.Parse(payload);
+                    playlistsInfo = doc.RootElement.TryGetProperty("Playlists", out var p) ? p.GetString() : "";
+                } catch {}
+
                 return $"""
 
-                    [YOUTUBE EDUCATOR REFERENCE - PLANNING STYLE ONLY]
+                    [YOUTUBE EDUCATOR REFERENCE - PLANNING STYLE & RESOURCES]
                     Source: [youtube:{teachingReference.SourceId}] Status: {teachingReference.Status}
                     Teaching flow: {teachingReference.TeachingFlow}
+                    {playlistsInfo}
                     Examples: {string.Join(" | ", teachingReference.Examples.Take(4))}
                     Common mistakes: {string.Join(" | ", teachingReference.CommonMistakes.Take(4))}
                     Practice ideas: {string.Join(" | ", teachingReference.PracticeIdeas.Take(4))}
-                    Use this to improve curriculum sequence and remedial practice. Do not copy video content or treat it as factual proof.
+                    Use this to improve curriculum sequence and recommend these high-quality playlists/channels to the user.
                     """;
             }
 
@@ -350,14 +496,32 @@ public class DeepPlanAgent : IDeepPlanAgent
                 {
                     var title = mod.GetProperty("title").GetString() ?? "Modül";
                     var emoji = mod.TryGetProperty("emoji", out var emojiProp) ? emojiProp.GetString() ?? "📖" : "📖";
-                    var topics = mod.GetProperty("topics").EnumerateArray()
-                        .Select(t => t.GetString())
-                        .Where(t => !string.IsNullOrWhiteSpace(t))
-                        .Select(t => t!)
-                        .ToList();
 
-                    if (topics.Count > 0)
-                        modules.Add(new ModuleDefinition(title, emoji, topics));
+                    var lessons = new List<LessonDefinition>();
+                    if (mod.TryGetProperty("lessons", out var lessonsProp))
+                    {
+                        foreach (var l in lessonsProp.EnumerateArray())
+                        {
+                            var lTitle = l.GetProperty("title").GetString();
+                            var lSkill = l.TryGetProperty("skillTag", out var sProp) ? sProp.GetString() : "genel-kavram";
+                            var lIntent = l.TryGetProperty("intent", out var iProp) ? iProp.GetString() : "Core";
+
+                            if (!string.IsNullOrWhiteSpace(lTitle))
+                                lessons.Add(new LessonDefinition(lTitle, lSkill ?? "genel-kavram", lIntent ?? "Core"));
+                        }
+                    }
+                    else if (mod.TryGetProperty("topics", out var topicsProp)) // Geriye dönük uyumluluk
+                    {
+                        foreach (var t in topicsProp.EnumerateArray())
+                        {
+                            var tTitle = t.GetString();
+                            if (!string.IsNullOrWhiteSpace(tTitle))
+                                lessons.Add(new LessonDefinition(tTitle, "genel-kavram", "Core"));
+                        }
+                    }
+
+                    if (lessons.Count > 0)
+                        modules.Add(new ModuleDefinition(title, emoji, lessons));
                 }
 
                 if (modules.Count >= 2) return modules;
@@ -368,10 +532,149 @@ public class DeepPlanAgent : IDeepPlanAgent
         return null;
     }
 
+    private static List<ModuleDefinition> ApplyDiagnosticTraceability(
+        List<ModuleDefinition> modules,
+        DiagnosticWeaknessSummary diagnostic)
+    {
+        if (!diagnostic.HasWeaknesses)
+        {
+            return modules;
+        }
+
+        var diagnosticLessons = diagnostic.WeakConcepts
+            .Take(4)
+            .Select((concept, index) =>
+            {
+                var mistake = diagnostic.MistakePatterns.Count == 0
+                    ? null
+                    : diagnostic.MistakePatterns[index % diagnostic.MistakePatterns.Count];
+                var intent = IntentForMistake(mistake?.Value);
+                var label = HumanizeDiagnosticLabel(concept.Value);
+                var suffix = TitleSuffixForMistake(mistake?.Value);
+
+                return new LessonDefinition(
+                    $"{label} {suffix}",
+                    $"diagnostic:{concept.Value}",
+                    intent,
+                    BuildDiagnosticPhaseMetadata(diagnostic, concept, mistake));
+            })
+            .ToList();
+
+        if (diagnosticLessons.Count == 0)
+        {
+            diagnosticLessons = diagnostic.MistakePatterns
+                .Take(3)
+                .Select(mistake =>
+                {
+                    var label = HumanizeDiagnosticLabel(mistake.Value);
+                    return new LessonDefinition(
+                        $"{label} Tanisal Calisma",
+                        $"diagnostic:mistake:{mistake.Value}",
+                        IntentForMistake(mistake.Value),
+                        BuildDiagnosticPhaseMetadata(diagnostic, null, mistake));
+                })
+                .ToList();
+        }
+
+        if (diagnosticLessons.Count == 0)
+        {
+            return modules;
+        }
+
+        var tracedModules = new List<ModuleDefinition>(modules.Count + 1)
+        {
+            new("Tanisal Iyilestirme", "🧭", diagnosticLessons)
+        };
+        tracedModules.AddRange(modules);
+        return tracedModules;
+    }
+
+    private static string BuildDiagnosticPhaseMetadata(
+        DiagnosticWeaknessSummary diagnostic,
+        DiagnosticTraceEntry? focusConcept,
+        DiagnosticTraceEntry? focusMistake)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            source = "PlanDiagnostic",
+            diagnosticWeakConcepts = diagnostic.WeakConcepts.Select(c => new { value = c.Value, count = c.Count }).ToList(),
+            diagnosticMistakePatterns = diagnostic.MistakePatterns.Select(m => new { value = m.Value, count = m.Count }).ToList(),
+            focusWeakConcept = focusConcept?.Value,
+            focusWeakConceptLabel = focusConcept == null ? null : HumanizeDiagnosticLabel(focusConcept.Value),
+            focusMistakePattern = focusMistake?.Value
+        });
+    }
+
+    private static string IntentForMistake(string? mistake)
+    {
+        if (string.IsNullOrWhiteSpace(mistake))
+        {
+            return "Remediation";
+        }
+
+        return mistake.Trim() switch
+        {
+            "Procedural" => "PracticeLab",
+            "Application" => "PracticeLab",
+            "Reading" => "Remediation",
+            "MisreadQuestion" => "Remediation",
+            "Conceptual" => "DeepDive",
+            "Careless" => "QuickReview",
+            _ => "Remediation"
+        };
+    }
+
+    private static string TitleSuffixForMistake(string? mistake)
+    {
+        if (string.IsNullOrWhiteSpace(mistake))
+        {
+            return "Tanisal Calisma";
+        }
+
+        return mistake.Trim() switch
+        {
+            "Procedural" => "Pratik Laboratuvari",
+            "Application" => "Uygulama Pratigi",
+            "Reading" => "Okuma Onarimi",
+            "MisreadQuestion" => "Soru Okuma Kontrolu",
+            "Conceptual" => "Kavram Onarimi",
+            "Careless" => "Dikkat Kontrolu",
+            _ => "Tanisal Calisma"
+        };
+    }
+
+    private static string HumanizeDiagnosticLabel(string value)
+    {
+        var normalized = value
+            .Replace('-', ' ')
+            .Replace('_', ' ')
+            .Replace('/', ' ')
+            .Replace('.', ' ')
+            .Trim();
+
+        while (normalized.Contains("  ", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return "Tanisal Zayiflik";
+        }
+
+        var words = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => word.Equals("vs", StringComparison.OrdinalIgnoreCase)
+                ? "vs"
+                : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(word.ToLowerInvariant()));
+        return string.Join(' ', words);
+    }
+
     /// <summary>3 seviyeli Topic hiyerarşisi: Ana Konu → Modül → Ders. Her ders için WikiPage oluşturur.</summary>
     private async Task<List<Topic>> SaveModularSubTopicsAsync(
-        Guid parentTopicId, List<ModuleDefinition> modules, Guid userId)
+        Guid parentTopicId, List<ModuleDefinition>? modules, Guid userId)
     {
+        if (modules == null || !modules.Any()) return new List<Topic>();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
@@ -399,21 +702,23 @@ public class DeepPlanAgent : IDeepPlanAgent
                 Order          = mi,
                 CreatedAt      = DateTime.UtcNow,
                 LastAccessedAt = DateTime.UtcNow,
-                TotalSections  = mod.Topics.Count
+                TotalSections  = mod.Lessons.Count
             };
             db.Topics.Add(moduleTopic);
 
             // Ders topic'leri (3. seviye)
-            for (int li = 0; li < mod.Topics.Count; li++)
+            for (int li = 0; li < mod.Lessons.Count; li++)
             {
+                var lessonDef = mod.Lessons[li];
                 var lessonTopic = new Topic
                 {
                     Id             = Guid.NewGuid(),
                     UserId         = userId,
                     ParentTopicId  = moduleTopic.Id,
-                    Title          = mod.Topics[li],
+                    Title          = lessonDef.Title,
                     Emoji          = mod.Emoji,
-                    Category       = "Plan",
+                    Category       = $"Plan:{lessonDef.Intent}",
+                    PhaseMetadata  = lessonDef.PhaseMetadata,
                     CurrentPhase   = TopicPhase.Discovery,
                     Order          = li,
                     CreatedAt      = DateTime.UtcNow,
@@ -452,13 +757,157 @@ public class DeepPlanAgent : IDeepPlanAgent
     }
 
     /// <summary>Modül tanımı: başlık, emoji ve altındaki dersler.</summary>
-    private record ModuleDefinition(string Title, string Emoji, List<string> Topics);
+    private record ModuleDefinition(string Title, string Emoji, List<LessonDefinition> Lessons);
+    private record LessonDefinition(string Title, string SkillTag, string Intent = "Core", string? PhaseMetadata = null);
+
+    private sealed record DiagnosticWeaknessSummary(
+        List<DiagnosticTraceEntry> WeakConcepts,
+        List<DiagnosticTraceEntry> MistakePatterns)
+    {
+        public bool HasWeaknesses => WeakConcepts.Count > 0 || MistakePatterns.Count > 0;
+
+        public static DiagnosticWeaknessSummary Parse(string? diagnosticQuizSummary)
+        {
+            if (string.IsNullOrWhiteSpace(diagnosticQuizSummary))
+            {
+                return new DiagnosticWeaknessSummary([], []);
+            }
+
+            return new DiagnosticWeaknessSummary(
+                ParseLine(diagnosticQuizSummary, "WeakConcepts:"),
+                ParseLine(diagnosticQuizSummary, "MistakePatterns:"));
+        }
+
+        private static List<DiagnosticTraceEntry> ParseLine(string text, string prefix)
+        {
+            var line = text
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault(item => item.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+            if (line == null)
+            {
+                return [];
+            }
+
+            var value = line[prefix.Length..].Trim();
+            if (value.Length == 0 || value.Equals("none", StringComparison.OrdinalIgnoreCase))
+            {
+                return [];
+            }
+
+            return value
+                .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(ParseEntry)
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Value))
+                .OrderByDescending(entry => entry.Count)
+                .ThenBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static DiagnosticTraceEntry ParseEntry(string item)
+        {
+            var separator = item.LastIndexOf(':');
+            if (separator <= 0)
+            {
+                return new DiagnosticTraceEntry(item.Trim(), 1);
+            }
+
+            var value = item[..separator].Trim();
+            var countText = item[(separator + 1)..].Trim();
+            return int.TryParse(countText, out var count)
+                ? new DiagnosticTraceEntry(value, count)
+                : new DiagnosticTraceEntry(item.Trim(), 1);
+        }
+    }
+
+    private sealed record DiagnosticTraceEntry(string Value, int Count);
+
+    private async Task<string> AnalyzeBaselineQuizResultsAsync(Guid topicId, Guid userId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
+            // 1. Baseline Quiz sonuçlarını getir (en son 20 soru)
+            var attempts = await db.QuizAttempts
+                .Where(a => a.TopicId == topicId && a.UserId == userId)
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(20)
+                .ToListAsync();
+
+            if (!attempts.Any()) return string.Empty;
+
+            // 2. Yanlış cevaplara odaklan
+            var failedAttempts = attempts.Where(a => !a.IsCorrect).ToList();
+            if (!failedAttempts.Any())
+                return "Öğrenci baseline quiz'de kusursuz performans gösterdi. Müfredatı ileri düzey, teknik detaylara boğmadan, vizyoner ve hızlı akışlı bir yapıda hazırla. Temel kavramları atla.";
+
+            var failedSummary = string.Join("\n", failedAttempts.Select(a =>
+                $"- Soru: {a.Question}\n  Beceri: {a.SkillTag}\n  Hata Analizi: {a.Explanation}"));
+
+            // 3. LLM ile Mikro-Teşhis yap
+            var systemPrompt = """
+                Sen akademik düzeyde bir 'Eğitim Teşhis Uzmanı (Diagnostic Educator)' botusun.
+                Görevin: Öğrencinin baseline quiz hatalarını analiz ederek, zihinsel modelindeki eksik parçaları (micro-gaps) tespit etmek.
+
+                ANALİZ KURALI:
+                - "Şu soruyu yanlış yaptı" deme. "Kullanıcı X'i biliyor ama Y kavramının Z üzerindeki etkisini yanlış yorumluyor" gibi derinlikli konuş.
+                - Müfredat mimarına "Şu 3 kritik noktaya matkapla (drill) inmeli, şu analojileri kullanmalısın" şeklinde direktif ver.
+                """;
+
+            var userPrompt = $"Öğrenci Hata Raporu:\n{failedSummary}\n\nLütfen teşhisini ve müfredat direktiflerini Türkçe olarak hazırla.";
+
+            return await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, userPrompt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[DeepPlan] Baseline analiz aşaması başarısız oldu.");
+            return string.Empty;
+        }
+    }
 
     public async Task<string> GenerateBaselineQuizAsync(string topicTitle)
     {
+        _logger.LogInformation("[DeepPlan] Baseline Quiz için Korteks keşfi başlatılıyor: {Topic}", topicTitle);
+
+        // 1. Korteks Keşfi (Quiz sorularının gerçek dünya verilerine dayanması için)
+        string compressedResearchPromptBlock;
+        try
+        {
+            var korteksResult = await _korteks.RunResearchWithEvidenceAsync(topicTitle, Guid.Empty, null);
+            var compressedResearch = _planResearchCompressor.Compress(korteksResult);
+            compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearch);
+            _logger.LogInformation(
+                "[DeepPlan] Baseline Quiz Korteks bağlamı sıkıştırıldı. Mode={GroundingMode} Sources={SourceCount} BlockLen={Len}",
+                compressedResearch.GroundingMode,
+                compressedResearch.SourceCount,
+                compressedResearchPromptBlock.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[DeepPlan] Baseline Quiz Korteks araştırması başarısız oldu. Tanılama kurallarıyla devam edilecek.");
+            var blockedResearch = new KorteksResearchResultDto
+            {
+                Topic = topicTitle,
+                GroundingMode = GroundingMode.BlockedProvider,
+                ProviderFailures = [ex.Message],
+                IsFallback = true,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            var compressedResearch = _planResearchCompressor.Compress(blockedResearch);
+            compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearch);
+        }
+
         var systemPrompt = $$"""
-            Sen bir 'Eğitim Tanılama Uzmanı (Educational Diagnostician)' botusun.
-            Görevin: Kullanıcının '{{topicTitle}}' konusundaki bilgi seviyesini EN İNCE AYRINTISINA KADAR tespit etmek için 20 soru hazırlamak.
+            Sen profesyonel bir 'Eğitim Tanılama Uzmanı (Educational Diagnostician)' botusun.
+            Görevin: Kullanıcının '{{topicTitle}}' konusundaki gerçek bilgi seviyesini EN İNCE AYRINTISINA KADAR tespit etmek için 20 soru hazırlamak.
+
+            [SIKISTIRILMIS QUIZ ARASTIRMA BAGLAMI]
+            {{compressedResearchPromptBlock}}
+
+            Eger GroundingMode FallbackInternalKnowledge veya BlockedProvider ise bu baglami guncel/kaynakli kanit gibi sunma.
+            Bu durumda sorulari konu basligi, genel pedagojik tanilama kurallari ve temel mufredat kapsami ile uret.
 
             SORU DAĞILIMI VE DERİNLİK (Toplam 20 Soru):
             - 1-4: TEMEL KAVRAMLAR (Başlangıç seviyesi, terminoloji kontrolü)
@@ -466,12 +915,20 @@ public class DeepPlanAgent : IDeepPlanAgent
             - 11-16: ANALİZ VE PROBLEM ÇÖZME (İleri seviye, hata ayıklama ve mimari kararlar)
             - 17-20: UZMANLIK VE DERİN KONULAR (Zorlayıcı, uç durumlar ve optimizasyon)
 
-            KALİTE VE FORMAT KURALLARI:
+            KALİTE KURALLARI:
+            - Sorulari sadece yukaridaki sikistirilmis arastirma baglami ve konu basligiyla destekle; ham Korteks raporu varsayma.
+            - Genis bir kavram haritasini kapsa: temel kavram, onkosul, uygulama, analiz, hata ayiklama ve uc durumlar.
+            - Soru tipleri tekrarlamasin: conceptual, procedural, application, analysis ve misconception_probe karisik kullanilsin.
+            - Zorluk dagilimi dengeli olsun: kolay, orta ve zor sorulari acikca karistir.
+            - Soru metinleri birbirinin kopyasi veya yakin tekrari olmasin.
+            - En az 8 farkli conceptTag ve en az 4 farkli questionType kullan.
+            - En az 5 soru yaygin kavram yanilgisini veya beklenen hata kategorisini hedeflesin.
+            - Programlama/teknik konularda en az bir soru gercek kod parcasi, kod okuma veya hata ayiklama tarzi icersin.
             - Sadece "X nedir?" gibi ezber soruları YASAKTIR. Sorular gerçek hayat problemlerini veya teknik senaryoları yansıtmalıdır.
             - Yanlış seçenekler (çeldiriciler) mantıklı ve kafa karıştırıcı olmalı.
-            - Çıktı SADECE saf JSON dizisi olmalıdır.
-            - "type" alanı çok önemlidir. Eğer soru sözel ve kavramsal bir bilgiyse "multiple_choice" (4 şık ekle), ALGORİTMA VEYA KODLAMA gerektiriyorsa "coding" (şıkları boş bırak) yap.
+            - Her soru icin uygun bir `skillTag`, `conceptTag`, `learningObjective`, `questionType` ve `expectedMisconceptionCategory` belirle.
 
+            ÇIKTI FORMATI (SADECE JSON):
             [
               {
                 "type": "multiple_choice", // veya "coding"
@@ -482,15 +939,139 @@ public class DeepPlanAgent : IDeepPlanAgent
                   { "text": "...", "isCorrect": false },
                   { "text": "...", "isCorrect": false }
                 ],
-                "explanation": "Detaylı açıklama",
+                "correctAnswer": "Dogru sik metni veya id'si",
+                "explanation": "Detayli aciklama",
+                "skillTag": "beceri-etiketi",
+                "difficulty": "kolay|orta|zor",
+                "conceptTag": "kavram-etiketi",
+                "learningObjective": "Olculen ogrenme hedefi",
+                "questionType": "conceptual|procedural|application|analysis|misconception_probe",
+                "expectedMisconceptionCategory": "Conceptual|Procedural|Calculation|Reading|Application|MisreadQuestion|Careless",
                 "topic": "{{topicTitle}}"
-              },
-              ... (TOPLAM 20 SORU)
+              }
             ]
 
             DİL: Türkçe.
             """;
 
-        return await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\"");
+        var rawQuiz = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\" için 20 adet derinlikli baseline sorusu üret.");
+        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrFallback(rawQuiz, topicTitle, out var quality);
+        if (!quality.IsAcceptable)
+        {
+            _logger.LogWarning(
+                "[DeepPlan] Baseline quiz quality failed. Topic={Topic} Failures={Failures}",
+                topicTitle,
+                string.Join(" | ", quality.Failures));
+        }
+
+        return validatedQuiz;
+    }
+
+    private static DeepPlanGroundingMetadataDto ToDeepPlanGrounding(KorteksResearchResultDto result) =>
+        new()
+        {
+            GroundingMode = result.GroundingMode,
+            SourceCount = result.SourceCount,
+            Sources = result.Sources,
+            ProviderWarnings = result.ProviderFailures.Concat(result.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            IsFallback = result.IsFallback
+        };
+
+    private static string AppendGroundingMetadata(string contextInfo, DeepPlanGroundingMetadataDto? grounding)
+    {
+        if (grounding == null)
+        {
+            return contextInfo;
+        }
+
+        return $"{contextInfo}\n\n{BuildGroundingPromptBlock(grounding)}";
+    }
+
+    private static string BuildGroundingPromptBlock(DeepPlanGroundingMetadataDto? grounding)
+    {
+        if (grounding == null)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[KORTEKS GROUNDING METADATA]");
+        sb.AppendLine($"GroundingMode: {grounding.GroundingMode}");
+        sb.AppendLine($"SourceCount: {grounding.SourceCount}");
+        sb.AppendLine($"IsFallback: {grounding.IsFallback}");
+        if (grounding.ProviderWarnings.Any())
+        {
+            sb.AppendLine($"ProviderWarnings: {string.Join(" | ", grounding.ProviderWarnings.Take(5))}");
+        }
+
+        if (grounding.Sources.Any())
+        {
+            sb.AppendLine("Sources:");
+            foreach (var source in grounding.Sources.Take(8).Select((s, i) => new { Source = s, Index = i + 1 }))
+            {
+                var snippet = string.IsNullOrWhiteSpace(source.Source.Snippet) ? "" : $" Snippet={source.Source.Snippet}";
+                sb.AppendLine($"{source.Index}. Provider={source.Source.Provider} Tool={source.Source.ToolName} Title={source.Source.Title} Url={source.Source.Url}{snippet}");
+            }
+        }
+        else
+        {
+            sb.AppendLine("Sources: none with valid URLs.");
+        }
+
+        sb.AppendLine("Instruction: If GroundingMode is FallbackInternalKnowledge or BlockedProvider, generate a useful curriculum but do not claim it is source-grounded or based on current internet research.");
+        return sb.ToString();
+    }
+
+    private string BuildAdaptivePromptSection(Orka.Core.DTOs.AdaptiveLearningContext context)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[ADAPTIF ÖĞRENME BAĞLAMI - STRÜKTÜREL VERİ]");
+        sb.AppendLine($"- Öğrenci Seviyesi: {context.UserLevel}");
+
+        if (context.QuizSummary != null && context.QuizSummary.TotalAttempts > 0)
+        {
+            sb.AppendLine($"- Son Performans: {context.QuizSummary.TotalAttempts} denemede %{Math.Round(context.QuizSummary.AverageAccuracy * 100)} başarı.");
+        }
+
+        if (context.WeakSkills.Any())
+        {
+            sb.AppendLine("- Tespit Edilen Zayıf Beceriler (SkillTags):");
+            foreach (var s in context.WeakSkills.Take(5))
+                sb.AppendLine($"  * {s.Skill} (Başarı: %{Math.Round(s.Accuracy * 100)}, Hata: {s.WrongCount})");
+        }
+
+        if (context.WeakConcepts.Any())
+        {
+            sb.AppendLine("- Tekrarlayan Kavramsal Zayıflıklar (ConceptTags):");
+            foreach (var c in context.WeakConcepts)
+                sb.AppendLine($"  * {c.Concept} ({c.Frequency} kez hata yapıldı)");
+        }
+
+        if (context.MistakePatterns.Any())
+        {
+            sb.AppendLine("- Hata Pattern Analizi:");
+            foreach (var p in context.MistakePatterns)
+                sb.AppendLine($"  * {p.Label} ({p.Frequency} kez)");
+        }
+
+        if (context.DueReviewSkills.Any())
+        {
+            sb.AppendLine("- SRS Gözden Geçirme Baskısı (Due for Review):");
+            sb.AppendLine($"  * {string.Join(", ", context.DueReviewSkills)}");
+        }
+
+        if (!string.IsNullOrEmpty(context.StudentProfileSummary))
+        {
+            sb.AppendLine($"- Öğrenci Profil Özeti: {context.StudentProfileSummary}");
+        }
+
+        if (!string.IsNullOrEmpty(context.PreviousSessionSummary))
+        {
+            sb.AppendLine($"- Önceki Oturum Özeti: {context.PreviousSessionSummary}");
+        }
+
+        sb.AppendLine("\nTALİMAT: Müfredatı hazırlarken yukarıdaki [ADAPTIF ÖĞRENME BAĞLAMI] verilerini temel al. Zayıf kavramlara 'Deep Dive' veya 'Remedial' dersleri ekle, hata patternlerine uygun analojiler öner ve SRS baskısı olan konuları pekiştir.");
+
+        return sb.ToString();
     }
 }

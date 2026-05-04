@@ -1,4 +1,5 @@
 using Orka.Core.Entities;
+using Orka.Core.DTOs.Korteks;
 
 namespace Orka.Core.Interfaces;
 
@@ -22,6 +23,22 @@ public interface IDeepPlanAgent
         string userLevel = "Bilinmiyor",
         string? researchContext = null,
         string? failedTopics = null);
+
+    Task<DeepPlanGenerationWithGroundingResultDto> GenerateAndSaveDeepPlanWithGroundingAsync(
+        Guid parentTopicId,
+        string topicTitle,
+        Guid userId,
+        string userLevel = "Bilinmiyor",
+        string? researchContext = null,
+        string? failedTopics = null);
+
+    Task<DeepPlanGenerationWithGroundingResultDto> GenerateAndSaveDeepPlanFromDiagnosticAsync(
+        Guid parentTopicId,
+        string topicTitle,
+        Guid userId,
+        string compressedResearchPromptBlock,
+        string diagnosticQuizSummary,
+        string userLevel = "Bilinmiyor");
 
     Task<string> GenerateBaselineQuizAsync(string topicTitle);
 }

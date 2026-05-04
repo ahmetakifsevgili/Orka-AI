@@ -24,6 +24,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [HttpPost("/api/register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         try
@@ -43,6 +44,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [HttpPost("/api/login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         try
