@@ -125,7 +125,8 @@ public class TutorAgent : ITutorAgent
             FetchLowQualityFeedbackAsync(session.Id),
             hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content) : Task.FromResult(string.Empty),
             hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
+            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            hasTopic ? FetchReviewPressureContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
         );
 
         var contextMessages = await contextTask;
@@ -150,7 +151,8 @@ public class TutorAgent : ITutorAgent
             lowQualityHint:     parallelResults[6],
             notebookContext:    parallelResults[7],
             learningSignalContext: parallelResults[8],
-            educatorCoreContext: teacherContext.PromptBlock);
+            educatorCoreContext: teacherContext.PromptBlock,
+            reviewPressureContext: parallelResults[10]);
         var userMessage = BuildContextSummary(contextMessages);
 
         var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
@@ -331,7 +333,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             FetchLowQualityFeedbackAsync(session.Id),
             hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content, ct) : Task.FromResult(string.Empty),
             hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty),
-            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
+            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            hasTopic ? FetchReviewPressureContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
         );
 
         var contextMessages = await contextTask;
@@ -357,7 +360,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             lowQualityHint:     parallelResults[6],
             notebookContext:    parallelResults[7],
             learningSignalContext: parallelResults[8],
-            educatorCoreContext: teacherContext.PromptBlock);
+            educatorCoreContext: teacherContext.PromptBlock,
+            reviewPressureContext: parallelResults[10]);
         var userMessage = BuildContextSummary(contextMessages);
 
         // AIAgentFactory: Primary → Gemini → Mistral (stream failover zinciri)
@@ -520,6 +524,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
             var root = path[0];
             var activeLessonTitle = topic.Title;
+            var planIntentHint = TutorIntelligenceContextFormatter.BuildPlanIntentHint(topic.Category);
 
             var modules = await db.Topics
                 .AsNoTracking()
@@ -560,7 +565,10 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 [AKTIF_DERS_BAGLAMI]:
                 - Secili konu yolu: {string.Join(" > ", path.Select(p => p.Title))}
                 - Aktif anlatilacak ders: {activeLessonTitle}
+                - Dil seviyesi: {topic.LanguageLevel ?? root.LanguageLevel ?? "not recorded"}
+                - Son calisma ozeti: {topic.LastStudySnapshot ?? root.LastStudySnapshot ?? "not recorded"}
                 - Kullanici "devam", "basla", "anlat" gibi kisa bir mesaj yazarsa konu sorma; bu aktif ders uzerinden dogrudan anlatima basla.
+                {planIntentHint}
                 """;
         }
         catch (Exception ex)
@@ -577,15 +585,19 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
+        var scopeIds = await GetTopicScopeIdsAsync(db, userId, topicId.Value);
+
         var recentFailedAttempts = await db.QuizAttempts
-            .Where(q => q.UserId == userId && q.TopicId == topicId && !q.IsCorrect)
+            .AsNoTracking()
+            .Where(q => q.UserId == userId && q.TopicId.HasValue && scopeIds.Contains(q.TopicId.Value) && !q.IsCorrect)
             .OrderByDescending(q => q.CreatedAt)
-            .Take(3)
+            .Take(5)
             .ToListAsync();
 
         // Faz 13: Zaten öğrenilmiş alt konular (tekrara gerek yok)
         var masteredSkills = await db.SkillMasteries
-            .Where(sm => sm.UserId == userId && sm.TopicId == topicId)
+            .AsNoTracking()
+            .Where(sm => sm.UserId == userId && scopeIds.Contains(sm.TopicId))
             .OrderByDescending(sm => sm.MasteredAt)
             .Take(10)
             .Select(sm => sm.SubTopicTitle)
@@ -601,11 +613,47 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
         if (recentFailedAttempts.Count > 0)
         {
-            var failures = string.Join("\n", recentFailedAttempts.Select(q => $"- Zayıf Nokta: {q.Question}"));
-            sb.AppendLine($"\n[ÖĞRENCİ PROFİLİ — Zorlandığı noktalar]:\n{failures}\nEğitim dilini bu zayıf noktaları güçlendirecek şekilde ayarla.");
+            sb.AppendLine(TutorIntelligenceContextFormatter.BuildFailedAttemptSummary(recentFailedAttempts));
         }
 
         return sb.Length > 0 ? sb.ToString() : "";
+    }
+
+    private async Task<string> FetchReviewPressureContextAsync(Guid userId, Guid? topicId, CancellationToken ct = default)
+    {
+        if (!topicId.HasValue) return string.Empty;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var scopeIds = await GetTopicScopeIdsAsync(db, userId, topicId.Value, ct);
+
+            var recommendations = await _learningSignals.GetRecommendationsAsync(userId, topicId.Value, ct);
+            var remediationPlans = await db.RemediationPlans
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && scopeIds.Contains(r.TopicId))
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(5)
+                .ToListAsync(ct);
+
+            var context = TutorIntelligenceContextFormatter.BuildReviewPressureSummary(recommendations, remediationPlans);
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                _logger.LogInformation(
+                    "[TutorAgent] Review/remediation pressure context loaded. TopicId={TopicId} RecommendationCount={RecommendationCount} RemediationCount={RemediationCount}",
+                    topicId.Value,
+                    recommendations.Count,
+                    remediationPlans.Count);
+            }
+
+            return context;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[TutorAgent] Review/remediation pressure context okunamadi. TopicId={TopicId}", topicId.Value);
+            return string.Empty;
+        }
     }
 
     /// <summary>
@@ -784,7 +832,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         string lowQualityHint  = "",
         string notebookContext = "",
         string learningSignalContext = "",
-        string educatorCoreContext = "")
+        string educatorCoreContext = "",
+        string reviewPressureContext = "")
     {
         var prompt = $$"""
             Sen Orka AI — Kullanıcının özel öğretmeni ve bilge bir mentorusun.
@@ -797,6 +846,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             {{goldExamples}}
             {{notebookContext}}
             {{learningSignalContext}}
+            {{reviewPressureContext}}
             {{educatorCoreContext}}
 
             [TEMEL KURAL — ÖĞRETİM TARZI]:
@@ -849,5 +899,36 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
 
         return prompt;
+    }
+
+    private static async Task<HashSet<Guid>> GetTopicScopeIdsAsync(
+        OrkaDbContext db,
+        Guid userId,
+        Guid topicId,
+        CancellationToken ct = default)
+    {
+        var topics = await db.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId)
+            .Select(t => new { t.Id, t.ParentTopicId })
+            .ToListAsync(ct);
+
+        var result = new HashSet<Guid> { topicId };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var topic in topics)
+            {
+                if (topic.ParentTopicId.HasValue &&
+                    result.Contains(topic.ParentTopicId.Value) &&
+                    result.Add(topic.Id))
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        return result;
     }
 }
