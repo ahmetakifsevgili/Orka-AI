@@ -29,3 +29,17 @@ Local API: `http://127.0.0.1:5101`. Unique users/topics. No TestSprite. JWTs omi
 | cross-user isolation | `source/flashcard foreign access` | PASS | source=404 flashcard=404 | PASS | foreign resources hidden |
 
 Summary: all bounded probes passed. Classroom ask/audio remains provider-dependent for UX design, not a backend blocker.
+
+## Tutor Pedagogy / Visualization / YouTube Addendum Probe
+
+Local API: `http://127.0.0.1:5101`. Unique user/topic. No TestSprite. JWTs omitted. AI prose was not exact-asserted.
+
+| Probe | Endpoint | Status | Evidence | Classification | Notes |
+|---|---|---|---|---|---|
+| Mermaid diagram | `POST /api/chat/send` | PARTIAL | 200; one bounded run preserved Mermaid fenced content before rebuild, final updated-build run returned text without a Mermaid block. Metadata extraction is covered by focused unit test. | AI_NONDETERMINISTIC | Backend preserves/extracts Mermaid when present; model may ignore explicit diagram request. |
+| YouTube teaching reference | `POST /api/chat/send` | PASS | 200; no seeded YouTube context; no named teacher/channel claim observed. | EXPECTED_FALLBACK | YouTube provider was not spammed. |
+| no YouTube fallback | `POST /api/chat/send` | PASS | Tutor answered without claiming video evidence. | EXPECTED_FALLBACK | No reference card should render without metadata. |
+| source vs YouTube priority | `upload + POST /api/chat/send` | PARTIAL | Source upload passed; bounded Tutor answer did not reliably emit doc citation. | AI_NONDETERMINISTIC | Existing source ask/Tutor citation proofs remain accepted; docs keep source priority rule. |
+| visual tool readiness | focused code audit | PARTIAL | Tutor prompt supports Pollinations markdown image URLs; no callable visual generator endpoint was proven. | FRONTEND_DEPENDENT | Render markdown image or hide visual job UI until beta. |
+
+Addendum summary: backend blockers none. Mermaid, YouTube pedagogy fallback, and visual markdown are now documented for frontend rendering; metadata extraction for Mermaid/Pollinations/YouTube markers is covered by deterministic unit tests.

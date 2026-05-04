@@ -75,4 +75,43 @@ public sealed class DurableLearningContractTests
         Assert.Empty(metadata.Citations);
         Assert.Equal("model_fallback", metadata.GroundingMode);
     }
+
+    [Fact]
+    public void ChatMetadata_DetectsMermaidDiagramTool()
+    {
+        var metadata = new ChatMetadataService().Build("""
+            ```mermaid
+            flowchart LR
+              A[Request] --> B[Await]
+            ```
+            """);
+
+        var tool = Assert.Single(metadata.UsedTools);
+        Assert.Equal("mermaid", tool.Name);
+        Assert.Equal("generated_text", tool.Status);
+        Assert.Equal("mermaid_fenced_block", tool.Evidence);
+    }
+
+    [Fact]
+    public void ChatMetadata_DetectsYouTubeDegradedToolWarning()
+    {
+        var metadata = new ChatMetadataService().Build("[youtube:degraded] YouTube aramasi gecici olarak kullanilamiyor.");
+
+        var tool = Assert.Single(metadata.UsedTools);
+        Assert.Equal("youtube", tool.Name);
+        Assert.Equal("degraded", tool.Status);
+        Assert.Contains("youtube_degraded", metadata.ProviderWarnings);
+        Assert.Equal("degraded_fallback", metadata.GroundingMode);
+    }
+
+    [Fact]
+    public void ChatMetadata_DetectsPollinationsVisualUrl()
+    {
+        var metadata = new ChatMetadataService().Build("![diagram](https://image.pollinations.ai/prompt/async%20diagram?width=512&height=512&nologo=true)");
+
+        var tool = Assert.Single(metadata.UsedTools);
+        Assert.Equal("pollinations", tool.Name);
+        Assert.Equal("generated_image_url", tool.Status);
+        Assert.Equal("embedded_image_markdown", tool.Evidence);
+    }
 }

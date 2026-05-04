@@ -141,3 +141,4 @@ Generated from controllers and Swagger for frontend contract freeze.
 - Swagger does not currently advertise JWT security consistently; auth was reconciled from controller attributes.
 - `DiagnosticsController`, `TestController`, and direct `CodeController` endpoints should stay hidden unless intentionally exposed for beta/admin tooling.
 - Provider-backed routes are contract-ready but UI must show degraded/provider-blocked states when returned.
+- Tutor pedagogy/visualization addendum does not add new endpoints. Frontend should use `/api/chat/send` content plus `metadata.usedTools`, `metadata.fallbackReason`, and `metadata.providerWarnings` for Mermaid, visual markdown, and YouTube pedagogy/reference UI.

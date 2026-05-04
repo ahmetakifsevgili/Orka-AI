@@ -7,6 +7,11 @@
 | Topic tree/sidebar | `/api/topics, /api/topics/tree` | READY_FOR_FRONTEND | planIntent available |
 | Plan view | `topics + quiz plan diagnostic` | READY_WITH_UI_DECISION | provider-dependent plan generation |
 | Tutor chat | `/api/chat/send` | READY_FOR_FRONTEND | metadata available |
+| Tutor Mermaid diagrams | `/api/chat/send` content + metadata | READY_FOR_FRONTEND | render fenced `mermaid`; code fallback if invalid |
+| Tutor YouTube teaching reference | `/api/chat/send` metadata.usedTools | READY_WITH_UI_DECISION | YouTube is pedagogy/reference, not factual proof |
+| Visual/diagram generation | `/api/chat/send` content | READY_WITH_UI_DECISION | Mermaid and image markdown supported; no visual job UX frozen |
+| YouTube/video reference card | `metadata.usedTools` | READY_WITH_UI_DECISION | render cards only from metadata/tool evidence |
+| Pedagogy/fallback banners | `metadata.fallbackReason/providerWarnings` | READY_FOR_FRONTEND | show degraded YouTube/tool state without blocking answer |
 | Streaming chat | `/api/chat/stream` | READY_WITH_UI_DECISION | SSE text; metadata SSE later |
 | Source upload/manage | `/api/sources` | READY_FOR_FRONTEND | upload/list/patch/delete |
 | Source ask / Notebook view | `/api/sources/{id}/ask` | READY_FOR_FRONTEND | citation metadata |

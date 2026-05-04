@@ -42,3 +42,21 @@ Topic phase/status are current code strings; unknown values render neutral. Wiki
 
 ## Display Rules
 Show citations from metadata first, inline tags second. Show fallback/provider banners from metadata. Empty arrays mean empty state, not loading.
+
+## Tutor Pedagogy / Visualization / YouTube Addendum
+
+Tutor may return Mermaid diagrams in `content` when the user asks for a diagram/schema/flowchart or when a process, architecture, lifecycle, dependency, or comparison benefits from a visual explanation. Frontend should render fenced `mermaid` code blocks and fall back to a normal code block if parsing fails. Mermaid is not a citation source. When detected, `metadata.usedTools[]` may include `{ name: "mermaid", status: "generated_text", evidence: "mermaid_fenced_block" }`.
+
+Tutor may include markdown image URLs for visual explanations, especially Pollinations educational diagram URLs. Frontend can render these as normal markdown images or expose a later UI CTA. Dedicated backend visual job lifecycle is not frozen for Tutor chat; treat it as `READY_WITH_UI_DECISION`.
+
+YouTube is a pedagogy/reference input by default, not factual grounding. Allowed uses are teaching flow, examples, analogies, common mistakes, practice ideas, and video recommendation only when actual YouTube evidence exists. Tutor must not claim it saw a specific video, teacher, or channel unless YouTube context is present. YouTube must not replace `[doc:sourceId:pN]` citations for factual source-backed claims.
+
+When YouTube evidence is present or degraded, `metadata.usedTools[]` may include `{ name: "youtube", status: "ready|degraded|disabled", evidence: "youtube:<videoId-or-status>", fallbackReason: null|"youtube_degraded" }`. `providerWarnings[]` may include `youtube_disabled` or `youtube_degraded`.
+
+Frontend rendering guidance:
+- Render Mermaid blocks from `content`.
+- Render YouTube/video reference cards only from `metadata.usedTools`, never from prose alone.
+- Render fallback banners from `fallbackReason` and `providerWarnings[]`.
+- Prefer `metadata.citations[]` for factual source chips; inline doc tags remain visible fallback.
+
+Detailed addendum: `docs/tutor-pedagogy-visualization-contract.md`.
