@@ -183,6 +183,10 @@ public class QuizController : ControllerBase
                 IsCorrect = a.IsCorrect,
                 Explanation = a.Explanation,
                 SkillTag = a.SkillTag,
+                ConceptTag = ExtractMetadata(a.SourceRefsJson, "conceptTag"),
+                LearningObjective = ExtractMetadata(a.SourceRefsJson, "learningObjective"),
+                QuestionType = ExtractMetadata(a.SourceRefsJson, "questionType"),
+                MistakeCategory = ExtractMetadata(a.SourceRefsJson, "mistakeCategory"),
                 TopicPath = a.TopicPath,
                 Difficulty = a.Difficulty,
                 CognitiveType = a.CognitiveType,
@@ -250,4 +254,22 @@ public class QuizController : ControllerBase
         });
     }
 
+    private static string? ExtractMetadata(string? json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty(key, out var value) &&
+                   value.ValueKind == System.Text.Json.JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
 }

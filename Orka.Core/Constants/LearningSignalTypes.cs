@@ -19,6 +19,9 @@ public static class LearningSignalTypes
     public const string IdeSentToTutor = "IdeSentToTutor";
     public const string RemediationStarted = "RemediationStarted";
     public const string RemediationCompleted = "RemediationCompleted";
+    public const string ReviewCompleted = "ReviewCompleted";
+    public const string DailyChallengeAssigned = "DailyChallengeAssigned";
+    public const string DailyChallengeCompleted = "DailyChallengeCompleted";
     public const string LessonCompleted = "LessonCompleted";
     public const string YouTubeReferenceUsed = "YouTubeReferenceUsed";
     public const string NotebookSourceUsed = "NotebookSourceUsed";
@@ -41,6 +44,9 @@ public static class LearningSignalTypes
         IdeSentToTutor,
         RemediationStarted,
         RemediationCompleted,
+        ReviewCompleted,
+        DailyChallengeAssigned,
+        DailyChallengeCompleted,
         LessonCompleted,
         YouTubeReferenceUsed,
         NotebookSourceUsed,
