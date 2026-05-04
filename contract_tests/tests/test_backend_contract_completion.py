@@ -18,6 +18,13 @@ def test_topic_plan_intent_shape(session, auth_header):
 
     assert topic.get("planIntent") == "QuickReview"
 
+    detail_resp = session.get(f"{BASE_URL}/api/topics/{topic['id']}", headers=auth_header, timeout=TIMEOUT)
+    assert detail_resp.status_code == 200, detail_resp.text
+    detail = detail_resp.json()
+    assert detail.get("category") == "Plan:QuickReview"
+    assert detail.get("planIntent") == "QuickReview"
+    assert detail.get("topic", {}).get("planIntent") == "QuickReview"
+
     list_resp = session.get(f"{BASE_URL}/api/topics", headers=auth_header, timeout=TIMEOUT)
     assert list_resp.status_code == 200
     listed = next(t for t in list_resp.json() if t["id"] == topic["id"])

@@ -66,4 +66,7 @@ public record ClassroomAskResultDto(
     Guid ClassroomSessionId,
     Guid InteractionId,
     string Answer,
-    IReadOnlyList<string> Speakers);
+    IReadOnlyList<string> Speakers)
+{
+    public string AnswerScript => Answer;
+}

@@ -8,7 +8,7 @@ Stable fields: `messageId`, `sessionId`, `topicId`, `content`, `role`, `createdA
 Metadata: `citations[]`, `usedTools[]`, `groundingMode`, `fallbackReason`, `sourceConfidence`, `providerWarnings[]`. Empty arrays are valid empty state; null confidence means unknown. Grounding values: `source_grounded`, `model_fallback`, `degraded`, `unknown`.
 
 ## Topic DTO
-Stable fields: `id`, `title`, `parentTopicId`, `category`, `planIntent`, `emoji`, `currentPhase`, `order`, `totalSections`, `createdAt` when present. Plan intents: `Core`, `DeepDive`, `PracticeLab`, `QuickReview`, `Remediation`, `Assessment`, `Module`, null. Read `planIntent` first; `category=Plan:*` is legacy compatibility.
+Stable fields: `id`, `title`, `parentTopicId`, `category`, `planIntent`, `emoji`, `currentPhase`, `order`, `totalSections`, `createdAt` when present. `GET /api/topics/{id}` returns these fields at the top level and keeps the legacy nested `topic` object for compatibility. Plan intents: `Core`, `DeepDive`, `PracticeLab`, `QuickReview`, `Remediation`, `Assessment`, `Module`, null. Read `planIntent` first; `category=Plan:*` is legacy compatibility.
 
 ## Source DTO
 Fields: `id`, `topicId`, `sessionId`, `fileName`, `title`, `contentType`, `fileSize`, `chunkCount`, `status`, `isDeleted`, `version`, timestamps. Ask returns answer plus `citations[]`/metadata. Deleted source returns 404.
@@ -35,7 +35,7 @@ Fields: `id`, `type`, `title`, `body`, `status`, `severity`, `relatedEntityType`
 Fields: `jobId`, `status`, `script`, `speakers[]`, `contentType`, `fileName`, `downloadUrl`, `fallbackReason`, `errorMessage`, `createdAt`, `updatedAt`. Status: `pending`, `generating`, `ready`, `script-only`, `failed`.
 
 ## Classroom DTO
-Session start is stable. Ask/audio are provider/TTS-dependent. Frontend should treat classroom answer/audio availability as stateful, not guaranteed immediate media.
+Session start is stable. Ask returns `classroomSessionId`, `interactionId`, `answer`, `answerScript`, and `speakers[]`; `answerScript` is the frontend-facing alias for the same script content as `answer`. Ask/audio are provider/TTS-dependent. Frontend should treat classroom answer/audio availability as stateful, not guaranteed immediate media.
 
 ## Stable State Values
 Topic phase/status are current code strings; unknown values render neutral. Wiki: pending/learning/ready/failed. Source: uploaded/processed/failed plus `isDeleted`. Review: active/archived. Flashcard: active/deleted. Daily challenge: active/completed. Notification: unread/read. Unknown strings must not crash UI.

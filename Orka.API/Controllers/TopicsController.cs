@@ -61,14 +61,29 @@ public class TopicsController : ControllerBase
         var topic = await _topicService.GetTopicByIdAsync(id, userId);
         if (topic == null) return NotFound(new { message = "Konu bulunamadı." });
 
+        var resolvedPlanIntent = ResolvePlanIntent(topic.PlanIntent, topic.Category);
+
         return Ok(new
         {
+            id = topic.Id,
+            title = topic.Title,
+            emoji = topic.Emoji,
+            category = topic.Category,
+            planIntent = resolvedPlanIntent,
+            parentTopicId = topic.ParentTopicId,
+            order = topic.Order,
+            currentPhase = topic.CurrentPhase.ToString(),
+            createdAt = topic.CreatedAt,
+            lastAccessedAt = topic.LastAccessedAt,
+            progressPercentage = topic.ProgressPercentage,
+            successScore = topic.SuccessScore,
+            isMastered = topic.IsMastered,
             topic = new { 
                 topic.Id, 
                 topic.Title, 
                 topic.Emoji, 
                 topic.Category,
-                PlanIntent = ResolvePlanIntent(topic.PlanIntent, topic.Category),
+                PlanIntent = resolvedPlanIntent,
                 topic.ParentTopicId, 
                 topic.Order, 
                 topic.CurrentPhase, 
