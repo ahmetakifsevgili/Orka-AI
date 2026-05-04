@@ -101,20 +101,20 @@ public class RedisMemoryService : IRedisMemoryService
         {
             string key = $"orka:rateLimit:{clientIp}";
             var count = await _db.StringIncrementAsync(key);
-            
+
             // Eğer key ilk defa oluşturulduysa, Timer (TTL) başlat.
             if (count == 1)
             {
                 await _db.KeyExpireAsync(key, window);
             }
-            
+
             return count <= maxRequests;
         }
         catch (Exception ex)
         {
              _logger.LogError(ex, "[Redis] Rate Limit (Kota Kalkanı) kontrol edilirken hata oluştu.");
              // Redis çökerse sistemi kilitlememek için (Fail open) true döndürüyoruz.
-             return true; 
+             return true;
         }
     }
 
@@ -741,7 +741,7 @@ public class RedisMemoryService : IRedisMemoryService
         {
             var key = $"orka:topic_score:{topicId}";
             var items = await _db.ListRangeAsync(key, 0, -1);
-            
+
             if (items.Length == 0) return (0, 0);
 
             var scores = items
@@ -769,7 +769,7 @@ public class RedisMemoryService : IRedisMemoryService
     }
 
     // ── Faz 15: Yaşayan Organizasyon (Öğrenci Anlayış Takibi) ────────────────
-    
+
     private record StudentProfileRecord(int UnderstandingScore, string Weaknesses, DateTime RecordedAt);
 
     public async Task RecordStudentProfileAsync(Guid topicId, int understandingScore, string weaknesses)
@@ -778,12 +778,12 @@ public class RedisMemoryService : IRedisMemoryService
         {
             var key = $"orka:student_profile:{topicId}";
             var record = new StudentProfileRecord(understandingScore, weaknesses ?? string.Empty, DateTime.UtcNow);
-            
+
             // Konu bazında sadece en güncel profili tek record olarak tutmak isteyebiliriz.
             // Ama zaman içerisindeki değişimi anlamak için liste de tutulabilir.
             // Şimdilik sadece en güncel veriyi String (SET) olarak ya da ufak bir liste olarak tutalım.
             // Tek kaynakta güncel durum kalsın diye SET/GET yapalım (üzerine yazsın, "yaşayan organizasyon"un "şu anki" hali)
-            
+
             var payload = JsonSerializer.Serialize(record);
             await _db.StringSetAsync(key, payload, WeaknessDecayPeriod);
 
@@ -801,12 +801,12 @@ public class RedisMemoryService : IRedisMemoryService
         {
             var key = $"orka:student_profile:{topicId}";
             var val = await _db.StringGetAsync(key);
-            
+
             if (val.IsNullOrEmpty) return null;
-            
+
             var record = JsonSerializer.Deserialize<StudentProfileRecord>(val.ToString());
             if (record == null) return null;
-            
+
             return (record.UnderstandingScore, record.Weaknesses);
         }
         catch (Exception ex)
@@ -845,7 +845,20 @@ public class RedisMemoryService : IRedisMemoryService
         {
             var key = $"orka:lowquality:{sessionId}";
             // StringGetDelete: atomik tek-kullanımlık okuma + silme.
-            var val = await _db.StringGetDeleteAsync(key);
+            RedisValue val;
+            try
+            {
+                // Prefer atomic one-shot read where the Redis server supports GETDEL.
+                val = await _db.StringGetDeleteAsync(key);
+            }
+            catch (RedisServerException ex) when (ex.Message.Contains("unknown command", StringComparison.OrdinalIgnoreCase))
+            {
+                // Older Redis-compatible local servers may not support GETDEL. Keep Tutor personalization
+                // working with a best-effort read + delete fallback instead of logging an error every answer.
+                val = await _db.StringGetAsync(key);
+                if (!val.IsNullOrEmpty)
+                    await _db.KeyDeleteAsync(key);
+            }
 
             if (val.IsNullOrEmpty) return null;
 

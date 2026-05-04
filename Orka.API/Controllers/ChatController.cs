@@ -63,6 +63,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("message")]
+    [HttpPost("send")]
     public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -83,7 +84,10 @@ public class ChatController : ControllerBase
                 request.Content,
                 request.TopicId,
                 request.SessionId,
-                request.IsPlanMode);
+                request.IsPlanMode,
+                request.FocusTopicId,
+                request.FocusTopicPath,
+                request.FocusSourceRef);
 
             return Ok(response);
         }
@@ -105,14 +109,14 @@ public class ChatController : ControllerBase
             await Response.WriteAsJsonAsync(new { message = "Gunluk mesaj limitine ulasildi.", dailyLimit = limit.Limit });
             return;
         }
-        
+
         Guid sid;
         Guid? createdTopicId = null;
         try
         {
             var session = await _agentOrchestrator.GetOrCreateSessionAsync(userId, request.TopicId, request.SessionId, request.Content);
             if (session == null) throw new Exception("Oturum baslatilamadi.");
-            
+
             sid = session.Id;
             createdTopicId = session.TopicId;
 
@@ -146,7 +150,10 @@ public class ChatController : ControllerBase
                 request.Content,
                 request.TopicId,
                 sid,
-                request.IsPlanMode))
+                request.IsPlanMode,
+                request.FocusTopicId,
+                request.FocusTopicPath,
+                request.FocusSourceRef))
             {
                 var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
                 await Response.WriteAsync($"data: {safeChunk}\n\n");
