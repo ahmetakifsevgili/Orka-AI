@@ -1,3 +1,5 @@
+using Orka.Core.DTOs.Korteks;
+
 namespace Orka.Core.Interfaces;
 
 /// <summary>
@@ -17,6 +19,13 @@ public interface IKorteksAgent
     /// Her adımın log çıktısını stream olarak döndürür (Frontend'te adım adım göstermek için).
     /// </summary>
     IAsyncEnumerable<string> RunResearchAsync(
+        string topic,
+        Guid userId,
+        Guid? topicId = null,
+        string? fileContext = null,
+        CancellationToken ct = default);
+
+    Task<KorteksResearchResultDto> RunResearchWithEvidenceAsync(
         string topic,
         Guid userId,
         Guid? topicId = null,

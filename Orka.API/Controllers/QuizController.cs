@@ -2,13 +2,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orka.Core.DTOs;
-using Orka.Core.Entities;
+using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
-using System.Security.Cryptography;
 using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
 
 namespace Orka.API.Controllers;
 
@@ -18,20 +15,58 @@ namespace Orka.API.Controllers;
 public class QuizController : ControllerBase
 {
     private readonly OrkaDbContext _db;
-    private readonly ILearningSignalService _signals;
-    private readonly ISummarizerAgent _summarizer;
-    private readonly IRedisMemoryService _redis;
+    private readonly IQuizAttemptRecorder _quizRecorder;
+    private readonly IDeepPlanAgent _deepPlan;
+    private readonly IPlanDiagnosticService _planDiagnostic;
+    private readonly ILogger<QuizController> _logger;
 
     public QuizController(
         OrkaDbContext db,
-        ILearningSignalService signals,
-        ISummarizerAgent summarizer,
-        IRedisMemoryService redis)
+        IQuizAttemptRecorder quizRecorder,
+        IDeepPlanAgent deepPlan,
+        IPlanDiagnosticService planDiagnostic,
+        ILogger<QuizController> logger)
     {
         _db = db;
-        _signals = signals;
-        _summarizer = summarizer;
-        _redis = redis;
+        _quizRecorder = quizRecorder;
+        _deepPlan = deepPlan;
+        _planDiagnostic = planDiagnostic;
+        _logger = logger;
+    }
+
+    [HttpGet("generate")]
+    public async Task<IActionResult> Generate([FromQuery] Guid? topicId)
+    {
+        if (topicId == null) return BadRequest(new { error = "topicId zorunlu." });
+
+        var topic = await _db.Topics.FindAsync(topicId);
+        if (topic == null) return NotFound(new { error = "Konu bulunamadı." });
+
+        try
+        {
+            var rawJson = await _deepPlan.GenerateBaselineQuizAsync(topic.Title);
+
+            // LLM bazen JSON blokları (```json ... ```) içine sarar veya metin ekler, temizleyelim
+            var cleaned = rawJson.Trim();
+            if (cleaned.Contains("```"))
+            {
+                var lines = cleaned.Split('\n');
+                cleaned = string.Join("\n", lines.Where(l => !l.Trim().StartsWith("```")));
+            }
+
+            var s = cleaned.IndexOf('[');
+            var e = cleaned.LastIndexOf(']');
+            if (s >= 0 && e > s) cleaned = cleaned[s..(e + 1)];
+
+            var questions = System.Text.Json.JsonSerializer.Deserialize<object>(cleaned);
+
+            return Ok(new { topicId, questions });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Quiz üretimi başarısız. TopicId={TopicId}", topicId);
+            return StatusCode(500, new { error = "Quiz üretilemedi." });
+        }
     }
 
     [HttpPost("attempt")]
@@ -42,66 +77,9 @@ public class QuizController : ControllerBase
 
         try
         {
-            var sessionId = NormalizeGuid(request.SessionId);
-            var topicId = NormalizeGuid(request.TopicId);
-
-            if (!topicId.HasValue && sessionId.HasValue)
-            {
-                topicId = await _db.Sessions
-                    .Where(s => s.Id == sessionId.Value && s.UserId == userId)
-                    .Select(s => s.TopicId)
-                    .FirstOrDefaultAsync();
-            }
-
-            var quizRunId = NormalizeGuid(request.QuizRunId);
-            if (quizRunId.HasValue && !await _db.QuizRuns.AnyAsync(r => r.Id == quizRunId.Value && r.UserId == userId))
-            {
-                _db.QuizRuns.Add(new QuizRun
-                {
-                    Id = quizRunId.Value,
-                    UserId = userId,
-                    TopicId = topicId,
-                    SessionId = sessionId,
-                    QuizType = request.MessageId?.Contains("baseline", StringComparison.OrdinalIgnoreCase) == true ? "baseline" : "lesson",
-                    Status = "active",
-                    MetadataJson = JsonSerializer.Serialize(new { request.MessageId }),
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-
-            var attempt = new QuizAttempt
-            {
-                Id = Guid.NewGuid(),
-                QuizRunId = quizRunId,
-                SessionId = sessionId,
-                TopicId = topicId,
-                UserId = userId,
-                QuestionId = request.QuestionId,
-                Question = request.Question ?? "",
-                UserAnswer = request.SelectedOptionId ?? "",
-                IsCorrect = request.IsCorrect,
-                Explanation = request.Explanation ?? "",
-                SkillTag = NormalizeText(request.SkillTag),
-                TopicPath = NormalizeText(request.TopicPath),
-                Difficulty = NormalizeText(request.Difficulty),
-                CognitiveType = NormalizeText(request.CognitiveType),
-                QuestionHash = string.IsNullOrWhiteSpace(request.QuestionHash)
-                    ? ComputeQuestionHash(request.Question ?? "")
-                    : request.QuestionHash.Trim(),
-                SourceRefsJson = request.SourceRefsJson,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _db.QuizAttempts.Add(attempt);
-            await _db.SaveChangesAsync();
-            await _signals.RecordQuizAnsweredAsync(attempt, HttpContext.RequestAborted);
-
-            if (topicId.HasValue)
-            {
-                _summarizer.InvalidateNotebookTools(topicId.Value);
-                if (!string.IsNullOrWhiteSpace(attempt.QuestionHash))
-                    await _redis.RememberQuestionHashesAsync(userId, topicId.Value, [attempt.QuestionHash]);
-            }
+            var result = await _quizRecorder.RecordAsync(userId, request, HttpContext.RequestAborted);
+            var attempt = result.Attempt;
+            var xpResult = result.Xp;
 
             return Ok(new
             {
@@ -109,12 +87,79 @@ public class QuizController : ControllerBase
                 attempt.QuizRunId,
                 attempt.TopicId,
                 attempt.SkillTag,
-                attempt.QuestionHash
+                attempt.QuestionHash,
+                xp = xpResult is null
+                    ? null
+                    : new
+                    {
+                        xpResult.Awarded,
+                        xpResult.XpAwarded,
+                        xpResult.TotalXP,
+                        xpResult.CurrentStreak,
+                        Badges = xpResult.NewlyEarnedBadges
+                    },
+                review = result.Review,
+                mistake = result.Mistake
             });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "[QuizController] Quiz sonucu kaydedilemedi. UserId={UserId}", userId);
             return StatusCode(500, new { error = "Quiz sonucu kaydedilemedi." });
+        }
+    }
+
+    [HttpPost("plan-diagnostic/start")]
+    public async Task<IActionResult> StartPlanDiagnostic([FromBody] StartPlanDiagnosticRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _planDiagnostic.StartAsync(userId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Plan diagnostic start failed. UserId={UserId}", userId);
+            return StatusCode(500, new { error = "Plan diagnostic could not be started." });
+        }
+    }
+
+    [HttpPost("plan-diagnostic/{planRequestId:guid}/attempt")]
+    public async Task<IActionResult> RecordPlanDiagnosticAttempt(Guid planRequestId, [FromBody] RecordQuizAttemptRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _planDiagnostic.RecordAnswerAsync(userId, planRequestId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Plan diagnostic answer failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, planRequestId);
+            return StatusCode(500, new { error = "Plan diagnostic answer could not be recorded." });
+        }
+    }
+
+    [HttpPost("plan-diagnostic/finalize")]
+    public async Task<IActionResult> FinalizePlanDiagnostic([FromBody] FinalizePlanDiagnosticRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _planDiagnostic.FinalizeAsync(userId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Plan diagnostic finalize failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, request.PlanRequestId);
+            return StatusCode(500, new { error = "Plan diagnostic could not be finalized." });
         }
     }
 
@@ -158,9 +203,9 @@ public class QuizController : ControllerBase
 
         var totalAttempts = await _db.QuizAttempts.CountAsync(a => a.UserId == userId);
         var correctAttempts = await _db.QuizAttempts.CountAsync(a => a.UserId == userId && a.IsCorrect);
-        
+
         var accuracy = totalAttempts > 0 ? (double)correctAttempts / totalAttempts : 0;
-        
+
         // Son 7 gÃ¼nÃ¼n gÃ¼nlÃ¼k baÅŸarÄ±sÄ±
         var last7Days = Enumerable.Range(0, 7)
             .Select(i => DateTime.UtcNow.Date.AddDays(-i))
@@ -205,19 +250,4 @@ public class QuizController : ControllerBase
         });
     }
 
-    private static Guid? NormalizeGuid(Guid? value) =>
-        value.HasValue && value.Value != Guid.Empty ? value.Value : null;
-
-    private static string? NormalizeText(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static string ComputeQuestionHash(string question)
-    {
-        var normalized = string.Join(' ', (question ?? string.Empty)
-            .ToLowerInvariant()
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        if (string.IsNullOrWhiteSpace(normalized)) return string.Empty;
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
-        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
-    }
 }
