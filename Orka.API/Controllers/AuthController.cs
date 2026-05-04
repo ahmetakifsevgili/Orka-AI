@@ -30,6 +30,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [HttpPost("/api/register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         _logger.LogInformation("[Auth] Register attempt Email={Email}", request.Email);
@@ -37,7 +38,7 @@ public class AuthController : ControllerBase
         var result = await _authService.RegisterAsync(
             request.FirstName, request.LastName, request.Email, request.Password);
 
-        return Ok(new AuthResponse
+        return StatusCode(201, new AuthResponse
         {
             Token = result.Token,
             RefreshToken = result.RefreshToken,
@@ -46,6 +47,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [HttpPost("/api/login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         _logger.LogInformation("[Auth] Login attempt Email={Email}", request.Email);
@@ -64,7 +66,14 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
     {
         var result = await _authService.RefreshAsync(request.RefreshToken);
-        return Ok(new { token = result.Token, refreshToken = result.RefreshToken });
+        return Ok(new
+        {
+            token = result.Token,
+            jwt = result.Token,
+            access_token = result.Token,
+            refreshToken = result.RefreshToken,
+            refresh_token = result.RefreshToken
+        });
     }
 
     [HttpPost("logout")]
