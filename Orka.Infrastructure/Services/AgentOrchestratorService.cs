@@ -652,19 +652,26 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
             if (actionRoute == "RESEARCH")
             {
-                var researchChunks = new List<string>();
                 using var researchScope = _scopeFactory.CreateScope();
                 var korteks = researchScope.ServiceProvider.GetRequiredService<IKorteksAgent>();
-                await foreach (var chunk in korteks.RunResearchAsync(content, userId, session.TopicId))
-                {
-                    researchChunks.Add(chunk);
-                }
 
-                var researchContext = string.Join(Environment.NewLine, researchChunks);
-                if (string.IsNullOrWhiteSpace(researchContext))
+                string researchContext;
+                try
                 {
-                    _logger.LogWarning("[Orchestrator] Research route returned empty context; Tutor will answer with explicit source limits.");
-                    researchContext = "Kaynaklı araştırma bağlamı boş döndü. Bu durumu kullanıcıya açıkça belirt.";
+                    var researchResult = await korteks.RunResearchWithEvidenceAsync(content, userId, session.TopicId);
+                    researchContext = KorteksResearchContextFormatter.FormatForTutor(researchResult);
+
+                    _logger.LogInformation(
+                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}",
+                        researchResult.GroundingMode,
+                        researchResult.IsFallback,
+                        researchResult.SourceCount,
+                        researchResult.ProviderCalls.Count(c => c.Invoked));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Orchestrator] Research route failed; Tutor will answer with explicit source limits.");
+                    researchContext = "[KORTEKS SOURCE-GROUNDING]\nStatus: failed\nFallback: true\nGroundingWarning: Source-backed research could not be completed. Tell the user that external source grounding is unavailable for this answer.";
                 }
 
                 var enrichedContent = $"[KORTEKS ARAŞTIRMA SONUÇLARI]:{Environment.NewLine}{researchContext}{Environment.NewLine}{Environment.NewLine}[KULLANICI MESAJI]:{Environment.NewLine}{tutorContent}";
