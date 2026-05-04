@@ -162,7 +162,8 @@ public class AudioOverviewService : IAudioOverviewService
             .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId, ct);
 
         if (job?.AudioBytes == null || job.AudioBytes.Length == 0) return null;
-        return (job.AudioBytes, job.ContentType, $"orka-audio-overview-{job.Id}.mp3");
+        var contentType = NormalizeContentType(job.ContentType);
+        return (job.AudioBytes, contentType, BuildFileName(job.Id, contentType));
     }
 
     private async Task<string> BuildOverviewContextAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
@@ -223,6 +224,43 @@ public class AudioOverviewService : IAudioOverviewService
             speakers = [];
         }
 
-        return new AudioOverviewJobDto(job.Id, job.Status, job.Script, speakers, job.ErrorMessage, job.CreatedAt);
+        var normalizedStatus = NormalizeStatus(job.Status);
+        var contentType = job.AudioBytes is { Length: > 0 } ? NormalizeContentType(job.ContentType) : null;
+        return new AudioOverviewJobDto(
+            job.Id,
+            normalizedStatus,
+            job.Script,
+            speakers,
+            job.ErrorMessage,
+            job.CreatedAt,
+            contentType,
+            contentType == null ? null : BuildFileName(job.Id, contentType),
+            normalizedStatus == "ready" ? $"/api/audio/overview/{job.Id}/stream" : null,
+            normalizedStatus == "script-only" ? job.ErrorMessage ?? "tts_unavailable_script_only" : null,
+            job.UpdatedAt);
+    }
+
+    private static string NormalizeStatus(string? status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? "pending"
+            : status.Trim().ToLowerInvariant() switch
+            {
+                "processing" => "generating",
+                "generated" => "ready",
+                "script_only" => "script-only",
+                "script-only" => "script-only",
+                "ready" => "ready",
+                "failed" => "failed",
+                "generating" => "generating",
+                _ => status.Trim().ToLowerInvariant()
+            };
+
+    private static string NormalizeContentType(string? contentType) =>
+        string.IsNullOrWhiteSpace(contentType) ? "audio/mpeg" : contentType.Trim().ToLowerInvariant();
+
+    private static string BuildFileName(Guid id, string contentType)
+    {
+        var ext = contentType.Contains("wav", StringComparison.OrdinalIgnoreCase) ? "wav" : "mp3";
+        return $"orka-audio-overview-{id}.{ext}";
     }
 }

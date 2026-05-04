@@ -12,6 +12,8 @@ public class Topic
     public string Title { get; set; } = string.Empty;
     public string? Emoji { get; set; }
     public string? Category { get; set; }
+    public string? PlanIntent { get; set; }
+    public string? MetadataJson { get; set; }
     
     // YENİ: Durum ve Hafıza Alanları
     public TopicPhase CurrentPhase { get; set; } = TopicPhase.Discovery;

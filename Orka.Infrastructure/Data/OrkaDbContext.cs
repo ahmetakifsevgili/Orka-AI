@@ -30,6 +30,14 @@ public class OrkaDbContext : DbContext
     public DbSet<LearningSource> LearningSources { get; set; } = null!;
     public DbSet<SourceChunk> SourceChunks { get; set; } = null!;
     public DbSet<AudioOverviewJob> AudioOverviewJobs { get; set; } = null!;
+    public DbSet<ReviewItem> ReviewItems { get; set; } = null!;
+    public DbSet<Flashcard> Flashcards { get; set; } = null!;
+    public DbSet<DailyChallenge> DailyChallenges { get; set; } = null!;
+    public DbSet<DailyChallengeSubmission> DailyChallengeSubmissions { get; set; } = null!;
+    public DbSet<XpEvent> XpEvents { get; set; } = null!;
+    public DbSet<Badge> Badges { get; set; } = null!;
+    public DbSet<UserBadge> UserBadges { get; set; } = null!;
+    public DbSet<Notification> Notifications { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -279,6 +287,8 @@ public class OrkaDbContext : DbContext
             .HasIndex(t => t.ParentTopicId);
         modelBuilder.Entity<Topic>()
             .HasIndex(t => new { t.UserId, t.Order });
+        modelBuilder.Entity<Topic>()
+            .HasIndex(t => new { t.UserId, t.PlanIntent });
 
         // Session: kullanıcı + konu bazlı oturum arama
         modelBuilder.Entity<Session>()
@@ -287,6 +297,10 @@ public class OrkaDbContext : DbContext
         // Message: oturum mesaj listesi + sıralama
         modelBuilder.Entity<Message>()
             .HasIndex(m => new { m.SessionId, m.CreatedAt });
+
+        modelBuilder.Entity<Message>()
+            .Property(m => m.MetadataJson)
+            .HasColumnType("nvarchar(max)");
 
         // WikiPage: konu bazlı wiki içerik yükleme
         modelBuilder.Entity<WikiPage>()
@@ -317,6 +331,9 @@ public class OrkaDbContext : DbContext
             .HasIndex(s => new { s.UserId, s.TopicId });
 
         modelBuilder.Entity<LearningSource>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.IsDeleted });
+
+        modelBuilder.Entity<LearningSource>()
             .HasIndex(s => new { s.UserId, s.SessionId });
 
         modelBuilder.Entity<SourceChunk>()
@@ -335,6 +352,9 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<SourceChunk>()
             .HasIndex(c => new { c.LearningSourceId, c.PageNumber, c.ChunkIndex });
+
+        modelBuilder.Entity<SourceChunk>()
+            .HasIndex(c => new { c.LearningSourceId, c.IsDeleted, c.PageNumber, c.ChunkIndex });
 
         modelBuilder.Entity<AudioOverviewJob>()
             .HasOne(j => j.User)
@@ -396,5 +416,227 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<ClassroomSession>()
             .HasIndex(c => new { c.UserId, c.TopicId, c.UpdatedAt });
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.Topic)
+            .WithMany()
+            .HasForeignKey(r => r.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.QuizAttempt)
+            .WithMany()
+            .HasForeignKey(r => r.QuizAttemptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.LearningSignal)
+            .WithMany()
+            .HasForeignKey(r => r.LearningSignalId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.Flashcard)
+            .WithMany()
+            .HasForeignKey(r => r.FlashcardId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasOne(r => r.RemediationPlan)
+            .WithMany()
+            .HasForeignKey(r => r.RemediationPlanId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ReviewItem>()
+            .Property(r => r.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasIndex(r => new { r.UserId, r.Status, r.DueAt });
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasIndex(r => new { r.UserId, r.TopicId });
+
+        modelBuilder.Entity<ReviewItem>()
+            .HasIndex(r => new { r.UserId, r.ReviewKey })
+            .IsUnique()
+            .HasFilter("[Status] = 'active' AND [ReviewKey] <> 'topic:global:general'");
+
+        modelBuilder.Entity<Flashcard>()
+            .HasOne(f => f.User)
+            .WithMany()
+            .HasForeignKey(f => f.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Flashcard>()
+            .HasOne(f => f.Topic)
+            .WithMany()
+            .HasForeignKey(f => f.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Flashcard>()
+            .HasOne(f => f.LearningSource)
+            .WithMany()
+            .HasForeignKey(f => f.LearningSourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Flashcard>()
+            .HasOne(f => f.WikiPage)
+            .WithMany()
+            .HasForeignKey(f => f.WikiPageId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Flashcard>()
+            .HasOne(f => f.QuizAttempt)
+            .WithMany()
+            .HasForeignKey(f => f.QuizAttemptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Flashcard>()
+            .Property(f => f.Front)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Flashcard>()
+            .Property(f => f.Back)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Flashcard>()
+            .Property(f => f.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Flashcard>()
+            .HasIndex(f => new { f.UserId, f.TopicId, f.Status });
+
+        modelBuilder.Entity<DailyChallenge>()
+            .HasOne(d => d.User)
+            .WithMany()
+            .HasForeignKey(d => d.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallenge>()
+            .HasOne(d => d.Topic)
+            .WithMany()
+            .HasForeignKey(d => d.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallenge>()
+            .HasOne(d => d.ReviewItem)
+            .WithMany(r => r.DailyChallenges)
+            .HasForeignKey(d => d.ReviewItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallenge>()
+            .Property(d => d.QuestionsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<DailyChallenge>()
+            .Property(d => d.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<DailyChallenge>()
+            .HasIndex(d => new { d.UserId, d.TopicId, d.Date })
+            .IsUnique();
+
+        modelBuilder.Entity<DailyChallengeSubmission>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallengeSubmission>()
+            .HasOne(s => s.DailyChallenge)
+            .WithMany(d => d.Submissions)
+            .HasForeignKey(s => s.DailyChallengeId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallengeSubmission>()
+            .HasOne(s => s.XpEvent)
+            .WithMany()
+            .HasForeignKey(s => s.XpEventId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DailyChallengeSubmission>()
+            .HasIndex(s => new { s.UserId, s.DailyChallengeId })
+            .IsUnique();
+
+        modelBuilder.Entity<XpEvent>()
+            .HasOne(e => e.User)
+            .WithMany()
+            .HasForeignKey(e => e.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<XpEvent>()
+            .Property(e => e.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<XpEvent>()
+            .HasIndex(e => new { e.UserId, e.EventKey })
+            .IsUnique();
+
+        modelBuilder.Entity<Badge>()
+            .HasIndex(b => b.Code)
+            .IsUnique();
+
+        modelBuilder.Entity<Badge>()
+            .Property(b => b.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<UserBadge>()
+            .HasOne(ub => ub.User)
+            .WithMany()
+            .HasForeignKey(ub => ub.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<UserBadge>()
+            .HasOne(ub => ub.Badge)
+            .WithMany(b => b.UserBadges)
+            .HasForeignKey(ub => ub.BadgeId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<UserBadge>()
+            .HasOne(ub => ub.SourceEvent)
+            .WithMany()
+            .HasForeignKey(ub => ub.SourceEventId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<UserBadge>()
+            .HasIndex(ub => new { ub.UserId, ub.BadgeId })
+            .IsUnique();
+
+        modelBuilder.Entity<Notification>()
+            .HasOne(n => n.User)
+            .WithMany()
+            .HasForeignKey(n => n.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.Body)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Notification>()
+            .Property(n => n.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Notification>()
+            .HasIndex(n => new { n.UserId, n.Status, n.CreatedAt });
     }
 }

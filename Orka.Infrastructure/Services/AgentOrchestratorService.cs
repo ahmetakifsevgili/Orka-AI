@@ -36,6 +36,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly ITokenCostEstimator _tokenEstimator;
     private readonly IAIAgentFactory _agentFactory;
     private readonly IBackgroundTaskQueue _backgroundQueue;
+    private readonly IChatMetadataService _chatMetadata;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -53,6 +54,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITokenCostEstimator tokenEstimator,
         IAIAgentFactory agentFactory,
         IBackgroundTaskQueue backgroundQueue,
+        IChatMetadataService chatMetadata,
         ILogger<AgentOrchestratorService> logger)
     {
         _db = db;
@@ -69,6 +71,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _tokenEstimator = tokenEstimator;
         _agentFactory = agentFactory;
         _backgroundQueue = backgroundQueue;
+        _chatMetadata = chatMetadata;
         _logger = logger;
     }
 
@@ -779,7 +782,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             PlanCreated = planCreated,
             WikiPageId  = activeWikiPageId,
             IsNewTopic  = isNewTopic,
-            TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null
+            TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null,
+            Metadata    = _chatMetadata.Build(aiResponse)
         };
     }
 
@@ -802,6 +806,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             {
                 _logger.LogInformation("[DeepPlan] Müfredat için seviye tespiti başlatılıyor: {Topic}", topic.Title);
                 topic.Category = "Plan";
+                topic.PlanIntent ??= "Core";
                 await _db.SaveChangesAsync();
 
                 var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
@@ -1589,6 +1594,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             WikiPageId  = null,
             IsNewTopic  = topicId == null,
             TopicTitle  = topic.Title,
+            Metadata    = _chatMetadata.Build(quizResponse.Response)
         };
     }
 
@@ -1620,6 +1626,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         topic.Category = "Plan";
+        topic.PlanIntent ??= "Core";
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("[DeepPlan] Müfredat planı seviye tespiti başlatılıyor: {Topic}", topic.Title);

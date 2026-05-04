@@ -21,4 +21,5 @@ public class ChatMessageResponse
     // Analytics
     public int? TokensUsed { get; set; }
     public decimal? TotalCostUSD { get; set; }
+    public ChatResponseMetadata? Metadata { get; set; }
 }

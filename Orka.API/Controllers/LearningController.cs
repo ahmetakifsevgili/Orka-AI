@@ -16,11 +16,13 @@ public class LearningController : ControllerBase
 {
     private readonly ILearningSignalService _signals;
     private readonly OrkaDbContext _db;
+    private readonly IReviewSrsService _reviews;
 
-    public LearningController(ILearningSignalService signals, OrkaDbContext db)
+    public LearningController(ILearningSignalService signals, OrkaDbContext db, IReviewSrsService reviews)
     {
         _signals = signals;
         _db = db;
+        _reviews = reviews;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -37,13 +39,24 @@ public class LearningController : ControllerBase
     public async Task<IActionResult> GetDueReview(Guid topicId)
     {
         var recommendations = await _signals.GetRecommendationsAsync(GetUserId(), topicId, HttpContext.RequestAborted);
-        return Ok(recommendations);
+        var durable = await _reviews.GetDueAsync(GetUserId(), topicId, HttpContext.RequestAborted);
+        return Ok(new ReviewDueResponse(durable, recommendations));
     }
 
     [HttpPost("review/{recommendationId:guid}/complete")]
     public async Task<IActionResult> CompleteReview(Guid recommendationId, [FromBody] CompleteReviewRequest request)
     {
         var userId = GetUserId();
+        var durable = await _reviews.CompleteAsync(
+            userId,
+            recommendationId,
+            request.Quality,
+            responseMode: "legacy-learning-endpoint",
+            notes: null,
+            HttpContext.RequestAborted);
+        if (durable != null)
+            return Ok(new { completed = true, recommendationId = durable.Id, durable.SkillTag, request.Quality, durable });
+
         var recommendation = await _db.StudyRecommendations
             .FirstOrDefaultAsync(r => r.Id == recommendationId && r.UserId == userId, HttpContext.RequestAborted);
 

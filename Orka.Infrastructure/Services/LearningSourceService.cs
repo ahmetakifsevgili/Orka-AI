@@ -154,6 +154,7 @@ public class LearningSourceService : ILearningSourceService
     {
         return await _db.LearningSources
             .Where(s => s.UserId == userId && s.TopicId == topicId)
+            .Where(s => !s.IsDeleted)
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new LearningSourceSummaryDto(
                 s.Id,
@@ -165,8 +166,61 @@ public class LearningSourceService : ILearningSourceService
                 s.PageCount,
                 s.ChunkCount,
                 s.Status,
-                s.CreatedAt))
+                s.CreatedAt,
+                s.IsDeleted,
+                s.Version))
             .ToListAsync(ct);
+    }
+
+    public async Task<LearningSourceSummaryDto?> UpdateSourceAsync(
+        Guid userId,
+        Guid sourceId,
+        string? title,
+        CancellationToken ct = default)
+    {
+        var source = await _db.LearningSources
+            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
+        if (source == null) return null;
+
+        if (!string.IsNullOrWhiteSpace(title))
+            source.Title = title.Trim();
+        source.Version += 1;
+        source.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        if (source.TopicId.HasValue)
+        {
+            _summarizer.InvalidateNotebookTools(source.TopicId.Value);
+            await _redis.BumpTopicVersionAsync(source.TopicId.Value, "source-updated");
+        }
+        return ToSummary(source);
+    }
+
+    public async Task<bool> DeleteSourceAsync(
+        Guid userId,
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        var source = await _db.LearningSources
+            .Include(s => s.Chunks)
+            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
+        if (source == null) return false;
+
+        source.IsDeleted = true;
+        source.Status = "deleted";
+        source.DeletedAt = DateTime.UtcNow;
+        source.DeletedByUserId = userId;
+        source.Version += 1;
+        source.UpdatedAt = DateTime.UtcNow;
+        foreach (var chunk in source.Chunks)
+            chunk.IsDeleted = true;
+
+        await _db.SaveChangesAsync(ct);
+        if (source.TopicId.HasValue)
+        {
+            _summarizer.InvalidateNotebookTools(source.TopicId.Value);
+            await _redis.BumpTopicVersionAsync(source.TopicId.Value, "source-deleted");
+        }
+        return true;
     }
 
     public async Task<SourcePageDto?> GetPageAsync(
@@ -177,12 +231,12 @@ public class LearningSourceService : ILearningSourceService
     {
         var source = await _db.LearningSources
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId, ct);
+            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
         if (source == null) return null;
 
         var chunks = await _db.SourceChunks
             .AsNoTracking()
-            .Where(c => c.LearningSourceId == sourceId && c.PageNumber == pageNumber)
+            .Where(c => c.LearningSourceId == sourceId && c.PageNumber == pageNumber && !c.IsDeleted)
             .OrderBy(c => c.ChunkIndex)
             .Select(c => new SourceChunkDto(c.Id, c.PageNumber, c.ChunkIndex, c.Text, c.HighlightHint))
             .ToListAsync(ct);
@@ -211,7 +265,7 @@ public class LearningSourceService : ILearningSourceService
     {
         var source = await _db.LearningSources
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId, ct);
+            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
         if (source == null) throw new InvalidOperationException("Kaynak bulunamadı.");
 
         var chunks = await FindRelevantChunksAsync(userId, source.TopicId, sourceId, question, 8, ct);
@@ -275,7 +329,11 @@ public class LearningSourceService : ILearningSourceService
 
         await RecordSourceAskedAsync(userId, source, question, citations.Count, ct);
 
-        return new SourceAskResultDto(answer, citations);
+        return new SourceAskResultDto(answer, citations, new SourceMetadataDto(
+            citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto($"[doc:{sourceId}:p{c.PageNumber}]", "document", sourceId, c.PageNumber, source.Title, null, 1.0)).ToList(),
+            citations.Count > 0 ? "source_grounded" : "model_fallback",
+            citations.Count > 0 ? null : "source_retrieval_empty",
+            citations.Count > 0 ? 1.0 : null));
     }
 
     public async Task<string> BuildTopicGroundingContextAsync(
@@ -309,7 +367,7 @@ public class LearningSourceService : ILearningSourceService
         var query = _db.SourceChunks
             .AsNoTracking()
             .Include(c => c.LearningSource)
-            .Where(c => c.LearningSource.UserId == userId);
+            .Where(c => c.LearningSource.UserId == userId && !c.LearningSource.IsDeleted && !c.IsDeleted);
 
         if (sourceId.HasValue)
             query = query.Where(c => c.LearningSourceId == sourceId.Value);
@@ -406,7 +464,7 @@ public class LearningSourceService : ILearningSourceService
     }
 
     private static LearningSourceSummaryDto ToSummary(LearningSource s) =>
-        new(s.Id, s.TopicId, s.SessionId, s.SourceType, s.Title, s.FileName, s.PageCount, s.ChunkCount, s.Status, s.CreatedAt);
+        new(s.Id, s.TopicId, s.SessionId, s.SourceType, s.Title, s.FileName, s.PageCount, s.ChunkCount, s.Status, s.CreatedAt, s.IsDeleted, s.Version);
 
     private async Task RecordSourceAskedAsync(
         Guid userId,

@@ -40,6 +40,7 @@ public class TopicsController : ControllerBase
             title             = t.Title,
             emoji             = t.Emoji ?? "📚",
             category          = t.Category ?? "Genel",
+            planIntent        = ResolvePlanIntent(t.PlanIntent, t.Category),
             parentTopicId     = t.ParentTopicId,
             order             = t.Order,
             currentPhase      = t.CurrentPhase.ToString(),
@@ -66,7 +67,8 @@ public class TopicsController : ControllerBase
                 topic.Id, 
                 topic.Title, 
                 topic.Emoji, 
-                topic.Category, 
+                topic.Category,
+                PlanIntent = ResolvePlanIntent(topic.PlanIntent, topic.Category),
                 topic.ParentTopicId, 
                 topic.Order, 
                 topic.CurrentPhase, 
@@ -90,6 +92,9 @@ public class TopicsController : ControllerBase
         // Emoji and Category if provided (discovery creates with defaults)
         if (!string.IsNullOrEmpty(request.Emoji)) result.Topic.Emoji = request.Emoji;
         if (!string.IsNullOrEmpty(request.Category)) result.Topic.Category = request.Category;
+        if (!string.IsNullOrWhiteSpace(request.PlanIntent)) result.Topic.PlanIntent = request.PlanIntent.Trim();
+        else result.Topic.PlanIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category);
+        await _db.SaveChangesAsync();
         
         return Ok(new
         {
@@ -97,6 +102,7 @@ public class TopicsController : ControllerBase
             title = result.Topic.Title,
             emoji = result.Topic.Emoji,
             category = result.Topic.Category,
+            planIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category),
             createdAt = result.Topic.CreatedAt
         });
     }
@@ -154,6 +160,7 @@ public class TopicsController : ControllerBase
                 id                 = t.Id,
                 title              = t.Title,
                 order              = t.Order,
+                planIntent         = ResolvePlanIntent(t.PlanIntent, t.Category),
                 progressPercentage = t.ProgressPercentage,
                 successScore       = t.SuccessScore,
                 isMastered         = t.IsMastered,
@@ -203,6 +210,14 @@ public class TopicsController : ControllerBase
             quizAccuracy
         });
     }
+
+    private static string? ResolvePlanIntent(string? planIntent, string? category)
+    {
+        if (!string.IsNullOrWhiteSpace(planIntent)) return planIntent.Trim();
+        return !string.IsNullOrWhiteSpace(category) && category.StartsWith("Plan:", StringComparison.OrdinalIgnoreCase)
+            ? category.Split(':', 2)[1]
+            : null;
+    }
 }
 
 public class CreateTopicBody
@@ -210,6 +225,7 @@ public class CreateTopicBody
     public string Title { get; set; } = string.Empty;
     public string? Emoji { get; set; }
     public string? Category { get; set; }
+    public string? PlanIntent { get; set; }
 }
 
 public class UpdateTopicBody

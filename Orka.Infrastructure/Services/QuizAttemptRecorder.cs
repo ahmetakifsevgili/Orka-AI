@@ -12,15 +12,21 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
     private readonly OrkaDbContext _db;
     private readonly ILearningSignalService _learningSignals;
     private readonly ISkillMasteryService _skillMastery;
+    private readonly IReviewSrsService _reviews;
+    private readonly IXpEventService _xpEvents;
 
     public QuizAttemptRecorder(
         OrkaDbContext db,
         ILearningSignalService learningSignals,
-        ISkillMasteryService skillMastery)
+        ISkillMasteryService skillMastery,
+        IReviewSrsService reviews,
+        IXpEventService xpEvents)
     {
         _db = db;
         _learningSignals = learningSignals;
         _skillMastery = skillMastery;
+        _reviews = reviews;
+        _xpEvents = xpEvents;
     }
 
     public async Task<QuizAttemptRecordResult> RecordAsync(
@@ -82,6 +88,27 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
         await _learningSignals.RecordQuizAnsweredAsync(attempt, ct);
 
+        ReviewItem? reviewItem = null;
+        if (!request.IsCorrect && request.TopicId.HasValue)
+        {
+            reviewItem = await _reviews.EnsureReviewItemAsync(
+                userId,
+                request.TopicId,
+                request.ConceptTag,
+                request.SkillTag,
+                request.LearningObjective,
+                request.MistakeCategory,
+                request.TopicPath,
+                "quiz",
+                attempt.Id,
+                attempt.Id,
+                learningSignalId: null,
+                flashcardId: null,
+                remediationPlanId: null,
+                ct);
+            await _db.SaveChangesAsync(ct);
+        }
+
         SkillMastery? mastery = null;
         if (request.TopicId.HasValue)
         {
@@ -98,8 +125,10 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                 .FirstOrDefaultAsync(ct);
         }
 
-        var xp = await AwardQuizXpAsync(userId, request.IsCorrect, alreadyAwarded, ct);
-        var review = await BuildReviewDtoAsync(userId, request.TopicId, reviewIdentity, mastery?.Id, ct);
+        var xp = await AwardQuizXpAsync(userId, request.IsCorrect, alreadyAwarded, attempt.Id, request.QuestionHash, ct);
+        var review = reviewItem != null
+            ? ToLegacyReviewDto(reviewItem, mastery?.Id)
+            : await BuildReviewDtoAsync(userId, request.TopicId, reviewIdentity, mastery?.Id, ct);
         return new QuizAttemptRecordResult(attempt, xp, review, null);
     }
 
@@ -134,29 +163,30 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         Guid userId,
         bool isCorrect,
         bool alreadyAwarded,
+        Guid attemptId,
+        string? questionHash,
         CancellationToken ct)
     {
         if (!isCorrect || alreadyAwarded) return new XpAwardResult(false, 0, await GetTotalXpAsync(userId, ct), 0, []);
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user == null) return null;
-
-        var today = DateTime.UtcNow.Date;
-        if (user.LastActiveDate?.Date == today.AddDays(-1))
-        {
-            user.CurrentStreak += 1;
-        }
-        else if (user.LastActiveDate?.Date != today)
-        {
-            user.CurrentStreak = 1;
-        }
-
-        user.LastActiveDate = DateTime.UtcNow;
-        user.TotalXP += 20;
+        var key = string.IsNullOrWhiteSpace(questionHash)
+            ? $"quiz:{attemptId:N}"
+            : $"quiz:{questionHash.Trim()}";
+        var result = await _xpEvents.AwardAsync(userId, key, "quiz_correct", 20, "QuizAttempt", attemptId, ct);
         await _db.SaveChangesAsync(ct);
-
-        return new XpAwardResult(true, 20, user.TotalXP, user.CurrentStreak, []);
+        return result;
     }
+
+    private static ReviewItemDto ToLegacyReviewDto(ReviewItem item, Guid? masteryId) =>
+        new(
+            item.Id,
+            masteryId,
+            item.ConceptTag ?? item.SkillTag ?? item.LearningObjective ?? item.ReviewKey,
+            item.DueAt,
+            item.IntervalDays,
+            item.EaseFactor,
+            item.RepetitionCount,
+            item.LapseCount);
 
     private async Task<int> GetTotalXpAsync(Guid userId, CancellationToken ct) =>
         await _db.Users

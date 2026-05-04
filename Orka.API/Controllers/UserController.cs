@@ -138,6 +138,23 @@ public class UserController : ControllerBase
         var level     = (user.TotalXP / 100) + 1;
         var xpInLevel = user.TotalXP % 100;
         var xpToNext  = 100 - xpInLevel;
+        var badges = await _dbContext.UserBadges
+            .AsNoTracking()
+            .Include(ub => ub.Badge)
+            .Where(ub => ub.UserId == userId)
+            .OrderByDescending(ub => ub.EarnedAt)
+            .Select(ub => new
+            {
+                ub.Badge.Id,
+                ub.Badge.Code,
+                ub.Badge.Name,
+                ub.Badge.Description,
+                ub.Badge.IconKey,
+                ub.Badge.RuleType,
+                ub.Badge.Threshold,
+                ub.EarnedAt
+            })
+            .ToListAsync();
 
         return Ok(new
         {
@@ -155,7 +172,8 @@ public class UserController : ControllerBase
                 4 => "Scholar",
                 5 => "Expert",
                 _ => $"Master Lv.{level}"
-            }
+            },
+            badges
         });
     }
 

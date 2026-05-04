@@ -12,5 +12,6 @@ public class SourceChunk
     public string Text { get; set; } = string.Empty;
     public string? EmbeddingJson { get; set; }
     public string? HighlightHint { get; set; }
+    public bool IsDeleted { get; set; }
     public DateTime CreatedAt { get; set; }
 }

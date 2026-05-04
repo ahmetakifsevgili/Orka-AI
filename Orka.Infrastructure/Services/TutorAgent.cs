@@ -524,7 +524,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
             var root = path[0];
             var activeLessonTitle = topic.Title;
-            var planIntentHint = TutorIntelligenceContextFormatter.BuildPlanIntentHint(topic.Category);
+            var planIntentHint = TutorIntelligenceContextFormatter.BuildPlanIntentHint(topic.PlanIntent, topic.Category);
 
             var modules = await db.Topics
                 .AsNoTracking()

@@ -85,6 +85,19 @@ public class SourcesController : ControllerBase
         var result = await _sources.GetPageAsync(GetUserId(), sourceId, page, HttpContext.RequestAborted);
         return result == null ? NotFound(new { message = "Sayfa veya kaynak bulunamadı." }) : Ok(result);
     }
+    [HttpPatch("{sourceId:guid}")]
+    public async Task<IActionResult> Update(Guid sourceId, [FromBody] SourceUpdateRequest request)
+    {
+        var result = await _sources.UpdateSourceAsync(GetUserId(), sourceId, request.Title, HttpContext.RequestAborted);
+        return result == null ? NotFound(new { message = "Kaynak bulunamadi." }) : Ok(result);
+    }
+
+    [HttpDelete("{sourceId:guid}")]
+    public async Task<IActionResult> Delete(Guid sourceId)
+    {
+        var deleted = await _sources.DeleteSourceAsync(GetUserId(), sourceId, HttpContext.RequestAborted);
+        return deleted ? Ok(new { deleted = true, sourceId }) : NotFound(new { message = "Kaynak bulunamadi." });
+    }
 }
 
 public class SourceUploadRequest
@@ -97,4 +110,9 @@ public class SourceUploadRequest
 public class SourceAskRequest
 {
     public string Question { get; set; } = string.Empty;
+}
+
+public class SourceUpdateRequest
+{
+    public string? Title { get; set; }
 }

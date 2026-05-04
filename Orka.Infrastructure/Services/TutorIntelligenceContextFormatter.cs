@@ -7,27 +7,34 @@ namespace Orka.Infrastructure.Services;
 
 public static class TutorIntelligenceContextFormatter
 {
-    public static string BuildPlanIntentHint(string? category)
+    public static string BuildPlanIntentHint(string? planIntent, string? category = null)
     {
-        if (string.IsNullOrWhiteSpace(category) ||
-            !category.StartsWith("Plan:", StringComparison.OrdinalIgnoreCase))
+        var intentName = !string.IsNullOrWhiteSpace(planIntent)
+            ? planIntent.StartsWith("Plan:", StringComparison.OrdinalIgnoreCase)
+                ? planIntent.Split(':', 2)[1].Trim()
+                : planIntent.Trim()
+            : !string.IsNullOrWhiteSpace(category) && category.StartsWith("Plan:", StringComparison.OrdinalIgnoreCase)
+                ? category.Split(':', 2)[1].Trim()
+                : null;
+
+        if (string.IsNullOrWhiteSpace(intentName))
         {
             return string.Empty;
         }
 
-        var intent = category.Trim();
-        var mode = intent.Equals("Plan:DeepDive", StringComparison.OrdinalIgnoreCase) ? "deeper conceptual explanation"
-            : intent.Equals("Plan:PracticeLab", StringComparison.OrdinalIgnoreCase) ? "step-by-step practice and runnable tasks"
-            : intent.Equals("Plan:QuickReview", StringComparison.OrdinalIgnoreCase) ? "retrieval practice and concise review"
-            : intent.Equals("Plan:Remediation", StringComparison.OrdinalIgnoreCase) ? "misconception repair before new material"
-            : intent.Equals("Plan:Assessment", StringComparison.OrdinalIgnoreCase) ? "check understanding before advancing"
-            : intent.Equals("Plan:Core", StringComparison.OrdinalIgnoreCase) ? "core explanation with one quick check"
+        var mode = intentName.Equals("DeepDive", StringComparison.OrdinalIgnoreCase) ? "deeper conceptual explanation"
+            : intentName.Equals("PracticeLab", StringComparison.OrdinalIgnoreCase) ? "step-by-step practice and runnable tasks"
+            : intentName.Equals("QuickReview", StringComparison.OrdinalIgnoreCase) ? "retrieval practice and concise review"
+            : intentName.Equals("Remediation", StringComparison.OrdinalIgnoreCase) ? "misconception repair before new material"
+            : intentName.Equals("Assessment", StringComparison.OrdinalIgnoreCase) ? "check understanding before advancing"
+            : intentName.Equals("Core", StringComparison.OrdinalIgnoreCase) ? "core explanation with one quick check"
             : "normal structured tutoring";
 
         return $"""
 
                 [PLAN_INTENT_TEACHING_MODE]
-                - Active topic category: {intent}
+                - Active topic planIntent: {intentName}
+                - Backward category: {category ?? "(none)"}
                 - Teaching mode: {mode}
                 - Use this as style guidance only; do not change facts or invent missing learner signals.
                 """;

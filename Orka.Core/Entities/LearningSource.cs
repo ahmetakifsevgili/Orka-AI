@@ -20,6 +20,10 @@ public class LearningSource
     public int ChunkCount { get; set; }
     public string Status { get; set; } = "ready";
     public string? ErrorMessage { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
+    public int Version { get; set; } = 1;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
