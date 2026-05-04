@@ -31,6 +31,46 @@ def test_review_due_empty_state(session, auth_header):
     assert isinstance(resp.json(), list)
 
 
+def test_wrong_quiz_creates_review_and_review_complete(session, auth_header):
+    topic = _create_topic(session, auth_header)
+    payload = {
+        "topicId": topic["id"],
+        "questionId": f"q-{uuid.uuid4()}",
+        "question": "Which concept is being checked?",
+        "selectedOptionId": "wrong",
+        "isCorrect": False,
+        "explanation": "The answer missed the target concept.",
+        "skillTag": "ContractSkill",
+        "conceptTag": "ContractConcept",
+        "learningObjective": "Complete durable review",
+        "questionType": "concept",
+        "mistakeCategory": "Conceptual",
+        "topicPath": "Contracts > Review",
+        "difficulty": "easy",
+        "questionHash": f"hash-{uuid.uuid4()}",
+    }
+
+    attempt = session.post(f"{BASE_URL}/api/quiz/attempt", json=payload, headers=auth_header, timeout=TIMEOUT)
+    assert attempt.status_code == 200, attempt.text
+    assert attempt.json()["review"]
+
+    due = session.get(f"{BASE_URL}/api/review/due?topicId={topic['id']}", headers=auth_header, timeout=TIMEOUT)
+    assert due.status_code == 200, due.text
+    items = due.json()
+    assert items
+
+    complete = session.post(
+        f"{BASE_URL}/api/review/{items[0]['id']}/complete",
+        json={"quality": 4, "notes": "contract test"},
+        headers=auth_header,
+        timeout=TIMEOUT,
+    )
+    assert complete.status_code == 200, complete.text
+    body = complete.json()
+    assert body["id"] == items[0]["id"]
+    assert body["lastReviewedAt"]
+
+
 def test_flashcard_create_links_review_and_review_submit(session, auth_header):
     topic = _create_topic(session, auth_header)
     payload = {
@@ -96,6 +136,15 @@ def test_notifications_empty_list_shape(session, auth_header):
 
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+    read_all = session.post(f"{BASE_URL}/api/notifications/read-all", headers=auth_header, timeout=TIMEOUT)
+    assert read_all.status_code == 200, read_all.text
+
+
+def test_audio_unknown_job_returns_404(session, auth_header):
+    resp = session.get(f"{BASE_URL}/api/audio/overview/{uuid.uuid4()}", headers=auth_header, timeout=TIMEOUT)
+
+    assert resp.status_code == 404
 
 
 def test_source_delete_hides_source_chunks(session, auth_header):
