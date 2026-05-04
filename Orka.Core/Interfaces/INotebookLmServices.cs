@@ -45,6 +45,11 @@ public interface IAudioOverviewService
         Guid? sessionId,
         CancellationToken ct = default);
 
+    Task<AudioOverviewJobDto?> GetOverviewAsync(
+        Guid userId,
+        Guid jobId,
+        CancellationToken ct = default);
+
     Task<(byte[] Bytes, string ContentType, string FileName)?> GetAudioAsync(
         Guid userId,
         Guid jobId,

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,11 +21,8 @@ public class ClassroomService : IClassroomService
     private readonly ILearningSignalService _signals;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IBackgroundTaskQueue _backgroundQueue;
+    private readonly IWikiService _wikiService;
     private readonly ILogger<ClassroomService> _logger;
-
-    private static readonly Regex SpeakerRegex =
-        new(@"\[(HOCA|ASISTAN|KONUK|OGRETMEN|TEACHER|GUEST|ASSISTANT)\]\s*:",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public ClassroomService(
         OrkaDbContext db,
@@ -34,6 +30,7 @@ public class ClassroomService : IClassroomService
         ILearningSignalService signals,
         IServiceScopeFactory scopeFactory,
         IBackgroundTaskQueue backgroundQueue,
+        IWikiService wikiService,
         ILogger<ClassroomService> logger)
     {
         _db = db;
@@ -41,6 +38,7 @@ public class ClassroomService : IClassroomService
         _signals = signals;
         _scopeFactory = scopeFactory;
         _backgroundQueue = backgroundQueue;
+        _wikiService = wikiService;
         _logger = logger;
     }
 
@@ -52,6 +50,44 @@ public class ClassroomService : IClassroomService
         string transcript,
         CancellationToken ct = default)
     {
+        if (!topicId.HasValue && !sessionId.HasValue && !audioOverviewJobId.HasValue && string.IsNullOrWhiteSpace(transcript))
+            throw new ArgumentException("Classroom baslatmak icin topicId, sessionId, audioOverviewJobId veya transcript gerekli.");
+
+        if (topicId.HasValue)
+        {
+            var topicExists = await _db.Topics
+                .AsNoTracking()
+                .AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
+            if (!topicExists)
+                throw new NotFoundException("Classroom topic bulunamadi.");
+        }
+
+        if (sessionId.HasValue)
+        {
+            var sessionExists = await _db.Sessions
+                .AsNoTracking()
+                .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
+            if (!sessionExists)
+                throw new NotFoundException("Classroom session bulunamadi.");
+        }
+
+        if (audioOverviewJobId.HasValue)
+        {
+            var jobExists = await _db.AudioOverviewJobs
+                .AsNoTracking()
+                .AnyAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
+            if (!jobExists)
+                throw new NotFoundException("Classroom audio overview job bulunamadi.");
+        }
+
+        var preparedTranscript = await BuildClassroomContextAsync(
+            userId,
+            topicId,
+            sessionId,
+            audioOverviewJobId,
+            transcript,
+            ct);
+
         var classroom = new ClassroomSession
         {
             Id = Guid.NewGuid(),
@@ -59,8 +95,8 @@ public class ClassroomService : IClassroomService
             TopicId = topicId,
             SessionId = sessionId,
             AudioOverviewJobId = audioOverviewJobId,
-            Transcript = transcript ?? string.Empty,
-            LastSegment = ExtractLastSegment(transcript),
+            Transcript = preparedTranscript,
+            LastSegment = ExtractLastSegment(preparedTranscript),
             Status = "active",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -87,9 +123,12 @@ public class ClassroomService : IClassroomService
         string? activeSegment,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(question))
+            throw new ArgumentException("Classroom sorusu bos olamaz.");
+
         var classroom = await _db.ClassroomSessions
             .FirstOrDefaultAsync(c => c.Id == classroomSessionId && c.UserId == userId, ct);
-        if (classroom == null) throw new InvalidOperationException("Classroom session bulunamadi.");
+        if (classroom == null) throw new NotFoundException("Classroom session bulunamadi.");
 
         var segment = string.IsNullOrWhiteSpace(activeSegment) ? classroom.LastSegment : activeSegment.Trim();
         var systemPrompt = """
@@ -187,22 +226,29 @@ public class ClassroomService : IClassroomService
             null,
             async ct =>
             {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-                var tts = scope.ServiceProvider.GetRequiredService<IEdgeTtsService>();
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+                    var tts = scope.ServiceProvider.GetRequiredService<IEdgeTtsService>();
 
-                var audioBytes = await tts.SynthesizeDialogueAsync(answer, ct);
-                if (audioBytes.Length == 0) return;
+                    var audioBytes = await tts.SynthesizeDialogueAsync(answer, ct);
+                    if (audioBytes.Length == 0) return;
 
-                var interaction = await db.ClassroomInteractions
-                    .FirstOrDefaultAsync(i => i.Id == interactionId, ct);
-                if (interaction == null) return;
+                    var interaction = await db.ClassroomInteractions
+                        .FirstOrDefaultAsync(i => i.Id == interactionId, ct);
+                    if (interaction == null) return;
 
-                interaction.AudioBytes = audioBytes;
-                interaction.ContentType = "audio/mpeg";
-                await db.SaveChangesAsync(ct);
-                _logger.LogInformation("[Classroom] Edge-TTS audio attached. Interaction={InteractionId} Bytes={Bytes}",
-                    interactionId, audioBytes.Length);
+                    interaction.AudioBytes = audioBytes;
+                    interaction.ContentType = "audio/mpeg";
+                    await db.SaveChangesAsync(ct);
+                    _logger.LogInformation("[Classroom] Edge-TTS audio attached. Interaction={InteractionId} Bytes={Bytes}",
+                        interactionId, audioBytes.Length);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Classroom] Interaction TTS failed; keeping script-only interaction. Interaction={InteractionId}", interactionId);
+                }
             },
             MaxAttempts: 1,
             Timeout: TtsTimeout));
@@ -225,21 +271,73 @@ public class ClassroomService : IClassroomService
     private static ClassroomSessionDto ToDto(ClassroomSession session) =>
         new(session.Id, session.TopicId, session.SessionId, session.Transcript, session.LastSegment, session.Status, session.CreatedAt);
 
+    private async Task<string> BuildClassroomContextAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        Guid? audioOverviewJobId,
+        string? transcript,
+        CancellationToken ct)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(transcript))
+            parts.Add($"[TRANSCRIPT]\n{Trim(transcript.Trim(), 4000)}");
+
+        if (topicId.HasValue)
+        {
+            var topic = await _db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
+            if (topic != null)
+                parts.Add($"[TOPIC]\n{topic.Title}");
+
+            var wiki = await _wikiService.GetWikiFullContentAsync(topicId.Value, userId);
+            if (!string.IsNullOrWhiteSpace(wiki))
+                parts.Add($"[WIKI]\n{Trim(wiki, 2500)}");
+
+            var sourceBits = await _db.SourceChunks
+                .AsNoTracking()
+                .Include(c => c.LearningSource)
+                .Where(c => c.LearningSource.UserId == userId && c.LearningSource.TopicId == topicId)
+                .OrderBy(c => c.ChunkIndex)
+                .Take(4)
+                .Select(c => $"[doc:{c.LearningSourceId}:p{c.PageNumber}] {c.Text}")
+                .ToListAsync(ct);
+            if (sourceBits.Count > 0)
+                parts.Add("[SOURCES]\n" + Trim(string.Join("\n\n", sourceBits), 2500));
+        }
+
+        if (sessionId.HasValue)
+        {
+            var messages = await _db.Messages
+                .AsNoTracking()
+                .Where(m => m.SessionId == sessionId.Value && m.UserId == userId)
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(8)
+                .OrderBy(m => m.CreatedAt)
+                .Select(m => $"{m.Role}: {m.Content}")
+                .ToListAsync(ct);
+            if (messages.Count > 0)
+                parts.Add("[SESSION]\n" + Trim(string.Join("\n", messages), 2500));
+        }
+
+        if (audioOverviewJobId.HasValue)
+        {
+            var audioJob = await _db.AudioOverviewJobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
+            if (!string.IsNullOrWhiteSpace(audioJob?.Script))
+                parts.Add("[AUDIO_OVERVIEW]\n" + Trim(audioJob.Script, 2500));
+        }
+
+        return parts.Count == 0
+            ? "Henuz classroom icin yeterli baglam yok."
+            : Trim(string.Join("\n\n", parts), 9000);
+    }
+
     private static string NormalizeDialogue(string raw)
     {
-        var clean = (raw ?? string.Empty).Replace("```", "").Trim();
-        if (string.IsNullOrWhiteSpace(clean))
-        {
-            clean = "Bu bolumu daha sade bir ornekle tekrar anlatalim.";
-        }
-
-        if (!SpeakerRegex.IsMatch(clean))
-        {
-            clean = $"[HOCA]: {clean}";
-        }
-
-        var normalized = SpeakerRegex.Replace(clean, match => $"[{NormalizeSpeaker(match.Groups[1].Value)}]:");
-        var speakers = ParseSpeakers(normalized);
+        var normalized = AudioDialogueFormatter.NormalizeScript(raw);
+        var speakers = AudioDialogueFormatter.ParseSpeakers(normalized);
 
         if (!speakers.Contains("HOCA"))
         {
@@ -256,23 +354,7 @@ public class ClassroomService : IClassroomService
     }
 
     private static IReadOnlyList<string> ParseSpeakers(string script) =>
-        SpeakerRegex.Matches(script)
-            .Select(m => NormalizeSpeaker(m.Groups[1].Value))
-            .Distinct()
-            .DefaultIfEmpty("HOCA")
-            .ToList();
-
-    private static string NormalizeSpeaker(string raw)
-    {
-        var label = (raw ?? string.Empty).Trim().ToUpperInvariant();
-        return label switch
-        {
-            "ASSISTANT" => "ASISTAN",
-            "OGRETMEN" or "TEACHER" => "HOCA",
-            "GUEST" => "KONUK",
-            _ => label is "HOCA" or "ASISTAN" or "KONUK" ? label : "HOCA"
-        };
-    }
+        AudioDialogueFormatter.ParseSpeakers(script);
 
     private static string ExtractLastSegment(string? transcript)
     {

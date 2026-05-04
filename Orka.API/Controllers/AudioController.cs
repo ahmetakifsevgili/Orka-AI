@@ -22,11 +22,25 @@ public class AudioController : ControllerBase
     [HttpPost("overview")]
     public async Task<IActionResult> CreateOverview([FromBody] AudioOverviewRequest request)
     {
+        if (!request.TopicId.HasValue && !request.SessionId.HasValue)
+        {
+            return BadRequest(new { message = "Audio Overview icin topicId veya sessionId zorunlu." });
+        }
+
         var job = await _audio.CreateOverviewAsync(
             GetUserId(),
             request.TopicId,
             request.SessionId,
             HttpContext.RequestAborted);
+
+        return Ok(job);
+    }
+
+    [HttpGet("overview/{jobId:guid}")]
+    public async Task<IActionResult> GetOverview(Guid jobId)
+    {
+        var job = await _audio.GetOverviewAsync(GetUserId(), jobId, HttpContext.RequestAborted);
+        if (job == null) return NotFound(new { message = "Audio overview job bulunamadi." });
 
         return Ok(job);
     }

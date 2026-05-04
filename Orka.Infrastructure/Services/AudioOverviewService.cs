@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -13,15 +12,14 @@ namespace Orka.Infrastructure.Services;
 
 public class AudioOverviewService : IAudioOverviewService
 {
+    private static readonly TimeSpan ScriptGenerationTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TtsGenerationTimeout = TimeSpan.FromSeconds(20);
+
     private readonly OrkaDbContext _db;
     private readonly IAIAgentFactory _factory;
     private readonly IWikiService _wikiService;
     private readonly IEdgeTtsService _ttsService;
     private readonly ILogger<AudioOverviewService> _logger;
-
-    private static readonly Regex SpeakerRegex =
-        new(@"\[(HOCA|ASISTAN|KONUK)\]\s*:\s*(.+?)(?=\n\s*\[(?:HOCA|ASISTAN|KONUK)\]\s*:|\z)",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     public AudioOverviewService(
         OrkaDbContext db,
@@ -44,7 +42,25 @@ public class AudioOverviewService : IAudioOverviewService
         CancellationToken ct = default)
     {
         if (!topicId.HasValue && !sessionId.HasValue)
-            throw new InvalidOperationException("Audio Overview için topicId veya sessionId zorunlu.");
+            throw new ArgumentException("Audio Overview icin topicId veya sessionId zorunlu.");
+
+        if (topicId.HasValue)
+        {
+            var topicExists = await _db.Topics
+                .AsNoTracking()
+                .AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
+            if (!topicExists)
+                throw new NotFoundException("Audio overview topic bulunamadi.");
+        }
+
+        if (sessionId.HasValue)
+        {
+            var sessionExists = await _db.Sessions
+                .AsNoTracking()
+                .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
+            if (!sessionExists)
+                throw new NotFoundException("Audio overview session bulunamadi.");
+        }
 
         var job = new AudioOverviewJob
         {
@@ -64,41 +80,45 @@ public class AudioOverviewService : IAudioOverviewService
         {
             var context = await BuildOverviewContextAsync(userId, topicId, sessionId, ct);
             var systemPrompt = """
-                Sen Orka AI'nin Sesli Sınıf podcast yapımcısısın.
-                Verilen ders/kaynak içeriğini 2-3 dakikalık, üç konuşmacıya kadar destekleyen kısa bir podcast metnine çevir.
-                Format kesinlikle satır satır şöyle olmalı:
+                Sen Orka AI'nin Sesli Sinif podcast yapimcisisin.
+                Verilen ders/kaynak icerigini 2-3 dakikalik, uc konusmaciya kadar destekleyen kisa bir podcast metnine cevir.
+                Format kesinlikle satir satir soyle olmali:
                 [HOCA]: ...
                 [ASISTAN]: ...
                 [KONUK]: ...
-                KONUK opsiyoneldir ama konuya dış bakış veya öğrenci sesi katacaksa kullan.
-                Markdown, JSON veya açıklama ekleme.
-                Türkçe, sıcak, öğretici ve akıcı yaz.
+                KONUK opsiyoneldir ama konuya dis bakis veya ogrenci sesi katacaksa kullan.
+                Markdown, JSON veya aciklama ekleme.
+                Turkce, sicak, ogretici ve akici yaz.
                 """;
 
+            using var scriptTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            scriptTimeout.CancelAfter(ScriptGenerationTimeout);
             var script = await _factory.CompleteChatAsync(
                 AgentRole.Summarizer,
                 systemPrompt,
                 $"Kaynak materyal:\n\n{context}",
-                ct);
+                scriptTimeout.Token);
 
-            script = NormalizeScript(script);
-            var speakers = ParseSpeakers(script);
+            script = AudioDialogueFormatter.NormalizeScript(script);
+            var speakers = AudioDialogueFormatter.ParseSpeakers(script);
 
             job.Script = script;
             job.SpeakersJson = JsonSerializer.Serialize(speakers);
 
             try
             {
-                job.AudioBytes = await _ttsService.SynthesizeDialogueAsync(script, ct);
+                using var ttsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                ttsTimeout.CancelAfter(TtsGenerationTimeout);
+                job.AudioBytes = await _ttsService.SynthesizeDialogueAsync(script, ttsTimeout.Token);
                 job.ContentType = "audio/mpeg";
                 job.Status = "ready";
-                _logger.LogInformation("[AudioOverview] Edge-TTS ses üretimi tamamlandı. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
+                _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
             }
             catch (Exception ttsEx)
             {
-                _logger.LogWarning(ttsEx, "[AudioOverview] Edge-TTS başarısız, script-only moduna geçiliyor. Job={JobId}", job.Id);
+                _logger.LogWarning(ttsEx, "[AudioOverview] Edge-TTS failed; switching to script-only. Job={JobId}", job.Id);
                 job.Status = "script-only";
-                job.ErrorMessage = "Edge-TTS üretilemedi; frontend browser TTS fallback kullanmalı.";
+                job.ErrorMessage = "Edge-TTS uretilemedi; frontend browser TTS fallback kullanmali.";
             }
 
             job.UpdatedAt = DateTime.UtcNow;
@@ -106,18 +126,30 @@ public class AudioOverviewService : IAudioOverviewService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[AudioOverview] Üretim başarısız. Job={JobId}", job.Id);
+            _logger.LogError(ex, "[AudioOverview] Generation failed. Job={JobId}", job.Id);
             job.Status = "script-only";
-            job.ErrorMessage = "Backend TTS üretilemedi; frontend browser TTS fallback kullanmalı.";
+            job.ErrorMessage = "Backend TTS uretilemedi; frontend browser TTS fallback kullanmali.";
             job.Script = string.IsNullOrWhiteSpace(job.Script)
-                ? "[HOCA]: Sesli sınıf şu anda tam ses dosyası üretemedi, ama bu metni tarayıcı sesiyle dinleyebilirsin."
+                ? "[HOCA]: Sesli sinif su anda tam ses dosyasi uretemedi, ama bu metni tarayici sesiyle dinleyebilirsin."
                 : job.Script;
-            job.SpeakersJson = JsonSerializer.Serialize(ParseSpeakers(job.Script));
+            job.SpeakersJson = JsonSerializer.Serialize(AudioDialogueFormatter.ParseSpeakers(job.Script));
             job.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(CancellationToken.None);
         }
 
         return ToDto(job);
+    }
+
+    public async Task<AudioOverviewJobDto?> GetOverviewAsync(
+        Guid userId,
+        Guid jobId,
+        CancellationToken ct = default)
+    {
+        var job = await _db.AudioOverviewJobs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId, ct);
+
+        return job == null ? null : ToDto(job);
     }
 
     public async Task<(byte[] Bytes, string ContentType, string FileName)?> GetAudioAsync(
@@ -130,7 +162,7 @@ public class AudioOverviewService : IAudioOverviewService
             .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId, ct);
 
         if (job?.AudioBytes == null || job.AudioBytes.Length == 0) return null;
-        return (job.AudioBytes, job.ContentType, $"orka-audio-overview-{job.Id}.wav");
+        return (job.AudioBytes, job.ContentType, $"orka-audio-overview-{job.Id}.mp3");
     }
 
     private async Task<string> BuildOverviewContextAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
@@ -155,47 +187,29 @@ public class AudioOverviewService : IAudioOverviewService
                 .Select(c => $"[doc:{c.LearningSourceId}:p{c.PageNumber}] {c.Text}")
                 .ToListAsync(ct);
             if (sourceBits.Count > 0)
-                sb.AppendLine("\nKaynak notları:\n" + string.Join("\n\n", sourceBits));
+                sb.AppendLine("\nKaynak notlari:\n" + string.Join("\n\n", sourceBits));
         }
 
         if (sessionId.HasValue)
         {
             var messages = await _db.Messages
                 .AsNoTracking()
-                .Where(m => m.SessionId == sessionId)
+                .Where(m => m.SessionId == sessionId && m.UserId == userId)
                 .OrderByDescending(m => m.CreatedAt)
                 .Take(12)
                 .OrderBy(m => m.CreatedAt)
                 .Select(m => $"{m.Role}: {m.Content}")
                 .ToListAsync(ct);
             if (messages.Count > 0)
-                sb.AppendLine("\nSohbet özeti:\n" + string.Join("\n", messages));
+                sb.AppendLine("\nSohbet ozeti:\n" + string.Join("\n", messages));
         }
 
         var text = sb.ToString();
-        return string.IsNullOrWhiteSpace(text) ? "Henüz yeterli ders içeriği yok." : Trim(text, 8000);
+        return string.IsNullOrWhiteSpace(text) ? "Henuz yeterli ders icerigi yok." : Trim(text, 8000);
     }
-
-    private static string NormalizeScript(string raw)
-    {
-        var clean = raw.Replace("```", "").Trim();
-        return SpeakerRegex.IsMatch(clean)
-            ? clean
-            : $"[HOCA]: {clean}";
-    }
-
-    private static IReadOnlyList<string> ParseSpeakers(string script)
-    {
-        var speakers = SpeakerRegex.Matches(script)
-            .Select(m => m.Groups[1].Value.ToUpperInvariant())
-            .Distinct()
-            .ToList();
-        return speakers.Count == 0 ? ["HOCA"] : speakers;
-    }
-
 
     private static string Trim(string value, int maxChars) =>
-        value.Length > maxChars ? value[..maxChars] + "\n[...kırpıldı]" : value;
+        value.Length > maxChars ? value[..maxChars] + "\n[...kirpildi]" : value;
 
     private static AudioOverviewJobDto ToDto(AudioOverviewJob job)
     {
