@@ -518,7 +518,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     if (capturedTopicId.HasValue)
                     {
                         var failedPage = await db.WikiPages
-                            .FirstOrDefaultAsync(p => p.TopicId == capturedTopicId.Value && p.Status == "pending");
+                            .FirstOrDefaultAsync(p => p.TopicId == capturedTopicId.Value &&
+                                                      (p.Status == "pending" || p.Status == "learning"));
                         if (failedPage != null)
                         {
                             failedPage.Status = "failed";

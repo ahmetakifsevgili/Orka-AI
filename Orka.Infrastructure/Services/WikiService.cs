@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
@@ -192,7 +193,7 @@ public class WikiService : IWikiService
 
         // ── Mevcut wiki sayfasını bul veya oluştur ───────────────────────────
         var page = await db.WikiPages
-            .Where(w => w.TopicId == wikiTopicId && (w.Status == "pending" || w.Status == "learning"))
+            .Where(w => w.TopicId == wikiTopicId && w.UserId == topic.UserId)
             .OrderBy(w => w.OrderIndex)
             .FirstOrDefaultAsync();
 
@@ -216,7 +217,7 @@ public class WikiService : IWikiService
             db.WikiPages.Add(page);
         }
 
-        if (page.Status == "pending")
+        if (page.Status is "pending" or "ready")
         {
             page.Status = "learning";
             page.UpdatedAt = DateTime.UtcNow;
@@ -260,6 +261,8 @@ public class WikiService : IWikiService
             summary = aiContent.Length > 1000 ? aiContent[..1000] + "\n\n..." : aiContent;
         }
 
+        summary = PreserveDocCitationTags(summary, aiContent);
+
         var block = new WikiBlock
         {
             Id = Guid.NewGuid(),
@@ -274,6 +277,9 @@ public class WikiService : IWikiService
         };
 
         db.WikiBlocks.Add(block);
+        page.Status = "ready";
+        page.Content = EnsureMarkdownIntegrity(summary);
+        page.UpdatedAt = DateTime.UtcNow;
 
         // QuizBlock: Her 3. wiki güncellemesinde pekiştirme soruları üret (her mesajda değil)
         if ((existingBlockCount + 1) % 3 == 0)
@@ -339,6 +345,23 @@ Ders İçeriği:
         }
 
         return fullText.ToString();
+    }
+
+    private static string PreserveDocCitationTags(string summary, string source)
+    {
+        var sourceTags = Regex.Matches(source, @"\[doc:[0-9a-fA-F-]+:p\d+\]", RegexOptions.IgnoreCase)
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (sourceTags.Count == 0) return summary;
+
+        var missing = sourceTags
+            .Where(tag => !summary.Contains(tag, StringComparison.OrdinalIgnoreCase))
+            .Take(5)
+            .ToList();
+        if (missing.Count == 0) return summary;
+
+        return $"{summary.TrimEnd()}\n\nKaynak etiketleri: {string.Join(" ", missing)}";
     }
 
     private static string EnsureMarkdownIntegrity(string content)
