@@ -45,7 +45,7 @@ public sealed class FinalCoreIntelligenceTests
 
         Assert.True(result.Success);
         Assert.Equal("ready", result.Status);
-        Assert.Contains("computation", result.SafeMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("LLM API", result.SafeMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("wolfram_alpha", telemetry.LastToolId);
         Assert.True(telemetry.LastSuccess);
     }

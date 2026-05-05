@@ -50,7 +50,7 @@ public sealed class WolframProvider : IWolframProvider
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
             var client = _httpClientFactory.CreateClient("WolframAlpha");
-            var url = $"v1/result?appid={Uri.EscapeDataString(appId)}&i={Uri.EscapeDataString(query)}";
+            var url = $"https://www.wolframalpha.com/api/v1/llm-api?input={Uri.EscapeDataString(query)}&appid={Uri.EscapeDataString(appId)}";
             var response = await client.GetAsync(url, timeout.Token);
             var body = (await response.Content.ReadAsStringAsync(timeout.Token)).Trim();
             if (!response.IsSuccessStatusCode)
@@ -69,7 +69,7 @@ public sealed class WolframProvider : IWolframProvider
                 sw.ElapsedMilliseconds,
                 false,
                 null,
-                "Wolfram Alpha computation result is available.",
+                "Wolfram Alpha LLM API computation result is available.",
                 0.95,
                 1);
             return await RecordAsync(result, userId, sessionId, topicId, ct);

@@ -48,7 +48,7 @@ public sealed class ToolCapabilityService : IToolCapabilityService
                 "AI:YouTube:Enabled", ["AI:YouTube:ApiKey", "YouTube:ApiKey"],
                 "Pedagogy/style/examples only by default; factual proof requires transcript/source evidence.", "topic/video", "pedagogy reference"),
             Provider("wolfram_alpha", "Wolfram Alpha", "computation", "High", ["AI:WolframAlpha:AppId", "WolframAlpha:AppId"],
-                "Disabled stub unless AppId exists; exact computation tool, not general chat.", "query", "computed result"),
+                "Uses Wolfram Alpha LLM API when AppId exists; exact computation tool, not general chat.", "query", "computed result"),
             Tool("ide_execution", "IDE / Piston sandbox execution", "code_execution", "Enabled", "High", false, true, null,
                 "sandbox_api_fallback", "code/language/stdin", "stdout/stderr/phase/safeTutorSummary",
                 "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX",

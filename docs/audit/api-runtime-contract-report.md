@@ -253,3 +253,38 @@ Regression proof:
 - `dotnet build` -> PASS, 0 warnings, 0 errors.
 - `dotnet test --no-build` -> PASS.
 - `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped, 2 existing mark warnings.
+
+## Optimization Lifecycle Gate Addendum
+
+Wolfram optimization:
+
+- dirty Orka used Wolfram Alpha `llm-api`, which is better suited for LLM/tool consumption.
+- validation provider now calls `https://www.wolframalpha.com/api/v1/llm-api?input=...&appid=...`.
+- AppId is still required; no fake public Wolfram provider is assumed.
+
+Full runtime gate:
+
+| Method/path | Expected | Actual | Result |
+|---|---:|---:|---|
+| GET `/swagger/index.html` | 200 | 200 | PASS |
+| GET `/health/live` | 200 | 200 | PASS |
+| GET `/health/ready` | 200 | 200 | PASS |
+| GET `/api/korteks/ping` without token | 401 | 401 | PASS |
+| GET `/api/tools/capabilities` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/ide_execution` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/wolfram_alpha` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/news` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/weather` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/crypto` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/youtube_pedagogy` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/sources_query` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/review_query` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/flashcards` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/daily_challenge` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/bookmarks` | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/mermaid` | 200 | 200 | PASS |
+
+Stress proof:
+
+- 12 parallel `/health/live` requests -> 12/12 returned 200.
+- 12 parallel `/api/tools/capabilities` requests -> 12/12 returned 200.
