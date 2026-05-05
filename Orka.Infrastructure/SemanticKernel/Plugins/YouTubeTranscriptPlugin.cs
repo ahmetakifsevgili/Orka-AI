@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Orka.Core.DTOs;
+using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.SemanticKernel.Plugins;
 
@@ -17,17 +19,20 @@ public partial class YouTubeTranscriptPlugin
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
     private readonly ILogger<YouTubeTranscriptPlugin> _logger;
+    private readonly IYouTubeTeachingReferenceService? _teachingReferences;
 
     private const int MaxTranscriptChars = 3000;
 
     public YouTubeTranscriptPlugin(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        ILogger<YouTubeTranscriptPlugin> logger)
+        ILogger<YouTubeTranscriptPlugin> logger,
+        IYouTubeTeachingReferenceService? teachingReferences = null)
     {
         _httpClient = httpClientFactory.CreateClient("YouTube");
         _apiKey = configuration["AI:YouTube:ApiKey"] ?? configuration["YouTube:ApiKey"] ?? string.Empty;
         _logger = logger;
+        _teachingReferences = teachingReferences;
     }
 
     [KernelFunction, Description(
@@ -162,6 +167,60 @@ public partial class YouTubeTranscriptPlugin
             _logger.LogError(ex, "[YouTube] Transcript cekme hatasi. VideoId={VideoId}", videoId);
             return $"[youtube:degraded] YouTube transcript gecici olarak alinamadi. Kaynak: https://youtube.com/watch?v={videoId}";
         }
+    }
+
+    [KernelFunction, Description(
+        "YouTube transcript verisinden pedagojik ogretim referansi uretir. " +
+        "Bu cikti factual kanit degil; anlatim akisi, ornek, benzetme, yaygin hata ve pratik fikri icindir.")]
+    public async Task<string> BuildTeachingReference(
+        [Description("YouTube video ID, ornek: dQw4w9WgXcQ")] string videoId,
+        [Description("Ders konusu veya ogrenme hedefi")] string topic = "",
+        [Description("Tercih edilen transcript dili: tr veya en. Varsayilan: tr")] string lang = "tr")
+    {
+        if (string.IsNullOrWhiteSpace(videoId))
+        {
+            return "[youtube:degraded] VideoId bos oldugu icin ogretim referansi olusturulamadi.";
+        }
+
+        if (_teachingReferences is null)
+        {
+            return $"[youtube:degraded] YouTube pedagogy pipeline kayitli degil. Kaynak: https://youtube.com/watch?v={videoId}";
+        }
+
+        var reference = await _teachingReferences.BuildReferenceAsync(
+            new YouTubeTranscriptRequest(videoId, lang, topic));
+
+        if (!reference.Status.Equals("ready", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"[youtube:{reference.Status}] YouTube ogretim referansi hazir degil. " +
+                   $"Bu bilgi pedagojik referanstir, factual kaynak degildir. Kaynak: https://youtube.com/watch?v={videoId}";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"**[youtube:{videoId}] Pedagojik ogretim referansi**");
+        sb.AppendLine("Kullanim siniri: Bu referans anlatim akisi ve ogretim tarzi icindir; factual kanit olarak kullanma.");
+        sb.AppendLine($"Kaynak: https://youtube.com/watch?v={videoId}");
+        sb.AppendLine();
+        sb.AppendLine("Ogretim akisi:");
+        sb.AppendLine(reference.TeachingFlow);
+
+        AppendList(sb, "Ornekler", reference.Examples);
+        AppendList(sb, "Benzetmeler", reference.Analogies);
+        AppendList(sb, "Yaygin hatalar", reference.CommonMistakes);
+        AppendList(sb, "Pratik fikirleri", reference.PracticeIdeas);
+
+        if (reference.EvidenceChunks.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Transcript kanit parcalari:");
+            foreach (var chunk in reference.EvidenceChunks.Take(3))
+            {
+                var text = chunk.Text.Length > 240 ? chunk.Text[..240] + "..." : chunk.Text;
+                sb.AppendLine($"- chunk:{chunk.Index} {text}");
+            }
+        }
+
+        return sb.ToString();
     }
 
     private async Task<string?> FetchCaptionTrackAsync(string videoId, string lang)
@@ -351,6 +410,17 @@ public partial class YouTubeTranscriptPlugin
         >= 1_000 => $"{count / 1_000.0:F1}K",
         _ => count.ToString()
     };
+
+    private static void AppendList(StringBuilder sb, string title, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0) return;
+        sb.AppendLine();
+        sb.AppendLine(title + ":");
+        foreach (var value in values.Take(4))
+        {
+            sb.AppendLine("- " + value);
+        }
+    }
 
     [GeneratedRegex(@"""captionTracks"":\s*(\[.*?\])", RegexOptions.Singleline)]
     private static partial Regex CaptionTracksRegex();

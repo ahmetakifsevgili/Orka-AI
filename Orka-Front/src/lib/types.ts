@@ -31,10 +31,48 @@ export interface ChatMessage {
   role: MessageRole;
   type: MessageType;
   content: string;
+  metadata?: ChatResponseMetadata | null;
   quiz?: QuizData | QuizData[];
   completedTopicId?: string; // Set when type === "topic_complete"
   timestamp: Date;
   isStreaming?: boolean;
+}
+
+export interface CitationDto {
+  citationId?: string;
+  sourceType?: string;
+  sourceId?: string | null;
+  pageNumber?: number | null;
+  label?: string | null;
+  url?: string | null;
+  confidence?: number | null;
+}
+
+export interface UsedToolDto {
+  name?: string;
+  status?: string;
+  evidence?: string | null;
+  fallbackReason?: string | null;
+  toolId?: string | null;
+  success?: boolean | null;
+  fallbackUsed?: boolean | null;
+  provider?: string | null;
+  latencyMs?: number | null;
+  citations?: CitationDto[] | null;
+  sourceConfidence?: number | null;
+  errorCode?: string | null;
+  safeMessage?: string | null;
+  groundingMode?: string | null;
+  timestamp?: string | null;
+}
+
+export interface ChatResponseMetadata {
+  citations?: CitationDto[];
+  usedTools?: UsedToolDto[];
+  groundingMode?: string;
+  fallbackReason?: string | null;
+  sourceConfidence?: number | null;
+  providerWarnings?: string[];
 }
 
 export interface SubLesson {
@@ -93,6 +131,7 @@ export interface ApiTopic {
   isMastered?: boolean;       // Konu tam öğrenildi mi?
   totalSections?: number;
   completedSections?: number;
+  planIntent?: string | null;
 }
 
 /** Single message returned inside a session */
@@ -101,6 +140,7 @@ export interface ApiSessionMessage {
   role: "User" | "AI" | "user" | "ai";
   content: string;
   messageType?: string;
+  metadata?: ChatResponseMetadata | null;
   createdAt: string;
 }
 
@@ -125,6 +165,34 @@ export interface ApiChatResponse {
   topicTitle?: string;
   tokensUsed?: number;
   totalCostUSD?: number;
+  metadata?: ChatResponseMetadata | null;
+}
+
+export interface ToolCapability {
+  toolId: string;
+  displayName: string;
+  category: string;
+  status: string;
+  riskLevel: string;
+  requiresAuth: boolean;
+  requiresAdmin: boolean;
+  requiresExternalProvider: boolean;
+  configKey?: string | null;
+  timeoutMs: number;
+  costTracked: boolean;
+  telemetryEnabled: boolean;
+  fallbackMode: string;
+  inputSchema: string;
+  outputSchema: string;
+  decision: string;
+  notes: string;
+}
+
+export interface ToolCapabilitiesResponse {
+  tools: ToolCapability[];
+  count: number;
+  includeInternal: boolean;
+  contract: "tool_capability_v1" | string;
 }
 
 /** Global Stats for Dashboard */

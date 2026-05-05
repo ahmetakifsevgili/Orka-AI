@@ -30,7 +30,7 @@ public class TavilySearchPlugin
     public TavilySearchPlugin(IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
         _tavilyClient = httpClientFactory.CreateClient("Tavily");
-        _tavilyApiKey = configuration["AI:Tavily:ApiKey"] ?? throw new ArgumentException("Tavily API Key eksik.");
+        _tavilyApiKey = configuration["AI:Tavily:ApiKey"] ?? string.Empty;
         _maxResults   = int.TryParse(configuration["AI:Albert:MaxSearchResults"], out var msr) ? msr : 5;
     }
 
@@ -84,6 +84,9 @@ public class TavilySearchPlugin
 
     private async Task<string> ExecuteSearchAsync(string query)
     {
+        if (string.IsNullOrWhiteSpace(_tavilyApiKey))
+            return "[tavily:disabled] Tavily web search is not configured. Do not claim current web grounding.";
+
         try
         {
             var requestBody = new

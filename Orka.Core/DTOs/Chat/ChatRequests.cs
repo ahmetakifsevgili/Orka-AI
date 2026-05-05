@@ -5,8 +5,16 @@ namespace Orka.Core.DTOs.Chat;
 public class SendMessageRequest
 {
     public string Content { get; set; } = string.Empty;
+    public string Message
+    {
+        get => Content;
+        set => Content = value;
+    }
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
+    public Guid? FocusTopicId { get; set; }
+    public string? FocusTopicPath { get; set; }
+    public string? FocusSourceRef { get; set; }
     public bool IsPlanMode { get; set; }
 }
 

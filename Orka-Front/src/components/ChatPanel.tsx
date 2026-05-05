@@ -25,6 +25,7 @@ import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
 import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
+import ToolCapabilityStrip from "./ToolCapabilityStrip";
 
 interface ChatPanelProps {
   activeTopic: ApiTopic | null;
@@ -521,6 +522,9 @@ export default function ChatPanel({
           )}
         </div>
         <div className="flex items-center gap-4">
+          <div className="hidden lg:block">
+            <ToolCapabilityStrip compact />
+          </div>
           {activeTopic && (
             <button
               onClick={() => onOpenWiki(activeTopic.id)}

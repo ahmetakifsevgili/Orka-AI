@@ -9,6 +9,7 @@ using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.SemanticKernel.Filters;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -116,9 +117,30 @@ builder.Services.AddScoped<IAudioOverviewService, AudioOverviewService>();
 builder.Services.AddScoped<ILearningSignalService, LearningSignalService>();
 builder.Services.AddScoped<IClassroomService, ClassroomService>();
 builder.Services.AddScoped<IEdgeTtsService, EdgeTtsService>();
+builder.Services.AddScoped<IReviewSrsService, ReviewSrsService>();
+builder.Services.AddScoped<IFlashcardService, FlashcardService>();
+builder.Services.AddScoped<IDailyChallengeService, DailyChallengeService>();
+builder.Services.AddScoped<IXpEventService, XpEventService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IPushDeliveryService, PushDeliveryService>();
+builder.Services.AddScoped<ISrsReminderWorkerService, SrsReminderWorkerService>();
+builder.Services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerService>();
+builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
+builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
+builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
+builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
+builder.Services.AddScoped<IWolframProvider, WolframProvider>();
+builder.Services.AddScoped<INewsProvider, NewsProvider>();
+builder.Services.AddScoped<IWeatherProvider, WeatherProvider>();
+builder.Services.AddScoped<IMarketDataProvider, MarketDataProvider>();
+builder.Services.AddScoped<IMistakeClassifierService, MistakeClassifierService>();
+builder.Services.AddScoped<IYouTubeTranscriptProvider, YouTubeTranscriptProvider>();
+builder.Services.AddScoped<IYouTubeTeachingReferenceService, YouTubeTeachingReferenceService>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
+builder.Services.AddHostedService<SrsReminderWorker>();
+builder.Services.AddHostedService<DailyChallengeWorker>();
 
 // LLMOps: Token/Cost Estimator (Dashboard maliyet verisi için)
 builder.Services.AddSingleton<ITokenCostEstimator, TokenCostEstimator>();
@@ -130,6 +152,20 @@ builder.Services.AddScoped<TavilySearchPlugin>();
 builder.Services.AddScoped<WikipediaPlugin>();
 builder.Services.AddScoped<AcademicSearchPlugin>();
 builder.Services.AddScoped<YouTubeTranscriptPlugin>();
+builder.Services.AddScoped<SourcesQueryPlugin>();
+builder.Services.AddScoped<ReviewQueryPlugin>();
+builder.Services.AddScoped<FlashcardPlugin>();
+builder.Services.AddScoped<DailyChallengePlugin>();
+builder.Services.AddScoped<BookmarkPlugin>();
+builder.Services.AddScoped<LearningModePlugin>();
+builder.Services.AddScoped<AgentDecisionPlugin>();
+builder.Services.AddScoped<VisualGeneratorPlugin>();
+builder.Services.AddScoped<WolframAlphaPlugin>();
+builder.Services.AddScoped<IdeExecutionPlugin>();
+builder.Services.AddScoped<WeatherGeographyPlugin>();
+builder.Services.AddScoped<NewsPlugin>();
+builder.Services.AddScoped<CryptoDataPlugin>();
+builder.Services.AddScoped<PluginTelemetryFilter>();
 
 // Korteks dosya çıkarma servisi
 builder.Services.AddScoped<FileExtractionService>();
@@ -257,6 +293,61 @@ builder.Services.AddHttpClient("YouTube", c =>
         PooledConnectionLifetime = TimeSpan.FromMinutes(2)
     });
 
+builder.Services.AddHttpClient("YouTubeTranscript", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+    c.BaseAddress = new Uri(builder.Configuration["AI:YouTube:TranscriptBaseUrl"] ?? "https://www.youtube.com/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("WolframAlpha", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["AI:WolframAlpha:BaseUrl"] ?? "https://api.wolframalpha.com/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("News", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+    c.BaseAddress = new Uri(builder.Configuration["AI:NewsAPI:BaseUrl"] ?? "https://newsapi.org/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("Weather", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["Tools:Weather:BaseUrl"] ?? "https://api.openweathermap.org/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("MarketData", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["Tools:Crypto:BaseUrl"] ?? "https://api.coingecko.com/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
 // Judge0 CE — Sandbox kod çalıştırma (public instance, token gerekmez)
 // emkc.org/piston 15 Şubat 2026'dan itibaren whitelist-only oldu; Judge0 CE'ye geçildi.
 // Public instance: https://ce.judge0.com
@@ -310,6 +401,20 @@ builder.Services.AddScoped<Kernel>(sp =>
     kernel.Plugins.AddFromObject(sp.GetRequiredService<WikipediaPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<AcademicSearchPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>());
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<SourcesQueryPlugin>(), "Sources");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<ReviewQueryPlugin>(), "Review");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<FlashcardPlugin>(), "Flashcards");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<DailyChallengePlugin>(), "DailyChallenge");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<BookmarkPlugin>(), "Bookmarks");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<LearningModePlugin>(), "LearningMode");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<AgentDecisionPlugin>(), "AgentDecision");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<VisualGeneratorPlugin>(), "Visuals");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<WolframAlphaPlugin>(), "Wolfram");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<IdeExecutionPlugin>(), "IdeExecution");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<WeatherGeographyPlugin>(), "Weather");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<NewsPlugin>(), "News");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<CryptoDataPlugin>(), "Crypto");
+    kernel.FunctionInvocationFilters.Add(sp.GetRequiredService<PluginTelemetryFilter>());
             
     return kernel;
 });

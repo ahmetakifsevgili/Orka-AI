@@ -25,7 +25,17 @@ public interface IRedisMemoryService
     /// TutorAgent bir sonraki mesajda bu sonucu okuyarak bağlamsal yorum yapabilir.
     /// TTL: 30 dakika (aktif session süresiyle uyumlu).
     /// </summary>
-    Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language);
+    Task SetLastPistonResultAsync(
+        Guid sessionId,
+        string code,
+        string stdout,
+        string stderr,
+        string language,
+        string phase = "run",
+        string? compileError = null,
+        string? runtimeError = null,
+        bool success = true,
+        string? safeTutorSummary = null);
 
     /// <summary>
     /// Session'ın son Piston çalıştırma sonucunu JSON olarak döner.

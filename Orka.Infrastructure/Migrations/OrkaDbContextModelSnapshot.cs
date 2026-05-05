@@ -124,6 +124,135 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("AudioOverviewJobs");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.Badge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IconKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RuleType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("Threshold")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Badges");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Bookmark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FlashcardId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("LearningSourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Quote")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ReviewItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("TagsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("WikiPageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlashcardId");
+
+                    b.HasIndex("LearningSourceId");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("ReviewItemId");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("WikiPageId");
+
+                    b.HasIndex("UserId", "MessageId")
+                        .IsUnique()
+                        .HasFilter("[MessageId] IS NOT NULL AND [Status] = 'active'");
+
+                    b.HasIndex("UserId", "TopicId", "Status", "CreatedAt");
+
+                    b.ToTable("Bookmarks");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.ClassroomInteraction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -207,6 +336,248 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("ClassroomSessions");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.CostRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AgentRole")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<decimal>("EstimatedCostUsd")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
+
+                    b.Property<int>("EstimatedTokens")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "OccurredAt");
+
+                    b.HasIndex("Provider", "Model", "OccurredAt");
+
+                    b.ToTable("CostRecords");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.DailyChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("CorrectCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("QuestionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ReviewItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceConceptTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceSkillTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SourceType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewItemId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("UserId", "TopicId", "Date")
+                        .IsUnique()
+                        .HasFilter("[TopicId] IS NOT NULL");
+
+                    b.ToTable("DailyChallenges");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.DailyChallengeSubmission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("DailyChallengeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Quality")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("XpAwarded")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("XpEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DailyChallengeId");
+
+                    b.HasIndex("XpEventId");
+
+                    b.HasIndex("UserId", "DailyChallengeId")
+                        .IsUnique();
+
+                    b.ToTable("DailyChallengeSubmissions");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Flashcard", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Back")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ConceptTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedFrom")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Difficulty")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Front")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Hint")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LearningObjective")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("LearningSourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("QuizAttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SkillTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("WikiPageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LearningSourceId");
+
+                    b.HasIndex("QuizAttemptId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("WikiPageId");
+
+                    b.HasIndex("UserId", "TopicId", "Status");
+
+                    b.ToTable("Flashcards");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.LearningSignal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -277,12 +648,21 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DeletedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
                     b.Property<int>("PageCount")
                         .HasColumnType("int");
@@ -311,6 +691,9 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SessionId");
@@ -320,6 +703,8 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("UserId", "SessionId");
 
                     b.HasIndex("UserId", "TopicId");
+
+                    b.HasIndex("UserId", "TopicId", "IsDeleted");
 
                     b.ToTable("LearningSources");
                 });
@@ -351,6 +736,9 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ModelUsed")
                         .HasColumnType("nvarchar(max)");
 
@@ -378,6 +766,122 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("SessionId", "CreatedAt");
 
                     b.ToTable("Messages");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FirebaseMessageId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PushStatus")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RelatedEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RelatedEntityType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Status", "CreatedAt");
+
+                    b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.PushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Auth")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeviceLabel")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("P256dh")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Endpoint")
+                        .IsUnique()
+                        .HasFilter("[Status] = 'active'");
+
+                    b.HasIndex("UserId", "Status");
+
+                    b.ToTable("PushSubscriptions");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuizAttempt", b =>
@@ -585,6 +1089,109 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("RemediationPlans");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.ReviewItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConceptTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<double>("EaseFactor")
+                        .HasColumnType("float");
+
+                    b.Property<Guid?>("FlashcardId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("IntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("LapseCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LearningObjective")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("LearningSignalId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MistakeCategory")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("QuizAttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("RemediationPlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RepetitionCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReviewKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SkillTag")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("SourceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("SuccessStreak")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlashcardId");
+
+                    b.HasIndex("LearningSignalId");
+
+                    b.HasIndex("QuizAttemptId");
+
+                    b.HasIndex("RemediationPlanId");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("UserId", "ReviewKey")
+                        .IsUnique()
+                        .HasFilter("[Status] = 'active' AND [ReviewKey] <> 'topic:global:general'");
+
+                    b.HasIndex("UserId", "TopicId");
+
+                    b.HasIndex("UserId", "Status", "DueAt");
+
+                    b.ToTable("ReviewItems");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -730,6 +1337,9 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<string>("HighlightHint")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("LearningSourceId")
                         .HasColumnType("uniqueidentifier");
 
@@ -743,6 +1353,8 @@ namespace Orka.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("LearningSourceId", "PageNumber", "ChunkIndex");
+
+                    b.HasIndex("LearningSourceId", "IsDeleted", "PageNumber", "ChunkIndex");
 
                     b.ToTable("SourceChunks");
                 });
@@ -795,6 +1407,71 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("StudyRecommendations");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.ToolTelemetryEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CapabilityStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("FallbackUsed")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("LatencyMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ToolId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ToolId", "OccurredAt");
+
+                    b.HasIndex("UserId", "OccurredAt");
+
+                    b.ToTable("ToolTelemetryEvents");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.Topic", b =>
                 {
                     b.Property<Guid>("Id")
@@ -832,6 +1509,9 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<string>("LastStudySnapshot")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Order")
                         .HasColumnType("int");
 
@@ -840,6 +1520,9 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("PhaseMetadata")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PlanIntent")
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<double>("ProgressPercentage")
                         .HasColumnType("float");
@@ -862,6 +1545,8 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("ParentTopicId");
 
                     b.HasIndex("UserId", "Order");
+
+                    b.HasIndex("UserId", "PlanIntent");
 
                     b.ToTable("Topics");
                 });
@@ -954,6 +1639,39 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.UserBadge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BadgeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("EarnedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("SourceEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BadgeId");
+
+                    b.HasIndex("SourceEventId");
+
+                    b.HasIndex("UserId", "BadgeId")
+                        .IsUnique();
+
+                    b.ToTable("UserBadges");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.WikiBlock", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1035,6 +1753,46 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("WikiPages");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.XpEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EventKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("RelatedEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RelatedEntityType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("XpDelta")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "EventKey")
+                        .IsUnique();
+
+                    b.ToTable("XpEvents");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.AgentEvaluation", b =>
                 {
                     b.HasOne("Orka.Core.Entities.Message", "Message")
@@ -1087,6 +1845,66 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.Bookmark", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.Flashcard", "Flashcard")
+                        .WithMany()
+                        .HasForeignKey("FlashcardId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.LearningSource", "LearningSource")
+                        .WithMany()
+                        .HasForeignKey("LearningSourceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Message", "Message")
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.ReviewItem", "ReviewItem")
+                        .WithMany()
+                        .HasForeignKey("ReviewItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Session", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.WikiPage", "WikiPage")
+                        .WithMany()
+                        .HasForeignKey("WikiPageId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Flashcard");
+
+                    b.Navigation("LearningSource");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("ReviewItem");
+
+                    b.Navigation("Session");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
+
+                    b.Navigation("WikiPage");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.ClassroomInteraction", b =>
                 {
                     b.HasOne("Orka.Core.Entities.ClassroomSession", "ClassroomSession")
@@ -1128,6 +1946,96 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("Topic");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.DailyChallenge", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.ReviewItem", "ReviewItem")
+                        .WithMany("DailyChallenges")
+                        .HasForeignKey("ReviewItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("ReviewItem");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.DailyChallengeSubmission", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.DailyChallenge", "DailyChallenge")
+                        .WithMany("Submissions")
+                        .HasForeignKey("DailyChallengeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.XpEvent", "XpEvent")
+                        .WithMany()
+                        .HasForeignKey("XpEventId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("DailyChallenge");
+
+                    b.Navigation("User");
+
+                    b.Navigation("XpEvent");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Flashcard", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.LearningSource", "LearningSource")
+                        .WithMany()
+                        .HasForeignKey("LearningSourceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.QuizAttempt", "QuizAttempt")
+                        .WithMany()
+                        .HasForeignKey("QuizAttemptId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.WikiPage", "WikiPage")
+                        .WithMany()
+                        .HasForeignKey("WikiPageId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("LearningSource");
+
+                    b.Navigation("QuizAttempt");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
+
+                    b.Navigation("WikiPage");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.LearningSignal", b =>
@@ -1196,6 +2104,28 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Session");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Notification", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.PushSubscription", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuizAttempt", b =>
@@ -1286,6 +2216,52 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Session");
+
+                    b.Navigation("Topic");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.ReviewItem", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.Flashcard", "Flashcard")
+                        .WithMany()
+                        .HasForeignKey("FlashcardId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.LearningSignal", "LearningSignal")
+                        .WithMany()
+                        .HasForeignKey("LearningSignalId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.QuizAttempt", "QuizAttempt")
+                        .WithMany()
+                        .HasForeignKey("QuizAttemptId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.RemediationPlan", "RemediationPlan")
+                        .WithMany()
+                        .HasForeignKey("RemediationPlanId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Topic", "Topic")
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Flashcard");
+
+                    b.Navigation("LearningSignal");
+
+                    b.Navigation("QuizAttempt");
+
+                    b.Navigation("RemediationPlan");
 
                     b.Navigation("Topic");
 
@@ -1387,6 +2363,32 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.UserBadge", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.Badge", "Badge")
+                        .WithMany("UserBadges")
+                        .HasForeignKey("BadgeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Orka.Core.Entities.XpEvent", "SourceEvent")
+                        .WithMany()
+                        .HasForeignKey("SourceEventId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Badge");
+
+                    b.Navigation("SourceEvent");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.WikiBlock", b =>
                 {
                     b.HasOne("Orka.Core.Entities.WikiPage", "WikiPage")
@@ -1417,6 +2419,27 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Orka.Core.Entities.XpEvent", b =>
+                {
+                    b.HasOne("Orka.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.Badge", b =>
+                {
+                    b.Navigation("UserBadges");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.DailyChallenge", b =>
+                {
+                    b.Navigation("Submissions");
+                });
+
             modelBuilder.Entity("Orka.Core.Entities.LearningSource", b =>
                 {
                     b.Navigation("Chunks");
@@ -1425,6 +2448,11 @@ namespace Orka.Infrastructure.Migrations
             modelBuilder.Entity("Orka.Core.Entities.QuizRun", b =>
                 {
                     b.Navigation("Attempts");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.ReviewItem", b =>
+                {
+                    b.Navigation("DailyChallenges");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.Session", b =>

@@ -13,7 +13,18 @@ public interface IPistonService
 }
 
 /// <summary>Piston'dan dönen çalıştırma sonucu.</summary>
-public record PistonResult(string Stdout, string Stderr, bool Success);
+public record PistonResult(
+    string Stdout,
+    string Stderr,
+    bool Success,
+    string Phase = "run",
+    string? CompileError = null,
+    string? RuntimeError = null,
+    int? ExitCode = null,
+    long DurationMs = 0,
+    bool Truncated = false,
+    string? SafeTutorSummary = null,
+    string? Runtime = null);
 
 /// <summary>Piston API'nin döndürdüğü dil/runtime bilgisi.</summary>
 public record PistonRuntime(string Language, string Version, IReadOnlyList<string> Aliases);

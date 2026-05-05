@@ -103,6 +103,13 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
   const [stdout, setStdout] = useState<string | null>(null);
   const [stderr, setStderr] = useState<string | null>(null);
   const [success, setSuccess] = useState<boolean | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [compileError, setCompileError] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [safeTutorSummary, setSafeTutorSummary] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<string | null>(null);
   const [outputOpen, setOutputOpen] = useState(true);
 
   const langLabel = LANGUAGE_OPTIONS.find((item) => item.value === language)?.label ?? language;
@@ -114,6 +121,13 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
     setStdout(null);
     setStderr(null);
     setSuccess(null);
+    setPhase(null);
+    setCompileError(null);
+    setRuntimeError(null);
+    setDurationMs(null);
+    setTruncated(false);
+    setSafeTutorSummary(null);
+    setRuntime(null);
   }, []);
 
   const handleLanguageChange = useCallback((lang: string) => {
@@ -132,12 +146,20 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
       setStdout(result.stdout || null);
       setStderr(result.stderr || null);
       setSuccess(Boolean(result.success));
+      setPhase(result.phase ?? (result.success ? "run" : "run"));
+      setCompileError(result.compileError ?? null);
+      setRuntimeError(result.runtimeError ?? null);
+      setDurationMs(result.durationMs ?? null);
+      setTruncated(Boolean(result.truncated));
+      setSafeTutorSummary(result.safeTutorSummary ?? null);
+      setRuntime(result.runtime ?? null);
       setOutputOpen(true);
     } catch (err: any) {
       const apiMessage = err?.response?.data?.stderr || err?.response?.data?.error;
       const fallbackMessage = apiMessage || "Kod çalıştırma servisine bağlanılamadı. Lütfen birkaç saniye sonra tekrar deneyin.";
       setStderr(fallbackMessage);
       setSuccess(false);
+      setPhase("network_error");
       setOutputOpen(true);
       void LearningAPI.recordSignal({
         topicId,
@@ -186,6 +208,9 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
           quizQuestion: Boolean(quizQuestion),
           stdoutLength: stdout?.length ?? 0,
           stderrLength: stderr?.length ?? 0,
+          phase,
+          compileError: Boolean(compileError),
+          runtimeError: Boolean(runtimeError),
         }),
       }).catch(() => {});
     };
@@ -207,15 +232,21 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
 
     const status = runSucceeded ? "başarıyla çalıştı" : "hata verdi";
     const message = [
-      `${questionContext}Aşağıdaki ${langLabel} kodu ${status}:`,
+      `${questionContext}Aşağıdaki ${langLabel} kodu ${status} (phase: ${phase ?? "unknown"}):`,
       "```" + language,
       code,
       "```",
       "",
+      runtime ? `**Sandbox:** ${runtime}` : "",
+      durationMs !== null ? `**Süre:** ${durationMs}ms` : "",
+      truncated ? "**Not:** Backend çıktı uzun olduğu için kırptı." : "",
+      compileError ? `**Derleme Hatası:**\n\`\`\`\n${compileError}\n\`\`\`` : "",
+      runtimeError ? `**Runtime Hatası:**\n\`\`\`\n${runtimeError}\n\`\`\`` : "",
       runSucceeded ? "**Çıktı:**" : "**Hata Çıktısı:**",
       "```",
       clipForTutor(outputText),
       "```",
+      safeTutorSummary ? `\n**Backend Tutor Özeti:** ${safeTutorSummary}` : "",
       "",
       runSucceeded
         ? "Bu kodu incele ve soruya verdiğim cevabın doğru olup olmadığını değerlendir. Daha iyi bir çözüm varsa göster."
@@ -225,7 +256,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
     recordTutorSignal();
     onSendToChat(message);
     onClose?.();
-  }, [code, hasOutput, langLabel, language, onClose, onSendToChat, outputText, quizQuestion, runSucceeded, sessionId, stderr, stdout, success, topicId]);
+  }, [code, compileError, durationMs, hasOutput, langLabel, language, onClose, onSendToChat, outputText, phase, quizQuestion, runSucceeded, runtime, runtimeError, safeTutorSummary, sessionId, stderr, stdout, success, topicId, truncated]);
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent text-[#172033]">
@@ -351,8 +382,11 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                   {runSucceeded ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
                 </span>
                 <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
-                  {runSucceeded ? "Çıktı" : "Hata Çıktısı"} · {langLabel}
+                  {runSucceeded ? "Çıktı" : phase === "compile" ? "Derleme Hatası" : phase === "timeout" ? "Zaman Aşımı" : phase === "blocked" ? "Engellendi" : "Hata Çıktısı"} · {langLabel}
                 </span>
+                {runtime && <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold text-[#667085]">{runtime}</span>}
+                {durationMs !== null && <span className="text-[10px] font-mono text-[#98a2b3]">{durationMs}ms</span>}
+                {truncated && <span className="rounded-full bg-[#fff8ee] px-2 py-0.5 text-[10px] font-bold text-[#8a641f]">kırpıldı</span>}
               </div>
               <div className="flex items-center gap-2">
                 {onSendToChat && (
@@ -384,7 +418,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                   className="overflow-hidden"
                 >
                   <pre className={`max-h-48 overflow-y-auto overflow-x-auto whitespace-pre-wrap px-4 py-3 text-[13px] font-mono leading-relaxed ${runSucceeded ? "text-[#456f55]" : "text-[#9a4e3e]"}`}>
-                    {outputText}
+                    {[compileError, runtimeError, outputText, safeTutorSummary ? `\nTutor notu: ${safeTutorSummary}` : ""].filter(Boolean).join("\n\n")}
                   </pre>
                 </motion.div>
               )}

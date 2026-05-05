@@ -22,5 +22,6 @@ public class Message
     public string? ModelUsed { get; set; }
     public int TokensUsed { get; set; }
     public decimal CostUSD { get; set; }
+    public string? MetadataJson { get; set; }
     public DateTime CreatedAt { get; set; }
 }

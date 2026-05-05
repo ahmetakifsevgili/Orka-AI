@@ -12,6 +12,10 @@ public class QuizAttemptDto
     public bool IsCorrect { get; set; }
     public string Explanation { get; set; } = string.Empty;
     public string? SkillTag { get; set; }
+    public string? ConceptTag { get; set; }
+    public string? LearningObjective { get; set; }
+    public string? QuestionType { get; set; }
+    public string? MistakeCategory { get; set; }
     public string? TopicPath { get; set; }
     public string? Difficulty { get; set; }
     public string? CognitiveType { get; set; }

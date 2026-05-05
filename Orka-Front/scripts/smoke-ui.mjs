@@ -44,6 +44,7 @@ addCheck("Mist Comfort utilities exist", css.includes(".orka-surface") && css.in
 
 const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
 addCheck("Vite production build warnings are bounded", viteConfig.includes("chunkSizeWarningLimit") && !viteConfig.includes("manualChunks"));
+addCheck("Vite proxy targets frozen backend port", viteConfig.includes("localhost:5101") && viteConfig.includes("VITE_API_PROXY_TARGET"));
 
 const ide = read("src/components/InteractiveIDE.tsx");
 addCheck("IDE Turkish action copy", ide.includes("Kodu Çalıştır") && ide.includes("Hocaya Gönder"));
@@ -59,6 +60,11 @@ addCheck("Classroom assistant never disappears", classroom.includes("ensureClass
 
 const api = read("src/services/api.ts");
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
+addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
+addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
+
+const toolContext = read("src/contexts/ToolCapabilitiesContext.tsx");
+addCheck("Tool capability context drives visibility", toolContext.includes("ToolsAPI.getCapabilities") && toolContext.includes("isVisibleForUser"));
 
 const dashboard = read("src/components/DashboardPanel.tsx");
 addCheck("Learning signal book visible", dashboard.includes("Öğrenci Sinyal Defteri") && dashboard.includes("learningSignalBook"));
@@ -79,6 +85,13 @@ addCheck("Mermaid stays lazy loaded", richMarkdown.includes('import("mermaid")')
 
 const home = read("src/pages/Home.tsx");
 addCheck("Toast import has no static/dynamic conflict", !home.includes('import("react-hot-toast")'));
+addCheck("Learning panel is wired into app shell", home.includes("LearningPanel") && home.includes('"learning"'));
+
+const learningPanel = read("src/components/LearningPanel.tsx");
+addCheck("Learning panel uses durable backend surfaces", learningPanel.includes("FlashcardsAPI") && learningPanel.includes("ReviewAPI") && learningPanel.includes("DailyChallengeAPI") && learningPanel.includes("BookmarksAPI"));
+
+const chatMessage = read("src/components/ChatMessage.tsx");
+addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 
 const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");

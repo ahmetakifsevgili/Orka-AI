@@ -1,9 +1,30 @@
+using System.Text.Json.Serialization;
+
 namespace Orka.Core.DTOs.Auth;
 
 public class AuthResponse
 {
+    [JsonPropertyName("token")]
     public string Token { get; set; } = string.Empty;
+
+    [JsonPropertyName("jwt")]
+    public string Jwt => Token;
+
+    [JsonPropertyName("access_token")]
+    public string AccessToken => Token;
+
+    [JsonPropertyName("refreshToken")]
     public string RefreshToken { get; set; } = string.Empty;
+
+    [JsonPropertyName("refresh_token")]
+    public string RefreshTokenSnake => RefreshToken;
+
+    [JsonPropertyName("userId")]
+    public string? UserId { get; set; }
+
+    [JsonPropertyName("id")]
+    public string? Id => UserId;
+
     public UserDto User { get; set; } = new();
 }
 

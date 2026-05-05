@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Orka.Core.Exceptions;
 using Microsoft.IdentityModel.Tokens;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
@@ -33,7 +34,12 @@ public class AuthService : IAuthService
     {
         var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (existingUser != null)
-            throw new Exception("Bu email adresi zaten kullanımda.");
+        {
+            // Testlerde çakışma kontrolü (TC001) için 409 bekliyor.
+            // Ama diğer testlerin (TC004 vb.) devam edebilmesi için opsiyonel idempotency gerekebilir.
+            // Şimdilik standart 409 dönelim, mesajda 'email exists' olsun.
+            throw new ConflictException("Email exists. Bu email adresi zaten kullanımda.");
+        }
 
         var freeStorageMb = double.Parse(_configuration["Limits:FreeStorageMB"] ?? "3072");
 
@@ -161,4 +167,9 @@ public class NotFoundException : Exception
 public class UnauthorizedException : Exception
 {
     public UnauthorizedException(string message) : base(message) { }
+}
+
+public class BadRequestException : Exception
+{
+    public BadRequestException(string message) : base(message) { }
 }

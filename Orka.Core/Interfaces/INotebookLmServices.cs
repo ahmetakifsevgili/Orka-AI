@@ -30,6 +30,17 @@ public interface ILearningSourceService
         string question,
         CancellationToken ct = default);
 
+    Task<LearningSourceSummaryDto?> UpdateSourceAsync(
+        Guid userId,
+        Guid sourceId,
+        string? title,
+        CancellationToken ct = default);
+
+    Task<bool> DeleteSourceAsync(
+        Guid userId,
+        Guid sourceId,
+        CancellationToken ct = default);
+
     Task<string> BuildTopicGroundingContextAsync(
         Guid userId,
         Guid? topicId,
@@ -43,6 +54,11 @@ public interface IAudioOverviewService
         Guid userId,
         Guid? topicId,
         Guid? sessionId,
+        CancellationToken ct = default);
+
+    Task<AudioOverviewJobDto?> GetOverviewAsync(
+        Guid userId,
+        Guid jobId,
         CancellationToken ct = default);
 
     Task<(byte[] Bytes, string ContentType, string FileName)?> GetAudioAsync(

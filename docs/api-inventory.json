@@ -1,0 +1,2618 @@
+{
+  "generatedAt": "2026-05-04T22:21:25.081Z",
+  "baseCommit": "4b7b981",
+  "branch": "feature/full-api-inventory-contract-freeze",
+  "featureParityAddendum": {
+    "branch": "feature/full-backend-feature-parity-sk-runtime",
+    "addedEndpointGroups": [
+      "bookmarks",
+      "push-subscriptions",
+      "profile-aliases",
+      "code-execute-alias",
+      "health-api-alias",
+      "flashcard-legacy-aliases"
+    ],
+    "semanticKernelPlugins": [
+      "Sources",
+      "Review",
+      "Flashcards",
+      "DailyChallenge",
+      "Bookmarks",
+      "LearningMode",
+      "AgentDecision",
+      "Visuals"
+    ],
+    "notes": "Addendum preserves original inventory and records parity surfaces added after API freeze."
+  },
+  "backendHardeningAddendum": {
+    "branch": "feature/backend-production-hardening-dirty-orka-parity",
+    "addedEndpointGroups": [
+      "tool-capabilities"
+    ],
+    "addedEndpoints": [
+      "GET /api/tools/capabilities",
+      "GET /api/tools/capabilities/{toolId}"
+    ],
+    "explicitlyClassifiedDirtyTools": [
+      "wolfram_alpha",
+      "ide_execution",
+      "weather",
+      "news",
+      "crypto",
+      "visual_generation",
+      "youtube_pedagogy",
+      "tavily_web_search",
+      "sources_query",
+      "review_query",
+      "flashcards",
+      "daily_challenge",
+      "bookmarks"
+    ],
+    "notes": "Dirty-Orka tools must resolve to integrated, gated, disabled stub, admin/dev-only, production hardening, or not-ported-with-reason. Frontend must read capability status instead of inferring from prose."
+  },
+  "counts": {
+    "total": 95,
+    "authRequired": 85,
+    "public": 10,
+    "betaHidden": 7
+  },
+  "controllers": [
+    {
+      "name": "AudioController",
+      "file": "AudioController.cs",
+      "baseRoute": "api/audio",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 3,
+      "actions": [
+        {
+          "method": "POST",
+          "route": "overview"
+        },
+        {
+          "method": "GET",
+          "route": "overview/{jobId:guid}"
+        },
+        {
+          "method": "GET",
+          "route": "overview/{jobId:guid}/stream"
+        }
+      ]
+    },
+    {
+      "name": "AuthController",
+      "file": "AuthController.cs",
+      "baseRoute": "api/auth",
+      "authRequiredByDefault": false,
+      "allowAnonymousPresent": false,
+      "actionCount": 6,
+      "actions": [
+        {
+          "method": "POST",
+          "route": "register"
+        },
+        {
+          "method": "POST",
+          "route": "/api/register"
+        },
+        {
+          "method": "POST",
+          "route": "login"
+        },
+        {
+          "method": "POST",
+          "route": "/api/login"
+        },
+        {
+          "method": "POST",
+          "route": "refresh"
+        },
+        {
+          "method": "POST",
+          "route": "logout"
+        }
+      ]
+    },
+    {
+      "name": "ChatController",
+      "file": "ChatController.cs",
+      "baseRoute": "api/chat",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 5,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "test-ai"
+        },
+        {
+          "method": "POST",
+          "route": "message"
+        },
+        {
+          "method": "POST",
+          "route": "send"
+        },
+        {
+          "method": "POST",
+          "route": "stream"
+        },
+        {
+          "method": "POST",
+          "route": "session/end"
+        }
+      ]
+    },
+    {
+      "name": "ClassroomController",
+      "file": "ClassroomController.cs",
+      "baseRoute": "api/classroom",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 3,
+      "actions": [
+        {
+          "method": "POST",
+          "route": "session"
+        },
+        {
+          "method": "POST",
+          "route": "{id:guid}/ask"
+        },
+        {
+          "method": "GET",
+          "route": "interaction/{interactionId:guid}/audio"
+        }
+      ]
+    },
+    {
+      "name": "CodeController",
+      "file": "CodeController.cs",
+      "baseRoute": "api/code",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 2,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "languages"
+        },
+        {
+          "method": "POST",
+          "route": "run"
+        }
+      ]
+    },
+    {
+      "name": "DailyChallengeController",
+      "file": "DailyChallengeController.cs",
+      "baseRoute": "api/daily-challenge",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 2,
+      "actions": [
+        {
+          "method": "GET",
+          "route": ""
+        },
+        {
+          "method": "POST",
+          "route": "{challengeId:guid}/submit"
+        }
+      ]
+    },
+    {
+      "name": "DashboardController",
+      "file": "DashboardController.cs",
+      "baseRoute": "api/dashboard",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 3,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "stats"
+        },
+        {
+          "method": "GET",
+          "route": "recent-activity"
+        },
+        {
+          "method": "GET",
+          "route": "system-health"
+        }
+      ]
+    },
+    {
+      "name": "DiagnosticsController",
+      "file": "DiagnosticsController.cs",
+      "baseRoute": "api/dev/diagnostics",
+      "authRequiredByDefault": false,
+      "allowAnonymousPresent": true,
+      "actionCount": 1,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "config"
+        }
+      ]
+    },
+    {
+      "name": "FlashcardsController",
+      "file": "FlashcardsController.cs",
+      "baseRoute": "api/flashcards",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 5,
+      "actions": [
+        {
+          "method": "GET",
+          "route": ""
+        },
+        {
+          "method": "POST",
+          "route": ""
+        },
+        {
+          "method": "POST",
+          "route": "generate"
+        },
+        {
+          "method": "POST",
+          "route": "{id:guid}/review"
+        },
+        {
+          "method": "DELETE",
+          "route": "{id:guid}"
+        }
+      ]
+    },
+    {
+      "name": "HealthController",
+      "file": "HealthController.cs",
+      "baseRoute": "health",
+      "authRequiredByDefault": false,
+      "allowAnonymousPresent": true,
+      "actionCount": 3,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "live"
+        },
+        {
+          "method": "GET",
+          "route": "ready"
+        },
+        {
+          "method": "GET",
+          "route": ""
+        }
+      ]
+    },
+    {
+      "name": "KorteksController",
+      "file": "KorteksController.cs",
+      "baseRoute": "api/korteks",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 5,
+      "actions": [
+        {
+          "method": "POST",
+          "route": "research-stream"
+        },
+        {
+          "method": "POST",
+          "route": "research-file"
+        },
+        {
+          "method": "POST",
+          "route": "research"
+        },
+        {
+          "method": "POST",
+          "route": "research-sync"
+        },
+        {
+          "method": "GET",
+          "route": "ping"
+        }
+      ]
+    },
+    {
+      "name": "LearningController",
+      "file": "LearningController.cs",
+      "baseRoute": "api/learning",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 5,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "topic/{topicId:guid}/summary"
+        },
+        {
+          "method": "GET",
+          "route": "topic/{topicId:guid}/recommendations"
+        },
+        {
+          "method": "GET",
+          "route": "topic/{topicId:guid}/review/due"
+        },
+        {
+          "method": "POST",
+          "route": "review/{recommendationId:guid}/complete"
+        },
+        {
+          "method": "POST",
+          "route": "signal"
+        }
+      ]
+    },
+    {
+      "name": "NotificationsController",
+      "file": "NotificationsController.cs",
+      "baseRoute": "api/notifications",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 3,
+      "actions": [
+        {
+          "method": "GET",
+          "route": ""
+        },
+        {
+          "method": "POST",
+          "route": "{id:guid}/read"
+        },
+        {
+          "method": "POST",
+          "route": "read-all"
+        }
+      ]
+    },
+    {
+      "name": "QuizController",
+      "file": "QuizController.cs",
+      "baseRoute": "api/quiz",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 7,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "generate"
+        },
+        {
+          "method": "POST",
+          "route": "attempt"
+        },
+        {
+          "method": "POST",
+          "route": "plan-diagnostic/start"
+        },
+        {
+          "method": "POST",
+          "route": "plan-diagnostic/{planRequestId:guid}/attempt"
+        },
+        {
+          "method": "POST",
+          "route": "plan-diagnostic/finalize"
+        },
+        {
+          "method": "GET",
+          "route": "history/{topicId}"
+        },
+        {
+          "method": "GET",
+          "route": "stats"
+        }
+      ]
+    },
+    {
+      "name": "ReviewController",
+      "file": "ReviewController.cs",
+      "baseRoute": "api/review",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 2,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "due"
+        },
+        {
+          "method": "POST",
+          "route": "{id:guid}/complete"
+        }
+      ]
+    },
+    {
+      "name": "SkillMasteryController",
+      "file": "SkillMasteryController.cs",
+      "baseRoute": "api/skills",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 2,
+      "actions": [
+        {
+          "method": "GET",
+          "route": ""
+        },
+        {
+          "method": "GET",
+          "route": "{topicId:guid}"
+        }
+      ]
+    },
+    {
+      "name": "SourcesController",
+      "file": "SourcesController.cs",
+      "baseRoute": "api/sources",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 6,
+      "actions": [
+        {
+          "method": "POST",
+          "route": "upload"
+        },
+        {
+          "method": "GET",
+          "route": "topic/{topicId:guid}"
+        },
+        {
+          "method": "POST",
+          "route": "{sourceId:guid}/ask"
+        },
+        {
+          "method": "GET",
+          "route": "{sourceId:guid}/pages/{page:int}"
+        },
+        {
+          "method": "PATCH",
+          "route": "{sourceId:guid}"
+        },
+        {
+          "method": "DELETE",
+          "route": "{sourceId:guid}"
+        }
+      ]
+    },
+    {
+      "name": "TestController",
+      "file": "TestController.cs",
+      "baseRoute": "api/test",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 4,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "ping-groq"
+        },
+        {
+          "method": "GET",
+          "route": "ping-github"
+        },
+        {
+          "method": "GET",
+          "route": "ping-factory"
+        },
+        {
+          "method": "GET",
+          "route": "ping-embed"
+        }
+      ]
+    },
+    {
+      "name": "TopicsController",
+      "file": "TopicsController.cs",
+      "baseRoute": "api/topics",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 9,
+      "actions": [
+        {
+          "method": "GET",
+          "route": ""
+        },
+        {
+          "method": "GET",
+          "route": "{id}"
+        },
+        {
+          "method": "POST",
+          "route": ""
+        },
+        {
+          "method": "PATCH",
+          "route": "{id}"
+        },
+        {
+          "method": "DELETE",
+          "route": "{id}"
+        },
+        {
+          "method": "GET",
+          "route": "{id}/sessions"
+        },
+        {
+          "method": "GET",
+          "route": "{id}/sessions/latest"
+        },
+        {
+          "method": "GET",
+          "route": "{id}/subtopics"
+        },
+        {
+          "method": "GET",
+          "route": "{id}/progress"
+        }
+      ]
+    },
+    {
+      "name": "UserController",
+      "file": "UserController.cs",
+      "baseRoute": "api/user",
+      "authRequiredByDefault": false,
+      "allowAnonymousPresent": false,
+      "actionCount": 5,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "me"
+        },
+        {
+          "method": "PATCH",
+          "route": "profile"
+        },
+        {
+          "method": "PATCH",
+          "route": "settings"
+        },
+        {
+          "method": "GET",
+          "route": "gamification"
+        },
+        {
+          "method": "DELETE",
+          "route": "account"
+        }
+      ]
+    },
+    {
+      "name": "WikiController",
+      "file": "WikiController.cs",
+      "baseRoute": "api/wiki",
+      "authRequiredByDefault": true,
+      "allowAnonymousPresent": false,
+      "actionCount": 14,
+      "actions": [
+        {
+          "method": "GET",
+          "route": "{topicId}"
+        },
+        {
+          "method": "GET",
+          "route": "page/{pageId}"
+        },
+        {
+          "method": "POST",
+          "route": "page/{pageId}/note"
+        },
+        {
+          "method": "PUT",
+          "route": "block/{blockId}"
+        },
+        {
+          "method": "DELETE",
+          "route": "block/{blockId}"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/export"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/briefing"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/glossary"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/timeline"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/mindmap"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/study-cards"
+        },
+        {
+          "method": "GET",
+          "route": "{topicId}/recommendations"
+        },
+        {
+          "method": "POST",
+          "route": "{topicId}/chat"
+        },
+        {
+          "method": "POST",
+          "route": "{topicId}/research"
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "controller": "AudioController",
+      "group": "Audio",
+      "method": "GET",
+      "path": "/api/audio/overview/{jobId}/stream",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "jobId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Unknown/not-ready job returns 404; script-only job keeps script without audio.",
+      "fallbackBehavior": "TTS failure should produce script-only/failed with fallbackReason/errorMessage.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "AudioController",
+      "group": "Audio",
+      "method": "GET",
+      "path": "/api/audio/overview/{jobId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "jobId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Unknown/not-ready job returns 404; script-only job keeps script without audio.",
+      "fallbackBehavior": "TTS failure should produce script-only/failed with fallbackReason/errorMessage.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "AudioController",
+      "group": "Audio",
+      "method": "POST",
+      "path": "/api/audio/overview",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Unknown/not-ready job returns 404; script-only job keeps script without audio.",
+      "fallbackBehavior": "TTS failure should produce script-only/failed with fallbackReason/errorMessage.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/auth/refresh",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/auth/register",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/login",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "AuthController",
+      "group": "Auth",
+      "method": "POST",
+      "path": "/api/register",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "ChatController",
+      "group": "Chat",
+      "method": "POST",
+      "path": "/api/chat/message",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ChatController",
+      "group": "Chat",
+      "method": "POST",
+      "path": "/api/chat/send",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ChatController",
+      "group": "Chat",
+      "method": "POST",
+      "path": "/api/chat/session/end",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ChatController",
+      "group": "Chat",
+      "method": "POST",
+      "path": "/api/chat/stream",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ChatController",
+      "group": "Chat",
+      "method": "GET",
+      "path": "/api/chat/test-ai",
+      "authRequired": true,
+      "role": "Admin",
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ClassroomController",
+      "group": "Classroom",
+      "method": "POST",
+      "path": "/api/classroom/{id}/ask",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ClassroomController",
+      "group": "Classroom",
+      "method": "GET",
+      "path": "/api/classroom/interaction/{interactionId}/audio",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "interactionId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ClassroomController",
+      "group": "Classroom",
+      "method": "POST",
+      "path": "/api/classroom/session",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "CodeController",
+      "group": "Code",
+      "method": "GET",
+      "path": "/api/code/languages",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "CodeController",
+      "group": "Code",
+      "method": "POST",
+      "path": "/api/code/run",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DailyChallengeController",
+      "group": "DailyChallenge",
+      "method": "POST",
+      "path": "/api/daily-challenge/{challengeId}/submit",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "challengeId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No history creates fallback daily challenge.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DailyChallengeController",
+      "group": "DailyChallenge",
+      "method": "GET",
+      "path": "/api/daily-challenge",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "topicId"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No history creates fallback daily challenge.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DashboardController",
+      "group": "Dashboard",
+      "method": "GET",
+      "path": "/api/dashboard/recent-activity",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DashboardController",
+      "group": "Dashboard",
+      "method": "GET",
+      "path": "/api/dashboard/stats",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DashboardController",
+      "group": "Dashboard",
+      "method": "GET",
+      "path": "/api/dashboard/system-health",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "DiagnosticsController",
+      "group": "Diagnostics",
+      "method": "GET",
+      "path": "/api/dev/diagnostics/config",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "FlashcardsController",
+      "group": "Flashcards",
+      "method": "POST",
+      "path": "/api/flashcards/{id}/review",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No flashcards returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "FlashcardsController",
+      "group": "Flashcards",
+      "method": "DELETE",
+      "path": "/api/flashcards/{id}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No flashcards returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "FlashcardsController",
+      "group": "Flashcards",
+      "method": "POST",
+      "path": "/api/flashcards/generate",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No flashcards returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "FlashcardsController",
+      "group": "Flashcards",
+      "method": "GET",
+      "path": "/api/flashcards",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "topicId"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No flashcards returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "FlashcardsController",
+      "group": "Flashcards",
+      "method": "POST",
+      "path": "/api/flashcards",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No flashcards returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "HealthController",
+      "group": "Health",
+      "method": "GET",
+      "path": "/health/live",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "HealthController",
+      "group": "Health",
+      "method": "GET",
+      "path": "/health/ready",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "HealthController",
+      "group": "Health",
+      "method": "GET",
+      "path": "/health",
+      "authRequired": false,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "Public or auth lifecycle endpoint."
+    },
+    {
+      "controller": "KorteksController",
+      "group": "Korteks",
+      "method": "GET",
+      "path": "/api/korteks/ping",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "KorteksController",
+      "group": "Korteks",
+      "method": "POST",
+      "path": "/api/korteks/research-file",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "multipart/form-data"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "KorteksController",
+      "group": "Korteks",
+      "method": "POST",
+      "path": "/api/korteks/research-stream",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "KorteksController",
+      "group": "Korteks",
+      "method": "POST",
+      "path": "/api/korteks/research-sync",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "KorteksController",
+      "group": "Korteks",
+      "method": "POST",
+      "path": "/api/korteks/research",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "LearningController",
+      "group": "Learning",
+      "method": "POST",
+      "path": "/api/learning/review/{recommendationId}/complete",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "recommendationId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "LearningController",
+      "group": "Learning",
+      "method": "POST",
+      "path": "/api/learning/signal",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "LearningController",
+      "group": "Learning",
+      "method": "GET",
+      "path": "/api/learning/topic/{topicId}/recommendations",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "LearningController",
+      "group": "Learning",
+      "method": "GET",
+      "path": "/api/learning/topic/{topicId}/review/due",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "LearningController",
+      "group": "Learning",
+      "method": "GET",
+      "path": "/api/learning/topic/{topicId}/summary",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "NotificationsController",
+      "group": "Notifications",
+      "method": "POST",
+      "path": "/api/notifications/{id}/read",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No notifications returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "NotificationsController",
+      "group": "Notifications",
+      "method": "POST",
+      "path": "/api/notifications/read-all",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No notifications returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "NotificationsController",
+      "group": "Notifications",
+      "method": "GET",
+      "path": "/api/notifications",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "includeRead"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No notifications returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "POST",
+      "path": "/api/quiz/attempt",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "GET",
+      "path": "/api/quiz/generate",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "topicId"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "GET",
+      "path": "/api/quiz/history/{topicId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "POST",
+      "path": "/api/quiz/plan-diagnostic/{planRequestId}/attempt",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "planRequestId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "POST",
+      "path": "/api/quiz/plan-diagnostic/finalize",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "POST",
+      "path": "/api/quiz/plan-diagnostic/start",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "QuizController",
+      "group": "Quiz",
+      "method": "GET",
+      "path": "/api/quiz/stats",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ReviewController",
+      "group": "Review",
+      "method": "POST",
+      "path": "/api/review/{id}/complete",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No due review returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "ReviewController",
+      "group": "Review",
+      "method": "GET",
+      "path": "/api/review/due",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "topicId"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "No due review returns [].",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SkillMasteryController",
+      "group": "SkillMastery",
+      "method": "GET",
+      "path": "/api/skills/{topicId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SkillMasteryController",
+      "group": "SkillMastery",
+      "method": "GET",
+      "path": "/api/skills",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "POST",
+      "path": "/api/sources/{sourceId}/ask",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "sourceId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "GET",
+      "path": "/api/sources/{sourceId}/pages/{page}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "sourceId",
+        "page"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "DELETE",
+      "path": "/api/sources/{sourceId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "sourceId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "PATCH",
+      "path": "/api/sources/{sourceId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "sourceId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "GET",
+      "path": "/api/sources/topic/{topicId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "SourcesController",
+      "group": "Sources",
+      "method": "POST",
+      "path": "/api/sources/upload",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "multipart/form-data"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] for no sources; deleted source ask/page returns 404.",
+      "fallbackBehavior": "Embedding/vector failure falls back to lexical retrieval where available.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TestController",
+      "group": "Test",
+      "method": "GET",
+      "path": "/api/test/ping-embed",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "text"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TestController",
+      "group": "Test",
+      "method": "GET",
+      "path": "/api/test/ping-factory",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [
+        "role"
+      ],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TestController",
+      "group": "Test",
+      "method": "GET",
+      "path": "/api/test/ping-github",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TestController",
+      "group": "Test",
+      "method": "GET",
+      "path": "/api/test/ping-groq",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "HIDE_UNTIL_BETA",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics/{id}/progress",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics/{id}/sessions/latest",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics/{id}/sessions",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics/{id}/subtopics",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "DELETE",
+      "path": "/api/topics/{id}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics/{id}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "PATCH",
+      "path": "/api/topics/{id}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "GET",
+      "path": "/api/topics",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "TopicsController",
+      "group": "Topics",
+      "method": "POST",
+      "path": "/api/topics",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Empty list [] when no topics.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "UserController",
+      "group": "User",
+      "method": "DELETE",
+      "path": "/api/user/account",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "UserController",
+      "group": "User",
+      "method": "GET",
+      "path": "/api/user/gamification",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "UserController",
+      "group": "User",
+      "method": "GET",
+      "path": "/api/user/me",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "UserController",
+      "group": "User",
+      "method": "PATCH",
+      "path": "/api/user/profile",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "UserController",
+      "group": "User",
+      "method": "PATCH",
+      "path": "/api/user/settings",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "See endpoint-specific response; expected empty states must not be 500.",
+      "fallbackBehavior": "No provider fallback expected.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/briefing",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "POST",
+      "path": "/api/wiki/{topicId}/chat",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/export",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "404 when no ready wiki content; list endpoints return [].",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/glossary",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/mindmap",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/recommendations",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "POST",
+      "path": "/api/wiki/{topicId}/research",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/study-cards",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}/timeline",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/{topicId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "topicId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "DELETE",
+      "path": "/api/wiki/block/{blockId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "blockId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "PUT",
+      "path": "/api/wiki/block/{blockId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "blockId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "POST",
+      "path": "/api/wiki/page/{pageId}/note",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "pageId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [
+        "application/json",
+        "text/json",
+        "application/*+json"
+      ],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    },
+    {
+      "controller": "WikiController",
+      "group": "Wiki",
+      "method": "GET",
+      "path": "/api/wiki/page/{pageId}",
+      "authRequired": true,
+      "role": null,
+      "pathParams": [
+        "pageId"
+      ],
+      "queryParams": [],
+      "requestContentTypes": [],
+      "responses": [
+        "200"
+      ],
+      "frontendReadiness": "READY_FOR_FRONTEND",
+      "emptyState": "Pending/empty wiki returns safe empty/list or generated fallback when provider available.",
+      "fallbackBehavior": "Provider-dependent operations classify degraded/provider-blocked; frontend must not exact-assert prose.",
+      "userIsolation": "JWT userId scoped; foreign resources should return 404 unless aggregate/profile."
+    }
+  ]
+}

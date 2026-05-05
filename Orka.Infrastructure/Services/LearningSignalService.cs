@@ -207,14 +207,6 @@ public class LearningSignalService : ILearningSignalService
         }
 
         await _redis.RecordCacheMetricAsync("learning-recommendations", hit: false, latencyMs: sw.Elapsed.TotalMilliseconds);
-        var summary = await GetTopicSummaryAsync(userId, topicId, ct);
-        foreach (var weak in summary.WeakSkills.Take(5))
-        {
-            await EnsureRecommendationAsync(userId, topicId, weak.SkillTag, weak.TopicPath, $"Dogru orani %{Math.Round(weak.Accuracy * 100)}", ct);
-        }
-
-        await _db.SaveChangesAsync(ct);
-
         var items = await _db.StudyRecommendations
             .AsNoTracking()
             .Where(r => r.UserId == userId && r.TopicId == topicId)

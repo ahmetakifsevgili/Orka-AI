@@ -20,3 +20,7 @@ public sealed record ReviewItemDto(
     string? FlashcardBack = null);
 
 public sealed record CompleteReviewRequest(int Quality);
+
+public sealed record ReviewDueResponse(
+    IReadOnlyList<DurableReviewItemDto> Items,
+    IReadOnlyList<StudyRecommendationDto> LegacyRecommendations);

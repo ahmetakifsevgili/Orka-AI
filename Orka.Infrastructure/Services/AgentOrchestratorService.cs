@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MediatR;
 using Orka.Core.Constants;
+using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -36,6 +37,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly ITokenCostEstimator _tokenEstimator;
     private readonly IAIAgentFactory _agentFactory;
     private readonly IBackgroundTaskQueue _backgroundQueue;
+    private readonly IChatMetadataService _chatMetadata;
+    private readonly ITutorToolRuntime _tutorToolRuntime;
+    private readonly IRuntimeTelemetryService _runtimeTelemetry;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -53,6 +57,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITokenCostEstimator tokenEstimator,
         IAIAgentFactory agentFactory,
         IBackgroundTaskQueue backgroundQueue,
+        IChatMetadataService chatMetadata,
+        ITutorToolRuntime tutorToolRuntime,
+        IRuntimeTelemetryService runtimeTelemetry,
         ILogger<AgentOrchestratorService> logger)
     {
         _db = db;
@@ -69,6 +76,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _tokenEstimator = tokenEstimator;
         _agentFactory = agentFactory;
         _backgroundQueue = backgroundQueue;
+        _chatMetadata = chatMetadata;
+        _tutorToolRuntime = tutorToolRuntime;
+        _runtimeTelemetry = runtimeTelemetry;
         _logger = logger;
     }
 
@@ -105,7 +115,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
     }
 
-    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false)
+    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
     {
         // SESSION - Controller already called GetOrCreateSessionAsync and passed the real sessionId.
         // We MUST NOT call it again here or we will create a second topic every time.
@@ -124,6 +134,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             yield return "Oturum bulunamadı.";
             yield break;
         }
+
+        var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
 
         // Kullanıcı mesajını kaydet (duplike önleme: son mesaj aynı değilse)
         var lastMsg = session.Messages?.OrderByDescending(m => m.CreatedAt).FirstOrDefault();
@@ -270,7 +282,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         // Varsayılan: Normal ders anlatımı - gerçek zamanlı STREAM
         bool isQuizPending = session.CurrentState == SessionState.QuizPending;
-        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, content, session, isQuizPending))
+        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, tutorContent, session, isQuizPending))
         {
             fullResponse += chunk;
             yield return chunk;
@@ -282,6 +294,71 @@ public class AgentOrchestratorService : IAgentOrchestrator
             var msgId = await SaveAiMessage(session, userId, fullResponse);
             TriggerBackgroundTasks(session, userId, content, fullResponse, msgId);
         }
+    }
+
+    private async Task<string> BuildFocusedTutorContentAsync(
+        string content,
+        Guid? focusTopicId,
+        string? focusTopicPath,
+        string? focusSourceRef)
+    {
+        if (!focusTopicId.HasValue &&
+            string.IsNullOrWhiteSpace(focusTopicPath) &&
+            string.IsNullOrWhiteSpace(focusSourceRef))
+        {
+            return content;
+        }
+
+        string? focusTopicTitle = null;
+        if (focusTopicId.HasValue)
+        {
+            focusTopicTitle = await _db.Topics
+                .Where(t => t.Id == focusTopicId.Value)
+                .Select(t => t.Title)
+                .FirstOrDefaultAsync();
+        }
+
+        _logger.LogInformation(
+            "[Orchestrator] ORKA_CONTEXT focus injected. FocusTopicId={FocusTopicId} FocusTopicPath={FocusTopicPath} FocusSourceRef={FocusSourceRef}",
+            focusTopicId,
+            focusTopicPath,
+            focusSourceRef);
+
+        var lines = new List<string>
+        {
+            "[ORKA_CONTEXT]",
+            "Tutor bu istekte kullanıcının aktif odak bağlamını korumalıdır."
+        };
+
+        if (focusTopicId.HasValue)
+            lines.Add($"FocusTopicId: {focusTopicId.Value}");
+        if (!string.IsNullOrWhiteSpace(focusTopicTitle))
+            lines.Add($"FocusTopicTitle: {focusTopicTitle}");
+        if (!string.IsNullOrWhiteSpace(focusTopicPath))
+            lines.Add($"FocusTopicPath: {focusTopicPath}");
+        if (!string.IsNullOrWhiteSpace(focusSourceRef))
+            lines.Add($"FocusSourceRef: {focusSourceRef}");
+
+        lines.Add("[USER_MESSAGE]");
+        lines.Add(content);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static bool LooksLikeResearchRequest(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+
+        var lower = content.ToLowerInvariant();
+        return lower.Contains("araştır") ||
+               lower.Contains("arastir") ||
+               lower.Contains("kaynaklı") ||
+               lower.Contains("kaynakli") ||
+               lower.Contains("güncel") ||
+               lower.Contains("guncel") ||
+               lower.Contains("internetten") ||
+               lower.Contains("webden") ||
+               lower.Contains("web'den") ||
+               lower.Contains("google");
     }
 
     private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId, string agentRole = "TutorAgent")
@@ -451,7 +528,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     if (capturedTopicId.HasValue)
                     {
                         var failedPage = await db.WikiPages
-                            .FirstOrDefaultAsync(p => p.TopicId == capturedTopicId.Value && p.Status == "pending");
+                            .FirstOrDefaultAsync(p => p.TopicId == capturedTopicId.Value &&
+                                                      (p.Status == "pending" || p.Status == "learning"));
                         if (failedPage != null)
                         {
                             failedPage.Status = "failed";
@@ -506,10 +584,35 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += cost;
 
         await _db.SaveChangesAsync();
+        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", model, tokens, cost);
         return aiMsg.Id;
     }
 
-    public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false)
+    private async Task RecordCostSafeAsync(
+        Guid userId,
+        Guid sessionId,
+        Guid messageId,
+        string agentRole,
+        string provider,
+        string? model,
+        int tokens,
+        decimal cost)
+    {
+        await _runtimeTelemetry.RecordCostAsync(new CostRecordRequest(
+            UserId: userId,
+            SessionId: sessionId,
+            MessageId: messageId,
+            AgentRole: agentRole,
+            Provider: provider,
+            Model: model,
+            EstimatedTokens: tokens,
+            EstimatedCostUsd: cost,
+            Success: true,
+            ErrorCode: null,
+            MetadataJson: null));
+    }
+
+    public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
     {
         // -- DEEP PLAN MODE - bypass normal agent routing ----
         if (isPlanMode)
@@ -521,6 +624,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (session == null) throw new Exception("Oturum oluşturulamadı veya SmallTalk.");
 
         bool isNewTopic = !session.Messages.Any();
+        var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
 
         // 1. SAVE USER MESSAGE
         var userMsg = new Message
@@ -547,7 +651,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (isNewTopic)
         {
             // İlk mesaj: doğal TutorAgent yanıtı + ince plan teklifi ipucu
-            var responseTask = _tutorAgent.GetResponseAsync(userId, content, session, false);
+            var responseTask = _tutorAgent.GetResponseAsync(userId, tutorContent, session, false);
             aiResponse = responseTask != null ? await responseTask : "Yanıt üretilemedi.";
             aiResponse += "\n\n---\n*İstersen `/plan` yazarak bu konu için yapılandırılmış bir müfredat planı da oluşturabilirim.*";
         }
@@ -575,12 +679,54 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
         else
         {
-            aiResponse = session.CurrentState switch
+            var actionRoute = LooksLikeResearchRequest(content)
+                ? "RESEARCH"
+                : await _supervisor.DetermineActionRouteAsync(content, session.Messages);
+
+            _logger.LogInformation("[Orchestrator] Supervisor Route Kararı: {Route}", actionRoute);
+
+            if (actionRoute == "RESEARCH")
             {
-                SessionState.Learning or SessionState.QuizPending => await HandleLearningStateAsync(
-                    userId, content, session),
-                _ => await _tutorAgent.GetResponseAsync(userId, content, session, false)
-            };
+                using var researchScope = _scopeFactory.CreateScope();
+                var korteks = researchScope.ServiceProvider.GetRequiredService<IKorteksAgent>();
+
+                string researchContext;
+                try
+                {
+                    var researchResult = await korteks.RunResearchWithEvidenceAsync(content, userId, session.TopicId);
+                    researchContext = KorteksResearchContextFormatter.FormatForTutor(researchResult);
+
+                    _logger.LogInformation(
+                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}",
+                        researchResult.GroundingMode,
+                        researchResult.IsFallback,
+                        researchResult.SourceCount,
+                        researchResult.ProviderCalls.Count(c => c.Invoked));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Orchestrator] Research route failed; Tutor will answer with explicit source limits.");
+                    researchContext = "[KORTEKS SOURCE-GROUNDING]\nStatus: failed\nFallback: true\nGroundingWarning: Source-backed research could not be completed. Tell the user that external source grounding is unavailable for this answer.";
+                }
+
+                var enrichedContent = $"[KORTEKS ARAŞTIRMA SONUÇLARI]:{Environment.NewLine}{researchContext}{Environment.NewLine}{Environment.NewLine}[KULLANICI MESAJI]:{Environment.NewLine}{tutorContent}";
+                aiResponse = await _tutorAgent.GetResponseAsync(userId, enrichedContent, session, false)
+                    ?? "Araştırma tamamlandı ancak Tutor yanıtı üretilemedi.";
+            }
+            else if (actionRoute == "QUIZ" && session.CurrentState == SessionState.Learning)
+            {
+                session.CurrentState = SessionState.QuizPending;
+                aiResponse = await HandleLearningStateAsync(userId, tutorContent, session);
+            }
+            else
+            {
+                aiResponse = session.CurrentState switch
+                {
+                    SessionState.Learning or SessionState.QuizPending => await HandleLearningStateAsync(
+                        userId, tutorContent, session),
+                    _ => await _tutorAgent.GetResponseAsync(userId, tutorContent, session, false)
+                };
+            }
         }
 
         // 3. SAVE AI MESSAGE
@@ -610,6 +756,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += aiCost;
 
         await _db.SaveChangesAsync();
+        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", tutorModel, aiTokens, aiCost);
 
         // AUTO-WIKI: Mesaj başına wiki üretimi YAPILMAZ (CLAUDE.md kuralı).
         // Wiki yalnızca (a) alt konu quiz'i geçildiğinde veya (b) AnalyzerAgent konu tamamlandı
@@ -654,6 +801,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 MaxAttempts: 1,
                 Timeout: TimeSpan.FromSeconds(90)));
         }
+        var usedTools = await _tutorToolRuntime.DetectToolUsageAsync(
+            userId,
+            content,
+            session,
+            aiResponse,
+            CancellationToken.None);
+
         return new ChatMessageResponse
         {
             MessageId   = aiMsg.Id,
@@ -668,7 +822,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             PlanCreated = planCreated,
             WikiPageId  = activeWikiPageId,
             IsNewTopic  = isNewTopic,
-            TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null
+            TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null,
+            Metadata    = _chatMetadata.Build(aiResponse, usedTools: usedTools)
         };
     }
 
@@ -691,6 +846,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             {
                 _logger.LogInformation("[DeepPlan] Müfredat için seviye tespiti başlatılıyor: {Topic}", topic.Title);
                 topic.Category = "Plan";
+                topic.PlanIntent ??= "Core";
                 await _db.SaveChangesAsync();
 
                 var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
@@ -1478,6 +1634,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             WikiPageId  = null,
             IsNewTopic  = topicId == null,
             TopicTitle  = topic.Title,
+            Metadata    = _chatMetadata.Build(quizResponse.Response)
         };
     }
 
@@ -1509,6 +1666,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         topic.Category = "Plan";
+        topic.PlanIntent ??= "Core";
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("[DeepPlan] Müfredat planı seviye tespiti başlatılıyor: {Topic}", topic.Title);

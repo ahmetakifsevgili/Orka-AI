@@ -13,7 +13,7 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
-import { Check, Copy, BookOpen, CheckCircle, Volume2 } from "lucide-react";
+import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Link2 } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
@@ -233,6 +233,55 @@ function withSourceLinks(content: string): string {
     .replace(/\[web(?::[^\]]+)?\]/g, "[web](orka-web://local)");
 }
 
+function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"] }) {
+  const tools = metadata?.usedTools ?? [];
+  const citations = metadata?.citations ?? [];
+  const warnings = metadata?.providerWarnings ?? [];
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode;
+  if (!hasMeta) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {metadata?.groundingMode && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-[#526d82]/12 bg-[#eef1f3]/78 px-2 py-1 text-[10px] font-bold text-[#667085]">
+          <Link2 className="h-3 w-3" />
+          {metadata.groundingMode}
+        </span>
+      )}
+      {tools.slice(0, 6).map((tool, index) => (
+        <span
+          key={`${tool.toolId ?? tool.name ?? "tool"}-${index}`}
+          title={[tool.safeMessage, tool.fallbackReason, tool.evidence].filter(Boolean).join(" · ")}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
+            tool.success === false || tool.fallbackUsed
+              ? "border-[#e8c46f]/35 bg-[#fff8ee]/85 text-[#8a641f]"
+              : "border-[#9ec7d9]/45 bg-[#dcecf3]/72 text-[#2d5870]"
+          }`}
+        >
+          <Wrench className="h-3 w-3" />
+          {tool.toolId ?? tool.name ?? "tool"}
+          {tool.provider && <span className="font-medium opacity-70">{tool.provider}</span>}
+        </span>
+      ))}
+      {citations.length > 0 && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+          <Link2 className="h-3 w-3" />
+          {citations.length} kaynak
+        </span>
+      )}
+      {(metadata?.fallbackReason || warnings.length > 0) && (
+        <span
+          title={[metadata?.fallbackReason, ...warnings].filter(Boolean).join(" · ")}
+          className="inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700"
+        >
+          <AlertTriangle className="h-3 w-3" />
+          fallback
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
@@ -348,6 +397,7 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
               if (!cleanedText && quizData) return null; // Only QuizCard
 
               return (
+                <>
                 <div className="bg-white/70 border border-[#526d82]/14 rounded-[1.25rem] px-5 py-4 mb-3 shadow-[0_14px_38px_rgba(66,91,112,0.09)] backdrop-blur-xl">
                   <div
                     className="prose max-w-none
@@ -421,6 +471,8 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
                     </ReactMarkdown>
                   </div>
                 </div>
+                  <ChatMetadataChips metadata={message.metadata} />
+                </>
               );
             })()}
 
@@ -476,6 +528,7 @@ export default memo(ChatMessageInner, (prev, next) => {
   return (
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
+    prev.message.metadata === next.message.metadata &&
     prev.message.isStreaming === next.message.isStreaming &&
     prev.message.type === next.message.type &&
     prev.topicId === next.topicId &&

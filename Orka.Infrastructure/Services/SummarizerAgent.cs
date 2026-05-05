@@ -137,6 +137,8 @@ public class SummarizerAgent : ISummarizerAgent
 
         // ── KİŞİSELLEŞTİRME: Öğrenci zayıf noktaları + yanlış quiz cevapları ──
         string personalizationBlock = "";
+        string adaptiveWikiMetadataBlock = "";
+        string sourceBackedWikiBlock = "";
         try
         {
             var profile = await _redis.GetStudentProfileAsync(topicId);
@@ -189,6 +191,65 @@ public class SummarizerAgent : ISummarizerAgent
                 _logger.LogInformation("[WikiCurator] Kişiselleştirme uygulandı. TopicId={TopicId} Failed={Count}",
                     topicId, failedAttempts.Count);
             }
+
+            var failedAttemptEntities = await db.QuizAttempts
+                .AsNoTracking()
+                .Where(q => q.TopicId == topicId && q.UserId == userId && !q.IsCorrect)
+                .OrderByDescending(q => q.CreatedAt)
+                .Take(5)
+                .ToListAsync();
+
+            var learningSignals = await db.LearningSignals
+                .AsNoTracking()
+                .Where(s => s.UserId == userId && s.TopicId == topicId)
+                .OrderByDescending(s => s.CreatedAt)
+                .Take(8)
+                .ToListAsync();
+
+            var recommendations = await db.StudyRecommendations
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.TopicId == topicId)
+                .OrderBy(r => r.IsDone)
+                .ThenByDescending(r => r.CreatedAt)
+                .Take(8)
+                .Select(r => new StudyRecommendationDto(
+                    r.Id,
+                    r.RecommendationType,
+                    r.Title,
+                    r.Reason,
+                    r.SkillTag,
+                    r.ActionPrompt,
+                    r.IsDone,
+                    r.CreatedAt))
+                .ToListAsync();
+
+            var remediationPlans = await db.RemediationPlans
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.TopicId == topicId)
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(5)
+                .ToListAsync();
+
+            adaptiveWikiMetadataBlock = WikiAdaptiveMetadataFormatter.BuildAdaptiveBlock(
+                profile,
+                failedAttemptEntities,
+                learningSignals,
+                recommendations,
+                remediationPlans);
+
+            var sourceChunks = await db.SourceChunks
+                .AsNoTracking()
+                .Include(c => c.LearningSource)
+                .Where(c => c.LearningSource.UserId == userId &&
+                            c.LearningSource.TopicId == topicId &&
+                            c.LearningSource.Status == "ready")
+                .OrderByDescending(c => c.CreatedAt)
+                .ThenBy(c => c.PageNumber)
+                .ThenBy(c => c.ChunkIndex)
+                .Take(8)
+                .ToListAsync();
+
+            sourceBackedWikiBlock = WikiAdaptiveMetadataFormatter.BuildSourceBlock(sourceChunks);
         }
         catch (Exception ex)
         {
@@ -202,6 +263,8 @@ public class SummarizerAgent : ISummarizerAgent
 
             Konu: {{topicTitle}}
             {{personalizationBlock}}
+            {{adaptiveWikiMetadataBlock}}
+            {{sourceBackedWikiBlock}}
             {{moduleWeaknessNotice}}
 
             HEDEF KİTLE & DİL:
@@ -252,7 +315,7 @@ public class SummarizerAgent : ISummarizerAgent
             """;
 
 
-        var userPrompt = $"Sohbet Geçmişi:\n\n{history}";
+        var userPrompt = $"Sohbet Geçmişi:\n\n{history}\n\n{sourceBackedWikiBlock}";
 
         try
         {
@@ -260,6 +323,7 @@ public class SummarizerAgent : ISummarizerAgent
                 _factory.GetModel(Orka.Core.Enums.AgentRole.Summarizer), sessionId);
 
             var summary = await _factory.CompleteChatAsync(Orka.Core.Enums.AgentRole.Summarizer, systemPrompt, userPrompt);
+            summary = WikiAdaptiveMetadataFormatter.EnsureSourceTagsPresent(summary, sourceBackedWikiBlock);
 
             // ── PEER REVIEW: Grader Öğrenci Dostu Dil Denetimi ──────────────────
             _logger.LogInformation("[WikiCurator] Grader dil kalite denetimi başlatıldı.");
@@ -307,6 +371,7 @@ public class SummarizerAgent : ISummarizerAgent
                 _logger.LogInformation("[WikiCurator] Sade ama yapısal yedek wiki üretildi.");
             }
 
+            summary = WikiAdaptiveMetadataFormatter.EnsureSourceTagsPresent(summary, sourceBackedWikiBlock);
             session.Summary = summary;
             await wikiService.AutoUpdateWikiAsync(topicId, summary, "Otomatik Oluşturulan Öğrenci Dostu Wiki", "GitHubModels-WikiArchitect");
             await db.SaveChangesAsync();
@@ -638,11 +703,35 @@ public class SummarizerAgent : ISummarizerAgent
     private async Task<string> BuildNotebookToolSourceAsync(Guid topicId, Guid userId, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
         var wikiService = scope.ServiceProvider.GetRequiredService<IWikiService>();
 
         var wikiContent = await wikiService.GetWikiFullContentAsync(topicId, userId);
         var korteksReport = await _redis.GetKorteksResearchReportAsync(topicId);
-        var combined = $"{wikiContent}\n\n{korteksReport}".Trim();
+        var sourceChunks = await db.SourceChunks
+            .AsNoTracking()
+            .Include(c => c.LearningSource)
+            .Where(c => c.LearningSource.UserId == userId &&
+                        c.LearningSource.TopicId == topicId &&
+                        c.LearningSource.Status == "ready")
+            .OrderByDescending(c => c.CreatedAt)
+            .ThenBy(c => c.PageNumber)
+            .ThenBy(c => c.ChunkIndex)
+            .Take(8)
+            .ToListAsync(ct);
+        var sourceBlock = WikiAdaptiveMetadataFormatter.BuildSourceBlock(sourceChunks);
+
+        var recentSignals = await db.LearningSignals
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.TopicId == topicId)
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(8)
+            .ToListAsync(ct);
+        var signalBlock = recentSignals.Count == 0
+            ? string.Empty
+            : "[ADAPTIVE LEARNING SIGNALS]\n" + string.Join("\n", recentSignals.Select(s => $"- {s.SignalType}: {s.SkillTag ?? s.TopicPath ?? "general"}"));
+
+        var combined = $"{wikiContent}\n\n{sourceBlock}\n\n{signalBlock}\n\n{korteksReport}".Trim();
         return combined.Length > 7000 ? combined[..7000] + "\n[...kırpıldı]" : combined;
     }
 

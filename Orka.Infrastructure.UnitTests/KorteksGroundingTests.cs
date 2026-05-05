@@ -139,6 +139,68 @@ public class KorteksGroundingTests
             sources.Select(s => s.Url));
     }
 
+    [Fact]
+    public void ResearchContextFormatter_IncludesGroundingAndDedupedSources()
+    {
+        var result = new KorteksResearchResultDto
+        {
+            Topic = "C# async await deadlock",
+            GroundingMode = GroundingMode.SourceGrounded,
+            IsFallback = false,
+            Report = "Use async all the way and avoid blocking waits.",
+            Sources =
+            [
+                Source("https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/"),
+                Source("https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/#overview")
+            ],
+            ProviderCalls = [Call(success: true)]
+        };
+
+        var context = KorteksResearchContextFormatter.FormatForTutor(result);
+
+        Assert.Contains("GroundingMode: SourceGrounded", context);
+        Assert.Contains("Fallback: false", context);
+        Assert.Contains("AcceptedSources:", context);
+        Assert.Contains("https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/", context);
+        Assert.Equal(1, CountOccurrences(context, "URL: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/"));
+    }
+
+    [Fact]
+    public void ResearchContextFormatter_LabelsFallbackWhenNoSources()
+    {
+        var result = new KorteksResearchResultDto
+        {
+            Topic = "provider unavailable",
+            GroundingMode = GroundingMode.FallbackInternalKnowledge,
+            IsFallback = true,
+            Report = "Model-only fallback.",
+            ProviderFailures = ["429 rate limit"]
+        };
+
+        var context = KorteksResearchContextFormatter.FormatForTutor(result);
+
+        Assert.Contains("Fallback: true", context);
+        Assert.Contains("GroundingWarning: No URL-backed source evidence is available.", context);
+        Assert.Contains("429 rate limit", context);
+    }
+
+    [Fact]
+    public void ResearchContextFormatter_CapsLargeReportForDownstreamContext()
+    {
+        var result = new KorteksResearchResultDto
+        {
+            Topic = "large report",
+            GroundingMode = GroundingMode.PartialSourceGrounded,
+            Report = new string('x', 12000),
+            Sources = [Source("https://example.com/research")]
+        };
+
+        var context = KorteksResearchContextFormatter.FormatForTutor(result);
+
+        Assert.True(context.Length <= 9040);
+        Assert.Contains("[truncated for downstream context]", context);
+    }
+
     private static SourceEvidenceDto Source(string url) =>
         new(
             Provider: "WebSearch",
@@ -164,4 +226,17 @@ public class KorteksGroundingTests
             DurationMs: 1,
             DegradedMarker: null,
             Timestamp: DateTimeOffset.UtcNow);
+
+    private static int CountOccurrences(string value, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
+    }
 }

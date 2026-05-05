@@ -4,6 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
+import type { ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +58,13 @@ export interface RegisterRequest {
 const TOKEN_KEY = "orka_token";
 const REFRESH_KEY = "orka_refresh";
 const USER_KEY = "orka_user";
+export const API_ORIGIN =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+export const buildApiUrl = (path: string) => {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${API_ORIGIN}${normalized}`;
+};
 
 export const storage = {
   getToken: () => localStorage.getItem(TOKEN_KEY),
@@ -84,11 +92,11 @@ export const storage = {
 
 // ---------------------------------------------------------------------------
 // Axios instance
-// Requests go to /api/... — Vite proxy forwards them to localhost:5065/api/...
+// Requests go to /api/... — Vite proxy forwards them to localhost:5101/api/...
 // ---------------------------------------------------------------------------
 
 const api: AxiosInstance = axios.create({
-  baseURL: "/api",
+  baseURL: buildApiUrl("/api"),
   headers: { "Content-Type": "application/json" },
 });
 
@@ -152,7 +160,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post<AuthTokens>("/api/auth/refresh", {
+        const { data } = await axios.post<AuthTokens>(buildApiUrl("/api/auth/refresh"), {
           refreshToken: refresh,
         });
         localStorage.setItem(TOKEN_KEY, data.token);
@@ -256,7 +264,7 @@ export const ChatAPI = {
     isPlanMode?: boolean;
   }) => {
     const token = storage.getToken();
-    return fetch("/api/chat/stream", {
+    return fetch(buildApiUrl("/api/chat/stream"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -399,6 +407,10 @@ export const SourcesAPI = {
         highlightHint?: string;
       }>;
     }>(`/sources/${sourceId}/pages/${page}`).then((r) => r.data),
+  update: (sourceId: string, data: { title?: string; fileName?: string }) =>
+    api.patch(`/sources/${sourceId}`, data).then((r) => r.data),
+  delete: (sourceId: string) =>
+    api.delete(`/sources/${sourceId}`).then((r) => r.data),
 };
 
 export const AudioOverviewAPI = {
@@ -411,7 +423,7 @@ export const AudioOverviewAPI = {
       errorMessage?: string;
       createdAt: string;
     }>("/audio/overview", data).then((r) => r.data),
-  streamUrl: (jobId: string) => `/api/audio/overview/${jobId}/stream`,
+  streamUrl: (jobId: string) => buildApiUrl(`/api/audio/overview/${jobId}/stream`),
 };
 
 export const LearningAPI = {
@@ -505,7 +517,7 @@ export const KorteksAPI = {
   // Düz konu araştırması (opsiyonel URL)
   stream: (data: { topic: string; topicId?: string; sourceUrl?: string }) => {
     const token = storage.getToken();
-    return fetch("/api/korteks/research", {
+    return fetch(buildApiUrl("/api/korteks/research"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -522,12 +534,23 @@ export const KorteksAPI = {
     form.append("topic", data.topic);
     if (data.topicId) form.append("topicId", data.topicId);
     form.append("file", data.file);
-    return fetch("/api/korteks/research-file", {
+    return fetch(buildApiUrl("/api/korteks/research-file"), {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
   },
+};
+
+export const ToolsAPI = {
+  getCapabilities: (includeInternal = false) =>
+    api
+      .get<ToolCapabilitiesResponse>(`/tools/capabilities${includeInternal ? "?includeInternal=true" : ""}`)
+      .then((r) => r.data),
+  getCapability: (toolId: string, includeInternal = false) =>
+    api
+      .get<ToolCapability>(`/tools/capabilities/${toolId}${includeInternal ? "?includeInternal=true" : ""}`)
+      .then((r) => r.data),
 };
 
 export const CodeAPI = {
@@ -536,7 +559,19 @@ export const CodeAPI = {
    * POST /api/code/run → { stdout, stderr, success }
    */
   run: (data: { code: string; language?: string; sessionId?: string; topicId?: string }) =>
-    api.post<{ stdout: string; stderr: string; success: boolean }>(
+    api.post<{
+      stdout: string;
+      stderr: string;
+      success: boolean;
+      phase?: string;
+      compileError?: string | null;
+      runtimeError?: string | null;
+      exitCode?: number | null;
+      durationMs?: number;
+      truncated?: boolean;
+      safeTutorSummary?: string | null;
+      runtime?: string | null;
+    }>(
       "/code/run",
       {
         code: data.code,
@@ -545,6 +580,57 @@ export const CodeAPI = {
         topicId: data.topicId,
       }
     ).then((r) => r.data),
+};
+
+export const FlashcardsAPI = {
+  list: (topicId?: string) =>
+    api.get(`/flashcards${topicId ? `?topicId=${topicId}` : ""}`).then((r) => r.data),
+  create: (data: {
+    topicId?: string;
+    front: string;
+    back: string;
+    hint?: string;
+    conceptTag?: string;
+    skillTag?: string;
+  }) => api.post("/flashcards", data).then((r) => r.data),
+  review: (id: string, quality: number, notes?: string) =>
+    api.post(`/flashcards/${id}/review`, { quality, notes }).then((r) => r.data),
+  delete: (id: string) => api.delete(`/flashcards/${id}`).then((r) => r.data),
+};
+
+export const ReviewAPI = {
+  due: (topicId?: string) =>
+    api.get(`/review/due${topicId ? `?topicId=${topicId}` : ""}`).then((r) => r.data),
+  complete: (id: string, quality: number, responseMode = "manual", notes?: string) =>
+    api.post(`/review/${id}/complete`, { quality, responseMode, notes }).then((r) => r.data),
+};
+
+export const DailyChallengeAPI = {
+  today: (topicId?: string) =>
+    api.get(`/daily-challenge${topicId ? `?topicId=${topicId}` : ""}`).then((r) => r.data),
+  submit: (challengeId: string, answer: string, quality = 3, topicId?: string) =>
+    api.post(`/daily-challenge/${challengeId}/submit`, { answer, quality, topicId }).then((r) => r.data),
+};
+
+export const BookmarksAPI = {
+  list: (topicId?: string) =>
+    api.get(`/bookmarks${topicId ? `?topicId=${topicId}` : ""}`).then((r) => r.data),
+  create: (data: {
+    topicId?: string;
+    sessionId?: string;
+    messageId?: string;
+    learningSourceId?: string;
+    wikiPageId?: string;
+    reviewItemId?: string;
+    flashcardId?: string;
+    title?: string;
+    note?: string;
+    quote?: string;
+    tags?: string[];
+  }) => api.post("/bookmarks", data).then((r) => r.data),
+  update: (id: string, data: { title?: string; note?: string; quote?: string; tags?: string[] }) =>
+    api.patch(`/bookmarks/${id}`, data).then((r) => r.data),
+  delete: (id: string) => api.delete(`/bookmarks/${id}`).then((r) => r.data),
 };
 
 export default api;

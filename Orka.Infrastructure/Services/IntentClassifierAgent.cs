@@ -92,9 +92,23 @@ public class IntentClassifierAgent : IIntentClassifierAgent
         {
             // Kendi rolüyle çağır (Cerebras/llama3.1-8b — hızlı + ucuz NLU). HUD'da ayrı metrik üretir.
             var response = await _factory.CompleteChatAsync(AgentRole.IntentClassifier, systemPrompt, userMessage, ct);
-            var cleanJson = response.Replace("```json", "").Replace("```", "").Trim();
+            var cleanJson = ExtractJsonObject(response);
+            if (string.IsNullOrWhiteSpace(cleanJson))
+            {
+                _logger.LogWarning("[IntentClassifier] JSON bulunamadı. Fail-safe CONTINUE döndürülüyor.");
+                return new IntentResult("CONTINUE", 0.0, "JSON bulunamadı — fail-safe.", 5, "");
+            }
 
-            var parsed = JsonSerializer.Deserialize<IntentJsonFormat>(cleanJson);
+            IntentJsonFormat? parsed;
+            try
+            {
+                parsed = JsonSerializer.Deserialize<IntentJsonFormat>(cleanJson);
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning("[IntentClassifier] JSON parse edilemedi. Fail-safe CONTINUE döndürülüyor.");
+                return new IntentResult("CONTINUE", 0.0, "Parse hatası — fail-safe.", 5, "");
+            }
 
             if (parsed != null && ValidIntents.Contains(parsed.intent))
             {
@@ -130,5 +144,20 @@ public class IntentClassifierAgent : IIntentClassifierAgent
         public string reasoning          { get; set; } = string.Empty;
         public int understandingScore    { get; set; } = 5;
         public string weaknesses         { get; set; } = string.Empty;
+    }
+
+    private static string? ExtractJsonObject(string? response)
+    {
+        if (string.IsNullOrWhiteSpace(response)) return null;
+
+        var clean = response.Replace("```json", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("```", "")
+            .Trim();
+
+        var start = clean.IndexOf('{');
+        var end = clean.LastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+
+        return clean[start..(end + 1)];
     }
 }

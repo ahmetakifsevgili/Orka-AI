@@ -1,3 +1,5 @@
+using Orka.Core.DTOs.Chat;
+
 namespace Orka.Core.DTOs;
 
 public record LearningSourceSummaryDto(
@@ -10,7 +12,9 @@ public record LearningSourceSummaryDto(
     int PageCount,
     int ChunkCount,
     string Status,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    bool IsDeleted = false,
+    int Version = 1);
 
 public record SourcePageDto(
     Guid SourceId,
@@ -27,7 +31,14 @@ public record SourceChunkDto(
 
 public record SourceAskResultDto(
     string Answer,
-    IReadOnlyList<SourceChunkDto> Citations);
+    IReadOnlyList<SourceChunkDto> Citations,
+    SourceMetadataDto? Metadata = null);
+
+public record SourceMetadataDto(
+    IReadOnlyList<CitationDto> Citations,
+    string GroundingMode,
+    string? FallbackReason,
+    double? SourceConfidence);
 
 public record GlossaryItemDto(string Term, string SimpleExplanation);
 
@@ -45,4 +56,9 @@ public record AudioOverviewJobDto(
     string Script,
     IReadOnlyList<string> Speakers,
     string? ErrorMessage,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? ContentType = null,
+    string? FileName = null,
+    string? DownloadUrl = null,
+    string? FallbackReason = null,
+    DateTime? UpdatedAt = null);

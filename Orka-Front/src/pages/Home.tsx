@@ -17,6 +17,7 @@ import WikiMainPanel from "@/components/WikiMainPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import DashboardPanel from "@/components/DashboardPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
+import LearningPanel from "@/components/LearningPanel";
 import SplitPane from "@/components/SplitPane";
 import { usePremiumOnboarding } from "@/components/PremiumOnboardingTour";
 
@@ -27,7 +28,7 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide"]);
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide", "learning"]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -40,6 +41,7 @@ function mapApiMessages(session: ApiSession | null): ChatMessage[] {
     role: mapRole(m.role || "ai"),
     type: (m.messageType as ChatMessage["type"]) ?? "text",
     content: m.content || "",
+    metadata: m.metadata ?? null,
     timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
   }));
 }
@@ -298,6 +300,8 @@ export default function Home() {
         return <DashboardPanel topics={topics} onViewChange={handleViewChange} />;
       case "settings":
         return <SettingsPanel />;
+      case "learning":
+        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} onOpenChat={() => setActiveView("chat")} />;
       case "wiki":
         return wikiTopicId ? (
           <WikiMainPanel topicId={wikiTopicId} onClose={() => handleViewChange("chat")} />

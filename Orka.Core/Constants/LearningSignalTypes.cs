@@ -16,13 +16,21 @@ public static class LearningSignalTypes
     public const string ClassroomStarted = "ClassroomStarted";
     public const string ClassroomQuestionAsked = "ClassroomQuestionAsked";
     public const string IdeRunCompleted = "IdeRunCompleted";
+    public const string IdeCompileError = "IdeCompileError";
+    public const string IdeRuntimeError = "IdeRuntimeError";
+    public const string IdeExecutionTimeout = "IdeExecutionTimeout";
+    public const string IdeProviderUnavailable = "IdeProviderUnavailable";
     public const string IdeSentToTutor = "IdeSentToTutor";
     public const string RemediationStarted = "RemediationStarted";
     public const string RemediationCompleted = "RemediationCompleted";
+    public const string ReviewCompleted = "ReviewCompleted";
+    public const string DailyChallengeAssigned = "DailyChallengeAssigned";
+    public const string DailyChallengeCompleted = "DailyChallengeCompleted";
     public const string LessonCompleted = "LessonCompleted";
     public const string YouTubeReferenceUsed = "YouTubeReferenceUsed";
     public const string NotebookSourceUsed = "NotebookSourceUsed";
     public const string MisconceptionDetected = "MisconceptionDetected";
+    public const string MistakeClassified = "MistakeClassified";
     public const string TeachingMoveApplied = "TeachingMoveApplied";
     public const string SourceCitationMissing = "SourceCitationMissing";
 
@@ -38,13 +46,21 @@ public static class LearningSignalTypes
         ClassroomStarted,
         ClassroomQuestionAsked,
         IdeRunCompleted,
+        IdeCompileError,
+        IdeRuntimeError,
+        IdeExecutionTimeout,
+        IdeProviderUnavailable,
         IdeSentToTutor,
         RemediationStarted,
         RemediationCompleted,
+        ReviewCompleted,
+        DailyChallengeAssigned,
+        DailyChallengeCompleted,
         LessonCompleted,
         YouTubeReferenceUsed,
         NotebookSourceUsed,
         MisconceptionDetected,
+        MistakeClassified,
         TeachingMoveApplied,
         SourceCitationMissing
     ];

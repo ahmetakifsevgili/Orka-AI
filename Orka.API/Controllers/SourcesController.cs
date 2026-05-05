@@ -49,6 +49,10 @@ public class SourcesController : ControllerBase
         {
             return StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = "Depolama limitine ulasildi." });
         }
+        catch (InvalidOperationException)
+        {
+            return BadRequest(new { message = "Kaynak yukleme istegi gecersiz." });
+        }
     }
 
     [HttpGet("topic/{topicId:guid}")]
@@ -64,8 +68,15 @@ public class SourcesController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Question))
             return BadRequest(new { message = "Soru boş olamaz." });
 
-        var result = await _sources.AskAsync(GetUserId(), sourceId, request.Question, HttpContext.RequestAborted);
-        return Ok(result);
+        try
+        {
+            var result = await _sources.AskAsync(GetUserId(), sourceId, request.Question, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
     }
 
     [HttpGet("{sourceId:guid}/pages/{page:int}")]
@@ -73,6 +84,19 @@ public class SourcesController : ControllerBase
     {
         var result = await _sources.GetPageAsync(GetUserId(), sourceId, page, HttpContext.RequestAborted);
         return result == null ? NotFound(new { message = "Sayfa veya kaynak bulunamadı." }) : Ok(result);
+    }
+    [HttpPatch("{sourceId:guid}")]
+    public async Task<IActionResult> Update(Guid sourceId, [FromBody] SourceUpdateRequest request)
+    {
+        var result = await _sources.UpdateSourceAsync(GetUserId(), sourceId, request.Title, HttpContext.RequestAborted);
+        return result == null ? NotFound(new { message = "Kaynak bulunamadi." }) : Ok(result);
+    }
+
+    [HttpDelete("{sourceId:guid}")]
+    public async Task<IActionResult> Delete(Guid sourceId)
+    {
+        var deleted = await _sources.DeleteSourceAsync(GetUserId(), sourceId, HttpContext.RequestAborted);
+        return deleted ? Ok(new { deleted = true, sourceId }) : NotFound(new { message = "Kaynak bulunamadi." });
     }
 }
 
@@ -86,4 +110,9 @@ public class SourceUploadRequest
 public class SourceAskRequest
 {
     public string Question { get; set; } = string.Empty;
+}
+
+public class SourceUpdateRequest
+{
+    public string? Title { get; set; }
 }
