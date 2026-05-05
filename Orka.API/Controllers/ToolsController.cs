@@ -21,6 +21,7 @@ public sealed class ToolsController : ControllerBase
         _db = db;
     }
 
+    [AllowAnonymous]
     [HttpGet("capabilities")]
     public async Task<IActionResult> GetCapabilities([FromQuery] bool includeInternal = false)
     {
@@ -35,6 +36,7 @@ public sealed class ToolsController : ControllerBase
         });
     }
 
+    [AllowAnonymous]
     [HttpGet("capabilities/{toolId}")]
     public async Task<IActionResult> GetCapability(string toolId, [FromQuery] bool includeInternal = false)
     {

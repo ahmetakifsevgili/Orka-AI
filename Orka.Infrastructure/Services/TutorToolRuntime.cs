@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Orka.Core.DTOs;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
@@ -11,12 +12,18 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
 {
     private readonly OrkaDbContext _db;
     private readonly IToolCapabilityService _capabilities;
+    private readonly IRuntimeTelemetryService _telemetry;
     private readonly ILogger<TutorToolRuntime> _logger;
 
-    public TutorToolRuntime(OrkaDbContext db, IToolCapabilityService capabilities, ILogger<TutorToolRuntime> logger)
+    public TutorToolRuntime(
+        OrkaDbContext db,
+        IToolCapabilityService capabilities,
+        IRuntimeTelemetryService telemetry,
+        ILogger<TutorToolRuntime> logger)
     {
         _db = db;
         _capabilities = capabilities;
+        _telemetry = telemetry;
         _logger = logger;
     }
 
@@ -126,11 +133,32 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                 "tool_runtime_probe_failed"));
         }
 
-        return tools
+        var result = tools
             .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .Take(12)
             .ToList();
+
+        foreach (var tool in result)
+        {
+            await _telemetry.RecordToolEventAsync(new ToolTelemetryEventRequest(
+                UserId: userId,
+                SessionId: session.Id,
+                TopicId: session.TopicId,
+                ToolId: tool.Name,
+                CapabilityStatus: tool.Status,
+                Provider: null,
+                Model: null,
+                LatencyMs: 0,
+                Success: !tool.Status.Contains("degraded", StringComparison.OrdinalIgnoreCase) &&
+                         !tool.Status.Contains("disabled", StringComparison.OrdinalIgnoreCase),
+                ErrorCode: tool.FallbackReason,
+                FallbackUsed: !string.IsNullOrWhiteSpace(tool.FallbackReason),
+                CorrelationId: null,
+                MetadataJson: tool.Evidence));
+        }
+
+        return result;
     }
 
     private static bool LooksLikeSourceQuery(string text) =>

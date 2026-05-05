@@ -125,6 +125,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
+builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());

@@ -27,6 +27,36 @@ Manual proof also returned:
 - `wolfram_alpha`, `ide_execution`, `weather`, `news`, `crypto` -> `Disabled / DISABLED_WITH_RUNTIME_STUB`
 - `sources_query`, `bookmarks` -> `Enabled / INTEGRATED_AND_TESTED`
 
+## Worker / Cost / Provider Gate Hardening Addendum
+
+Runtime smoke after worker/cost/provider hardening:
+
+| Method/path | Auth | Expected | Actual | Result |
+|---|---|---:|---:|---|
+| GET `/swagger/index.html` | no | 200 | 200 | PASS |
+| GET `/health/live` | no | 200 | 200 | PASS |
+| GET `/health/ready` | no | 200 | 200 | PASS |
+| GET `/api/korteks/ping` | yes | 401 without token | 401 | PASS |
+| GET `/api/tools/capabilities` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/wolfram_alpha` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/ide_execution` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/weather` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/news` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/crypto` | no | 200 | 200 | PASS |
+
+New durable runtime tables:
+
+- `ToolTelemetryEvents`
+- `CostRecords`
+
+Migration apply result: PASS (`20260505022104_AddRuntimeTelemetryAndCostRecords`).
+
+Unit/focused proof:
+
+- runtime telemetry records tool events and cost records.
+- unknown model cost estimation returns a safe fallback.
+- background queue rejects missing job types.
+
 ## Contract Decisions
 
 - Cross-user and auth behavior remains guarded by accepted contract tests.

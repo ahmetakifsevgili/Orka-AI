@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MediatR;
 using Orka.Core.Constants;
+using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -38,6 +39,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IChatMetadataService _chatMetadata;
     private readonly ITutorToolRuntime _tutorToolRuntime;
+    private readonly IRuntimeTelemetryService _runtimeTelemetry;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -57,6 +59,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IBackgroundTaskQueue backgroundQueue,
         IChatMetadataService chatMetadata,
         ITutorToolRuntime tutorToolRuntime,
+        IRuntimeTelemetryService runtimeTelemetry,
         ILogger<AgentOrchestratorService> logger)
     {
         _db = db;
@@ -75,6 +78,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _backgroundQueue = backgroundQueue;
         _chatMetadata = chatMetadata;
         _tutorToolRuntime = tutorToolRuntime;
+        _runtimeTelemetry = runtimeTelemetry;
         _logger = logger;
     }
 
@@ -580,7 +584,32 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += cost;
 
         await _db.SaveChangesAsync();
+        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", model, tokens, cost);
         return aiMsg.Id;
+    }
+
+    private async Task RecordCostSafeAsync(
+        Guid userId,
+        Guid sessionId,
+        Guid messageId,
+        string agentRole,
+        string provider,
+        string? model,
+        int tokens,
+        decimal cost)
+    {
+        await _runtimeTelemetry.RecordCostAsync(new CostRecordRequest(
+            UserId: userId,
+            SessionId: sessionId,
+            MessageId: messageId,
+            AgentRole: agentRole,
+            Provider: provider,
+            Model: model,
+            EstimatedTokens: tokens,
+            EstimatedCostUsd: cost,
+            Success: true,
+            ErrorCode: null,
+            MetadataJson: null));
     }
 
     public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
@@ -727,6 +756,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += aiCost;
 
         await _db.SaveChangesAsync();
+        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", tutorModel, aiTokens, aiCost);
 
         // AUTO-WIKI: Mesaj başına wiki üretimi YAPILMAZ (CLAUDE.md kuralı).
         // Wiki yalnızca (a) alt konu quiz'i geçildiğinde veya (b) AnalyzerAgent konu tamamlandı

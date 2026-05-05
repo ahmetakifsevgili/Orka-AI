@@ -40,6 +40,8 @@ public class OrkaDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; } = null!;
     public DbSet<Bookmark> Bookmarks { get; set; } = null!;
     public DbSet<PushSubscription> PushSubscriptions { get; set; } = null!;
+    public DbSet<ToolTelemetryEvent> ToolTelemetryEvents { get; set; } = null!;
+    public DbSet<CostRecord> CostRecords { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,6 +74,70 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<RefreshToken>()
             .HasIndex(rt => rt.Token)
             .IsUnique();
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.ToolId)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.CapabilityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.Provider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.Model)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.ErrorCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.CorrelationId)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .Property(t => t.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .HasIndex(t => new { t.ToolId, t.OccurredAt });
+
+        modelBuilder.Entity<ToolTelemetryEvent>()
+            .HasIndex(t => new { t.UserId, t.OccurredAt });
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.AgentRole)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.Provider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.Model)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.EstimatedCostUsd)
+            .HasPrecision(18, 8);
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.ErrorCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CostRecord>()
+            .Property(c => c.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<CostRecord>()
+            .HasIndex(c => new { c.UserId, c.OccurredAt });
+
+        modelBuilder.Entity<CostRecord>()
+            .HasIndex(c => new { c.Provider, c.Model, c.OccurredAt });
 
         modelBuilder.Entity<Session>()
             .HasOne(s => s.User)

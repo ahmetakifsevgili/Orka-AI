@@ -105,7 +105,7 @@ def test_push_subscription_crud(session, auth_header):
 
 
 def test_tool_capability_matrix_exposes_gated_dirty_orka_tools(session, auth_header):
-    resp = session.get(f"{BASE_URL}/api/tools/capabilities", headers=auth_header, timeout=TIMEOUT)
+    resp = session.get(f"{BASE_URL}/api/tools/capabilities", timeout=TIMEOUT)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["contract"] == "tool_capability_v1"
@@ -140,6 +140,6 @@ def test_tool_capability_matrix_exposes_gated_dirty_orka_tools(session, auth_hea
     assert tools["ide_execution"]["status"] in {"DevOnly", "Disabled"}
     assert tools["crypto"]["riskLevel"] == "High"
 
-    one = session.get(f"{BASE_URL}/api/tools/capabilities/wolfram_alpha", headers=auth_header, timeout=TIMEOUT)
+    one = session.get(f"{BASE_URL}/api/tools/capabilities/wolfram_alpha", timeout=TIMEOUT)
     assert one.status_code == 200, one.text
     assert one.json()["toolId"] == "wolfram_alpha"
