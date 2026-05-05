@@ -102,3 +102,44 @@ def test_push_subscription_crud(session, auth_header):
     )
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["deleted"] is True
+
+
+def test_tool_capability_matrix_exposes_gated_dirty_orka_tools(session, auth_header):
+    resp = session.get(f"{BASE_URL}/api/tools/capabilities", headers=auth_header, timeout=TIMEOUT)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["contract"] == "tool_capability_v1"
+    tools = {item["toolId"]: item for item in body["tools"]}
+
+    for tool_id in [
+        "sources_query",
+        "review_query",
+        "flashcards",
+        "daily_challenge",
+        "bookmarks",
+        "mermaid",
+        "visual_generation",
+        "youtube_pedagogy",
+        "wolfram_alpha",
+        "ide_execution",
+        "weather",
+        "news",
+        "crypto",
+    ]:
+        assert tool_id in tools
+        assert tools[tool_id]["telemetryEnabled"] is True
+        assert tools[tool_id]["decision"] in {
+            "INTEGRATED_AND_TESTED",
+            "INTEGRATED_BEHIND_GATE",
+            "BETA_ADMIN_OR_DEV_ONLY",
+            "DISABLED_WITH_RUNTIME_STUB",
+            "PRODUCTION_HARDENING",
+        }
+
+    assert tools["wolfram_alpha"]["status"] in {"Enabled", "Disabled"}
+    assert tools["ide_execution"]["status"] in {"DevOnly", "Disabled"}
+    assert tools["crypto"]["riskLevel"] == "High"
+
+    one = session.get(f"{BASE_URL}/api/tools/capabilities/wolfram_alpha", headers=auth_header, timeout=TIMEOUT)
+    assert one.status_code == 200, one.text
+    assert one.json()["toolId"] == "wolfram_alpha"

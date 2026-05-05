@@ -124,6 +124,7 @@ builder.Services.AddScoped<IXpEventService, XpEventService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
+builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
@@ -146,6 +147,11 @@ builder.Services.AddScoped<BookmarkPlugin>();
 builder.Services.AddScoped<LearningModePlugin>();
 builder.Services.AddScoped<AgentDecisionPlugin>();
 builder.Services.AddScoped<VisualGeneratorPlugin>();
+builder.Services.AddScoped<WolframAlphaPlugin>();
+builder.Services.AddScoped<IdeExecutionPlugin>();
+builder.Services.AddScoped<WeatherGeographyPlugin>();
+builder.Services.AddScoped<NewsPlugin>();
+builder.Services.AddScoped<CryptoDataPlugin>();
 builder.Services.AddScoped<PluginTelemetryFilter>();
 
 // Korteks dosya çıkarma servisi
@@ -335,6 +341,11 @@ builder.Services.AddScoped<Kernel>(sp =>
     kernel.Plugins.AddFromObject(sp.GetRequiredService<LearningModePlugin>(), "LearningMode");
     kernel.Plugins.AddFromObject(sp.GetRequiredService<AgentDecisionPlugin>(), "AgentDecision");
     kernel.Plugins.AddFromObject(sp.GetRequiredService<VisualGeneratorPlugin>(), "Visuals");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<WolframAlphaPlugin>(), "Wolfram");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<IdeExecutionPlugin>(), "IdeExecution");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<WeatherGeographyPlugin>(), "Weather");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<NewsPlugin>(), "News");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<CryptoDataPlugin>(), "Crypto");
     kernel.FunctionInvocationFilters.Add(sp.GetRequiredService<PluginTelemetryFilter>());
             
     return kernel;

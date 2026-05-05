@@ -82,3 +82,22 @@ The backend now includes parity contracts for features carried forward from the 
 - `semantic_kernel`
 
 Frontend must treat these as backend evidence/hints, not infer tool use from prose. External provider tools such as Wolfram, IDE auto-execution, Weather, News, and Crypto remain beta/hidden unless a later contract explicitly marks them ready.
+
+## Tool Capability Contract
+
+Frontend must not infer tool availability from Tutor prose. Use:
+
+- `GET /api/tools/capabilities`
+- `GET /api/tools/capabilities/{toolId}`
+
+Each tool returns `toolId`, `displayName`, `category`, `status`, `riskLevel`, `requiresAuth`, `requiresAdmin`, `requiresExternalProvider`, `configKey`, `timeoutMs`, `costTracked`, `telemetryEnabled`, `fallbackMode`, `inputSchema`, `outputSchema`, `decision`, and `notes`.
+
+Dirty-Orka tools are now explicit:
+
+- `wolfram_alpha`: disabled stub unless provider key is configured.
+- `ide_execution`: high-risk; SK auto-execution is disabled/admin-dev gated. Use `/api/code/run` or `/api/code/execute` for sandbox-backed API execution.
+- `weather`, `news`, `crypto`: beta/disabled stubs until product/provider gates are enabled.
+- `visual_generation`: beta visual generation; Mermaid remains low-risk text-only.
+- `youtube_pedagogy`: pedagogy/reference by default, not factual grounding unless transcript/source evidence is explicit.
+
+Frontend display rule: disabled, beta, admin-only, and dev-only tools should render as unavailable or gated controls, never as silently missing features.

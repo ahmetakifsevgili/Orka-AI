@@ -45,3 +45,18 @@ Backend blockers: none found. Hide until beta: direct diagnostics/test/code endp
 | Tutor SK tool hints | chat metadata `usedTools[]` | READY_WITH_UI_DECISION | Tool banners can be rendered from metadata, not prose. |
 | External info tools | SK plugins deferred/gated | HIDE_UNTIL_BETA | Weather/news/crypto/Wolfram need provider and product safety gates. |
 | Dev cleanup tooling | Not public | DEV_ADMIN_ONLY | Do not expose destructive cleanup in frontend. |
+
+## Backend Hardening Tool Matrix Addendum
+
+| Feature | Backend contract | Frontend Classification | Notes |
+| --- | --- | --- | --- |
+| Tool capability/status panel | `GET /api/tools/capabilities` | READY_FOR_FRONTEND | Use this instead of guessing tool availability from prose. |
+| Wolfram tool | capability row + disabled stub | HIDE_UNTIL_BETA | Requires provider key and product approval. |
+| IDE/SK auto-execution | capability row + disabled/admin-dev stub | HIDE_UNTIL_BETA | `/api/code/execute` remains the sandbox-backed API alias. |
+| Weather | capability row + disabled/beta stub | HIDE_UNTIL_BETA | External info, not core learning evidence. |
+| News | capability row + disabled/provider stub | HIDE_UNTIL_BETA | Must show dates/source if later enabled. |
+| Crypto | capability row + disabled/beta stub | HIDE_UNTIL_BETA | Educational market data only; no financial advice. |
+| Visual generation | capability row + existing Pollinations markdown plugin | READY_WITH_UI_DECISION | Render generated image links as illustrative. |
+| Mermaid | content rendering contract | READY_FOR_FRONTEND | Text-only, low-risk. |
+| Background worker controls | internal capability row only | PRODUCTION_HARDENING | Not a frontend blocker. |
+| Cost tracking dashboard | internal capability row only | PRODUCTION_HARDENING | Not a frontend blocker. |

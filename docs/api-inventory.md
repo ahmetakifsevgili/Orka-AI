@@ -165,3 +165,12 @@ Additional backend parity endpoints now available:
 - `POST /api/flashcards/bulk`
 
 These are compatibility/parity surfaces and do not replace the accepted canonical contracts.
+
+## Backend Hardening Tool Capability Addendum
+
+Additional backend hardening endpoints:
+
+- `GET /api/tools/capabilities`
+- `GET /api/tools/capabilities/{toolId}`
+
+These endpoints explicitly classify Dirty-Orka tools such as Wolfram, IDE execution, Weather, News, Crypto, Visual generation, YouTube pedagogy, Tavily/web search, SourcesQuery, ReviewQuery, Flashcards, DailyChallenge and Bookmarks. Disabled or provider-missing tools must be visible as disabled/beta/admin/dev capability rows, not silently omitted.

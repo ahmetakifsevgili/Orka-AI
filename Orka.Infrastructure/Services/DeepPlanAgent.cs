@@ -375,23 +375,23 @@ public class DeepPlanAgent : IDeepPlanAgent
             PlanDomain.Algorithm => new List<ModuleDefinition>
             {
                 new("Problem Okuma", "🧠", new List<LessonDefinition> { new("Input-output analizi", "complexity"), new("Edge-case listesi", "testing") }),
-                new("Pointers & Window", "🧭", new List<LessonDefinition> { new("Two Pointers", "algo"), new("Sliding Window", "algo") }),
+                new("Two Pointers & Sliding Window", "🧭", new List<LessonDefinition> { new("Two Pointers", "algo"), new("Sliding Window", "algo") }),
                 new("Traversal Pratiği", "🕸️", new List<LessonDefinition> { new("BFS/DFS", "graph"), new("Debug teknikleri", "ide") }),
-                new("DP & Optimizasyon", "⚙️", new List<LessonDefinition> { new("State tanımı", "dp"), new("Memoization", "optimization") })
+                new("Dynamic Programming ve HackerRank", "⚙️", new List<LessonDefinition> { new("State tanımı", "dp"), new("HackerRank pratik seti", "optimization") })
             },
             PlanDomain.Math => new List<ModuleDefinition>
             {
-                new($"{title} Kavram Sezgisi", "📐", new List<LessonDefinition> { new("Formül görselleştirme", "concept"), new("İşlem dili", "notation") }),
-                new("Adım Adım Çözüm", "✍️", new List<LessonDefinition> { new("Verilen-istenen ayrımı", "logic"), new("Tip sınıflandırma", "pattern") }),
+                new($"{title} Formulun Kavram Sezgisi", "📐", new List<LessonDefinition> { new("Formulun sezgisel anlamı", "concept"), new("İşlem dili", "notation") }),
+                new("Adım Adım Problem Çözümü", "✍️", new List<LessonDefinition> { new("Problem dili", "logic"), new("Tip sınıflandırma", "pattern") }),
                 new("Uygulama Setleri", "🧮", new List<LessonDefinition> { new("Örnek zinciri", "practice"), new("Zamanlı mini quiz", "assessment") }),
-                new("Mastery Kontrolü", "🔁", new List<LessonDefinition> { new("Hatalı skill telafisi", "remediation"), new("Tekrar etmeyen örnekler", "mastery") })
+                new("Telafi ve Mastery Kontrolü", "🔁", new List<LessonDefinition> { new("Hatalı skill telafisi", "remediation"), new("Tekrar etmeyen örnekler", "mastery") })
             },
             PlanDomain.Language => new List<ModuleDefinition>
             {
-                new("Temel İfadeler", "🗣️", new List<LessonDefinition> { new("Günlük kalıplar", "vocabulary"), new("Telaffuz farkındalığı", "pronunciation") }),
+                new("Temel İfadeler ve Telaffuz", "🗣️", new List<LessonDefinition> { new("Günlük kalıplar", "vocabulary"), new("Telaffuz farkındalığı", "pronunciation") }),
                 new("Grammar in Context", "📘", new List<LessonDefinition> { new("Bağlamsal yapılar", "grammar"), new("Hata düzeltme", "writing") }),
                 new("Speaking & Role-play", "🎙️", new List<LessonDefinition> { new("Diyalog kurma", "speaking"), new("Feedback analizi", "fluency") }),
-                new("Active Recall", "🔁", new List<LessonDefinition> { new("Spaced repetition", "memory"), new("Haftalık kapanış", "review") })
+                new("Spaced Repetition Active Recall", "🔁", new List<LessonDefinition> { new("Spaced Repetition", "memory"), new("Haftalık kapanış", "review") })
             },
             _ => null
         };

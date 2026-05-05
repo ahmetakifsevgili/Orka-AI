@@ -24,6 +24,32 @@
     ],
     "notes": "Addendum preserves original inventory and records parity surfaces added after API freeze."
   },
+  "backendHardeningAddendum": {
+    "branch": "feature/backend-production-hardening-dirty-orka-parity",
+    "addedEndpointGroups": [
+      "tool-capabilities"
+    ],
+    "addedEndpoints": [
+      "GET /api/tools/capabilities",
+      "GET /api/tools/capabilities/{toolId}"
+    ],
+    "explicitlyClassifiedDirtyTools": [
+      "wolfram_alpha",
+      "ide_execution",
+      "weather",
+      "news",
+      "crypto",
+      "visual_generation",
+      "youtube_pedagogy",
+      "tavily_web_search",
+      "sources_query",
+      "review_query",
+      "flashcards",
+      "daily_challenge",
+      "bookmarks"
+    ],
+    "notes": "Dirty-Orka tools must resolve to integrated, gated, disabled stub, admin/dev-only, production hardening, or not-ported-with-reason. Frontend must read capability status instead of inferring from prose."
+  },
   "counts": {
     "total": 95,
     "authRequired": 85,

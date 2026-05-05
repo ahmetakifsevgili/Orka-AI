@@ -10,11 +10,13 @@ namespace Orka.Infrastructure.Services;
 public sealed class TutorToolRuntime : ITutorToolRuntime
 {
     private readonly OrkaDbContext _db;
+    private readonly IToolCapabilityService _capabilities;
     private readonly ILogger<TutorToolRuntime> _logger;
 
-    public TutorToolRuntime(OrkaDbContext db, ILogger<TutorToolRuntime> logger)
+    public TutorToolRuntime(OrkaDbContext db, IToolCapabilityService capabilities, ILogger<TutorToolRuntime> logger)
     {
         _db = db;
+        _capabilities = capabilities;
         _logger = logger;
     }
 
@@ -97,6 +99,21 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "ready",
                     "safe tutor tool runtime registered",
                     null));
+
+                foreach (var toolId in DetectRequestedToolIds(text))
+                {
+                    var capability = _capabilities.GetCapability(toolId);
+                    if (capability is null)
+                        continue;
+
+                    tools.Add(new UsedToolDto(
+                        capability.ToolId,
+                        capability.Status.ToLowerInvariant(),
+                        capability.Decision,
+                        capability.Status.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
+                            ? capability.FallbackMode
+                            : null));
+                }
             }
         }
         catch (Exception ex)
@@ -132,7 +149,25 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
         ContainsAny(text, "bookmark", "yer imi", "kaydet", "sakla");
 
     private static bool LooksLikeExternalToolQuery(string text) =>
-        ContainsAny(text, "wolfram", "hesapla", "kod çalıştır", "kod calistir", "ide", "görsel", "gorsel", "youtube", "video");
+        ContainsAny(text, "wolfram", "hesapla", "kod çalıştır", "kod calistir", "ide", "görsel", "gorsel", "youtube", "video", "weather", "hava durumu", "news", "haber", "crypto", "kripto");
+
+    private static IEnumerable<string> DetectRequestedToolIds(string text)
+    {
+        if (ContainsAny(text, "wolfram", "integral", "denklem", "hesapla"))
+            yield return "wolfram_alpha";
+        if (ContainsAny(text, "kod çalıştır", "kod calistir", "ide", "run code", "execute code"))
+            yield return "ide_execution";
+        if (ContainsAny(text, "hava durumu", "weather", "iklim"))
+            yield return "weather";
+        if (ContainsAny(text, "haber", "news", "güncel", "guncel"))
+            yield return "news";
+        if (ContainsAny(text, "crypto", "kripto", "bitcoin", "ethereum"))
+            yield return "crypto";
+        if (ContainsAny(text, "görsel", "gorsel", "diagram", "çiz", "ciz"))
+            yield return "visual_generation";
+        if (ContainsAny(text, "youtube", "video", "hoca"))
+            yield return "youtube_pedagogy";
+    }
 
     private static bool ContainsAny(string text, params string[] needles) =>
         needles.Any(n => text.Contains(n, StringComparison.OrdinalIgnoreCase));
