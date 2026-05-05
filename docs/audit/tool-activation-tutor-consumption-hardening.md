@@ -212,5 +212,23 @@ New YouTube pedagogy intelligence:
 
 Remaining product gate:
 
-- Real Wolfram/news/weather/crypto/YouTube provider use still requires configuration.
+- Wolfram still requires AppId configuration.
+- News now has GDELT public fallback when NewsAPI is absent.
+- Weather now has Open-Meteo public fallback when OpenWeatherMap is absent.
+- Crypto/finance now uses CoinGecko public market-data by default.
+- YouTube live transcript/pedagogy still requires configuration plus the enable flag.
 - Tests intentionally use fake providers and safe missing-key fallbacks.
+
+## Public API Activation Update
+
+The current-data tools are no longer disabled just because commercial keys are absent:
+
+- `news`: GDELT public API is used as the default source-backed current-info provider. NewsAPI remains an optional commercial override.
+- `weather`: Open-Meteo public API is used as the default weather provider. OpenWeatherMap remains an optional commercial override.
+- `crypto`: CoinGecko public endpoint is used by default for educational market data.
+
+Runtime capability proof:
+
+- `/api/tools/capabilities/news` -> `Enabled / INTEGRATED_AND_TESTED`
+- `/api/tools/capabilities/weather` -> `Enabled / INTEGRATED_AND_TESTED`
+- `/api/tools/capabilities/crypto` -> `Enabled / INTEGRATED_AND_TESTED`

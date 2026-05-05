@@ -112,8 +112,6 @@ public sealed class NewsProvider : INewsProvider
         const string toolId = "news";
         var sw = Stopwatch.StartNew();
         var apiKey = _configuration["AI:NewsAPI:ApiKey"] ?? _configuration["NewsAPI:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "disabled", ProviderFailureCodes.ProviderMissing, "Current news provider is not configured; do not infer current events from model memory."), userId, sessionId, topicId, ct);
 
         try
         {
@@ -121,47 +119,50 @@ public sealed class NewsProvider : INewsProvider
             timeout.CancelAfter(TimeSpan.FromSeconds(12));
             var safeCount = Math.Clamp(count, 1, 10);
             var client = _httpClientFactory.CreateClient("News");
-            var url = $"v2/everything?q={Uri.EscapeDataString(query)}&language={Uri.EscapeDataString(language)}&pageSize={safeCount}&sortBy=publishedAt&apiKey={Uri.EscapeDataString(apiKey)}";
+            var provider = string.IsNullOrWhiteSpace(apiKey) ? "gdelt" : "newsapi";
+            var url = string.IsNullOrWhiteSpace(apiKey)
+                ? $"https://api.gdeltproject.org/api/v2/doc/doc?query={Uri.EscapeDataString(query)}&mode=ArtList&format=json&maxrecords={safeCount}&sort=HybridRel"
+                : $"v2/everything?q={Uri.EscapeDataString(query)}&language={Uri.EscapeDataString(language)}&pageSize={safeCount}&sortBy=publishedAt&apiKey={Uri.EscapeDataString(apiKey)}";
             var response = await client.GetAsync(url, timeout.Token);
             var body = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
-                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "degraded", ProviderFailureCodes.ProviderError, $"News provider failed with status {(int)response.StatusCode}.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, provider, "degraded", ProviderFailureCodes.ProviderError, $"News provider failed with status {(int)response.StatusCode}.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
             using var doc = JsonDocument.Parse(body);
             if (!doc.RootElement.TryGetProperty("articles", out var articles) || articles.ValueKind != JsonValueKind.Array)
-                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "malformed", ProviderFailureCodes.MalformedResponse, "News provider returned an unexpected response.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, provider, "malformed", ProviderFailureCodes.MalformedResponse, "News provider returned an unexpected response.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
             var parsed = articles.EnumerateArray()
-                .Select(ParseArticle)
+                .Select(a => provider == "gdelt" ? ParseGdeltArticle(a) : ParseNewsApiArticle(a))
                 .Where(a => !string.IsNullOrWhiteSpace(a.Title))
                 .Take(safeCount)
                 .ToList();
             if (parsed.Count == 0)
-                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "empty", ProviderFailureCodes.EmptyResult, "No sourced current news result was found.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, provider, "empty", ProviderFailureCodes.EmptyResult, "No sourced current news result was found.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
             var citations = parsed
                 .Select(a => new ProviderCitationDto(a.Title, a.Url, a.SourceName, a.PublishedAt, 0.85))
                 .ToList();
-            var result = new ProviderToolResultDto(true, toolId, "newsapi", "ready", parsed, citations, DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Sourced current news results are available.", 0.85, parsed.Count);
+            var result = new ProviderToolResultDto(true, toolId, provider, "ready", parsed, citations, DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Sourced current news results are available. Use source/date metadata instead of model memory for current events.", 0.85, parsed.Count);
             return await RecordAsync(result, userId, sessionId, topicId, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "timeout", ProviderFailureCodes.ProviderTimeout, "News provider timed out; do not invent current-news details.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "news", "timeout", ProviderFailureCodes.ProviderTimeout, "News provider timed out; do not invent current-news details.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "[News] Malformed response.");
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "malformed", ProviderFailureCodes.MalformedResponse, "News provider returned malformed data.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "news", "malformed", ProviderFailureCodes.MalformedResponse, "News provider returned malformed data.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[News] Provider call failed.");
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "newsapi", "degraded", ProviderFailureCodes.UnknownFailure, "News provider failed safely; do not infer current events.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "news", "degraded", ProviderFailureCodes.UnknownFailure, "News provider failed safely; do not infer current events.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
 
-    private static NewsArticleDto ParseArticle(JsonElement article)
+    private static NewsArticleDto ParseNewsApiArticle(JsonElement article)
     {
         var title = article.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
         var url = article.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
@@ -172,6 +173,18 @@ public sealed class NewsProvider : INewsProvider
         var sourceName = "news";
         if (article.TryGetProperty("source", out var source) && source.TryGetProperty("name", out var name))
             sourceName = name.GetString() ?? sourceName;
+        return new NewsArticleDto(title, sourceName, url, publishedAt, summary);
+    }
+
+    private static NewsArticleDto ParseGdeltArticle(JsonElement article)
+    {
+        var title = article.TryGetProperty("title", out var titleProp) ? titleProp.GetString() ?? string.Empty : string.Empty;
+        var url = article.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
+        var summary = article.TryGetProperty("seendate", out var seenProp) ? $"Seen date: {seenProp.GetString()}" : string.Empty;
+        DateTime? publishedAt = null;
+        if (article.TryGetProperty("seendate", out var publishedProp) && DateTime.TryParse(publishedProp.GetString(), out var parsed))
+            publishedAt = parsed.ToUniversalTime();
+        var sourceName = article.TryGetProperty("domain", out var domain) ? domain.GetString() ?? "GDELT" : "GDELT";
         return new NewsArticleDto(title, sourceName, url, publishedAt, summary);
     }
 
@@ -203,32 +216,42 @@ public sealed class WeatherProvider : IWeatherProvider
         var sw = Stopwatch.StartNew();
         var enabled = bool.TryParse(_configuration["Tools:Weather:Enabled"], out var enabledValue) && enabledValue;
         var apiKey = _configuration["Tools:Weather:ApiKey"] ?? _configuration["OpenWeatherMap:ApiKey"];
-        if (!enabled || string.IsNullOrWhiteSpace(apiKey))
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "openweathermap", "disabled", enabled ? ProviderFailureCodes.ProviderMissing : ProviderFailureCodes.ProviderDisabled, "Weather provider is not configured; no live weather data was used."), userId, sessionId, topicId, ct);
         if (double.IsNaN(latitude) || double.IsNaN(longitude) || Math.Abs(latitude) > 90 || Math.Abs(longitude) > 180)
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "openweathermap", "blocked", "malformed_location", "Weather location is invalid.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "weather", "blocked", "malformed_location", "Weather location is invalid.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
             var client = _httpClientFactory.CreateClient("Weather");
-            var url = $"data/2.5/weather?lat={latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}&lon={longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}&appid={Uri.EscapeDataString(apiKey)}&units=metric";
+            var provider = enabled && !string.IsNullOrWhiteSpace(apiKey) ? "openweathermap" : "open_meteo";
+            var lat = latitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var lon = longitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var url = provider == "openweathermap"
+                ? $"data/2.5/weather?lat={lat}&lon={lon}&appid={Uri.EscapeDataString(apiKey!)}&units=metric"
+                : $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&timezone=UTC";
             var response = await client.GetAsync(url, timeout.Token);
             var body = await response.Content.ReadAsStringAsync(timeout.Token);
             if (!response.IsSuccessStatusCode)
-                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "openweathermap", "degraded", ProviderFailureCodes.ProviderError, $"Weather provider failed with status {(int)response.StatusCode}.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, provider, "degraded", ProviderFailureCodes.ProviderError, $"Weather provider failed with status {(int)response.StatusCode}.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
             using var doc = JsonDocument.Parse(body);
-            var temp = doc.RootElement.TryGetProperty("main", out var main) && main.TryGetProperty("temp", out var tempProp) ? tempProp.GetDouble() : (double?)null;
-            var conditions = doc.RootElement.TryGetProperty("weather", out var arr) && arr.ValueKind == JsonValueKind.Array && arr.GetArrayLength() > 0 && arr[0].TryGetProperty("description", out var desc)
-                ? desc.GetString()
-                : null;
+            var temp = provider == "openweathermap"
+                ? doc.RootElement.TryGetProperty("main", out var main) && main.TryGetProperty("temp", out var tempProp) ? tempProp.GetDouble() : (double?)null
+                : doc.RootElement.TryGetProperty("current", out var current) && current.TryGetProperty("temperature_2m", out var meteoTempProp) ? meteoTempProp.GetDouble() : (double?)null;
+            var conditions = provider == "openweathermap"
+                ? doc.RootElement.TryGetProperty("weather", out var arr) && arr.ValueKind == JsonValueKind.Array && arr.GetArrayLength() > 0 && arr[0].TryGetProperty("description", out var desc)
+                    ? desc.GetString()
+                    : null
+                : doc.RootElement.TryGetProperty("current", out var curr) && curr.TryGetProperty("weather_code", out var code)
+                    ? $"weather_code:{code.GetInt32()}"
+                    : "current weather";
             var name = !string.IsNullOrWhiteSpace(locationName)
                 ? locationName
                 : doc.RootElement.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? $"{latitude},{longitude}" : $"{latitude},{longitude}";
-            var dto = new WeatherContextDto(name, DateTime.UtcNow, temp, conditions, "OpenWeatherMap");
-            var result = new ProviderToolResultDto(true, toolId, "openweathermap", "ready", dto, [new ProviderCitationDto("OpenWeatherMap current weather", null, "OpenWeatherMap", DateTime.UtcNow, 0.8)], DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Current weather context is available.", 0.8, 1);
+            var source = provider == "openweathermap" ? "OpenWeatherMap" : "Open-Meteo";
+            var dto = new WeatherContextDto(name, DateTime.UtcNow, temp, conditions, source);
+            var result = new ProviderToolResultDto(true, toolId, provider, "ready", dto, [new ProviderCitationDto($"{source} current weather", null, source, DateTime.UtcNow, 0.8)], DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Current weather context is available.", 0.8, 1);
             return await RecordAsync(result, userId, sessionId, topicId, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -268,8 +291,8 @@ public sealed class MarketDataProvider : IMarketDataProvider
     {
         const string toolId = "crypto";
         var sw = Stopwatch.StartNew();
-        var enabled = bool.TryParse(_configuration["Tools:Crypto:Enabled"], out var value) && value;
-        if (!enabled)
+        var providerDisabled = bool.TryParse(_configuration["Tools:Crypto:Disabled"], out var disabled) && disabled;
+        if (providerDisabled)
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "coingecko", "disabled", ProviderFailureCodes.ProviderDisabled, "Crypto market data is disabled; do not provide investment advice."), userId, sessionId, topicId, ct);
 
         try

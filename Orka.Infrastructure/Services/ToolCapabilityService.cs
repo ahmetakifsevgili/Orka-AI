@@ -53,12 +53,11 @@ public sealed class ToolCapabilityService : IToolCapabilityService
                 "sandbox_api_fallback", "code/language/stdin", "stdout/stderr/phase/safeTutorSummary",
                 "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX",
                 "Student IDE execution is active through authenticated /api/code/run and /api/code/execute using Judge0/Piston sandbox. SK auto-execution stays disabled."),
-            ProviderBeta("weather", "Weather / geography data", "external_info", "Medium", false,
-                "Tools:Weather:Enabled", ["Tools:Weather:ApiKey", "OpenWeatherMap:ApiKey"],
-                "Beta external info utility; not core learning evidence.", "location/coordinates", "weather report"),
-            Provider("news", "News search", "external_info", "Medium", ["AI:NewsAPI:ApiKey", "NewsAPI:ApiKey"],
-                "Current news requires provider evidence and dates; disabled when key is absent.", "query", "article list"),
-            Beta("crypto", "Crypto market data", "external_info", "High", true, false, "Tools:Crypto:Enabled",
+            PublicProvider("weather", "Weather / geography data", "external_info", "Medium", "Open-Meteo public fallback; OpenWeatherMap key optional.",
+                "Live weather context uses Open-Meteo without a key, or OpenWeatherMap when configured.", "location/coordinates", "weather report"),
+            PublicProvider("news", "News search", "external_info", "Medium", "GDELT public fallback; NewsAPI key optional.",
+                "Current news requires provider evidence and dates; GDELT is used when NewsAPI key is absent.", "query", "article list"),
+            PublicProvider("crypto", "Crypto market data", "external_info", "High", "CoinGecko public endpoint.",
                 "Educational market data only; must not provide financial advice.", "coin ids", "market facts")
         };
 
@@ -126,6 +125,18 @@ public sealed class ToolCapabilityService : IToolCapabilityService
             configKeys[0], configured ? "provider_fallback" : "disabled_stub", inputSchema, outputSchema,
             configured ? "INTEGRATED_BEHIND_GATE" : "DISABLED_WITH_RUNTIME_STUB", notes);
     }
+
+    private ToolCapabilityDto PublicProvider(
+        string id,
+        string displayName,
+        string category,
+        string risk,
+        string fallbackMode,
+        string notes,
+        string inputSchema,
+        string outputSchema) =>
+        Tool(id, displayName, category, "Enabled", risk, false, true,
+            null, fallbackMode, inputSchema, outputSchema, "INTEGRATED_AND_TESTED", notes);
 
     private ToolCapabilityDto ProviderBeta(
         string id,

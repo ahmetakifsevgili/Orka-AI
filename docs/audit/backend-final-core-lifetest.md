@@ -195,9 +195,16 @@ Now better than old dirty Orka:
 - YouTube transcript pedagogy has chunking/retrieval/teaching-reference proof
 - tool metadata is frontend-safe and additive
 
+Public provider closure after API-mega-list review:
+
+- `news` now uses GDELT public API when `NewsAPI` key is absent.
+- `weather` now uses Open-Meteo public API when OpenWeatherMap config is absent.
+- `crypto` now uses CoinGecko public market-data endpoint by default.
+- Capability endpoint reports these as `Enabled / INTEGRATED_AND_TESTED`, not disabled stubs.
+
 Still intentionally gated:
 
-- live Wolfram/news/weather/crypto calls need real provider config
+- Wolfram requires real AppId; no reliable public keyless computation API is assumed.
 - YouTube transcript live provider needs real provider config
 - visual generation remains beta/provider-gated
 - IDE execution remains sandbox API only; no host shell execution is exposed

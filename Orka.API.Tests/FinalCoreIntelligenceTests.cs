@@ -71,6 +71,26 @@ public sealed class FinalCoreIntelligenceTests
     }
 
     [Fact]
+    public async Task NewsProvider_NoKeyUsesPublicGdeltFallback()
+    {
+        var json = """
+        {"articles":[{"title":"Public climate education report","domain":"example.test","url":"https://example.test/gdelt","seendate":"20260505T120000Z"}]}
+        """;
+        var provider = new NewsProvider(
+            new FakeHttpClientFactory(json),
+            Config([]),
+            new CapturingTelemetry(),
+            NullLogger<NewsProvider>.Instance);
+
+        var result = await provider.SearchAsync("climate education");
+
+        Assert.True(result.Success);
+        Assert.Equal("gdelt", result.Provider);
+        Assert.Single(result.Citations);
+        Assert.Equal("example.test", result.Citations[0].SourceName);
+    }
+
+    [Fact]
     public async Task WeatherProvider_MalformedLocationFailsSafelyBeforeProvider()
     {
         var provider = new WeatherProvider(
@@ -86,6 +106,25 @@ public sealed class FinalCoreIntelligenceTests
     }
 
     [Fact]
+    public async Task WeatherProvider_NoKeyUsesPublicOpenMeteoFallback()
+    {
+        var json = """
+        {"current":{"temperature_2m":22.4,"weather_code":1}}
+        """;
+        var provider = new WeatherProvider(
+            new FakeHttpClientFactory(json),
+            Config([]),
+            new CapturingTelemetry(),
+            NullLogger<WeatherProvider>.Instance);
+
+        var result = await provider.GetWeatherAsync(41.01, 28.97, "Istanbul");
+
+        Assert.True(result.Success);
+        Assert.Equal("open_meteo", result.Provider);
+        Assert.Contains("Open-Meteo", result.SafeMessage + string.Join(",", result.Citations.Select(c => c.SourceName)), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task MarketDataProvider_FakeSuccessIncludesNoInvestmentAdviceGuard()
     {
         var json = """
@@ -93,7 +132,7 @@ public sealed class FinalCoreIntelligenceTests
         """;
         var provider = new MarketDataProvider(
             new FakeHttpClientFactory(json),
-            Config([new("Tools:Crypto:Enabled", "true")]),
+            Config([]),
             new CapturingTelemetry(),
             NullLogger<MarketDataProvider>.Instance);
 

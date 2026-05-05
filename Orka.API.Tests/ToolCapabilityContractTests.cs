@@ -48,6 +48,10 @@ public sealed class ToolCapabilityContractTests
         Assert.Equal("DISABLED_WITH_RUNTIME_STUB", tools["wolfram_alpha"].Decision);
         Assert.Equal("Enabled", tools["ide_execution"].Status);
         Assert.Equal("CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX", tools["ide_execution"].Decision);
+        Assert.Equal("Enabled", tools["news"].Status);
+        Assert.Equal("INTEGRATED_AND_TESTED", tools["news"].Decision);
+        Assert.Equal("Enabled", tools["weather"].Status);
+        Assert.Equal("Enabled", tools["crypto"].Status);
         Assert.Equal("High", tools["crypto"].RiskLevel);
         Assert.Equal("PRODUCTION_HARDENING", tools["cost_tracking"].Decision);
     }
@@ -73,7 +77,7 @@ public sealed class ToolCapabilityContractTests
         Assert.Equal("Enabled", tools["wolfram_alpha"].Status);
         Assert.Equal("INTEGRATED_BEHIND_GATE", tools["wolfram_alpha"].Decision);
         Assert.Equal("Enabled", tools["news"].Status);
-        Assert.Equal("Beta", tools["weather"].Status);
+        Assert.Equal("Enabled", tools["weather"].Status);
         Assert.Equal("Beta", tools["youtube_pedagogy"].Status);
     }
 

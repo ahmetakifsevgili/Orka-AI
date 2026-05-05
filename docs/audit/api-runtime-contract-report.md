@@ -228,3 +228,28 @@ Runtime smoke after final core intelligence:
 | GET `/api/tools/capabilities/weather` | no | 200 | 200 | PASS |
 | GET `/api/tools/capabilities/crypto` | no | 200 | 200 | PASS |
 | GET `/api/tools/capabilities/youtube_pedagogy` | no | 200 | 200 | PASS |
+
+## Public Provider Activation Addendum
+
+After reviewing the public API direction, provider tools were updated so useful public/keyless providers are not blocked behind missing commercial keys:
+
+| Tool | Public provider | Capability status without commercial key | Commercial override |
+|---|---|---|---|
+| `news` | GDELT Doc API | `Enabled / INTEGRATED_AND_TESTED` | `AI:NewsAPI:ApiKey` uses NewsAPI |
+| `weather` | Open-Meteo | `Enabled / INTEGRATED_AND_TESTED` | `Tools:Weather:ApiKey` or `OpenWeatherMap:ApiKey` uses OpenWeatherMap when enabled |
+| `crypto` | CoinGecko public simple price | `Enabled / INTEGRATED_AND_TESTED` | future paid provider can replace/augment |
+| `wolfram_alpha` | none assumed | remains gated | `AI:WolframAlpha:AppId` |
+
+Runtime capability proof on `http://127.0.0.1:5101`:
+
+| Method/path | Expected | Actual | Result |
+|---|---:|---:|---|
+| GET `/api/tools/capabilities/news` | 200 + enabled | 200 + `status=Enabled` | PASS |
+| GET `/api/tools/capabilities/weather` | 200 + enabled | 200 + `status=Enabled` | PASS |
+| GET `/api/tools/capabilities/crypto` | 200 + enabled | 200 + `status=Enabled` | PASS |
+
+Regression proof:
+
+- `dotnet build` -> PASS, 0 warnings, 0 errors.
+- `dotnet test --no-build` -> PASS.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped, 2 existing mark warnings.
