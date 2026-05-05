@@ -46,7 +46,8 @@ public sealed class ToolCapabilityContractTests
 
         Assert.Equal("Disabled", tools["wolfram_alpha"].Status);
         Assert.Equal("DISABLED_WITH_RUNTIME_STUB", tools["wolfram_alpha"].Decision);
-        Assert.Equal("Disabled", tools["ide_execution"].Status);
+        Assert.Equal("Enabled", tools["ide_execution"].Status);
+        Assert.Equal("CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX", tools["ide_execution"].Decision);
         Assert.Equal("High", tools["crypto"].RiskLevel);
         Assert.Equal("PRODUCTION_HARDENING", tools["cost_tracking"].Decision);
     }

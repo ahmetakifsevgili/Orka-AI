@@ -257,7 +257,7 @@ public sealed class ScheduledWorkersPushGroundingTests
         public Task<bool> CheckRateLimitAsync(string clientIp, int maxRequests, TimeSpan window) => Task.FromResult(true);
         public Task SetGlobalPolicyAsync(string policyText) => Task.CompletedTask;
         public Task<string> GetGlobalPolicyAsync() => Task.FromResult(string.Empty);
-        public Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language) => Task.CompletedTask;
+        public Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language, string phase = "run", string? compileError = null, string? runtimeError = null, bool success = true, string? safeTutorSummary = null) => Task.CompletedTask;
         public Task<string> GetLastPistonResultAsync(Guid sessionId) => Task.FromResult(string.Empty);
         public Task SetWikiReadyAsync(Guid topicId) => Task.CompletedTask;
         public Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;

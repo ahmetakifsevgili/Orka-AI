@@ -16,6 +16,10 @@ public static class LearningSignalTypes
     public const string ClassroomStarted = "ClassroomStarted";
     public const string ClassroomQuestionAsked = "ClassroomQuestionAsked";
     public const string IdeRunCompleted = "IdeRunCompleted";
+    public const string IdeCompileError = "IdeCompileError";
+    public const string IdeRuntimeError = "IdeRuntimeError";
+    public const string IdeExecutionTimeout = "IdeExecutionTimeout";
+    public const string IdeProviderUnavailable = "IdeProviderUnavailable";
     public const string IdeSentToTutor = "IdeSentToTutor";
     public const string RemediationStarted = "RemediationStarted";
     public const string RemediationCompleted = "RemediationCompleted";
@@ -41,6 +45,10 @@ public static class LearningSignalTypes
         ClassroomStarted,
         ClassroomQuestionAsked,
         IdeRunCompleted,
+        IdeCompileError,
+        IdeRuntimeError,
+        IdeExecutionTimeout,
+        IdeProviderUnavailable,
         IdeSentToTutor,
         RemediationStarted,
         RemediationCompleted,

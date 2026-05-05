@@ -146,7 +146,17 @@ public class RedisMemoryService : IRedisMemoryService
 
     // ── Faz 11: TutorAgent Bağlantı Katmanı ─────────────────────────────────
 
-    public async Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language)
+    public async Task SetLastPistonResultAsync(
+        Guid sessionId,
+        string code,
+        string stdout,
+        string stderr,
+        string language,
+        string phase = "run",
+        string? compileError = null,
+        string? runtimeError = null,
+        bool success = true,
+        string? safeTutorSummary = null)
     {
         try
         {
@@ -154,11 +164,16 @@ public class RedisMemoryService : IRedisMemoryService
             var payload = JsonSerializer.Serialize(new
             {
                 Code        = code.Length > 500 ? code[..500] + "..." : code, // Uzun kodu kırp
-                Stdout      = stdout,
-                Stderr      = stderr,
-                Language    = language,
-                ExecutedAt  = DateTime.UtcNow.ToString("O")
-            });
+                  Stdout      = stdout,
+                  Stderr      = stderr,
+                  Language    = language,
+                  Phase       = phase,
+                  CompileError = compileError,
+                  RuntimeError = runtimeError,
+                  Success     = success,
+                  SafeTutorSummary = safeTutorSummary,
+                  ExecutedAt  = DateTime.UtcNow.ToString("O")
+              });
             await _db.StringSetAsync(key, payload, TimeSpan.FromMinutes(30));
         }
         catch (Exception ex)

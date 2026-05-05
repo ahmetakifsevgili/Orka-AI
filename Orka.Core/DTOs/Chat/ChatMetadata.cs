@@ -23,4 +23,13 @@ public sealed record UsedToolDto(
     string Name,
     string Status,
     string? Evidence,
-    string? FallbackReason);
+    string? FallbackReason,
+    string? ToolId = null,
+    bool? Success = null,
+    bool? FallbackUsed = null,
+    string? Provider = null,
+    long? LatencyMs = null,
+    IReadOnlyList<CitationDto>? Citations = null,
+    double? SourceConfidence = null,
+    string? ErrorCode = null,
+    string? SafeMessage = null);

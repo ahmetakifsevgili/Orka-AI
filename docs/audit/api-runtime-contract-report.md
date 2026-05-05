@@ -103,3 +103,87 @@ Focused proof:
 - PASS: `37 passed`
 - SKIPPED: `1 lifecycle AI/provider-heavy scenario`
 - Warnings: two pytest mark warnings from existing lifecycle markers.
+
+## Tool Activation + Tutor Consumption Addendum
+
+IDE/Piston activation changed the product decision for `ide_execution` from a disabled unsafe tool to a core sandboxed learning tool:
+
+| Surface | Auth | Expected | Proof | Result | Notes |
+|---|---|---:|---|---|---|
+| POST `/api/code/run` | yes | 200/400 safe contract | unit tests | PASS | Uses `IPistonService` sandbox provider; no host shell execution. |
+| POST `/api/code/execute` | yes | alias-safe contract | unit tests | PASS | Compatibility alias for the same controller path. |
+| GET `/api/tools/capabilities/ide_execution` | no | 200 | runtime smoke target | PASS | `status=Enabled`, `decision=CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX`. |
+
+Expanded code execution DTO fields are stable and additive:
+
+- `phase`
+- `compileError`
+- `runtimeError`
+- `exitCode`
+- `durationMs`
+- `truncated`
+- `safeTutorSummary`
+- `runtime`
+
+Tutor consumption evidence:
+
+- Code execution results are written to Redis for the active session even when execution fails.
+- Tutor reads the latest Piston result as chat context.
+- Tutor prompt now distinguishes compile errors, runtime errors, timeouts, successful stdout, and provider/blocked states.
+- Learning signals now include:
+  - `IdeCompileError`
+  - `IdeRuntimeError`
+  - `IdeExecutionTimeout`
+  - `IdeProviderUnavailable`
+  - existing `IdeRunCompleted`
+
+Focused deterministic tests:
+
+- compile error -> Tutor context + `IdeCompileError`
+- runtime error -> Tutor context + `IdeRuntimeError`
+- success -> Tutor context + `IdeRunCompleted`
+- oversized stdin -> blocked before provider call
+- Tutor prompt contains Piston pedagogy guard
+
+Latest focused result:
+
+- `dotnet build` -> PASS, 0 warnings, 0 errors.
+- `dotnet test --no-build` -> PASS, 51 passed.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped.
+
+Runtime smoke after tool activation:
+
+| Method/path | Auth | Expected | Actual | Result |
+|---|---|---:|---:|---|
+| GET `/swagger/index.html` | no | 200 | 200 | PASS |
+| GET `/health/live` | no | 200 | 200 | PASS |
+| GET `/health/ready` | no | 200 | 200 | PASS |
+| GET `/api/korteks/ping` | yes | 401 without token | 401 | PASS |
+| GET `/api/tools/capabilities` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/ide_execution` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/wolfram_alpha` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/news` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/weather` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/crypto` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/youtube_pedagogy` | no | 200 | 200 | PASS |
+
+Observed tool status contract:
+
+| Tool | Status | Decision | Fallback |
+|---|---|---|---|
+| `ide_execution` | Enabled | `CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX` | `sandbox_api_fallback` |
+| `wolfram_alpha` | Disabled | `DISABLED_WITH_RUNTIME_STUB` | `disabled_stub` |
+| `news` | Disabled | `DISABLED_WITH_RUNTIME_STUB` | `disabled_stub` |
+| `weather` | Disabled | `DISABLED_WITH_RUNTIME_STUB` | `disabled_stub` |
+| `crypto` | Disabled | `DISABLED_WITH_RUNTIME_STUB` | `disabled_stub` |
+| `youtube_pedagogy` | Disabled | `DISABLED_WITH_RUNTIME_STUB` | `disabled_stub` |
+
+Provider-gated current-data tools remain safe:
+
+- `wolfram_alpha`
+- `news`
+- `weather`
+- `crypto`
+- `youtube_pedagogy`
+
+These tools are useful and retained, but they require provider configuration or return explicit fallback metadata. No tests require real provider keys.

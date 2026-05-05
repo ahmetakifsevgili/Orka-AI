@@ -162,9 +162,19 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
         public Task SetGlobalPolicyAsync(string policyText) => Task.CompletedTask;
         public Task<string> GetGlobalPolicyAsync() => Task.FromResult(string.Empty);
 
-        public Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language)
+        public Task SetLastPistonResultAsync(
+            Guid sessionId,
+            string code,
+            string stdout,
+            string stderr,
+            string language,
+            string phase = "run",
+            string? compileError = null,
+            string? runtimeError = null,
+            bool success = true,
+            string? safeTutorSummary = null)
         {
-            _lastPiston[sessionId] = System.Text.Json.JsonSerializer.Serialize(new { code, stdout, stderr, language });
+            _lastPiston[sessionId] = System.Text.Json.JsonSerializer.Serialize(new { code, stdout, stderr, language, phase, compileError, runtimeError, success, safeTutorSummary });
             return Task.CompletedTask;
         }
 

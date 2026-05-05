@@ -132,12 +132,14 @@ def test_tool_capability_matrix_exposes_gated_dirty_orka_tools(session, auth_hea
             "INTEGRATED_AND_TESTED",
             "INTEGRATED_BEHIND_GATE",
             "BETA_ADMIN_OR_DEV_ONLY",
+            "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX",
             "DISABLED_WITH_RUNTIME_STUB",
             "PRODUCTION_HARDENING",
         }
 
     assert tools["wolfram_alpha"]["status"] in {"Enabled", "Disabled"}
-    assert tools["ide_execution"]["status"] in {"DevOnly", "Disabled"}
+    assert tools["ide_execution"]["status"] in {"Enabled", "DevOnly", "Disabled"}
+    assert tools["ide_execution"]["decision"] == "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX"
     assert tools["crypto"]["riskLevel"] == "High"
 
     one = session.get(f"{BASE_URL}/api/tools/capabilities/wolfram_alpha", timeout=TIMEOUT)
