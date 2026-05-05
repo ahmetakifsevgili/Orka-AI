@@ -58,10 +58,12 @@ Current accepted behavior:
 - Notification rows are in-app first and do not depend on Firebase.
 - Push subscriptions are user-owned and tested.
 
-Decision:
+Closure update:
 
-- Scheduled DailyChallenge and SRS reminder workers are **GATED_PENDING_RUNTIME_PROOF** rather than silently missing.
-- They should be added later only with bounded selection, duplicate notification prevention, Firebase-disabled no-op and retry/backoff tests.
+- Scheduled DailyChallenge and SRS reminder workers are now registered as hosted services and are **ACCEPTED_WITH_GATE**.
+- Both workers default to disabled without appsettings changes.
+- Enabled service paths use bounded selection, duplicate notification prevention, Firebase-disabled no-op behavior and durable telemetry.
+- Full closure evidence is tracked in `docs/audit/backend-scheduled-workers-push-grounding-closure.md`.
 
 ## Push/Firebase Delivery
 
@@ -72,9 +74,11 @@ Current production-safe state:
 - Push subscription persistence exists.
 - Live Firebase delivery is not enabled by default.
 
-Decision:
+Closure update:
 
-- Firebase live delivery remains **DISABLED_WITH_RUNTIME_STUB / PRODUCTION_HARDENING** until provider config, token invalidation policy and retry classification are implemented.
+- Firebase live delivery remains gated, but the backend now has a `PushDeliveryService` runtime stub.
+- Disabled or missing provider config returns a typed safe result and records `push_delivery` telemetry.
+- In-app notification remains authoritative and is never blocked by Firebase availability.
 
 ## Cost / Token / Provider Ledger
 
@@ -157,4 +161,3 @@ Added:
 - indexes for user/time and provider/model/time or tool/time
 
 Local DB update: PASS.
-

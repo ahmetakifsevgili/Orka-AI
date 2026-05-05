@@ -122,6 +122,9 @@ builder.Services.AddScoped<IFlashcardService, FlashcardService>();
 builder.Services.AddScoped<IDailyChallengeService, DailyChallengeService>();
 builder.Services.AddScoped<IXpEventService, XpEventService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IPushDeliveryService, PushDeliveryService>();
+builder.Services.AddScoped<ISrsReminderWorkerService, SrsReminderWorkerService>();
+builder.Services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerService>();
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
@@ -129,6 +132,8 @@ builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
+builder.Services.AddHostedService<SrsReminderWorker>();
+builder.Services.AddHostedService<DailyChallengeWorker>();
 
 // LLMOps: Token/Cost Estimator (Dashboard maliyet verisi için)
 builder.Services.AddSingleton<ITokenCostEstimator, TokenCostEstimator>();

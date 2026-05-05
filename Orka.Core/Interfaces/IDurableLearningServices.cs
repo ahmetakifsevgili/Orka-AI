@@ -69,6 +69,25 @@ public interface INotificationService
     Task<int> MarkAllReadAsync(Guid userId, CancellationToken ct = default);
 }
 
+public interface IPushDeliveryService
+{
+    Task<PushDeliveryResultDto> SendAsync(
+        Guid userId,
+        PushSubscription? subscription,
+        Notification notification,
+        CancellationToken ct = default);
+}
+
+public interface ISrsReminderWorkerService
+{
+    Task<int> RunOnceAsync(CancellationToken ct = default);
+}
+
+public interface IDailyChallengeWorkerService
+{
+    Task<int> RunOnceAsync(CancellationToken ct = default);
+}
+
 public interface IChatMetadataService
 {
     ChatResponseMetadata Build(string content, string? fallbackReason = null, IEnumerable<UsedToolDto>? usedTools = null);

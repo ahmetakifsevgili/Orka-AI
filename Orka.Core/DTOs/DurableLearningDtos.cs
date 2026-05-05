@@ -110,3 +110,11 @@ public sealed record CreateNotificationRequest(
     string? RelatedEntityType = null,
     Guid? RelatedEntityId = null,
     DateTime? ExpiresAt = null);
+
+public sealed record PushDeliveryResultDto(
+    bool Success,
+    string Status,
+    string SafeMessage,
+    string Provider,
+    long LatencyMs,
+    string? ErrorCode = null);

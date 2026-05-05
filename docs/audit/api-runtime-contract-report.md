@@ -57,6 +57,38 @@ Unit/focused proof:
 - unknown model cost estimation returns a safe fallback.
 - background queue rejects missing job types.
 
+## Scheduled Workers + Push + Grounding Closure Addendum
+
+Runtime smoke after scheduled worker/push/grounding closure:
+
+| Method/path | Auth | Expected | Actual | Result |
+|---|---|---:|---:|---|
+| GET `/swagger/index.html` | no | 200 | 200 | PASS |
+| GET `/health/live` | no | 200 | 200 | PASS |
+| GET `/health/ready` | no | 200 | 200 | PASS |
+| GET `/api/korteks/ping` | yes | 401 without token | 401 | PASS |
+| GET `/api/tools/capabilities` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/daily_challenge` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/review_query` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/bookmarks` | no | 200 | 200 | PASS |
+
+New backend runtime closure:
+
+- `SrsReminderWorker` and `DailyChallengeWorker` are registered as hosted services.
+- Both workers are disabled by default unless explicit config enables them.
+- Disabled worker startup is safe and records durable telemetry through `RuntimeTelemetryService`.
+- Enabled service paths are bounded and duplicate-notification safe.
+- `PushDeliveryService` returns safe disabled/provider-missing/invalid-token results and records `push_delivery` telemetry.
+- EducatorCore citation quality signals are persisted and covered by deterministic tests:
+  - source context without `[doc:sourceId:pN]` -> `SourceCitationMissing`
+  - source context with valid doc citation -> no missing signal
+  - YouTube pedagogy reference -> `TeachingMoveApplied`
+
+Focused proof:
+
+- `dotnet test --no-build` -> PASS, 46 passed.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped.
+
 ## Contract Decisions
 
 - Cross-user and auth behavior remains guarded by accepted contract tests.
