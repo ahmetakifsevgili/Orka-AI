@@ -51,6 +51,7 @@ public class CodeController : ControllerBase
     /// Body: { "code": "...", "language": "csharp", "stdin": "optional input" }
     /// </summary>
     [HttpPost("run")]
+    [HttpPost("execute")]
     public async Task<IActionResult> RunCode([FromBody] CodeRunRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Code))

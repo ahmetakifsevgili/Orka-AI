@@ -43,3 +43,17 @@ Local API: `http://127.0.0.1:5101`. Unique user/topic. No TestSprite. JWTs omitt
 | visual tool readiness | focused code audit | PARTIAL | Tutor prompt supports Pollinations markdown image URLs; no callable visual generator endpoint was proven. | FRONTEND_DEPENDENT | Render markdown image or hide visual job UI until beta. |
 
 Addendum summary: backend blockers none. Mermaid, YouTube pedagogy fallback, and visual markdown are now documented for frontend rendering; metadata extraction for Mermaid/Pollinations/YouTube markers is covered by deterministic unit tests.
+## Feature Parity Runtime Probe Addendum
+
+Added parity probes to contract tests:
+
+| Probe | Expected |
+| --- | --- |
+| Bookmarks empty/list/create/update/delete | 200 with stable DTO and soft-delete response |
+| `/api/health/live` alias | 200 |
+| `/api/profile/xp` | 200 with `totalXP` |
+| `/api/profile/badges` | 200 with `badges[]` |
+| `/api/code/execute` validation | 400 for empty code without provider call |
+| Push subscription create/list/delete | 200 with active/deleted state |
+
+Provider-heavy Tutor SK auto-invocation remains outside permanent contract tests. The accepted deterministic guarantee is metadata/tool surface stability and no hard failure when provider-specific tools are unavailable.

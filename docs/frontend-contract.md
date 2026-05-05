@@ -60,3 +60,25 @@ Frontend rendering guidance:
 - Prefer `metadata.citations[]` for factual source chips; inline doc tags remain visible fallback.
 
 Detailed addendum: `docs/tutor-pedagogy-visualization-contract.md`.
+## Feature Parity Addendum: Bookmarks, Push, Tutor Tools
+
+The backend now includes parity contracts for features carried forward from the original `D:\Orka` backend:
+
+- `GET/POST/PATCH/DELETE /api/bookmarks`
+- `GET/POST/DELETE /api/notifications/subscriptions`
+- aliases under `/api/push/subscriptions`
+- `/api/profile/xp`
+- `/api/profile/badges`
+- `/api/code/execute`
+- flashcard legacy aliases under `/api/flashcards/topic/{topicId}`, `/api/flashcards/proposals/{topicId}`, `/api/flashcards/bulk`
+
+`ChatMessageResponse.metadata.usedTools` may include safe tool hints for:
+
+- `sources_query`
+- `review_query`
+- `flashcards`
+- `daily_challenge`
+- `bookmarks`
+- `semantic_kernel`
+
+Frontend must treat these as backend evidence/hints, not infer tool use from prose. External provider tools such as Wolfram, IDE auto-execution, Weather, News, and Crypto remain beta/hidden unless a later contract explicitly marks them ready.

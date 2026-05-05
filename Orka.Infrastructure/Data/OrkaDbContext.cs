@@ -38,6 +38,8 @@ public class OrkaDbContext : DbContext
     public DbSet<Badge> Badges { get; set; } = null!;
     public DbSet<UserBadge> UserBadges { get; set; } = null!;
     public DbSet<Notification> Notifications { get; set; } = null!;
+    public DbSet<Bookmark> Bookmarks { get; set; } = null!;
+    public DbSet<PushSubscription> PushSubscriptions { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -638,5 +640,114 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<Notification>()
             .HasIndex(n => new { n.UserId, n.Status, n.CreatedAt });
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.User)
+            .WithMany()
+            .HasForeignKey(b => b.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.Topic)
+            .WithMany()
+            .HasForeignKey(b => b.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.Session)
+            .WithMany()
+            .HasForeignKey(b => b.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.Message)
+            .WithMany()
+            .HasForeignKey(b => b.MessageId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.LearningSource)
+            .WithMany()
+            .HasForeignKey(b => b.LearningSourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.WikiPage)
+            .WithMany()
+            .HasForeignKey(b => b.WikiPageId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.ReviewItem)
+            .WithMany()
+            .HasForeignKey(b => b.ReviewItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .HasOne(b => b.Flashcard)
+            .WithMany()
+            .HasForeignKey(b => b.FlashcardId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Bookmark>()
+            .Property(b => b.Title)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<Bookmark>()
+            .Property(b => b.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<Bookmark>()
+            .Property(b => b.Note)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Bookmark>()
+            .Property(b => b.Quote)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Bookmark>()
+            .Property(b => b.TagsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<Bookmark>()
+            .HasIndex(b => new { b.UserId, b.TopicId, b.Status, b.CreatedAt });
+
+        modelBuilder.Entity<Bookmark>()
+            .HasIndex(b => new { b.UserId, b.MessageId })
+            .IsUnique()
+            .HasFilter("[MessageId] IS NOT NULL AND [Status] = 'active'");
+
+        modelBuilder.Entity<PushSubscription>()
+            .Property(p => p.Endpoint)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<PushSubscription>()
+            .Property(p => p.DeviceLabel)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<PushSubscription>()
+            .Property(p => p.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<PushSubscription>()
+            .HasOne(p => p.User)
+            .WithMany()
+            .HasForeignKey(p => p.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<PushSubscription>()
+            .HasIndex(p => new { p.UserId, p.Status });
+
+        modelBuilder.Entity<PushSubscription>()
+            .HasIndex(p => new { p.UserId, p.Endpoint })
+            .IsUnique()
+            .HasFilter("[Status] = 'active'");
     }
 }

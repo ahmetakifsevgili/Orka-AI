@@ -2,6 +2,28 @@
   "generatedAt": "2026-05-04T22:21:25.081Z",
   "baseCommit": "4b7b981",
   "branch": "feature/full-api-inventory-contract-freeze",
+  "featureParityAddendum": {
+    "branch": "feature/full-backend-feature-parity-sk-runtime",
+    "addedEndpointGroups": [
+      "bookmarks",
+      "push-subscriptions",
+      "profile-aliases",
+      "code-execute-alias",
+      "health-api-alias",
+      "flashcard-legacy-aliases"
+    ],
+    "semanticKernelPlugins": [
+      "Sources",
+      "Review",
+      "Flashcards",
+      "DailyChallenge",
+      "Bookmarks",
+      "LearningMode",
+      "AgentDecision",
+      "Visuals"
+    ],
+    "notes": "Addendum preserves original inventory and records parity surfaces added after API freeze."
+  },
   "counts": {
     "total": 95,
     "authRequired": 85,

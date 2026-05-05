@@ -34,3 +34,14 @@
 | Error/fallback banners | `metadata/fallback fields` | READY_FOR_FRONTEND | use structured state |
 
 Backend blockers: none found. Hide until beta: direct diagnostics/test/code endpoints and Korteks debug UI unless product approves.
+## Feature Parity Addendum
+
+| Screen / Feature | Backend State | Frontend Classification | Notes |
+| --- | --- | --- | --- |
+| Bookmarks | `GET/POST/PATCH/DELETE /api/bookmarks` | READY_FOR_FRONTEND | Can bookmark topic/message/source/wiki/review/flashcard contexts. |
+| Push subscriptions | `/api/notifications/subscriptions`, `/api/push/subscriptions` | READY_WITH_UI_DECISION | In-app notifications remain primary; push enablement UX is optional. |
+| Profile XP aliases | `/api/profile/xp`, `/api/profile/badges` | READY_FOR_FRONTEND | Compatibility surface over accepted gamification data. |
+| Code execute alias | `/api/code/execute` | HIDE_UNTIL_BETA | Same validation/safety rules as `/api/code/run`. |
+| Tutor SK tool hints | chat metadata `usedTools[]` | READY_WITH_UI_DECISION | Tool banners can be rendered from metadata, not prose. |
+| External info tools | SK plugins deferred/gated | HIDE_UNTIL_BETA | Weather/news/crypto/Wolfram need provider and product safety gates. |
+| Dev cleanup tooling | Not public | DEV_ADMIN_ONLY | Do not expose destructive cleanup in frontend. |

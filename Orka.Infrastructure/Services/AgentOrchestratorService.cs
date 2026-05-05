@@ -37,6 +37,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IAIAgentFactory _agentFactory;
     private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IChatMetadataService _chatMetadata;
+    private readonly ITutorToolRuntime _tutorToolRuntime;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -55,6 +56,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IAIAgentFactory agentFactory,
         IBackgroundTaskQueue backgroundQueue,
         IChatMetadataService chatMetadata,
+        ITutorToolRuntime tutorToolRuntime,
         ILogger<AgentOrchestratorService> logger)
     {
         _db = db;
@@ -72,6 +74,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _agentFactory = agentFactory;
         _backgroundQueue = backgroundQueue;
         _chatMetadata = chatMetadata;
+        _tutorToolRuntime = tutorToolRuntime;
         _logger = logger;
     }
 
@@ -768,6 +771,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 MaxAttempts: 1,
                 Timeout: TimeSpan.FromSeconds(90)));
         }
+        var usedTools = await _tutorToolRuntime.DetectToolUsageAsync(
+            userId,
+            content,
+            session,
+            aiResponse,
+            CancellationToken.None);
+
         return new ChatMessageResponse
         {
             MessageId   = aiMsg.Id,
@@ -783,7 +793,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             WikiPageId  = activeWikiPageId,
             IsNewTopic  = isNewTopic,
             TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null,
-            Metadata    = _chatMetadata.Build(aiResponse)
+            Metadata    = _chatMetadata.Build(aiResponse, usedTools: usedTools)
         };
     }
 

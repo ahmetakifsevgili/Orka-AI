@@ -27,6 +27,13 @@ public class FlashcardsController : ControllerBase
         return Ok(items);
     }
 
+    [HttpGet("topic/{topicId:guid}")]
+    public async Task<IActionResult> ListByTopic(Guid topicId)
+    {
+        var items = await _flashcards.ListAsync(GetUserId(), topicId, HttpContext.RequestAborted);
+        return Ok(items);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFlashcardRequest request)
     {
@@ -54,6 +61,47 @@ public class FlashcardsController : ControllerBase
             fallbackReason = "provider_generation_not_required_for_deterministic_contract",
             canCreateManually = true
         });
+    }
+
+    [HttpGet("proposals/{topicId:guid}")]
+    public IActionResult GetProposals(Guid topicId)
+    {
+        return Ok(new
+        {
+            topicId,
+            proposals = Array.Empty<FlashcardDto>(),
+            fallbackReason = "provider_generation_not_required_for_deterministic_contract",
+            canCreateManually = true
+        });
+    }
+
+    [HttpPost("bulk")]
+    public async Task<IActionResult> CreateBulk([FromBody] IReadOnlyList<CreateFlashcardRequest> requests)
+    {
+        if (requests.Count == 0)
+            return BadRequest(new { message = "En az bir flashcard gerekli." });
+
+        if (requests.Count > 50)
+            return BadRequest(new { message = "Tek istekte en fazla 50 flashcard olusturulabilir." });
+
+        var created = new List<FlashcardDto>();
+        foreach (var request in requests)
+        {
+            try
+            {
+                created.Add(await _flashcards.CreateAsync(GetUserId(), request, HttpContext.RequestAborted));
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { message = "Flashcard baglami bulunamadi." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        return Ok(new { items = created, count = created.Count });
     }
 
     [HttpPost("{id:guid}/review")]

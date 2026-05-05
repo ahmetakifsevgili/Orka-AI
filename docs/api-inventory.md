@@ -142,3 +142,26 @@ Generated from controllers and Swagger for frontend contract freeze.
 - `DiagnosticsController`, `TestController`, and direct `CodeController` endpoints should stay hidden unless intentionally exposed for beta/admin tooling.
 - Provider-backed routes are contract-ready but UI must show degraded/provider-blocked states when returned.
 - Tutor pedagogy/visualization addendum does not add new endpoints. Frontend should use `/api/chat/send` content plus `metadata.usedTools`, `metadata.fallbackReason`, and `metadata.providerWarnings` for Mermaid, visual markdown, and YouTube pedagogy/reference UI.
+## Feature Parity Addendum
+
+Additional backend parity endpoints now available:
+
+- `GET /api/bookmarks`
+- `POST /api/bookmarks`
+- `PATCH /api/bookmarks/{id}`
+- `DELETE /api/bookmarks/{id}`
+- `GET /api/notifications/subscriptions`
+- `POST /api/notifications/subscriptions`
+- `DELETE /api/notifications/subscriptions/{id}`
+- `GET /api/push/subscriptions`
+- `POST /api/push/subscriptions`
+- `DELETE /api/push/subscriptions/{id}`
+- `GET /api/profile/xp`
+- `GET /api/profile/badges`
+- `POST /api/code/execute`
+- `GET /api/health`, `GET /api/health/live`, `GET /api/health/ready`
+- `GET /api/flashcards/topic/{topicId}`
+- `GET /api/flashcards/proposals/{topicId}`
+- `POST /api/flashcards/bulk`
+
+These are compatibility/parity surfaces and do not replace the accepted canonical contracts.

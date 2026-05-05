@@ -9,6 +9,7 @@ using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.SemanticKernel.Filters;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -122,6 +123,7 @@ builder.Services.AddScoped<IDailyChallengeService, DailyChallengeService>();
 builder.Services.AddScoped<IXpEventService, XpEventService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
+builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
@@ -136,6 +138,15 @@ builder.Services.AddScoped<TavilySearchPlugin>();
 builder.Services.AddScoped<WikipediaPlugin>();
 builder.Services.AddScoped<AcademicSearchPlugin>();
 builder.Services.AddScoped<YouTubeTranscriptPlugin>();
+builder.Services.AddScoped<SourcesQueryPlugin>();
+builder.Services.AddScoped<ReviewQueryPlugin>();
+builder.Services.AddScoped<FlashcardPlugin>();
+builder.Services.AddScoped<DailyChallengePlugin>();
+builder.Services.AddScoped<BookmarkPlugin>();
+builder.Services.AddScoped<LearningModePlugin>();
+builder.Services.AddScoped<AgentDecisionPlugin>();
+builder.Services.AddScoped<VisualGeneratorPlugin>();
+builder.Services.AddScoped<PluginTelemetryFilter>();
 
 // Korteks dosya çıkarma servisi
 builder.Services.AddScoped<FileExtractionService>();
@@ -316,6 +327,15 @@ builder.Services.AddScoped<Kernel>(sp =>
     kernel.Plugins.AddFromObject(sp.GetRequiredService<WikipediaPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<AcademicSearchPlugin>());
     kernel.Plugins.AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>());
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<SourcesQueryPlugin>(), "Sources");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<ReviewQueryPlugin>(), "Review");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<FlashcardPlugin>(), "Flashcards");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<DailyChallengePlugin>(), "DailyChallenge");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<BookmarkPlugin>(), "Bookmarks");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<LearningModePlugin>(), "LearningMode");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<AgentDecisionPlugin>(), "AgentDecision");
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<VisualGeneratorPlugin>(), "Visuals");
+    kernel.FunctionInvocationFilters.Add(sp.GetRequiredService<PluginTelemetryFilter>());
             
     return kernel;
 });

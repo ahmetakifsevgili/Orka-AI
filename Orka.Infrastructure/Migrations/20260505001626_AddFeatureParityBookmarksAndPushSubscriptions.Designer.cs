@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Orka.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Orka.Infrastructure.Data;
 namespace Orka.Infrastructure.Migrations
 {
     [DbContext(typeof(OrkaDbContext))]
-    partial class OrkaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260505001626_AddFeatureParityBookmarksAndPushSubscriptions")]
+    partial class AddFeatureParityBookmarksAndPushSubscriptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -205,16 +208,14 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("TagsJson")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("TopicId")
                         .HasColumnType("uniqueidentifier");
@@ -794,12 +795,10 @@ namespace Orka.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DeviceLabel")
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Endpoint")
                         .IsRequired()
-                        .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("P256dh")
@@ -807,8 +806,7 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
