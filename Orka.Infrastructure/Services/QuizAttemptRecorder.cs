@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 
@@ -14,19 +15,22 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
     private readonly ISkillMasteryService _skillMastery;
     private readonly IReviewSrsService _reviews;
     private readonly IXpEventService _xpEvents;
+    private readonly IMistakeClassifierService _mistakeClassifier;
 
     public QuizAttemptRecorder(
         OrkaDbContext db,
         ILearningSignalService learningSignals,
         ISkillMasteryService skillMastery,
         IReviewSrsService reviews,
-        IXpEventService xpEvents)
+        IXpEventService xpEvents,
+        IMistakeClassifierService mistakeClassifier)
     {
         _db = db;
         _learningSignals = learningSignals;
         _skillMastery = skillMastery;
         _reviews = reviews;
         _xpEvents = xpEvents;
+        _mistakeClassifier = mistakeClassifier;
     }
 
     public async Task<QuizAttemptRecordResult> RecordAsync(
@@ -88,16 +92,32 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
         await _learningSignals.RecordQuizAnsweredAsync(attempt, ct);
 
+        MistakeClassificationResult? mistake = null;
         ReviewItem? reviewItem = null;
         if (!request.IsCorrect && request.TopicId.HasValue)
         {
+            mistake = await _mistakeClassifier.ClassifyAndRecordAsync(
+                userId,
+                request.TopicId,
+                request.SessionId,
+                new MistakeClassificationRequest(
+                    request.Question,
+                    request.Explanation,
+                    request.SelectedOptionId,
+                    request.Explanation,
+                    request.TopicId,
+                    request.SkillTag,
+                    request.ConceptTag,
+                    SourceOrWikiContext: request.SourceRefsJson),
+                ct);
+
             reviewItem = await _reviews.EnsureReviewItemAsync(
                 userId,
                 request.TopicId,
                 request.ConceptTag,
                 request.SkillTag,
                 request.LearningObjective,
-                request.MistakeCategory,
+                mistake?.Category ?? request.MistakeCategory,
                 request.TopicPath,
                 "quiz",
                 attempt.Id,
@@ -129,7 +149,14 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         var review = reviewItem != null
             ? ToLegacyReviewDto(reviewItem, mastery?.Id)
             : await BuildReviewDtoAsync(userId, request.TopicId, reviewIdentity, mastery?.Id, ct);
-        return new QuizAttemptRecordResult(attempt, xp, review, null);
+        return new QuizAttemptRecordResult(attempt, xp, review, mistake == null ? null : new MistakeTaxonomyResult(
+            ToLegacyMistakeCategory(mistake.Category),
+            mistake.CategoryLabel,
+            mistake.Reason,
+            mistake.SuggestedReviewPressure,
+            null,
+            mistake.SuggestedReviewPressure >= 3,
+            mistake.SuggestFlashcard));
     }
 
     private async Task UpdateQuizRunAsync(
@@ -158,6 +185,18 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static MistakeCategory ToLegacyMistakeCategory(string category) => category switch
+    {
+        "Conceptual" => MistakeCategory.Conceptual,
+        "Procedural" => MistakeCategory.Procedural,
+        "Careless" => MistakeCategory.Careless,
+        "MisreadQuestion" => MistakeCategory.MisreadQuestion,
+        "Vocabulary" => MistakeCategory.Reading,
+        "FormulaMisuse" => MistakeCategory.Application,
+        "CodeSyntax" or "CodeRuntime" or "CodeLogic" => MistakeCategory.Application,
+        _ => MistakeCategory.Unknown
+    };
 
     private async Task<XpAwardResult?> AwardQuizXpAsync(
         Guid userId,

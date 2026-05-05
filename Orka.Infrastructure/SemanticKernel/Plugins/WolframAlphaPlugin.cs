@@ -1,30 +1,26 @@
 using System.ComponentModel;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.SemanticKernel.Plugins;
 
 public sealed class WolframAlphaPlugin
 {
-    private readonly string _appId;
+    private readonly IWolframProvider _provider;
     private readonly ILogger<WolframAlphaPlugin> _logger;
 
-    public WolframAlphaPlugin(IConfiguration configuration, ILogger<WolframAlphaPlugin> logger)
+    public WolframAlphaPlugin(IWolframProvider provider, ILogger<WolframAlphaPlugin> logger)
     {
-        _appId = configuration["AI:WolframAlpha:AppId"] ?? configuration["WolframAlpha:AppId"] ?? string.Empty;
+        _provider = provider;
         _logger = logger;
     }
 
-    [KernelFunction, Description("Safely reports Wolfram Alpha availability. Exact computation is disabled unless provider configuration exists.")]
-    public Task<string> QueryWolframAlphaAsync([Description("Exact computation query")] string query)
+    [KernelFunction, Description("Uses Wolfram Alpha for exact math/physics/symbolic computation when configured. If unavailable, returns a safe fallback and never invents a computation result.")]
+    public async Task<string> QueryWolframAlphaAsync([Description("Exact computation query")] string query)
     {
-        if (string.IsNullOrWhiteSpace(_appId))
-        {
-            _logger.LogInformation("[Wolfram] Disabled stub returned; AppId is not configured.");
-            return Task.FromResult("[wolfram:disabled] Wolfram Alpha is not configured. Use general reasoning and do not claim a Wolfram result.");
-        }
-
-        return Task.FromResult("[wolfram:disabled] Wolfram provider is gated for backend hardening; no live call was made.");
+        var result = await _provider.QueryAsync(query);
+        _logger.LogInformation("[Wolfram] Result Status={Status} Success={Success}", result.Status, result.Success);
+        return ProviderResultFormatter.Format(result);
     }
 }

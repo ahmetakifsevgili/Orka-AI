@@ -52,6 +52,31 @@ public sealed class ToolCapabilityContractTests
         Assert.Equal("PRODUCTION_HARDENING", tools["cost_tracking"].Decision);
     }
 
+    [Fact]
+    public void CapabilityMatrix_ReflectsProviderConfiguration()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AI:WolframAlpha:AppId"] = "wolfram-test",
+                ["AI:NewsAPI:ApiKey"] = "news-test",
+                ["Tools:Weather:Enabled"] = "true",
+                ["Tools:Weather:ApiKey"] = "weather-test",
+                ["AI:YouTube:Enabled"] = "true",
+                ["AI:YouTube:ApiKey"] = "youtube-test"
+            })
+            .Build();
+
+        var service = new ToolCapabilityService(config, new TestEnvironment("Production"));
+        var tools = service.GetCapabilities().ToDictionary(t => t.ToolId);
+
+        Assert.Equal("Enabled", tools["wolfram_alpha"].Status);
+        Assert.Equal("INTEGRATED_BEHIND_GATE", tools["wolfram_alpha"].Decision);
+        Assert.Equal("Enabled", tools["news"].Status);
+        Assert.Equal("Beta", tools["weather"].Status);
+        Assert.Equal("Beta", tools["youtube_pedagogy"].Status);
+    }
+
     private sealed class TestEnvironment : IHostEnvironment
     {
         public TestEnvironment(string environmentName)

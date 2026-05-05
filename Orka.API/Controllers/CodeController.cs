@@ -16,18 +16,21 @@ public class CodeController : ControllerBase
     private readonly IPistonService _piston;
     private readonly IRedisMemoryService _redis;
     private readonly ILearningSignalService _signals;
+    private readonly IMistakeClassifierService? _mistakeClassifier;
     private readonly ILogger<CodeController> _logger;
 
     public CodeController(
         IPistonService piston,
         IRedisMemoryService redis,
         ILearningSignalService signals,
-        ILogger<CodeController> logger)
+        ILogger<CodeController> logger,
+        IMistakeClassifierService? mistakeClassifier = null)
     {
         _piston = piston;
         _redis = redis;
         _signals = signals;
         _logger = logger;
+        _mistakeClassifier = mistakeClassifier;
     }
 
     [HttpGet("languages")]
@@ -113,6 +116,26 @@ public class CodeController : ControllerBase
                     stderrLength = result.Stderr?.Length ?? 0
                 }),
                 ct: HttpContext.RequestAborted);
+
+            if (!result.Success && _mistakeClassifier != null)
+            {
+                await _mistakeClassifier.ClassifyAndRecordAsync(
+                    userId,
+                    request.TopicId,
+                    request.SessionId,
+                    new Orka.Core.DTOs.MistakeClassificationRequest(
+                        Question: "IDE code execution",
+                        ExpectedAnswer: "Code compiles and runs successfully",
+                        StudentAnswer: request.Code,
+                        Explanation: result.SafeTutorSummary,
+                        TopicId: request.TopicId,
+                        SkillTag: request.Language ?? "code",
+                        ConceptTag: result.Phase,
+                        CodePhase: result.Phase,
+                        CompileError: result.CompileError,
+                        RuntimeError: result.RuntimeError),
+                    HttpContext.RequestAborted);
+            }
         }
 
         return Ok(new CodeRunResponse(

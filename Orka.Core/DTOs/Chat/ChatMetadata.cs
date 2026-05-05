@@ -32,4 +32,6 @@ public sealed record UsedToolDto(
     IReadOnlyList<CitationDto>? Citations = null,
     double? SourceConfidence = null,
     string? ErrorCode = null,
-    string? SafeMessage = null);
+    string? SafeMessage = null,
+    string? GroundingMode = null,
+    DateTime? Timestamp = null);

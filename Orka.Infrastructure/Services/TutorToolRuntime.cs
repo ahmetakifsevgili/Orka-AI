@@ -47,7 +47,14 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "sources_query",
                     count > 0 ? "ready" : "unavailable",
                     count > 0 ? $"{count} active source(s)" : "no active topic sources",
-                    count > 0 ? null : "no_source_context"));
+                    count > 0 ? null : "no_source_context",
+                    ToolId: "sources_query",
+                    Success: count > 0,
+                    FallbackUsed: count <= 0,
+                    ErrorCode: count > 0 ? null : "no_source_context",
+                    SafeMessage: count > 0 ? "Topic source context is available." : "No active topic source context is available.",
+                    GroundingMode: "document",
+                    Timestamp: DateTime.UtcNow));
             }
 
             if (LooksLikeReviewQuery(text))
@@ -61,7 +68,13 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "review_query",
                     "ready",
                     $"{dueCount} due review item(s)",
-                    null));
+                    null,
+                    ToolId: "review_query",
+                    Success: true,
+                    FallbackUsed: false,
+                    SafeMessage: "Durable review state is available.",
+                    GroundingMode: "learning_state",
+                    Timestamp: DateTime.UtcNow));
             }
 
             if (LooksLikeFlashcardQuery(text))
@@ -74,7 +87,13 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "flashcards",
                     "ready",
                     $"{cardCount} flashcard(s)",
-                    null));
+                    null,
+                    ToolId: "flashcards",
+                    Success: true,
+                    FallbackUsed: false,
+                    SafeMessage: "Durable flashcard state is available.",
+                    GroundingMode: "learning_state",
+                    Timestamp: DateTime.UtcNow));
             }
 
             if (LooksLikeDailyChallengeQuery(text))
@@ -87,7 +106,13 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "daily_challenge",
                     exists ? "ready" : "available",
                     exists ? "today challenge exists" : "lazy creation available",
-                    null));
+                    null,
+                    ToolId: "daily_challenge",
+                    Success: true,
+                    FallbackUsed: false,
+                    SafeMessage: exists ? "Today's challenge exists." : "Daily challenge can be created lazily.",
+                    GroundingMode: "learning_state",
+                    Timestamp: DateTime.UtcNow));
             }
 
             if (LooksLikeBookmarkQuery(text))
@@ -96,7 +121,13 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                     "bookmarks",
                     "available",
                     "bookmark API/plugin available",
-                    null));
+                    null,
+                    ToolId: "bookmarks",
+                    Success: true,
+                    FallbackUsed: false,
+                    SafeMessage: "Bookmark API and plugin are available.",
+                    GroundingMode: "user_memory",
+                    Timestamp: DateTime.UtcNow));
             }
 
             if (LooksLikeExternalToolQuery(text))
@@ -119,7 +150,18 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                         capability.Decision,
                         capability.Status.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
                             ? capability.FallbackMode
-                            : null));
+                            : null,
+                        ToolId: capability.ToolId,
+                        Success: !capability.Status.Equals("Disabled", StringComparison.OrdinalIgnoreCase),
+                        FallbackUsed: capability.Status.Equals("Disabled", StringComparison.OrdinalIgnoreCase),
+                        Provider: capability.RequiresExternalProvider ? capability.DisplayName : null,
+                        LatencyMs: 0,
+                        ErrorCode: capability.Status.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
+                            ? capability.FallbackMode
+                            : null,
+                        SafeMessage: capability.Notes,
+                        GroundingMode: ToolGroundingMode(capability.Category),
+                        Timestamp: DateTime.UtcNow));
                 }
             }
         }
@@ -130,7 +172,14 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
                 "semantic_kernel",
                 "degraded",
                 "metadata probe failed",
-                "tool_runtime_probe_failed"));
+                "tool_runtime_probe_failed",
+                ToolId: "semantic_kernel",
+                Success: false,
+                FallbackUsed: true,
+                ErrorCode: "tool_runtime_probe_failed",
+                SafeMessage: "Tool metadata probe failed safely.",
+                GroundingMode: "tool_runtime",
+                Timestamp: DateTime.UtcNow));
         }
 
         var result = tools
@@ -196,6 +245,17 @@ public sealed class TutorToolRuntime : ITutorToolRuntime
         if (ContainsAny(text, "youtube", "video", "hoca"))
             yield return "youtube_pedagogy";
     }
+
+    private static string ToolGroundingMode(string category) => category.ToLowerInvariant() switch
+    {
+        "pedagogy_reference" => "youtube_pedagogy",
+        "external_info" => "provider_grounded",
+        "computation" => "computation",
+        "visualization" => "generated_visualization",
+        "code_execution" => "code_execution",
+        "learning" => "learning_state",
+        _ => "tool_runtime"
+    };
 
     private static bool ContainsAny(string text, params string[] needles) =>
         needles.Any(n => text.Contains(n, StringComparison.OrdinalIgnoreCase));

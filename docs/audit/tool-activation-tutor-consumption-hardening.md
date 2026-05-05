@@ -184,3 +184,33 @@ Backend follow-up:
 - Live Wolfram/news/weather/crypto providers can be implemented behind provider interfaces and fake-provider tests.
 - Current state is safe fallback/provider gate, not live-provider proof.
 - Finance/crypto UI must present "not investment advice" copy when surfaced later.
+
+## Final Core Intelligence Update
+
+The live-provider adapter layer has now been implemented behind provider gates:
+
+- `IWolframProvider` / `WolframProvider`
+- `INewsProvider` / `NewsProvider`
+- `IWeatherProvider` / `WeatherProvider`
+- `IMarketDataProvider` / `MarketDataProvider`
+
+The previous follow-up "live providers can be implemented" is now closed at backend adapter level. Real external calls remain configuration-gated, while fake-provider tests prove success, malformed, missing-key and telemetry paths without requiring real keys.
+
+New learning intelligence:
+
+- `IMistakeClassifierService` classifies wrong quiz and IDE/code errors.
+- `MistakeClassified` learning signals are persisted.
+- Wrong quiz classification feeds durable review pressure through the existing ReviewItem path.
+- IDE compile/runtime/timeout failures feed classification and learning signals when topic/session context exists.
+
+New YouTube pedagogy intelligence:
+
+- `IYouTubeTranscriptProvider` normalizes and chunks transcript text.
+- `IYouTubeTeachingReferenceService` retrieves relevant chunks and extracts teaching flow, examples, analogies, common mistakes and practice ideas.
+- `YouTubeTranscriptPlugin.BuildTeachingReference` exposes this path to the Tutor/Semantic Kernel runtime.
+- `TeachingMoveApplied` is persisted when user/topic context exists.
+
+Remaining product gate:
+
+- Real Wolfram/news/weather/crypto/YouTube provider use still requires configuration.
+- Tests intentionally use fake providers and safe missing-key fallbacks.

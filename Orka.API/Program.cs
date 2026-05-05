@@ -129,6 +129,13 @@ builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
 builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
+builder.Services.AddScoped<IWolframProvider, WolframProvider>();
+builder.Services.AddScoped<INewsProvider, NewsProvider>();
+builder.Services.AddScoped<IWeatherProvider, WeatherProvider>();
+builder.Services.AddScoped<IMarketDataProvider, MarketDataProvider>();
+builder.Services.AddScoped<IMistakeClassifierService, MistakeClassifierService>();
+builder.Services.AddScoped<IYouTubeTranscriptProvider, YouTubeTranscriptProvider>();
+builder.Services.AddScoped<IYouTubeTeachingReferenceService, YouTubeTeachingReferenceService>();
 builder.Services.AddSingleton<BackgroundTaskQueue>();
 builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
@@ -279,6 +286,61 @@ builder.Services.AddHttpClient("Wikipedia", c =>
 builder.Services.AddHttpClient("YouTube", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("YouTubeTranscript", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+    c.BaseAddress = new Uri(builder.Configuration["AI:YouTube:TranscriptBaseUrl"] ?? "https://www.youtube.com/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("WolframAlpha", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["AI:WolframAlpha:BaseUrl"] ?? "https://api.wolframalpha.com/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("News", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+    c.BaseAddress = new Uri(builder.Configuration["AI:NewsAPI:BaseUrl"] ?? "https://newsapi.org/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("Weather", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["Tools:Weather:BaseUrl"] ?? "https://api.openweathermap.org/");
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("MarketData", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+    c.BaseAddress = new Uri(builder.Configuration["Tools:Crypto:BaseUrl"] ?? "https://api.coingecko.com/");
     c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
 })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler

@@ -38,23 +38,25 @@ public sealed class ToolCapabilityService : IToolCapabilityService
                 "Text-only fenced Mermaid output; frontend renders or falls back to code block.", "diagram prompt", "markdown code block"),
             Beta("visual_generation", "Pollinations visual generation", "visualization", "Medium", true, false, "AI:VisualGeneration:Enabled",
                 "Provider-style image URL generation is illustrative and beta-visible only.", "prompt/altText", "markdown image URL"),
-            Provider("tavily_web_search", "Tavily web search", "research", "Medium", "AI:Tavily:ApiKey",
+            Provider("tavily_web_search", "Tavily web search", "research", "Medium", ["AI:Tavily:ApiKey"],
                 "External web search; source URLs must be kept separate from user documents.", "query", "source evidence"),
             Enabled("wikipedia", "Wikipedia concept lookup", "research", "Low", true,
                 "Public encyclopedia lookup for stable definitions; not a substitute for uploaded docs.", "query", "title/url/snippet"),
             Enabled("academic_search", "Academic search", "research", "Medium", true,
                 "Provider/public academic lookup used for credibility signals when available.", "query", "source evidence"),
-            Beta("youtube_pedagogy", "YouTube teaching reference", "pedagogy_reference", "Medium", true, false, "AI:YouTube:Enabled",
+            ProviderBeta("youtube_pedagogy", "YouTube teaching reference", "pedagogy_reference", "Medium", false,
+                "AI:YouTube:Enabled", ["AI:YouTube:ApiKey", "YouTube:ApiKey"],
                 "Pedagogy/style/examples only by default; factual proof requires transcript/source evidence.", "topic/video", "pedagogy reference"),
-            Provider("wolfram_alpha", "Wolfram Alpha", "computation", "High", "AI:WolframAlpha:AppId",
+            Provider("wolfram_alpha", "Wolfram Alpha", "computation", "High", ["AI:WolframAlpha:AppId", "WolframAlpha:AppId"],
                 "Disabled stub unless AppId exists; exact computation tool, not general chat.", "query", "computed result"),
             Tool("ide_execution", "IDE / Piston sandbox execution", "code_execution", "Enabled", "High", false, true, null,
                 "sandbox_api_fallback", "code/language/stdin", "stdout/stderr/phase/safeTutorSummary",
                 "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX",
                 "Student IDE execution is active through authenticated /api/code/run and /api/code/execute using Judge0/Piston sandbox. SK auto-execution stays disabled."),
-            Beta("weather", "Weather / geography data", "external_info", "Medium", true, false, "Tools:Weather:Enabled",
+            ProviderBeta("weather", "Weather / geography data", "external_info", "Medium", false,
+                "Tools:Weather:Enabled", ["Tools:Weather:ApiKey", "OpenWeatherMap:ApiKey"],
                 "Beta external info utility; not core learning evidence.", "location/coordinates", "weather report"),
-            Beta("news", "News search", "external_info", "Medium", true, false, "AI:NewsAPI:ApiKey",
+            Provider("news", "News search", "external_info", "Medium", ["AI:NewsAPI:ApiKey", "NewsAPI:ApiKey"],
                 "Current news requires provider evidence and dates; disabled when key is absent.", "query", "article list"),
             Beta("crypto", "Crypto market data", "external_info", "High", true, false, "Tools:Crypto:Enabled",
                 "Educational market data only; must not provide financial advice.", "coin ids", "market facts")
@@ -114,15 +116,37 @@ public sealed class ToolCapabilityService : IToolCapabilityService
         string displayName,
         string category,
         string risk,
-        string configKey,
+        string[] configKeys,
         string notes,
         string inputSchema,
         string outputSchema)
     {
-        var configured = HasValue(configKey);
+        var configured = HasAny(configKeys);
         return Tool(id, displayName, category, configured ? "Enabled" : "Disabled", risk, false, true,
-            configKey, configured ? "provider_fallback" : "disabled_stub", inputSchema, outputSchema,
+            configKeys[0], configured ? "provider_fallback" : "disabled_stub", inputSchema, outputSchema,
             configured ? "INTEGRATED_BEHIND_GATE" : "DISABLED_WITH_RUNTIME_STUB", notes);
+    }
+
+    private ToolCapabilityDto ProviderBeta(
+        string id,
+        string displayName,
+        string category,
+        string risk,
+        bool requiresAdmin,
+        string enabledKey,
+        string[] providerKeys,
+        string notes,
+        string inputSchema,
+        string outputSchema)
+    {
+        var enabled = IsEnabled(enabledKey);
+        var configured = HasAny(providerKeys);
+        var ready = enabled && configured;
+        var fallback = !enabled ? "disabled_stub" : configured ? "degraded_metadata" : "provider_missing";
+        var decision = ready ? "INTEGRATED_BEHIND_GATE" : "DISABLED_WITH_RUNTIME_STUB";
+
+        return Tool(id, displayName, category, ready ? "Beta" : "Disabled", risk, requiresAdmin, true,
+            providerKeys[0], fallback, inputSchema, outputSchema, decision, notes);
     }
 
     private ToolCapabilityDto AdminDev(
@@ -185,7 +209,7 @@ public sealed class ToolCapabilityService : IToolCapabilityService
             Decision: decision,
             Notes: notes);
 
-    private bool HasValue(string key) => !string.IsNullOrWhiteSpace(_configuration[key]);
+    private bool HasAny(params string[] keys) => keys.Any(key => !string.IsNullOrWhiteSpace(_configuration[key]));
 
     private bool IsEnabled(string key) =>
         bool.TryParse(_configuration[key], out var value) && value;

@@ -187,3 +187,44 @@ Provider-gated current-data tools remain safe:
 - `youtube_pedagogy`
 
 These tools are useful and retained, but they require provider configuration or return explicit fallback metadata. No tests require real provider keys.
+
+## Final Core Intelligence Addendum
+
+Provider tools now have real backend adapter implementations rather than documentation-only stubs:
+
+| Tool | Runtime contract | Missing config behavior | Fake-provider proof | Telemetry |
+|---|---|---|---|---|
+| `wolfram_alpha` | computation grounding | `provider_missing` fallback | normalized computation result | `ToolTelemetryEvents` |
+| `news` | current-info/source grounding | current source unavailable, no model-memory guessing | article + citation metadata | `ToolTelemetryEvents` |
+| `weather` | factual context | disabled/provider fallback | weather DTO path; malformed location safe | `ToolTelemetryEvents` |
+| `crypto` | educational market-data reference | disabled/provider fallback | market data + no-investment-advice guard | `ToolTelemetryEvents` |
+| `youtube_pedagogy` | transcript pedagogy reference | disabled/degraded fallback | chunk retrieval + teaching reference | `ToolTelemetryEvents` + `TeachingMoveApplied` |
+
+Capability endpoint correction:
+
+- `wolfram_alpha` checks `AI:WolframAlpha:AppId` and `WolframAlpha:AppId`.
+- `news` checks string API keys instead of parsing the key as a boolean.
+- `weather` requires explicit enablement plus provider key.
+- `youtube_pedagogy` requires explicit enablement plus provider key.
+
+Deterministic proof:
+
+- `dotnet build` -> PASS, 0 warnings, 0 errors.
+- `dotnet test --no-build` -> PASS, 59 passed.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped, 2 existing mark warnings.
+
+Runtime smoke after final core intelligence:
+
+| Method/path | Auth | Expected | Actual | Result |
+|---|---|---:|---:|---|
+| GET `/swagger/index.html` | no | 200 | 200 | PASS |
+| GET `/health/live` | no | 200 | 200 | PASS |
+| GET `/health/ready` | no | 200 | 200 | PASS |
+| GET `/api/korteks/ping` | yes | 401 without token | 401 | PASS |
+| GET `/api/tools/capabilities` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/ide_execution` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/wolfram_alpha` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/news` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/weather` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/crypto` | no | 200 | 200 | PASS |
+| GET `/api/tools/capabilities/youtube_pedagogy` | no | 200 | 200 | PASS |

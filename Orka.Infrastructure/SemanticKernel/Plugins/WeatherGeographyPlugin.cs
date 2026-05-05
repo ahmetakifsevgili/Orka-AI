@@ -1,31 +1,26 @@
 using System.ComponentModel;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.SemanticKernel.Plugins;
 
 public sealed class WeatherGeographyPlugin
 {
-    private readonly IConfiguration _configuration;
+    private readonly IWeatherProvider _provider;
     private readonly ILogger<WeatherGeographyPlugin> _logger;
 
-    public WeatherGeographyPlugin(IConfiguration configuration, ILogger<WeatherGeographyPlugin> logger)
+    public WeatherGeographyPlugin(IWeatherProvider provider, ILogger<WeatherGeographyPlugin> logger)
     {
-        _configuration = configuration;
+        _provider = provider;
         _logger = logger;
     }
 
-    [KernelFunction, Description("Reports weather/geography tool availability. External live weather is beta-gated.")]
-    public Task<string> GetWeatherAndGeography(double latitude, double longitude, string locationName = "")
+    [KernelFunction, Description("Gets current weather/geography context when configured. If unavailable, returns a safe fallback and does not invent live conditions.")]
+    public async Task<string> GetWeatherAndGeography(double latitude, double longitude, string locationName = "")
     {
-        var enabled = bool.TryParse(_configuration["Tools:Weather:Enabled"], out var value) && value;
-        if (!enabled)
-        {
-            _logger.LogInformation("[Weather] Disabled stub returned for {Location}.", locationName);
-            return Task.FromResult("[weather:disabled] Weather/geography live data is beta-gated and currently disabled.");
-        }
-
-        return Task.FromResult("[weather:disabled] Weather provider is gated for backend hardening; no live call was made.");
+        var result = await _provider.GetWeatherAsync(latitude, longitude, locationName);
+        _logger.LogInformation("[Weather] Result Status={Status} Success={Success}", result.Status, result.Success);
+        return ProviderResultFormatter.Format(result);
     }
 }

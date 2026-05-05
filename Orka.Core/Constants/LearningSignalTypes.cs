@@ -30,6 +30,7 @@ public static class LearningSignalTypes
     public const string YouTubeReferenceUsed = "YouTubeReferenceUsed";
     public const string NotebookSourceUsed = "NotebookSourceUsed";
     public const string MisconceptionDetected = "MisconceptionDetected";
+    public const string MistakeClassified = "MistakeClassified";
     public const string TeachingMoveApplied = "TeachingMoveApplied";
     public const string SourceCitationMissing = "SourceCitationMissing";
 
@@ -59,6 +60,7 @@ public static class LearningSignalTypes
         YouTubeReferenceUsed,
         NotebookSourceUsed,
         MisconceptionDetected,
+        MistakeClassified,
         TeachingMoveApplied,
         SourceCitationMissing
     ];
