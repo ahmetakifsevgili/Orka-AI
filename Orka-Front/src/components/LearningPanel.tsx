@@ -1,0 +1,220 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
+import type { ApiTopic } from "@/lib/types";
+import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, ReviewAPI } from "@/services/api";
+import ToolCapabilityStrip from "./ToolCapabilityStrip";
+
+type PanelProps = {
+  topic: ApiTopic | null;
+  sessionId?: string;
+  onOpenChat: () => void;
+};
+
+export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelProps) {
+  const [loading, setLoading] = useState(false);
+  const [flashcards, setFlashcards] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [challenge, setChallenge] = useState<any | null>(null);
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
+  const [bookmarkNote, setBookmarkNote] = useState("");
+
+  const topicId = topic?.id;
+  const title = topic?.title ?? "Genel çalışma alanı";
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cards, due, today, saved] = await Promise.all([
+        FlashcardsAPI.list(topicId).catch(() => []),
+        ReviewAPI.due(topicId).catch(() => []),
+        DailyChallengeAPI.today(topicId).catch(() => null),
+        BookmarksAPI.list(topicId).catch(() => []),
+      ]);
+      setFlashcards(Array.isArray(cards) ? cards : []);
+      setReviews(Array.isArray(due) ? due : []);
+      setChallenge(today);
+      setBookmarks(Array.isArray(saved) ? saved : []);
+    } finally {
+      setLoading(false);
+    }
+  }, [topicId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const challengeQuestions = useMemo(() => {
+    if (!challenge?.questions) return [];
+    if (Array.isArray(challenge.questions)) return challenge.questions;
+    try {
+      return JSON.parse(challenge.questionsJson ?? challenge.questions ?? "[]");
+    } catch {
+      return [];
+    }
+  }, [challenge]);
+
+  const createFlashcard = async () => {
+    if (!front.trim() || !back.trim()) return;
+    try {
+      await FlashcardsAPI.create({ topicId, front: front.trim(), back: back.trim(), skillTag: topic?.title });
+      setFront("");
+      setBack("");
+      toast.success("Flashcard kaydedildi.");
+      await refresh();
+    } catch {
+      toast.error("Flashcard kaydedilemedi.");
+    }
+  };
+
+  const createTopicBookmark = async () => {
+    if (!topicId) {
+      toast.error("Bookmark için önce bir konu seç.");
+      return;
+    }
+    try {
+      await BookmarksAPI.create({
+        topicId,
+        sessionId,
+        title,
+        note: bookmarkNote.trim() || undefined,
+        tags: ["frontend", "learning"],
+      });
+      setBookmarkNote("");
+      toast.success("Bookmark eklendi.");
+      await refresh();
+    } catch {
+      toast.error("Bookmark eklenemedi.");
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent">
+      <div className="flex-shrink-0 border-b border-[#526d82]/10 px-6 py-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">Pratik ve Hafıza</p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#172033]">{title}</h1>
+            <p className="mt-1 text-sm text-[#667085]">Flashcard, SRS tekrar, günlük görev ve bookmark akışı backend ile canlı çalışır.</p>
+          </div>
+          <div className="flex flex-col items-start gap-2 lg:items-end">
+            <ToolCapabilityStrip />
+            <button
+              onClick={() => void refresh()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/70 px-3 py-2 text-xs font-bold text-[#667085] transition hover:bg-[#eef1f3]"
+            >
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+              Yenile
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="grid gap-5 xl:grid-cols-2">
+          <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-black text-[#172033]"><CreditCard className="h-4 w-4" /> Flashcards</h2>
+              <span className="rounded-full bg-[#dcecf3]/70 px-2.5 py-1 text-[10px] font-bold text-[#2d5870]">{flashcards.length} kart</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input value={front} onChange={(e) => setFront(e.target.value)} placeholder="Ön yüz" className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/80 px-3 py-2 text-sm outline-none focus:border-[#9ec7d9]" />
+              <input value={back} onChange={(e) => setBack(e.target.value)} placeholder="Arka yüz" className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/80 px-3 py-2 text-sm outline-none focus:border-[#9ec7d9]" />
+            </div>
+            <button onClick={createFlashcard} disabled={!front.trim() || !back.trim()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white disabled:opacity-40">
+              <Plus className="h-3.5 w-3.5" /> Kart ekle
+            </button>
+            <div className="mt-4 space-y-2">
+              {flashcards.length === 0 ? <Empty text="Henüz flashcard yok. İlk kartı ekleyerek SRS hattını başlat." /> : flashcards.slice(0, 8).map((card) => (
+                <div key={card.id} className="rounded-xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#172033]">{card.front}</p>
+                      <p className="mt-1 text-xs text-[#667085]">{card.back}</p>
+                    </div>
+                    <button onClick={async () => { await FlashcardsAPI.delete(card.id); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Flashcard sil">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-black text-[#172033]"><ClipboardCheck className="h-4 w-4" /> SRS Tekrar</h2>
+              <span className="rounded-full bg-[#fff8ee] px-2.5 py-1 text-[10px] font-bold text-[#8a641f]">{reviews.length} due</span>
+            </div>
+            <div className="space-y-2">
+              {reviews.length === 0 ? <Empty text="Bugün bekleyen tekrar yok. Yanlış quiz ve IDE hataları buraya baskı üretir." /> : reviews.slice(0, 8).map((item) => (
+                <div key={item.reviewItemId ?? item.id} className="rounded-xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-3 py-2">
+                  <p className="text-sm font-bold text-[#172033]">{item.conceptTag ?? item.skillTag ?? item.learningObjective ?? "Review item"}</p>
+                  <p className="text-xs text-[#667085]">{item.status ?? item.origin ?? "due"}</p>
+                  <button onClick={async () => { await ReviewAPI.complete(item.reviewItemId ?? item.id, 4); await refresh(); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#547c61]/20 bg-[#d9e7de]/70 px-2.5 py-1 text-[11px] font-bold text-[#547c61]">
+                    <CheckCircle2 className="h-3 w-3" /> Tamamla
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
+            <h2 className="mb-4 text-sm font-black text-[#172033]">Günlük Challenge</h2>
+            {!challenge ? <Empty text="Challenge şu an üretilemedi ya da bağlantı yok." /> : (
+              <div className="rounded-xl bg-[#f7f9fa]/70 p-4">
+                <p className="text-sm font-bold text-[#172033]">{challenge.status ?? "today"}</p>
+                <p className="mt-1 text-xs text-[#667085]">{challenge.sourceSkillTag ?? challenge.sourceConceptTag ?? "Zayıf alan odaklı görev"}</p>
+                {challengeQuestions.slice(0, 2).map((q: any, i: number) => (
+                  <p key={i} className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-[#344054]">{typeof q === "string" ? q : q.question ?? JSON.stringify(q)}</p>
+                ))}
+                {challenge.id && (
+                  <button onClick={async () => { await DailyChallengeAPI.submit(challenge.id, "Frontend quick submit", 3, topicId); await refresh(); }} className="mt-3 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white">
+                    Deneme gönder
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-black text-[#172033]"><Bookmark className="h-4 w-4" /> Bookmarks</h2>
+              <span className="rounded-full bg-[#dcecf3]/70 px-2.5 py-1 text-[10px] font-bold text-[#2d5870]">{bookmarks.length} kayıt</span>
+            </div>
+            <textarea value={bookmarkNote} onChange={(e) => setBookmarkNote(e.target.value)} placeholder="Bu konuyla ilgili kısa not..." rows={3} className="w-full resize-none rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/80 px-3 py-2 text-sm outline-none focus:border-[#9ec7d9]" />
+            <button onClick={createTopicBookmark} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white">
+              <Plus className="h-3.5 w-3.5" /> Konuyu kaydet
+            </button>
+            <div className="mt-4 space-y-2">
+              {bookmarks.length === 0 ? <Empty text="Kaydedilmiş not yok. Tutor, Wiki veya kaynaklardan önemli parçaları burada tutabilirsin." /> : bookmarks.slice(0, 8).map((item) => (
+                <div key={item.id} className="rounded-xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#172033]">{item.title}</p>
+                      {item.note && <p className="mt-1 text-xs text-[#667085]">{item.note}</p>}
+                    </div>
+                    <button onClick={async () => { await BookmarksAPI.delete(item.id); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Bookmark sil">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <button onClick={onOpenChat} className="mt-6 rounded-xl border border-[#526d82]/14 bg-[#eef1f3]/80 px-4 py-2 text-xs font-bold text-[#667085] hover:text-[#172033]">
+          Tutor'a dön
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <p className="rounded-xl border border-dashed border-[#526d82]/16 bg-[#f7f9fa]/55 px-4 py-5 text-center text-xs leading-6 text-[#667085]">{text}</p>;
+}

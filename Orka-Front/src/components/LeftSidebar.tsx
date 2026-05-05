@@ -28,6 +28,7 @@ import {
   Code2,
   Trash2,
   LayoutDashboard,
+  ClipboardCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -35,6 +36,7 @@ import OrcaLogo from "./OrcaLogo";
 import type { ApiTopic } from "@/lib/types";
 import { TopicsAPI } from "@/services/api";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useToolCapabilities } from "@/contexts/ToolCapabilitiesContext";
 
 interface LeftSidebarProps {
   topics: ApiTopic[];
@@ -53,6 +55,7 @@ interface LeftSidebarProps {
 const NAV_ITEMS = [
   { id: "chat",    icon: Home,          labelKey: "home",    route: null },
   { id: "dashboard", icon: LayoutDashboard, labelKey: "Dashboard", route: null },
+  { id: "learning", icon: ClipboardCheck, labelKey: "learning", route: null },
   { id: "wiki",    icon: BookMarked,    labelKey: "wiki",    route: null },
   { id: "ide",     icon: Code2,         labelKey: "ide",     route: null },
 ];
@@ -72,6 +75,7 @@ export default function LeftSidebar({
 }: LeftSidebarProps) {
   const [, navigate] = useLocation();
   const { t } = useLanguage();
+  const { isEnabled, isVisibleForUser } = useToolCapabilities();
   const [isPinned, setIsPinned] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
   const isExpanded = isPinned || isHovered;
@@ -274,11 +278,12 @@ export default function LeftSidebar({
 
         {/* Nav */}
         <div className="px-2 pb-2 flex-shrink-0">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => item.id !== "ide" || (isVisibleForUser("ide_execution") && isEnabled("ide_execution"))).map((item) => {
             const isActive = activeView === item.id;
             const label = (() => {
               if (item.labelKey === "home") return t("home_nav") || "Anasayfa";
               if (item.labelKey === "Dashboard") return "Dashboard";
+              if (item.labelKey === "learning") return "Pratik";
               if (item.labelKey === "courses") return t("courses") || "Kurslar";
               if (item.labelKey === "wiki") return t("wiki") || "Wiki";
               if (item.labelKey === "ide") return "Kod Editörü";

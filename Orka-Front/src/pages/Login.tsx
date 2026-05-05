@@ -3,7 +3,7 @@ import { useLocation, Link } from "wouter";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ArrowRight, BrainCircuit, Eye, EyeOff, Lock, Mail, Sparkles, User } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
-import { AuthAPI, storage } from "../services/api";
+import { API_ORIGIN, AuthAPI, storage } from "../services/api";
 
 type AuthTab = "signin" | "signup";
 
@@ -24,7 +24,8 @@ function authErrorMessage(err: unknown, mode: AuthTab) {
   const suffix = correlationId ? ` Destek kodu: ${correlationId}` : "";
 
   if (!apiError.response) {
-    return "Backend'e ulasilamiyor. API'nin http://localhost:5065 uzerinde calistigini ve Swagger'in acildigini kontrol et.";
+    const base = API_ORIGIN || "http://localhost:5101";
+    return `Backend'e ulasilamiyor. API'nin ${base} uzerinde calistigini ve Swagger'in acildigini kontrol et.`;
   }
 
   if (status === 401) return "E-posta veya sifre hatali. Bilgileri kontrol edip tekrar dene.";

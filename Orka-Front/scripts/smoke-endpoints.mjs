@@ -35,6 +35,11 @@ const frontendContracts = [
   ["/audio/overview", "Audio overview"],
   ["/code/run", "Code run"],
   ["/korteks/research", "Korteks stream"],
+  ["/tools/capabilities", "Tool capabilities"],
+  ["/flashcards", "Flashcards"],
+  ["/review/due", "Review due"],
+  ["/daily-challenge", "Daily Challenge"],
+  ["/bookmarks", "Bookmarks"],
 ];
 
 for (const [needle, label] of frontendContracts) {
@@ -55,6 +60,11 @@ const controllerContracts = [
   ["Orka.API/Controllers/AudioController.cs", '[Route("api/audio")]'],
   ["Orka.API/Controllers/CodeController.cs", '[Route("api/code")]'],
   ["Orka.API/Controllers/KorteksController.cs", '[Route("api/korteks")]'],
+  ["Orka.API/Controllers/ToolsController.cs", '[Route("api/tools")]'],
+  ["Orka.API/Controllers/FlashcardsController.cs", '[Route("api/flashcards")]'],
+  ["Orka.API/Controllers/ReviewController.cs", '[Route("api/review")]'],
+  ["Orka.API/Controllers/DailyChallengeController.cs", '[Route("api/daily-challenge")]'],
+  ["Orka.API/Controllers/BookmarksController.cs", '[Route("api/bookmarks")]'],
 ];
 
 for (const [file, route] of controllerContracts) {

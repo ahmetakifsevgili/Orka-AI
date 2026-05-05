@@ -5,6 +5,7 @@ import { QuizHistoryProvider } from "./contexts/QuizHistoryContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { FontSizeProvider } from "./contexts/FontSizeContext";
+import { ToolCapabilitiesProvider } from "./contexts/ToolCapabilitiesContext";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -61,18 +62,20 @@ export default function App() {
       <FontSizeProvider>
         <LanguageProvider>
           <QuizHistoryProvider>
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                style: {
-                  background: "#18181b",
-                  border: "1px solid #27272a",
-                  color: "#fafafa",
-                  fontSize: "13px",
-                },
-              }}
-            />
-            <AppRouter />
+            <ToolCapabilitiesProvider>
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  style: {
+                    background: "#18181b",
+                    border: "1px solid #27272a",
+                    color: "#fafafa",
+                    fontSize: "13px",
+                  },
+                }}
+              />
+              <AppRouter />
+            </ToolCapabilitiesProvider>
           </QuizHistoryProvider>
         </LanguageProvider>
       </FontSizeProvider>
