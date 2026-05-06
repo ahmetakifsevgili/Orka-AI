@@ -20,4 +20,9 @@ public interface IPlanDiagnosticService
         Guid userId,
         FinalizePlanDiagnosticRequest request,
         CancellationToken ct = default);
+
+    Task<FinalizePlanDiagnosticResponse> SkipAndGenerateAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default);
 }

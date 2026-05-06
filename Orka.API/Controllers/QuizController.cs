@@ -163,6 +163,24 @@ public class QuizController : ControllerBase
         }
     }
 
+    [HttpPost("plan-diagnostic/{planRequestId:guid}/skip")]
+    public async Task<IActionResult> SkipPlanDiagnostic(Guid planRequestId)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _planDiagnostic.SkipAndGenerateAsync(userId, planRequestId, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Plan diagnostic skip failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, planRequestId);
+            return StatusCode(500, new { error = "Plan diagnostic could not be skipped safely." });
+        }
+    }
+
     [HttpGet("history/{topicId}")]
     public async Task<ActionResult<IEnumerable<QuizAttemptDto>>> GetQuizHistory(Guid topicId)
     {

@@ -126,6 +126,22 @@ public sealed class PlanDiagnosticTests
     }
 
     [Fact]
+    public async Task PlanDiagnostic_Skip_GeneratesBeginnerPlanWithoutFakeAttempts()
+    {
+        var harness = await CreateHarnessAsync();
+        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+
+        var result = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
+        var attemptCount = await harness.Db.QuizAttempts.CountAsync(a => a.UserId == harness.UserId && a.QuizRunId == start.QuizRunId);
+
+        Assert.True(result.PlanGenerated);
+        Assert.Equal(PlanDiagnosticStatus.PlanGenerated, result.Status);
+        Assert.Equal(0, attemptCount);
+        Assert.Contains("StartFromZero", harness.DeepPlan.LastDiagnosticQuizSummary);
+        Assert.Contains("do not infer weak skills", harness.DeepPlan.LastDiagnosticQuizSummary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PlanDiagnostic_DoesNotMutateExistingPlans()
     {
         var harness = await CreateHarnessAsync();

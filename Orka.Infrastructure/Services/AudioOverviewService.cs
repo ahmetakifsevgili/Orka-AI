@@ -79,6 +79,17 @@ public class AudioOverviewService : IAudioOverviewService
         try
         {
             var context = await BuildOverviewContextAsync(userId, topicId, sessionId, ct);
+            if (IsInsufficientOverviewContext(context))
+            {
+                job.Status = "script-only";
+                job.ErrorMessage = "Audio overview icin henuz kaynak, wiki veya ders sohbeti yok.";
+                job.Script = "[HOCA]: Bu konu icin henuz sesli derse donusturulecek yeterli kaynak veya ders icerigi yok.\n[ASISTAN]: Once Tutor'da bir ders isleyebilir, Wiki'ye not ekleyebilir veya kaynak yukleyebilirsin. Sonra Orka bu icerigi AI sesli ders akisine cevirebilir.";
+                job.SpeakersJson = JsonSerializer.Serialize(AudioDialogueFormatter.ParseSpeakers(job.Script));
+                job.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+                return ToDto(job);
+            }
+
             var systemPrompt = """
                 Sen Orka AI'nin Sesli Sinif podcast yapimcisisin.
                 Verilen ders/kaynak icerigini 2-3 dakikalik, uc konusmaciya kadar destekleyen kisa bir podcast metnine cevir.
@@ -109,7 +120,13 @@ public class AudioOverviewService : IAudioOverviewService
             {
                 using var ttsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 ttsTimeout.CancelAfter(TtsGenerationTimeout);
-                job.AudioBytes = await _ttsService.SynthesizeDialogueAsync(script, ttsTimeout.Token);
+                var audioBytes = await _ttsService.SynthesizeDialogueAsync(script, ttsTimeout.Token);
+                if (audioBytes.Length == 0)
+                {
+                    throw new InvalidOperationException("Edge-TTS returned an empty audio payload.");
+                }
+
+                job.AudioBytes = audioBytes;
                 job.ContentType = "audio/mpeg";
                 job.Status = "ready";
                 _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
@@ -169,6 +186,7 @@ public class AudioOverviewService : IAudioOverviewService
     private async Task<string> BuildOverviewContextAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
     {
         var sb = new StringBuilder();
+        var hasMeaningfulContext = false;
 
         if (topicId.HasValue)
         {
@@ -177,7 +195,10 @@ public class AudioOverviewService : IAudioOverviewService
 
             var wiki = await _wikiService.GetWikiFullContentAsync(topicId.Value, userId);
             if (!string.IsNullOrWhiteSpace(wiki))
+            {
                 sb.AppendLine(Trim(wiki, 5000));
+                hasMeaningfulContext = true;
+            }
 
             var sourceBits = await _db.SourceChunks
                 .AsNoTracking()
@@ -188,7 +209,10 @@ public class AudioOverviewService : IAudioOverviewService
                 .Select(c => $"[doc:{c.LearningSourceId}:p{c.PageNumber}] {c.Text}")
                 .ToListAsync(ct);
             if (sourceBits.Count > 0)
+            {
                 sb.AppendLine("\nKaynak notlari:\n" + string.Join("\n\n", sourceBits));
+                hasMeaningfulContext = true;
+            }
         }
 
         if (sessionId.HasValue)
@@ -202,12 +226,19 @@ public class AudioOverviewService : IAudioOverviewService
                 .Select(m => $"{m.Role}: {m.Content}")
                 .ToListAsync(ct);
             if (messages.Count > 0)
+            {
                 sb.AppendLine("\nSohbet ozeti:\n" + string.Join("\n", messages));
+                hasMeaningfulContext = true;
+            }
         }
 
         var text = sb.ToString();
-        return string.IsNullOrWhiteSpace(text) ? "Henuz yeterli ders icerigi yok." : Trim(text, 8000);
+        return string.IsNullOrWhiteSpace(text) || !hasMeaningfulContext ? "Henuz yeterli ders icerigi yok." : Trim(text, 8000);
     }
+
+    private static bool IsInsufficientOverviewContext(string context) =>
+        string.IsNullOrWhiteSpace(context) ||
+        context.Trim().Equals("Henuz yeterli ders icerigi yok.", StringComparison.OrdinalIgnoreCase);
 
     private static string Trim(string value, int maxChars) =>
         value.Length > maxChars ? value[..maxChars] + "\n[...kirpildi]" : value;

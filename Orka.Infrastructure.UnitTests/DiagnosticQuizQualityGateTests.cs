@@ -82,6 +82,17 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
+    public void DiagnosticQuizQuality_FallbackOptionsDoNotLeakCorrectnessLabels()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async/await");
+
+        Assert.DoesNotContain("Dogru yaklasim", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Yanlis:", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Doğru yaklaşım", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Yanlış:", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DiagnosticQuizQuality_AcceptsVariedDiagnosticQuiz()
     {
         var json = BuildQuiz();

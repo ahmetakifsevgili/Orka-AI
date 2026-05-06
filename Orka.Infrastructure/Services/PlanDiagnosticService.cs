@@ -218,6 +218,67 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         };
     }
 
+    public async Task<FinalizePlanDiagnosticResponse> SkipAndGenerateAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default)
+    {
+        var state = await RequireStateAsync(userId, planRequestId, ct);
+
+        state.AnsweredQuestionCount = await _db.QuizAttempts
+            .CountAsync(a => a.UserId == userId && a.QuizRunId == state.QuizRunId, ct);
+
+        if (state.Status == PlanDiagnosticStatus.PlanGenerated && state.GeneratedPlanRootTopicId.HasValue)
+        {
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = true,
+                GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId
+            };
+        }
+
+        state.Status = PlanDiagnosticStatus.PlanGenerating;
+        state.QuizCompletedAt ??= DateTime.UtcNow;
+        await _stateStore.SaveAsync(state, ct);
+
+        var diagnosticSummary = string.Join("\n", new[]
+        {
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]",
+            "Mode: StartFromZero",
+            $"QuizRunId: {state.QuizRunId}",
+            $"Answered: {state.AnsweredQuestionCount}",
+            "Correct: 0",
+            "Wrong: 0",
+            "WeakConcepts: none",
+            "MistakePatterns: none",
+            "Instruction: The learner explicitly skipped the diagnostic quiz and chose to start from zero. Build a beginner-safe plan, but do not infer weak skills or record fake mistakes from skipped questions."
+        });
+
+        var planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            state.TopicId,
+            state.TopicTitle,
+            userId,
+            state.CompressedResearchPromptBlock,
+            diagnosticSummary,
+            state.UserLevel);
+
+        state.Status = PlanDiagnosticStatus.PlanGenerated;
+        state.GeneratedPlanRootTopicId = state.TopicId;
+        await _stateStore.SaveAsync(state, ct);
+
+        return new FinalizePlanDiagnosticResponse
+        {
+            PlanRequestId = state.PlanRequestId,
+            Status = state.Status,
+            PlanGenerated = true,
+            Message = "Diagnostic quiz skipped; beginner plan generated without fake quiz mistakes.",
+            GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
+            GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+        };
+    }
+
     private async Task<string> GenerateDiagnosticQuizFromStoredContextAsync(
         string topicTitle,
         string compressedResearchPromptBlock,

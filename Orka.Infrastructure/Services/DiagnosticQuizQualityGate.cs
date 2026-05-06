@@ -146,18 +146,15 @@ public static class DiagnosticQuizQualityGate
                 ? "\n\nKod:\n```csharp\nvar task = LoadAsync();\nConsole.WriteLine(task.Result);\n```\nBu kodda hangi async/await veya Task kullanim problemi tani icin en onemlidir?"
                 : string.Empty;
 
+            var options = BuildNeutralDiagnosticOptions(i);
+            var correctOption = options.First(option => option.IsCorrect).Text;
+
             return new DiagnosticQuestionBlueprint
             {
                 Type = "multiple_choice",
                 Question = $"{topicTitle}: {i + 1}. tani sorusu - {t.Item5}.{codeSnippet}",
-                Options =
-                [
-                    new DiagnosticOption("Dogru yaklasim: kavrami baglama gore uygula.", true),
-                    new DiagnosticOption("Yanlis: ezber tanimi her durumda aynen uygula.", false),
-                    new DiagnosticOption("Yanlis: senaryodaki kisitlari yok say.", false),
-                    new DiagnosticOption("Yanlis: hata belirtisini kok neden san.", false)
-                ],
-                CorrectAnswer = "Dogru yaklasim: kavrami baglama gore uygula.",
+                Options = options,
+                CorrectAnswer = correctOption,
                 Explanation = i == 0
                     ? $"{t.Item5} Bu soru, .Result ile asenkron isin senkron bloklanmasi ve olasi deadlock/yanlis zihinsel model riskini olcer."
                     : $"{t.Item5} Bu soru, {topicTitle} icin tani amacli kavram ve uygulama ayrimini olcer.",
@@ -173,6 +170,43 @@ public static class DiagnosticQuizQualityGate
 
         return JsonSerializer.Serialize(questions, JsonOptions)
             .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(int index)
+    {
+        var sets = new[]
+        {
+            new[]
+            {
+                new DiagnosticOption("Async isi await ederek akisi bloklamadan surdurmak.", true),
+                new DiagnosticOption("Task sonucunu her durumda .Result ile beklemek.", false),
+                new DiagnosticOption("Kodun calismasini thread sayisini artirarak garanti etmek.", false),
+                new DiagnosticOption("Hata olusursa async anahtar kelimesini kaldirmak.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Senaryodaki kisitlari okuyup kavrami ona gore uygulamak.", true),
+                new DiagnosticOption("Tanimi ezberden yazip senaryoyu dikkate almamak.", false),
+                new DiagnosticOption("Ilgili kavram yerine benzer gorunen terimi secmek.", false),
+                new DiagnosticOption("Sonucu sadece hata mesajinin ilk kelimesinden tahmin etmek.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Once veri akisini, sonra karar adimini belirlemek.", true),
+                new DiagnosticOption("Kontrol akisini okumadan ciktiyi tahmin etmek.", false),
+                new DiagnosticOption("Tum degiskenleri ayni anda sabit kabul etmek.", false),
+                new DiagnosticOption("Ornek senaryodaki on kosullari yok saymak.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Hatanin belirtisini kok nedeninden ayirmak.", true),
+                new DiagnosticOption("Derleme hatasini her zaman mantik hatasi saymak.", false),
+                new DiagnosticOption("Cozumu sadece satir sayisini azaltmak olarak gormek.", false),
+                new DiagnosticOption("Kod ciktisini okumadan en kisa secenegi secmek.", false)
+            }
+        };
+
+        return sets[index % sets.Length].ToList();
     }
 
     public static string ExtractJsonArray(string raw)

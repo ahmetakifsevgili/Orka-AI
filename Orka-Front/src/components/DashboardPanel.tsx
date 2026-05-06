@@ -145,6 +145,11 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   const nextTopic = topics.find((topic) => (topic.progressPercentage ?? 0) > 0 && (topic.progressPercentage ?? 0) < 100) ?? recentTopic;
   const strongestSignal = weakSkills[0] ?? null;
   const hasStudyData = topics.length > 0 || weakSkills.length > 0 || recentSignals.length > 0 || totalQuizzes > 0;
+  const hasRealTopicProgress = topics.some((topic) =>
+    (topic.progressPercentage ?? 0) > 0 ||
+    (topic.completedSections ?? 0) > 0 ||
+    ((topic.totalSections ?? 0) > 0 && (topic.completedSections ?? 0) > 0)
+  );
   const studyFocusTitle = strongestSignal?.skillTag || nextTopic?.title || t("first_study_path");
   const studyFocusReason = strongestSignal
     ? `${strongestSignal.topicPath || "Bu konuda"} son denemelerde daha fazla tekrar istiyor.`
@@ -432,14 +437,18 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                 </button>
               </div>
 
-              {topics.length === 0 ? (
+              {topics.length === 0 || !hasRealTopicProgress ? (
                 <div className="rounded-3xl border border-dashed border-[#526d82]/15 px-6 py-12 text-center">
                   <div className="mx-auto mb-4 grid h-10 w-10 place-items-center rounded-2xl bg-[#dcecf3]/65">
                     <FileText className="h-4 w-4 text-[#52768a]" />
                   </div>
-                  <p className="text-sm font-bold text-[#172033]">Henuz aktif bir ogrenme yolunuz bulunmuyor.</p>
+                  <p className="text-sm font-bold text-[#172033]">
+                    {topics.length === 0 ? "Henuz aktif bir ogrenme yolunuz bulunmuyor." : "Plan var; gerçek ilerleme henüz başlamadı."}
+                  </p>
                   <p className="mx-auto mt-2 max-w-sm text-xs leading-6 text-[#667085]">
-                    Tutor'a hedefini yaz; Orka ilk konu yolunu acsin. Kaynak, kod hatasi, quiz ve tekrar sinyalleri geldikce burasi gercek verilerle dolar.
+                    {topics.length === 0
+                      ? "Tutor'a hedefini yaz; Orka ilk konu yolunu acsin. Kaynak, kod hatasi, quiz ve tekrar sinyalleri geldikce burasi gercek verilerle dolar."
+                      : "Bu liste sahte %0 kartları basmaz. İlk ders, quiz, IDE sonucu veya tekrar aksiyonu geldikçe ilerleme burada gerçek veriye dönüşür."}
                   </p>
                   <button
                     onClick={() => onViewChange("chat")}

@@ -491,24 +491,70 @@ export const ClassroomAPI = {
  * QuizAPI — Quiz denemelerini backend'e kaydeder.
  * POST /api/quiz/attempt endpoint'i backend'de hazır olmadığında
  * sessizce başarısız olur (fire-and-forget).
- */export const QuizAPI = {
-  recordAttempt: (data: {
-    messageId: string;
-    quizRunId?: string;
-    questionId?: string;
-    topicId?: string;
+ */
+type QuizAttemptPayload = {
+  messageId: string;
+  quizRunId?: string;
+  questionId?: string;
+  topicId?: string;
+  sessionId?: string;
+  question: string;
+  selectedOptionId: string;
+  isCorrect: boolean;
+  explanation: string;
+  skillTag?: string;
+  topicPath?: string;
+  difficulty?: string;
+  cognitiveType?: string;
+  questionHash?: string;
+  sourceRefsJson?: string;
+};
+
+export const QuizAPI = {
+  startPlanDiagnostic: (data: {
+    topicId: string;
     sessionId?: string;
-    question: string;
-    selectedOptionId: string;
-    isCorrect: boolean;
-    explanation: string;
-    skillTag?: string;
-    topicPath?: string;
-    difficulty?: string;
-    cognitiveType?: string;
-    questionHash?: string;
-    sourceRefsJson?: string;
-  }) => api.post("/quiz/attempt", data),
+    topicTitle?: string;
+    userLevel?: string;
+  }) =>
+    api.post<{
+      planRequestId: string;
+      quizRunId: string;
+      topicId: string;
+      topicTitle: string;
+      status: string;
+      questionsJson: string;
+      groundingMode: string;
+      sourceCount: number;
+      quizQuestionCount: number;
+    }>("/quiz/plan-diagnostic/start", data).then((r) => r.data),
+  recordPlanDiagnosticAttempt: (planRequestId: string, data: QuizAttemptPayload) =>
+    api.post<{
+      planRequestId: string;
+      quizRunId: string;
+      status: string;
+      answeredQuestionCount: number;
+      quizQuestionCount: number;
+    }>(`/quiz/plan-diagnostic/${planRequestId}/attempt`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  finalizePlanDiagnostic: (planRequestId: string) =>
+    api.post<{
+      planRequestId: string;
+      status: string;
+      planGenerated: boolean;
+      message?: string;
+      generatedPlanRootTopicId?: string;
+      generatedTopicIds: string[];
+    }>("/quiz/plan-diagnostic/finalize", { planRequestId }).then((r) => r.data),
+  skipPlanDiagnostic: (planRequestId: string) =>
+    api.post<{
+      planRequestId: string;
+      status: string;
+      planGenerated: boolean;
+      message?: string;
+      generatedPlanRootTopicId?: string;
+      generatedTopicIds: string[];
+    }>(`/quiz/plan-diagnostic/${planRequestId}/skip`, {}, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  recordAttempt: (data: QuizAttemptPayload) => api.post("/quiz/attempt", data, { suppressErrorToast: true } as OrkaAxiosConfig),
   getGlobalStats: () => api.get("/quiz/stats"),
   getHistory: (topicId: string) => api.get(`/quiz/history/${topicId}`),
 };
@@ -545,11 +591,11 @@ export const KorteksAPI = {
 export const ToolsAPI = {
   getCapabilities: (includeInternal = false) =>
     api
-      .get<ToolCapabilitiesResponse>(`/tools/capabilities${includeInternal ? "?includeInternal=true" : ""}`)
+      .get<ToolCapabilitiesResponse>(`/tools/capabilities${includeInternal ? "?includeInternal=true" : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
       .then((r) => r.data),
   getCapability: (toolId: string, includeInternal = false) =>
     api
-      .get<ToolCapability>(`/tools/capabilities/${toolId}${includeInternal ? "?includeInternal=true" : ""}`)
+      .get<ToolCapability>(`/tools/capabilities/${toolId}${includeInternal ? "?includeInternal=true" : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
       .then((r) => r.data),
 };
 

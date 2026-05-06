@@ -73,6 +73,16 @@ export interface ChatResponseMetadata {
   fallbackReason?: string | null;
   sourceConfidence?: number | null;
   providerWarnings?: string[];
+  planDiagnostic?: PlanDiagnosticMeta;
+}
+
+export interface PlanDiagnosticMeta {
+  planRequestId: string;
+  quizRunId: string;
+  topicId: string;
+  topicTitle: string;
+  status?: string;
+  quizQuestionCount?: number;
 }
 
 export interface SubLesson {

@@ -24,8 +24,15 @@ interface ChatMessageProps {
   message: ChatMessageType;
   topicId?: string;
   sessionId?: string;
-  /** QuizCard'dan gelen cevap metni; ChatPanel backend'e iletir. */
-  onSubmitAnswer?: (text: string) => void;
+  onPlanComplete?: (completion: {
+    planGenerated: boolean;
+    generatedPlanRootTopicId?: string;
+    generatedTopicIds?: string[];
+    message?: string;
+    score?: number;
+    total?: number;
+    skipped?: boolean;
+  }) => void;
   /** Kullanıcının gerçek adı (API'den alınır). */
   userName?: string;
   /** Konu tamamlama kartındaki wiki butonu için. */
@@ -144,6 +151,32 @@ async function getMermaid() {
   return m;
 }
 
+function sanitizeMermaid(code: string) {
+  return code
+    .replace(/([A-Za-z0-9_]+)\[([^\]\n"]*[\(\):.;,][^\]\n"]*)\]/g, (_match, node, label) => {
+      const escaped = String(label).replace(/"/g, '\\"');
+      return `${node}["${escaped}"]`;
+    })
+    .replace(/([A-Za-z0-9_]+)\(([^\)\n"]*[\[\]:.;,][^\)\n"]*)\)/g, (_match, node, label) => {
+      const escaped = String(label).replace(/"/g, '\\"');
+      return `${node}("${escaped}")`;
+    });
+}
+
+function mermaidFallbackHtml(code: string) {
+  const safeCode = code
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `
+    <div class="rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
+      <div class="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
+      <div class="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
+      <pre class="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">${safeCode}</pre>
+    </div>
+  `;
+}
+
 function MermaidBlock({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const idRef = useRef("m_" + Math.random().toString(36).slice(2, 9));
@@ -153,11 +186,19 @@ function MermaidBlock({ code }: { code: string }) {
     (async () => {
       try {
         const m = await getMermaid();
-        const { svg } = await m.render(idRef.current, code.trim());
+        let svg: string;
+        try {
+          const rendered = await m.render(idRef.current, code.trim());
+          svg = rendered.svg;
+        } catch {
+          const rendered = await m.render(`${idRef.current}_safe`, sanitizeMermaid(code.trim()));
+          svg = rendered.svg;
+        }
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       } catch (err) {
         if (!cancelled && ref.current) {
-          ref.current.innerHTML = `<pre class="text-xs text-amber-400 p-3">Mermaid hata: ${(err as Error).message}</pre>`;
+          console.warn("Mermaid render fallback:", err);
+          ref.current.innerHTML = mermaidFallbackHtml(code);
         }
       }
     })();
@@ -231,6 +272,16 @@ function withSourceLinks(content: string): string {
     )
     .replace(/\[wiki(?::[^\]]+)?\]/g, "[wiki](orka-wiki://local)")
     .replace(/\[web(?::[^\]]+)?\]/g, "[web](orka-web://local)");
+}
+
+function sanitizeVisibleChatContent(content: string) {
+  return content
+    .replace(/\[SKIP_QUIZ\]/gi, "")
+    .replace(/\[PLAN_READY\]/gi, "")
+    .replace(/\[IDE_OPEN\]/gi, "")
+    .replace(/\[TOPIC_COMPLETE:[^\]]+\]/gi, "")
+    .replace(/\*\*Quiz Cevab(?:ı|Ä±)m:\*\*[\s\S]*$/i, "")
+    .trim();
 }
 
 function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"] }) {
@@ -343,12 +394,12 @@ function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"]
   );
 }
 
-function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
+function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isTopicComplete = message.type === "topic_complete";
 
   // Hooks must always be called — conditional returns happen after
-  const [displayedContent, setDisplayedContent] = useState(isUser ? message.content : "");
+  const [displayedContent, setDisplayedContent] = useState(isUser ? sanitizeVisibleChatContent(message.content) : "");
   const [audioOpen, setAudioOpen] = useState(false);
 
   // Resolve quiz data without strict type checking (AI often forgets type indicator but sends json)
@@ -360,7 +411,7 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
   // Sync displayed content with message content — no typewriter animation for performance
   useEffect(() => {
     prevStreamingRef.current = message.isStreaming;
-    setDisplayedContent(message.content);
+    setDisplayedContent(sanitizeVisibleChatContent(message.content));
   }, [message.content, message.isStreaming]);
 
   // ── Konu Tamamlama Kartı ───────────────────────────────────────────────
@@ -414,7 +465,7 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
             </div>
             <div className="bg-[#dcecf3]/80 border border-[#9ec7d9]/45 rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
               <p className="text-[15px] text-[#172033] leading-relaxed whitespace-pre-wrap">
-                {message.content}
+                {sanitizeVisibleChatContent(message.content)}
               </p>
             </div>
           </div>
@@ -543,7 +594,8 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
                 messageId={message.id}
                 topicId={topicId}
                 sessionId={sessionId}
-                onSubmitAnswer={onSubmitAnswer}
+                planDiagnostic={message.metadata?.planDiagnostic}
+                onPlanComplete={onPlanComplete}
                 onOpenIDE={onOpenIDE}
                 isBaseline={
                     message.content.includes("akademik") ||

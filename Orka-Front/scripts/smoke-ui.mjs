@@ -111,7 +111,8 @@ addCheck("P5 classroom backend audio fallback", api.includes("interactionId") &&
 
 const quiz = read("src/components/QuizCard.tsx");
 addCheck("Quiz raw JSON leak guard", !quiz.includes("JSON.stringify(quiz") && !quiz.includes("{JSON.stringify"));
-addCheck("Quiz feedback copy uses readable Turkish", quiz.includes("Quiz Cevabım") && quiz.includes("Doğru") && quiz.includes("Yanlış") && !quiz.includes("Dogru") && !quiz.includes("Yanlis"));
+addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && !quiz.includes("[SKIP_QUIZ]") && !quiz.includes("crypto.randomUUID") && quiz.includes("Quiz akışı tamamlandı"));
+addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
 
 const tutorAgent = readRepo("Orka.Infrastructure/Services/TutorAgent.cs");
 const deepPlanAgent = readRepo("Orka.Infrastructure/Services/DeepPlanAgent.cs");

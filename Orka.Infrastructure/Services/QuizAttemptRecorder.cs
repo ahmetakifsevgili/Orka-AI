@@ -54,11 +54,20 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                 ct)
             : false;
 
+        QuizRun? quizRun = null;
+        if (request.QuizRunId.HasValue)
+        {
+            quizRun = await _db.QuizRuns
+                .FirstOrDefaultAsync(q => q.Id == request.QuizRunId.Value && q.UserId == userId, ct);
+        }
+
+        var validQuizRunId = quizRun?.Id;
+
         var attempt = new QuizAttempt
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            QuizRunId = request.QuizRunId,
+            QuizRunId = validQuizRunId,
             QuestionId = Clean(request.QuestionId),
             SessionId = request.SessionId,
             TopicId = request.TopicId,
@@ -77,15 +86,9 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
         _db.QuizAttempts.Add(attempt);
 
-        if (request.QuizRunId.HasValue)
+        if (quizRun != null && validQuizRunId.HasValue)
         {
-            var quizRun = await _db.QuizRuns
-                .FirstOrDefaultAsync(q => q.Id == request.QuizRunId.Value && q.UserId == userId, ct);
-
-            if (quizRun != null)
-            {
-                await UpdateQuizRunAsync(quizRun, userId, request.QuizRunId.Value, request.IsCorrect, now, ct);
-            }
+            await UpdateQuizRunAsync(quizRun, userId, validQuizRunId.Value, request.IsCorrect, now, ct);
         }
 
         await _db.SaveChangesAsync(ct);

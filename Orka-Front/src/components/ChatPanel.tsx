@@ -19,7 +19,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
 import type { ChatMessage, ApiTopic, QuizData } from "@/lib/types";
-import { ChatAPI, UserAPI, KorteksAPI } from "@/services/api";
+import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
 import ChatMessageComponent from "./ChatMessage";
@@ -27,6 +27,18 @@ import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import { useLanguage } from "@/contexts/LanguageContext";
+
+type PlanFlowStage = "idle" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
+
+type PlanCompletion = {
+  planGenerated: boolean;
+  generatedPlanRootTopicId?: string;
+  generatedTopicIds?: string[];
+  message?: string;
+  score?: number;
+  total?: number;
+  skipped?: boolean;
+};
 
 interface ChatPanelProps {
   activeTopic: ApiTopic | null;
@@ -72,6 +84,8 @@ export default function ChatPanel({
   const [isKorteksMode, setIsKorteksMode] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingState, setThinkingState] = useState(THINKING_STATES[0]);
+  const [planFlowStage, setPlanFlowStage] = useState<PlanFlowStage>("idle");
+  const [planFlowDetail, setPlanFlowDetail] = useState<string | null>(null);
 
   // Yeni topic modu aktifleştirildiğinde reset at
   useEffect(() => {
@@ -102,6 +116,7 @@ export default function ChatPanel({
   // ── Thinking state rotator ─────────────────────────────────────────────
   useEffect(() => {
     if (!isThinking) return;
+    if (planFlowStage !== "idle") return;
     const currentStates = isPlanMode ? PLANNING_THINKING_STATES : THINKING_STATES;
 
     let i = 0;
@@ -112,7 +127,7 @@ export default function ChatPanel({
       setThinkingState(currentStates[i]);
     }, 900);
     return () => clearInterval(id);
-  }, [isThinking, isPlanMode]);
+  }, [isThinking, isPlanMode, planFlowStage]);
 
   // ── Auto-scroll (only if user is near bottom) ───────────────────────────
   const isNearBottomRef = useRef(true);
@@ -149,6 +164,117 @@ export default function ChatPanel({
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
+  const startStructuredPlanDiagnostic = useCallback(
+    async (content: string) => {
+      if (!content || isThinking) return;
+
+      const userMsg: ChatMessage = {
+        id: `local-user-${Date.now()}`,
+        role: "user",
+        type: "text",
+        content,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, userMsg]);
+      setIsThinking(true);
+      setIsPlanMode(false);
+      setIsKorteksMode(false);
+      setPlanFlowStage("topic");
+      setPlanFlowDetail("Hedefini konuya ceviriyorum; cevaplar chat'e komut olarak basilmayacak.");
+
+      try {
+        let topicId = activeTopic?.id;
+        let topicTitle = activeTopic?.title ?? content;
+
+        if (!topicId) {
+          const title = content.replace(/\s+/g, " ").trim().slice(0, 70) || "Yeni calisma hedefi";
+          const created = await TopicsAPI.create({
+            title,
+            emoji: "📘",
+            category: "Plan",
+          });
+          topicId = created.data.id;
+          topicTitle = created.data.title;
+          onTopicAutoCreated?.(topicId!);
+          onTopicsRefresh();
+        }
+        if (!topicId) {
+          throw new Error("Topic could not be prepared for plan diagnostic.");
+        }
+        const ensuredTopicId = topicId;
+
+        setPlanFlowStage("research");
+        setPlanFlowDetail("Korteks konu baglamini ve guvenli kaynak sinyallerini hazirliyor.");
+
+        const start = await QuizAPI.startPlanDiagnostic({
+          topicId: ensuredTopicId,
+          sessionId: sessionId ?? undefined,
+          topicTitle,
+        });
+
+        const quizData = tryParseQuiz(start.questionsJson);
+        if (!quizData) {
+          throw new Error("Plan diagnostic quiz payload could not be parsed.");
+        }
+
+        setPlanFlowStage("quiz");
+        setPlanFlowDetail("Seviye testi hazir. Cevaplar ayri quiz yuzeyinde kaydedilecek.");
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `plan-quiz-${Date.now()}`,
+            role: "ai",
+            type: "quiz",
+            content:
+              "Seviye testini burada coz. Orka cevaplarini chat mesaji gibi gondermeyecek; sonuc plan uretimi icin kullanilacak.",
+            quiz: quizData,
+            metadata: {
+              groundingMode: start.groundingMode,
+              planDiagnostic: {
+                planRequestId: start.planRequestId,
+                quizRunId: start.quizRunId,
+                topicId: start.topicId,
+                topicTitle: start.topicTitle,
+                status: start.status,
+                quizQuestionCount: start.quizQuestionCount,
+              },
+            },
+            timestamp: new Date(),
+          },
+        ]);
+        onTopicsRefresh();
+      } catch (err) {
+        console.error("Plan diagnostic start error:", err);
+        setPlanFlowStage("error");
+        setPlanFlowDetail("Plan akisi baslatilamadi; normal Tutor modunda devam edebilirsin.");
+        toast.error("Plan akisi baslatilamadi. Backend durumunu kontrol ediyoruz.");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `plan-error-${Date.now()}`,
+            role: "ai",
+            type: "text",
+            content:
+              "Plan akisini baslatirken bir sorun olustu. Bu cevap chat'e quiz komutu basmadan durduruldu; istersen konuyu Tutor'a normal soru olarak sorabiliriz.",
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsThinking(false);
+      }
+    },
+    [
+      activeTopic,
+      isThinking,
+      onTopicAutoCreated,
+      onTopicsRefresh,
+      sessionId,
+      setMessages,
+    ]
+  );
+
   // ── Core send logic ────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (content: string) => {
@@ -174,6 +300,8 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, userMsg, placeholderMsg]);
       setIsThinking(true);
+      setPlanFlowStage("idle");
+      setPlanFlowDetail(null);
 
       const isPlanRequest = isPlanMode || content.toLowerCase().includes("plan") || content.toLowerCase().includes("müfredat");
       const initStates = isPlanRequest ? PLANNING_THINKING_STATES : THINKING_STATES;
@@ -443,19 +571,43 @@ export default function ChatPanel({
       resetTextarea();
       if (isKorteksMode) {
         sendKorteksMessage(content);
+      } else if (isPlanMode) {
+        startStructuredPlanDiagnostic(content);
       } else {
         sendMessage(content);
       }
     },
-    [input, isKorteksMode, sendMessage, sendKorteksMessage]
+    [input, isKorteksMode, isPlanMode, sendMessage, sendKorteksMessage, startStructuredPlanDiagnostic]
   );
 
   // ── Quiz answer callback ───────────────────────────────────────────────
-  const handleQuizAnswer = useCallback(
-    (formattedAnswer: string) => {
-      sendMessage(formattedAnswer);
+  const handleQuizFlowComplete = useCallback(
+    (completion: PlanCompletion) => {
+      if (!completion.planGenerated) return;
+
+      setPlanFlowStage("done");
+      setPlanFlowDetail("Plan hazir. Sol menudeki ogrenme yolundan ilk derse gecebilirsin.");
+      onTopicsRefresh();
+
+      const scoreLine = completion.skipped
+        ? "Seviye testi atlandi; Orka sifirdan baslayan guvenli bir plan uretti."
+        : typeof completion.score === "number" && typeof completion.total === "number"
+          ? `Seviye testi tamamlandi: ${completion.score}/${completion.total}.`
+          : "Seviye testi tamamlandi.";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `plan-ready-${Date.now()}`,
+          role: "ai",
+          type: "text",
+          content:
+            `${scoreLine}\n\nPlan olustu. Simdi sol menudeki ogrenme yolundan ilk derse gecebilir veya Tutor'a \"ilk derse basla\" yazabilirsin. Quiz cevabin chat mesaji olarak gonderilmedi.`,
+          timestamp: new Date(),
+        },
+      ]);
     },
-    [sendMessage]
+    [onTopicsRefresh, setMessages]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -585,9 +737,7 @@ export default function ChatPanel({
                   message={msg}
                   topicId={activeTopic?.id}
                   sessionId={sessionId ?? undefined}
-                  onSubmitAnswer={(answer) => {
-                    sendMessage(answer);
-                  }}
+                  onPlanComplete={handleQuizFlowComplete}
                   onOpenWiki={onOpenWiki}
                   onOpenIDE={onOpenIDE}
                 />
@@ -607,7 +757,11 @@ export default function ChatPanel({
                   <OrcaLogo className="w-4 h-4 text-[#344054]" animated={true} />
                 </div>
                 <div className="pt-0">
-                  <ThinkingIndicator state={thinkingState} />
+                  {planFlowStage !== "idle" ? (
+                    <PlanFlowIndicator stage={planFlowStage} detail={planFlowDetail} />
+                  ) : (
+                    <ThinkingIndicator state={thinkingState} />
+                  )}
                 </div>
               </motion.div>
             )}
@@ -654,7 +808,7 @@ export default function ChatPanel({
                     className={`
                       flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
                       ${isPlanMode
-                        ? "bg-[#f7f9fa]/10 border-white/20 text-white shadow-sm shadow-sm"
+                        ? "bg-[#dcecf3] border-[#9ec7d9]/60 text-[#172033] shadow-sm"
                         : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
                     `}
                     title="Plan Modu — Ogrenme mufredati olusturur"
@@ -683,7 +837,7 @@ export default function ChatPanel({
                       animate={{ opacity: 1, x: 0 }}
                       className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode ? "text-emerald-600" : "text-[#344054]"}`}
                     >
-                      {isKorteksMode ? "Deep Research Active" : "Planning Engine Active"}
+                      {isKorteksMode ? "Deep Research Active" : "Plan akisi hazir"}
                     </motion.span>
                   )}
                 </div>
@@ -718,6 +872,44 @@ export default function ChatPanel({
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
+
+function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: string | null }) {
+  const steps: Array<{ id: PlanFlowStage; label: string; body: string }> = [
+    { id: "topic", label: "Hedef ayrıştırılıyor", body: "Konu ve çalışma niyeti temizleniyor." },
+    { id: "research", label: "Kaynak sinyali aranıyor", body: "Korteks güvenli bağlam hazırlıyor." },
+    { id: "quiz", label: "Seviye testi hazırlanıyor", body: "Sorular chat'e karışmadan ayrı akışta açılacak." },
+    { id: "plan", label: "Plan üretiliyor", body: "Cevaplar müfredata dönüştürülüyor." },
+  ];
+  const currentIndex = Math.max(0, steps.findIndex((step) => step.id === stage));
+
+  return (
+    <div className="rounded-2xl border border-[#9ec7d9]/35 bg-white/76 px-4 py-3 shadow-[0_14px_36px_rgba(66,91,112,0.12)] backdrop-blur-xl">
+      <div className="mb-2 text-xs font-black text-[#172033]">Plan akışı çalışıyor</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {steps.map((step, index) => {
+          const done = index < currentIndex || stage === "done";
+          const active = index === currentIndex && stage !== "done" && stage !== "error";
+          return (
+            <div
+              key={step.id}
+              className={`rounded-xl border px-3 py-2 text-[11px] ${
+                active
+                  ? "border-[#9ec7d9] bg-[#dcecf3]/72 text-[#172033]"
+                  : done
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-[#526d82]/10 bg-[#f7f9fa]/72 text-[#667085]"
+              }`}
+            >
+              <div className="font-black">{done ? "✓ " : active ? "• " : ""}{step.label}</div>
+              <div className="mt-0.5 leading-4 opacity-80">{step.body}</div>
+            </div>
+          );
+        })}
+      </div>
+      {detail && <p className="mt-2 text-[11px] font-medium leading-5 text-[#667085]">{detail}</p>}
+    </div>
+  );
+}
 
 function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void }) {
   const { t } = useLanguage();

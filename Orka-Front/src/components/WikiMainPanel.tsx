@@ -406,11 +406,22 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
   };
 
   const handleCreateAudioOverview = async () => {
+    const hasAudioContext = sources.some((source) => (source.chunkCount ?? 0) > 0) || pages.length > 0 || messages.length > 0;
+    if (!hasAudioContext) {
+      setAudioJob(null);
+      toast("Sesli ders için önce kaynak, wiki notu veya ders sohbeti gerekiyor.", { icon: "ℹ️" });
+      return;
+    }
+
     setAudioLoading(true);
     try {
       const job = await AudioOverviewAPI.create({ topicId });
       setAudioJob(job);
-      toast.success("Sesli özet hazırlandı.");
+      if (job.status === "ready") {
+        toast.success("Sesli özet hazırlandı.");
+      } else {
+        toast("Ses dosyası üretilemedi; metin modu hazır.", { icon: "ℹ️" });
+      }
     } catch {
       toast.error("Sesli özet hazırlanamadı.");
     } finally {
@@ -1069,7 +1080,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                       <div className="flex items-center gap-2">
                         <Headphones className="w-4 h-4 text-sky-400" />
                         <span className="text-xs font-semibold uppercase tracking-widest text-[#344054]">
-                          Audio Overview
+                          AI Sesli Ders
                         </span>
                       </div>
                       <button
@@ -1082,7 +1093,14 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     </div>
                     {audioJob ? (
                       <div className="space-y-3">
-                        <audio controls src={AudioOverviewAPI.streamUrl(audioJob.id)} className="w-full" />
+                        {audioJob.status === "ready" && !audioJob.errorMessage ? (
+                          <audio controls src={AudioOverviewAPI.streamUrl(audioJob.id)} className="w-full" />
+                        ) : (
+                          <div className="rounded-xl border border-amber-500/20 bg-[#fff8ee]/80 px-3 py-2 text-xs font-semibold leading-5 text-[#8a641f]">
+                            Ses dosyası hazır değil. Orka metin akışını gösteriyor; bu canlı sınıf ya da üretilmiş ses gibi sunulmaz.
+                            {audioJob.errorMessage && <span className="mt-1 block font-medium">{audioJob.errorMessage}</span>}
+                          </div>
+                        )}
                         <div className="text-[11px] text-[#667085]">
                           Konuşmacılar: {audioJob.speakers.join(", ") || "HOCA"}
                         </div>

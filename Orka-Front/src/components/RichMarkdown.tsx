@@ -43,6 +43,24 @@ async function getMermaid() {
   return mermaid;
 }
 
+function sanitizeMermaid(code: string) {
+  return code.replace(/([A-Za-z0-9_]+)\[([^\]\n"]*[\(\):.;,][^\]\n"]*)\]/g, (_match, node, label) => {
+    const escaped = String(label).replace(/"/g, '\\"');
+    return `${node}["${escaped}"]`;
+  });
+}
+
+function mermaidFallbackHtml(code: string) {
+  const safeCode = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `
+    <div class="rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
+      <div class="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
+      <div class="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
+      <pre class="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">${safeCode}</pre>
+    </div>
+  `;
+}
+
 interface MermaidBlockProps {
   code: string;
 }
@@ -57,11 +75,19 @@ function MermaidBlock({ code }: MermaidBlockProps) {
     (async () => {
       try {
         const mermaid = await getMermaid();
-        const { svg } = await mermaid.render(`m_${id}`, code.trim());
+        let svg: string;
+        try {
+          const rendered = await mermaid.render(`m_${id}`, code.trim());
+          svg = rendered.svg;
+        } catch {
+          const rendered = await mermaid.render(`m_${id}_safe`, sanitizeMermaid(code.trim()));
+          svg = rendered.svg;
+        }
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       } catch (err) {
         if (!cancelled && ref.current) {
-          ref.current.innerHTML = `<pre class="text-xs text-amber-400 p-3 bg-zinc-900 rounded-lg border border-amber-500/20">Mermaid render hatası:\n${(err as Error).message}</pre>`;
+          console.warn("Mermaid render fallback:", err);
+          ref.current.innerHTML = mermaidFallbackHtml(code);
         }
       }
     })();

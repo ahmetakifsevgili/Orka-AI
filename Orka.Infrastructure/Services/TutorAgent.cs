@@ -45,9 +45,9 @@ public class TutorAgent : ITutorAgent
             2. MİMARİ / AKIŞ / İLİŞKİ → Mermaid diyagramı kullan:
                ```mermaid
                flowchart LR
-                 A[İstek] --> B[Auth] --> C[İş Mantığı] --> D[Veritabanı]
+                 A["İstek"] --> B["Auth"] --> C["İş Mantığı"] --> D["Veritabanı"]
                ```
-               State machine, sınıf diyagramı, sıra diyagramı için de aynı.
+               State machine, sınıf diyagramı, sıra diyagramı için de aynı. Node etiketlerinde parantez, nokta veya iki nokta kullanırsan mutlaka çift tırnakla yaz; emin değilsen tablo kullan.
 
             3. SOYUT KAVRAM → Pollinations.ai görseli embed et (öğrenci görmesi gerekirse):
                Format: ![kısa açıklama](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT>?width=512&height=512&nologo=true)
@@ -884,6 +884,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             - Timeout ise sonsuz döngü veya algoritma karmaşıklığını anlat.
             - Başarılı stdout varsa sonucu yorumla ve bir sonraki küçük pratik adımı ver.
             - Kod çıktısını uydurma; sadece verilen stdout/stderr/compileError/runtimeError alanlarına dayan.
+            - Kullanıcı C#, Python, JavaScript gibi kod öğrenmek istiyorsa ilk yol olarak Orka IDE/sandbox akışını öner. Visual Studio, VS Code veya harici kurulumları ilk varsayım yapma; onları sadece opsiyonel yerel geliştirme aracı olarak anlat.
+            - Başlangıç dersinde "önce Orka IDE'de deneyelim, sonra istersen yerel IDE kurulumuna geçeriz" çizgisini koru.
             Eğer kullanıcı pratik bir kodlama, algoritma problemi veya hands-on bir görev adımındaysa:
             1. Yanıtının herhangi bir yerinde (tercihen sonunda veya görev başlığından hemen önce) tam olarak şu gizli etiketi kullan: `[IDE_OPEN]` (Bu, kullanıcının kod editörünü otomatik açacaktır).
             2. Görevi şu formatta ver:

@@ -52,9 +52,14 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("skillTag", quizCard);
         Assert.Contains("topicPath", quizCard);
         Assert.Contains("questionHash", quizCard);
-        Assert.Contains("Quiz Cevab\u0131m", quizCard);
+        Assert.Contains("Quiz ak\u0131\u015f\u0131 tamamland\u0131", quizCard);
+        Assert.Contains("Tekrar edilmesi iyi olur", quizCard);
+        Assert.Contains("Bu cevap do\u011fru de\u011fil", quizCard);
         Assert.Contains("Do\u011fru", quizCard);
-        Assert.Contains("Yanl\u0131\u015f", quizCard);
+        Assert.DoesNotContain("Quiz Cevab\u0131m", quizCard, StringComparison.Ordinal);
+        Assert.DoesNotContain("[SKIP_QUIZ]", quizCard, StringComparison.Ordinal);
+        Assert.DoesNotContain("crypto.randomUUID", quizCard, StringComparison.Ordinal);
+        Assert.DoesNotContain("Harika gidiyorsun", quizCard, StringComparison.Ordinal);
         Assert.DoesNotContain("Dogru", quizCard, StringComparison.Ordinal);
         Assert.DoesNotContain("Yanlis", quizCard, StringComparison.Ordinal);
         Assert.DoesNotContain("JSON.stringify(quiz", quizCard, StringComparison.Ordinal);
