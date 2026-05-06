@@ -177,6 +177,10 @@ function mermaidFallbackHtml(code: string) {
   `;
 }
 
+function looksLikeMermaidFailure(svg: string) {
+  return /syntax error|parse error|mermaid version|error-icon|flowchart-v2-pointEnd/i.test(svg);
+}
+
 function MermaidBlock({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const idRef = useRef("m_" + Math.random().toString(36).slice(2, 9));
@@ -186,13 +190,18 @@ function MermaidBlock({ code }: { code: string }) {
     (async () => {
       try {
         const m = await getMermaid();
+        const renderOrThrow = async (id: string, source: string) => {
+          const rendered = await m.render(id, source);
+          if (looksLikeMermaidFailure(rendered.svg)) {
+            throw new Error("Mermaid returned an error SVG.");
+          }
+          return rendered.svg;
+        };
         let svg: string;
         try {
-          const rendered = await m.render(idRef.current, code.trim());
-          svg = rendered.svg;
+          svg = await renderOrThrow(idRef.current, code.trim());
         } catch {
-          const rendered = await m.render(`${idRef.current}_safe`, sanitizeMermaid(code.trim()));
-          svg = rendered.svg;
+          svg = await renderOrThrow(`${idRef.current}_safe`, sanitizeMermaid(code.trim()));
         }
         if (!cancelled && ref.current) ref.current.innerHTML = svg;
       } catch (err) {

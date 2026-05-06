@@ -181,7 +181,7 @@ export default function ChatPanel({
       setIsPlanMode(false);
       setIsKorteksMode(false);
       setPlanFlowStage("topic");
-      setPlanFlowDetail("Hedefini konuya ceviriyorum; cevaplar chat'e komut olarak basilmayacak.");
+      setPlanFlowDetail("Hedefi konu, seviye ve uygulama alanina ayiriyorum. Bu akista quiz cevaplari chat'e komut olarak basilmayacak.");
 
       try {
         let topicId = activeTopic?.id;
@@ -205,7 +205,7 @@ export default function ChatPanel({
         const ensuredTopicId = topicId;
 
         setPlanFlowStage("research");
-        setPlanFlowDetail("Korteks konu baglamini ve guvenli kaynak sinyallerini hazirliyor.");
+        setPlanFlowDetail("Korteks mevcut konu, kaynak, wiki ve guvenli pedagojik sinyalleri yokluyor. Canli veri yoksa bunu uydurmayacak.");
 
         const start = await QuizAPI.startPlanDiagnostic({
           topicId: ensuredTopicId,
@@ -219,7 +219,7 @@ export default function ChatPanel({
         }
 
         setPlanFlowStage("quiz");
-        setPlanFlowDetail("Seviye testi hazir. Cevaplar ayri quiz yuzeyinde kaydedilecek.");
+        setPlanFlowDetail("Seviye testi hazir. Sorular tek kartta akacak; sonraki soru yeni chat mesaji olarak basilmiyor.");
 
         setMessages((prev) => [
           ...prev,
@@ -875,16 +875,16 @@ export default function ChatPanel({
 
 function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: string | null }) {
   const steps: Array<{ id: PlanFlowStage; label: string; body: string }> = [
-    { id: "topic", label: "Hedef ayrıştırılıyor", body: "Konu ve çalışma niyeti temizleniyor." },
-    { id: "research", label: "Kaynak sinyali aranıyor", body: "Korteks güvenli bağlam hazırlıyor." },
-    { id: "quiz", label: "Seviye testi hazırlanıyor", body: "Sorular chat'e karışmadan ayrı akışta açılacak." },
-    { id: "plan", label: "Plan üretiliyor", body: "Cevaplar müfredata dönüştürülüyor." },
+    { id: "topic", label: "Hedef okunuyor", body: "Konu, hedef ve başlangıç niyeti ayrılıyor." },
+    { id: "research", label: "Bağlam taranıyor", body: "Kaynak, wiki, YouTube pedagojisi ve güvenli araç sinyalleri kontrol ediliyor." },
+    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yüzeyinde açılır; chat'e sistem komutu düşmez." },
+    { id: "plan", label: "Öğrenme yolu üretiliyor", body: "Cevaplar, zayıf kavramlar, IDE pratikleri ve tekrar baskısı plana çevrilir." },
   ];
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === stage));
 
   return (
     <div className="rounded-2xl border border-[#9ec7d9]/35 bg-white/76 px-4 py-3 shadow-[0_14px_36px_rgba(66,91,112,0.12)] backdrop-blur-xl">
-      <div className="mb-2 text-xs font-black text-[#172033]">Plan akışı çalışıyor</div>
+      <div className="mb-2 text-xs font-black text-[#172033]">Plan motoru çalışıyor</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {steps.map((step, index) => {
           const done = index < currentIndex || stage === "done";

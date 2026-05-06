@@ -93,6 +93,29 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
+    public void DiagnosticQuizQuality_FallbackIsDomainAwareForNonTechnicalTopics()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS tarih ve genel kultur");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(".Result", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("async/await", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Soru kokunu", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_FallbackUsesRequestedProgrammingProfile()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Python listeler ve hata ayiklama");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DiagnosticQuizQuality_AcceptsVariedDiagnosticQuiz()
     {
         var json = BuildQuiz();

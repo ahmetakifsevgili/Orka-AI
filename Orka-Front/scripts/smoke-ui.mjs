@@ -110,9 +110,12 @@ addCheck("Classroom ask answer joins audio queue", classroomPlayer.includes("que
 addCheck("P5 classroom backend audio fallback", api.includes("interactionId") && api.includes("getInteractionAudio") && classroomPlayer.includes("tryPlayBackendAudio") && classroomPlayer.includes("speechSynthesis"));
 
 const quiz = read("src/components/QuizCard.tsx");
+const quizParser = read("src/lib/quizParser.ts");
 addCheck("Quiz raw JSON leak guard", !quiz.includes("JSON.stringify(quiz") && !quiz.includes("{JSON.stringify"));
 addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && !quiz.includes("[SKIP_QUIZ]") && !quiz.includes("crypto.randomUUID") && quiz.includes("Quiz akışı tamamlandı"));
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
+addCheck("Quiz parser strips correctness labels from options", quizParser.includes("dogru") && quizParser.includes("yanlis") && quizParser.includes("incorrect"));
+addCheck("Mermaid error SVG falls back safely", chatMessage.includes("looksLikeMermaidFailure") && chatMessage.includes("Mermaid returned an error SVG."));
 
 const tutorAgent = readRepo("Orka.Infrastructure/Services/TutorAgent.cs");
 const deepPlanAgent = readRepo("Orka.Infrastructure/Services/DeepPlanAgent.cs");
@@ -122,6 +125,7 @@ addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL
 addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
 addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("programming_plan_missing_orka_ide"));
 addCheck("Programming fallback is Orka IDE centered without hardcoded C# lock", deepPlanAgent.includes("BuildProgrammingFallbackModules") && deepPlanAgent.includes("DetectProgrammingProfile") && deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi") && deepPlanAgent.includes("Python"));
+addCheck("Tutor coding lessons default to Orka IDE", tutorAgent.includes("ORKA IDE VARSAYILAN ORTAMDIR") && tutorAgent.includes("harici kurulumları ilk adım gibi anlatma"));
 addCheck("P4 language learning plan template exists", deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && deepPlanAgent.includes("Spaced Repetition") && deepPlanAgent.includes("Speaking Prompt"));
 addCheck("P4 plan quality backend guard exists", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesAreNotGeneric"));
 addCheck("P5 YouTube transcript plugin is in SK bridge", program.includes("YouTubeTranscriptPlugin") && program.includes("AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())"));

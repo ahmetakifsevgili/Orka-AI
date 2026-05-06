@@ -116,6 +116,7 @@ public static class DiagnosticQuizQualityGate
 
     public static string BuildFallbackDiagnosticBlueprint(string topicTitle)
     {
+        var profile = DetectFallbackProfile(topicTitle);
         var templates = new[]
         {
             ("code_reading", "kolay", "async-blocking-debug", "Reading", "Kod parcasinda engelleyici async kullanimini tespit eder."),
@@ -142,23 +143,23 @@ public static class DiagnosticQuizQualityGate
 
         var questions = templates.Select((t, i) =>
         {
-            var codeSnippet = i is 0 or 3 or 7 or 18
-                ? "\n\nKod:\n```csharp\nvar task = LoadAsync();\nConsole.WriteLine(task.Result);\n```\nBu kodda hangi async/await veya Task kullanim problemi tani icin en onemlidir?"
+            var codeSnippet = profile.IsTechnical && i is 0 or 3 or 7 or 18
+                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{profile.CodeSnippet}\n```\nBu parçada tani icin en onemli risk veya karar noktasi nedir?"
                 : string.Empty;
 
-            var options = BuildNeutralDiagnosticOptions(i);
+            var options = BuildNeutralDiagnosticOptions(i, profile);
             var correctOption = options.First(option => option.IsCorrect).Text;
 
             return new DiagnosticQuestionBlueprint
             {
                 Type = "multiple_choice",
-                Question = $"{topicTitle}: {i + 1}. tani sorusu - {t.Item5}.{codeSnippet}",
+                Question = $"{topicTitle}: {i + 1}. tani sorusu - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
                 Options = options,
                 CorrectAnswer = correctOption,
                 Explanation = i == 0
-                    ? $"{t.Item5} Bu soru, .Result ile asenkron isin senkron bloklanmasi ve olasi deadlock/yanlis zihinsel model riskini olcer."
+                    ? BuildFirstExplanation(profile, t.Item5)
                     : $"{t.Item5} Bu soru, {topicTitle} icin tani amacli kavram ve uygulama ayrimini olcer.",
-                SkillTag = t.Item3,
+                SkillTag = $"{profile.SkillPrefix}-{t.Item3}",
                 Difficulty = t.Item2,
                 ConceptTag = $"{t.Item3}-{i + 1}",
                 LearningObjective = t.Item5,
@@ -172,16 +173,128 @@ public static class DiagnosticQuizQualityGate
             .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(int index)
+    private static DiagnosticFallbackProfile DetectFallbackProfile(string topicTitle)
     {
-        var sets = new[]
+        var normalized = topicTitle.ToLowerInvariant();
+
+        if (normalized.Contains("c#", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("csharp", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains(".net", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "csharp",
+                "csharp",
+                "C#",
+                "Orka IDE sandbox'ta C# akisini okuyup derleme/runtime riskini ayirt etmek.",
+                "var user = users.First(u => u.Id == selectedId);\nConsole.WriteLine(user.Name.ToUpper());");
+        }
+
+        if (Regex.IsMatch(normalized, @"\bpython|py\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "python",
+                "python",
+                "Python",
+                "Orka IDE sandbox'ta Python veri akisini ve hata kaynagini okumak.",
+                "items = [1, 2, 3]\nprint(items[3])");
+        }
+
+        if (Regex.IsMatch(normalized, @"\b(javascript|typescript|react|node|js|ts)\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "javascript",
+                "javascript",
+                "JavaScript",
+                "Orka IDE sandbox'ta async/veri akisini ve state etkisini ayirt etmek.",
+                "const data = fetch('/api/items');\nconsole.log(data.length);");
+        }
+
+        if (Regex.IsMatch(normalized, @"\bsql|database|postgres|veritabani|veri tabani\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "sql",
+                "sql",
+                "SQL",
+                "Sorgu niyetini, filtreyi ve veri sonucunu ayirt etmek.",
+                "SELECT name FROM users WHERE created_at > NOW();");
+        }
+
+        if (IsTechnicalTopic(topicTitle))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "coding",
+                "text",
+                "programlama",
+                "Orka IDE akisi icinde problemi kucuk parcalara ayirip test etmek.",
+                "input -> transform -> validate -> output\nif validation fails: inspect the smallest failing step");
+        }
+
+        if (Regex.IsMatch(normalized, @"\bkpss|yks|tyt|ayt|sinav|exam\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                false,
+                "exam",
+                "text",
+                "sinav",
+                "Soru kokunu, kavrami ve distractor tuzaklarini ayirt etmek.",
+                string.Empty);
+        }
+
+        if (Regex.IsMatch(normalized, @"\bmatematik|math|geometri|olasilik|kombinasyon\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                false,
+                "math",
+                "text",
+                "matematik",
+                "Verilen kosulu, formulu ve sonuc kontrolunu ayirt etmek.",
+                string.Empty);
+        }
+
+        return new DiagnosticFallbackProfile(
+            false,
+            "general",
+            "text",
+            "genel",
+            "Kavrami ezberden degil, senaryo kosullarindan okuyarak uygulamak.",
+            string.Empty);
+    }
+
+    private static string BuildQuestionStem(DiagnosticFallbackProfile profile, string objective)
+    {
+        if (profile.IsTechnical)
+        {
+            return $"{objective}. {profile.Scenario}";
+        }
+
+        return $"{objective}. Bu tanida Orka once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
+    }
+
+    private static string BuildFirstExplanation(DiagnosticFallbackProfile profile, string objective)
+    {
+        if (profile.IsTechnical)
+        {
+            return $"{objective} Bu soru, {profile.DisplayName} icin Orka IDE odakli hata okuma ve kavrami uygulama ayrimini olcer.";
+        }
+
+        return $"{objective} Bu soru, ezber cevapla senaryodan karar verme arasindaki farki olcer.";
+    }
+
+    private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(int index, DiagnosticFallbackProfile profile)
+    {
+        var technicalSets = new[]
         {
             new[]
             {
-                new DiagnosticOption("Async isi await ederek akisi bloklamadan surdurmak.", true),
-                new DiagnosticOption("Task sonucunu her durumda .Result ile beklemek.", false),
-                new DiagnosticOption("Kodun calismasini thread sayisini artirarak garanti etmek.", false),
-                new DiagnosticOption("Hata olusursa async anahtar kelimesini kaldirmak.", false)
+                new DiagnosticOption("Orka IDE'de en kucuk akisi calistirip sonucu hatanin kok nedeniyle karsilastirmak.", true),
+                new DiagnosticOption("Hata mesajina bakmadan ilk gorunen satiri tamamen silmek.", false),
+                new DiagnosticOption("Kod calismiyorsa kavrami degil sadece dosya adini degistirmek.", false),
+                new DiagnosticOption("Ciktiyi okumadan en kisa secenegi secmek.", false)
             },
             new[]
             {
@@ -206,7 +319,39 @@ public static class DiagnosticQuizQualityGate
             }
         };
 
-        return sets[index % sets.Length].ToList();
+        var generalSets = new[]
+        {
+            new[]
+            {
+                new DiagnosticOption("Once soru kosullarini ayirip kavrami bu kosullara gore uygulamak.", true),
+                new DiagnosticOption("Tanimi ezberden tekrar edip senaryoyu dikkate almamak.", false),
+                new DiagnosticOption("Benzer gorunen terimi asil kavram yerine secmek.", false),
+                new DiagnosticOption("Sonucu yalnizca ilk kelimeye bakarak tahmin etmek.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Ornek durumdaki neden-sonuc iliskisini kurup kucuk adimla ilerlemek.", true),
+                new DiagnosticOption("Tum durumlarda ayni sabit cevabi kullanmak.", false),
+                new DiagnosticOption("On kosullari yok sayip sadece basliga gore karar vermek.", false),
+                new DiagnosticOption("Aciklamayi okumadan ezber kural secmek.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Kavrami bir senaryoda uygulayip cevabin nedenini aciklamak.", true),
+                new DiagnosticOption("Soru kokundeki kisitlari gereksiz ayrinti saymak.", false),
+                new DiagnosticOption("Yan kavrami ana kavram gibi kullanmak.", false),
+                new DiagnosticOption("Cozumu sadece daha uzun cevap yazmak sanmak.", false)
+            },
+            new[]
+            {
+                new DiagnosticOption("Belirti ile kok nedeni ayirip buna gore karar vermek.", true),
+                new DiagnosticOption("Her hatayi ayni kategoriye koymak.", false),
+                new DiagnosticOption("Ornekteki istisnayi yok saymak.", false),
+                new DiagnosticOption("Kanitsiz tahmini kesin bilgi gibi kullanmak.", false)
+            }
+        };
+
+        return (profile.IsTechnical ? technicalSets : generalSets)[index % 4].ToList();
     }
 
     public static string ExtractJsonArray(string raw)
@@ -335,8 +480,17 @@ public static class DiagnosticQuizQualityGate
         NormalizeTag(question.QuestionType).Contains("misconception", StringComparison.OrdinalIgnoreCase) ||
         NormalizeTag(question.ExpectedMisconceptionCategory) is "conceptual" or "procedural" or "application" or "calculation" or "reading";
 
-    private static bool IsTechnicalTopic(string topicTitle) =>
-        Regex.IsMatch(topicTitle, @"\b(c#|csharp|java|python|javascript|typescript|sql|async|await|task|api|programlama|kod|debug|thread)\b", RegexOptions.IgnoreCase);
+    private static bool IsTechnicalTopic(string topicTitle)
+    {
+        var normalized = topicTitle.ToLowerInvariant();
+        if (normalized.Contains("c#", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains(".net", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return Regex.IsMatch(topicTitle, @"\b(csharp|java|python|javascript|typescript|sql|async|await|task|api|programlama|kod|debug|thread)\b", RegexOptions.IgnoreCase);
+    }
 
     private static bool LooksCodeLike(string text) =>
         !string.IsNullOrWhiteSpace(text) &&
@@ -355,6 +509,14 @@ public static class DiagnosticQuizQualityGate
         string LearningObjective,
         string QuestionType,
         string ExpectedMisconceptionCategory);
+
+    private sealed record DiagnosticFallbackProfile(
+        bool IsTechnical,
+        string SkillPrefix,
+        string CodeFenceLanguage,
+        string DisplayName,
+        string Scenario,
+        string CodeSnippet);
 
     private sealed class DiagnosticQuestionBlueprint
     {

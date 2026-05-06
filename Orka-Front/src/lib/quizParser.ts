@@ -151,6 +151,9 @@ function normalizeOption(option: any, i: number, qi: number, correctHint: string
   const id = String(option?.id ?? option?.key ?? option?.label ?? `opt-${qi}-${i}`);
   const text = String(typeof option === "string" ? option : option?.text ?? option?.value ?? option?.label ?? "")
     .replace(/^[A-F][).]\s*/i, "")
+    .replace(/^(?:doğru|dogru)\s+yakla(?:ş|s)ım\s*[:：-]\s*/i, "")
+    .replace(/^(?:yanlış|yanlis)\s*[:：-]\s*/i, "")
+    .replace(/^(?:correct|incorrect|wrong)\s*(?:approach)?\s*[:：-]\s*/i, "")
     .trim();
   const optionLetter = String.fromCharCode(65 + i);
   const isCorrect =
