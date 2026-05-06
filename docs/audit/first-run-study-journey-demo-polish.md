@@ -30,6 +30,13 @@ The first-run surface now helps a learner choose a starting direction, enter Tut
 
 ## What Changed
 
+### Short Intro / Onboarding
+
+- The in-app onboarding tour was refreshed for the current Orka identity.
+- It now explains Orka as a personal AI teacher and study coach instead of a generic chat entry.
+- The tour connects Dashboard, Tutor, LearningPanel, Wiki/source, and IDE as one learning loop.
+- It does not claim fake progress, fake weak areas, or a full V3 exam engine.
+
 ### First-Run Study Journey
 
 - Dashboard now includes a lightweight "Hedef odagi" selector:
@@ -105,3 +112,13 @@ These prompts use the selected study focus when relevant, but do not fake existi
 | Study focus is local UI guidance, not a full exam engine. | NON_BLOCKING_NOTE | Honest skeleton for orientation. |
 | KPSS/YKS advanced planning belongs to V3. | PRODUCT_ROADMAP | Requires separate curriculum and scoring design. |
 | Demo flow still benefits from a scripted video/pitch asset. | UX_POLISH | This pass prepares the product surface, not the video itself. |
+
+## Follow-Up Patch
+
+| Item | Result |
+|---|---|
+| Onboarding tour refreshed | PASS |
+| V3 safe pull-forward notes created | PASS, see `docs/audit/v3-safe-pull-forward-notes.md` |
+| Branch before patch | `feature/first-run-study-journey-demo-polish` |
+| Commit before patch | `a224ea6 Polish first-run study journey and demo flow` |
+| Git status before patch | Clean |

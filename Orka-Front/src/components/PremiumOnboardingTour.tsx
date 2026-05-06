@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
-import "./PremiumOnboardingTour.css"; // Custom overrides
+import "./PremiumOnboardingTour.css";
 import { storage } from "@/services/api";
 
 export function usePremiumOnboarding() {
@@ -9,79 +9,83 @@ export function usePremiumOnboarding() {
     const user = storage.getUser();
     if (!user) return;
 
-    const storageKey = `orka_premium_tour_seen_v2_${user.id}`;
+    const storageKey = `orka_premium_tour_seen_v3_${user.id}`;
 
-    // Sadece Dashboard / Home üzerindeyken ve daha önce izlenmemişse
     const tourSeen = localStorage.getItem(storageKey);
     if (tourSeen === "true") return;
 
-    // Elementlerin DOM'a yerleşmesi için kısa bir gecikme
     const timer = setTimeout(() => {
-      // Eğer ana elemanlardan biri yoksa (sayfa henüz render olmadıysa) başlama
       if (!document.getElementById("tour-new-topic")) return;
 
       const driverObj = driver({
         showProgress: true,
         animate: true,
-        allowClose: false,
-        doneBtnText: "Başla",
-        nextBtnText: "İleri →",
-        prevBtnText: "← Geri",
+        allowClose: true,
+        doneBtnText: "Tamam",
+        nextBtnText: "İleri",
+        prevBtnText: "Geri",
         progressText: "{{current}} / {{total}}",
         popoverClass: "orka-premium-tour",
         onDestroyStarted: () => {
-          if (!driverObj.hasNextStep()) {
-            localStorage.setItem(storageKey, "true");
-            driverObj.destroy();
-          } else {
-             // İptal (skip) edilirse de kapatılsın ama belki de skip eden daha sonra görmek ister.
-             // Biz şimdilik her şekilde kapatıldığında bitmiş sayıyoruz ki sürekli çıkmasın.
-             localStorage.setItem(storageKey, "true");
-             driverObj.destroy();
-          }
+          localStorage.setItem(storageKey, "true");
+          driverObj.destroy();
         },
         steps: [
           {
             element: "#tour-new-topic",
             popover: {
-              title: "Öğrenme Serüveninizi Başlatın 🚀",
-              description: "Yeni bir konu başlatarak hedefinizi belirleyin. Orka sizin için dinamik ve kişiselleştirilmiş bir müfredat inşa edecek.",
+              title: "Küçük bir hedefle başla",
+              description:
+                "Orka önce bugün ne çalışmak istediğini netleştirir. Konu, kaynak, kod hatası veya tekrar döngüsüyle başlayabilirsin.",
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-dashboard",
             popover: {
-              title: "Performans Analitiği 📊",
-              description: "Gelişim ivmenizi buradan takip edin. Başarı oranınız ve öğrenme seriniz hedeflerinize giden yolda en güçlü motivasyonunuz olacak.",
+              title: "Bugünkü çalışma odağı",
+              description:
+                "Burası sana sıradaki küçük adımı gösterir. Gerçek ilerleme sinyalleri çözdükçe, kod yazdıkça, kaynakla çalıştıkça ve tekrar yaptıkça oluşur.",
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
+          },
+          {
+            element: "#tour-nav-learning",
+            popover: {
+              title: "Tekrar döngüsü",
+              description:
+                "Flashcard, tekrar, günlük mini görev ve bookmark parçaları ayrı kutular değil; Orka'nın öğrendiklerini yeniden çalışmaya çevirdiği döngüdür.",
+              side: "right",
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-wiki",
             popover: {
-              title: "Dinamik Bilgi Hafızası 🧠",
-              description: "Öğrendiğiniz her kavram, tamamen size özel ve sürekli güncellenen bir Wiki kütüphanesine dönüşür. Bilgi artık asla kaybolmaz.",
+              title: "Kaynak ve wiki hafızası",
+              description:
+                "Kendi dokümanların, wiki notları ve kaynaklı cevaplar burada anlam kazanır. Orka cevap verirken dayanak varsa bunu ayrıca gösterir.",
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-ide",
             popover: {
-              title: "Entegre Kod Editörü 💻",
-              description: "Öğrendiklerinizi anında pratiğe dökün. Güvenli sandbox ortamında kodunuzu yazın, çalıştırın ve yapay zeka ile hata ayıklayın.",
+              title: "Kod hatası da ders malzemesi",
+              description:
+                "IDE çıktısı Tutor'a öğretici bağlam olarak akar. Compile, runtime veya timeout hataları uygulama arızası değil, çalışılacak bir sonraki ipucudur.",
               side: "right",
-              align: "start"
-            }
-          }
-        ]
+              align: "start",
+            },
+          },
+        ],
       });
 
       driverObj.drive();
-    }, 1500); // 1.5 sn gecikme (yükleme animasyonları için)
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, []);

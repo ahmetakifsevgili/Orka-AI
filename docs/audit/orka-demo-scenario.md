@@ -20,13 +20,14 @@ Do not claim:
 ## 2-Minute Demo Script
 
 1. Open Orka on `Bugun`.
-2. Say: "Orka does not start as a blank chat box; it asks what the learner should do today."
-3. Show `Hedef odagi`.
-4. Pick `KPSS` or `Yazilim`, depending on the audience.
-5. Click `Tutor ile devam et`.
-6. Use a starter prompt such as `Konu ogren`.
-7. Show that Tutor can answer and, when metadata exists, show basis/tool/citation/fallback/learning trace.
-8. Close with: "As the learner solves, reviews, codes, uploads sources, and bookmarks, Orka turns those actions into the next step."
+2. If the intro tour appears, use it as the opening explanation: Orka turns study actions into the next step.
+3. Say: "Orka does not start as a blank chat box; it asks what the learner should do today."
+4. Show `Hedef odagi`.
+5. Pick `KPSS` or `Yazilim`, depending on the audience.
+6. Click `Tutor ile devam et`.
+7. Use a starter prompt such as `Konu ogren`.
+8. Show that Tutor can answer and, when metadata exists, show basis/tool/citation/fallback/learning trace.
+9. Close with: "As the learner solves, reviews, codes, uploads sources, and bookmarks, Orka turns those actions into the next step."
 
 ## 4-Minute Technical Demo Script
 
@@ -58,10 +59,26 @@ Do not claim:
 ## Backup Plan If Live Data Is Unavailable
 
 - Use dashboard empty state and explain it is intentionally honest.
+- Use the refreshed intro tour as the short product explanation.
 - Use starter prompts without claiming past personalization.
 - Use IDE provider_missing/blocked/timeout state as a safe learning-state example.
 - Use capability endpoint/docs to explain provider gates.
 - Do not fake a successful provider/tool result.
+
+## V3 Preview Boundary
+
+Safe to mention:
+
+- Study focus is a first step toward future exam-aware learning.
+- Code-error learning, review, flashcards, daily challenge, bookmarks, source/wiki grounding, and Tutor already exist as the current learning loop.
+
+Do not claim yet:
+
+- Full KPSS/YKS algorithm.
+- 3D classroom.
+- Music/focus mode.
+- Subscription/payment layer.
+- Teacher dashboard or institution product.
 
 ## Recommended Demo Data
 
