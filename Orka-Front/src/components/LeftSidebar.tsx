@@ -27,7 +27,6 @@ import {
   FlaskConical,
   Code2,
   Trash2,
-  LayoutDashboard,
   ClipboardCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -53,8 +52,8 @@ interface LeftSidebarProps {
 
 // NAV_ITEMS: label artık t() ile çevriliyor, statik label kaldırıldı
 const NAV_ITEMS = [
-  { id: "chat",    icon: Home,          labelKey: "home",    route: null },
-  { id: "dashboard", icon: LayoutDashboard, labelKey: "Dashboard", route: null },
+  { id: "dashboard", icon: Home, labelKey: "today", route: null },
+  { id: "chat", icon: MessageSquare, labelKey: "tutor", route: null },
   { id: "learning", icon: ClipboardCheck, labelKey: "learning", route: null },
   { id: "wiki",    icon: BookMarked,    labelKey: "wiki",    route: null },
   { id: "ide",     icon: Code2,         labelKey: "ide",     route: null },
@@ -281,8 +280,8 @@ export default function LeftSidebar({
           {NAV_ITEMS.filter((item) => item.id !== "ide" || (isVisibleForUser("ide_execution") && isEnabled("ide_execution"))).map((item) => {
             const isActive = activeView === item.id;
             const label = (() => {
-              if (item.labelKey === "home") return t("home_nav") || "Anasayfa";
-              if (item.labelKey === "Dashboard") return "Dashboard";
+              if (item.labelKey === "today") return "Bugun";
+              if (item.labelKey === "tutor") return "Tutor";
               if (item.labelKey === "learning") return "Pratik";
               if (item.labelKey === "courses") return t("courses") || "Kurslar";
               if (item.labelKey === "wiki") return t("wiki") || "Wiki";
