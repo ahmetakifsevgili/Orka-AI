@@ -1,123 +1,74 @@
-/**
- * LanguageContext — Türkçe / English dil yönetimi (encoding sorunsuz).
- * Tüm UI string'leri bu context'ten çekilir.
- */
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { UserAPI } from "@/services/api";
+import { LANGUAGE_OPTIONS, normalizeLocale, type Locale } from "@/i18n/languages";
+import { messages } from "@/i18n/messages";
 
-export type Language = "English" | "Türkçe";
+export type Language = Locale;
 
 interface LanguageContextType {
   language: Language;
+  locale: Locale;
+  languages: typeof LANGUAGE_OPTIONS;
   setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
-
-const translations: Record<Language, Record<string, string>> = {
-  English: {
-    settings: "Settings",
-    profile: "Profile",
-    language_region: "Language & Region",
-    theme: "Theme",
-    notifications: "Notifications",
-    delete_account: "Delete account completely",
-    light: "Light",
-    dark: "Dark",
-    system: "System",
-    interface_language: "Interface Language",
-    edit: "Edit",
-    wiki: "Knowledge Wiki",
-    table_of_contents: "Table of Contents",
-    topics: "Topics",
-    font_size: "Font Size",
-    small: "Small",
-    medium: "Medium",
-    large: "Large",
-    appearance: "Appearance",
-    account_security: "Account & Security",
-    quiz_reminders: "Quiz reminders",
-    quiz_reminders_desc: "Get daily practice reminders",
-    weekly_report: "Weekly progress report",
-    weekly_report_desc: "Receive a summary of your learning",
-    new_content: "New content alerts",
-    new_content_desc: "Notify me when new wiki content is created",
-    sounds: "Sound effects",
-    sounds_desc: "Play sounds for quiz answers and notifications",
-    // Sidebar nav
-    home_nav: "Home",
-    courses: "Courses",
-    chat_history: "Chat History",
-  },
-  Türkçe: {
-    settings: "Ayarlar",
-    profile: "Profil",
-    language_region: "Dil ve Bölge",
-    theme: "Tema",
-    notifications: "Bildirimler",
-    delete_account: "Hesabı tamamen sil",
-    light: "Açık",
-    dark: "Koyu",
-    system: "Sistem",
-    interface_language: "Arayüz Dili",
-    edit: "Düzenle",
-    wiki: "Bilgi Wiki",
-    table_of_contents: "İçindekiler",
-    topics: "Konular",
-    font_size: "Yazı Boyutu",
-    small: "Küçük",
-    medium: "Orta",
-    large: "Büyük",
-    appearance: "Görünüm",
-    account_security: "Hesap ve Güvenlik",
-    quiz_reminders: "Quiz hatırlatıcı",
-    quiz_reminders_desc: "Günlük pratik yapmak için hatırlatmalar alın",
-    weekly_report: "Haftalık gelişim raporu",
-    weekly_report_desc: "Öğrenme sürecinizin özetini alın",
-    new_content: "Yeni içerik uyarıları",
-    new_content_desc: "Yeni wiki içeriği oluştuğunda bildir",
-    sounds: "Ses efektleri",
-    sounds_desc: "Quiz cevapları ve bildirimler için ses çal",
-    // Sidebar nav
-    home_nav: "Anasayfa",
-    courses: "Kurslar",
-    chat_history: "Sohbet Geçmişi",
-  },
-};
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const interpolate = (template: string, params?: Record<string, string | number>) => {
+  if (!params) return template;
+  return Object.entries(params).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
+};
+
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    return (localStorage.getItem("orka_language") as Language) || "Türkçe";
-  });
+  const [language, setLanguageState] = useState<Language>(() =>
+    normalizeLocale(localStorage.getItem("orka_language")),
+  );
 
   useEffect(() => {
     const token = localStorage.getItem("orka_token");
     if (!token) return;
 
-    UserAPI.getMe().then((res) => {
-      if (res.data?.settings?.language) {
-        const lang = res.data.settings.language as Language;
-        setLanguageState(lang);
-        localStorage.setItem("orka_language", lang);
-      }
-    }).catch(() => {});
+    UserAPI.getMe()
+      .then((res) => {
+        if (res.data?.settings?.language) {
+          const lang = normalizeLocale(res.data.settings.language);
+          setLanguageState(lang);
+          localStorage.setItem("orka_language", lang);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const setLanguage = (lang: Language) => {
-    setLanguageState(lang);
-    localStorage.setItem("orka_language", lang);
+    const next = normalizeLocale(lang);
+    setLanguageState(next);
+    localStorage.setItem("orka_language", next);
   };
 
-  const t = (key: string) => {
-    return translations[language]?.[key] ?? key;
-  };
+  const value = useMemo<LanguageContextType>(() => {
+    const t = (key: string, params?: Record<string, string | number>) => {
+      const template =
+        messages[language]?.[key] ??
+        messages.en?.[key] ??
+        messages.tr?.[key] ??
+        key;
+      return interpolate(template, params);
+    };
 
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
-      {children}
-    </LanguageContext.Provider>
-  );
+    return {
+      language,
+      locale: language,
+      languages: LANGUAGE_OPTIONS,
+      setLanguage,
+      t,
+    };
+  }, [language]);
+
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
 export function useLanguage() {

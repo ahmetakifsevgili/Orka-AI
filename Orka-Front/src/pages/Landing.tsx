@@ -17,6 +17,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const fadeUp = {
   initial: { opacity: 0, y: 28 },
@@ -96,6 +97,8 @@ const trustItems = [
 ];
 
 export default function Landing() {
+  const { t, language, setLanguage, languages } = useLanguage();
+
   return (
     <div className="min-h-screen orka-bg text-[#172033] overflow-x-hidden">
       <div className="pointer-events-none fixed inset-0 mist-grid opacity-35" />
@@ -108,13 +111,27 @@ export default function Landing() {
             <span className="text-sm font-extrabold tracking-tight">Orka AI</span>
           </Link>
           <div className="hidden items-center gap-6 text-xs font-semibold text-[#667085] md:flex">
-            <a href="#features" className="transition hover:text-[#172033]">Modüller</a>
-            <a href="#flow" className="transition hover:text-[#172033]">Öğrenme Akışı</a>
-            <a href="#trust" className="transition hover:text-[#172033]">Sistem Mimarisi</a>
+            <a href="#features" className="transition hover:text-[#172033]">{t("landing_nav_modules")}</a>
+            <a href="#flow" className="transition hover:text-[#172033]">{t("landing_nav_flow")}</a>
+            <a href="#trust" className="transition hover:text-[#172033]">{t("landing_nav_architecture")}</a>
           </div>
-          <Link href="/login" className="orka-button rounded-full px-4 py-2 text-xs font-bold">
-            Giriş Yap
-          </Link>
+          <div className="flex items-center gap-2">
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as typeof language)}
+              className="hidden rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/72 px-3 py-2 text-xs font-bold text-[#344054] outline-none backdrop-blur sm:block"
+              aria-label={t("interface_language")}
+            >
+              {languages.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.nativeName}
+                </option>
+              ))}
+            </select>
+            <Link href="/login" className="orka-button rounded-full px-4 py-2 text-xs font-bold">
+              {t("login")}
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -127,14 +144,14 @@ export default function Landing() {
           >
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1.5 text-xs font-bold text-[#2d5870] shadow-sm backdrop-blur">
               <Sparkles className="h-3.5 w-3.5" />
-              Orka AI v1.0 Yayında • Organization Knowledge Agent
+              {t("landing_badge")}
             </div>
             <h1 className="font-display max-w-4xl text-5xl font-bold leading-[0.98] tracking-[-0.055em] text-[#172033] sm:text-6xl lg:text-7xl">
-              Öğrenme potansiyelinizi
-              <span className="block text-[#4f7485]">otonom bir zeka ağına dönüştürün.</span>
+              {t("landing_title_a")}
+              <span className="block text-[#4f7485]">{t("landing_title_b")}</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-8 text-[#5f6f7b] sm:text-lg">
-              Orka; sıradan bir asistan değil, zihinsel modelinizi öğrenen bir yapay zeka ekosistemidir. Plan, Wiki, Quiz, NotebookLM/RAG, Korteks, Sesli Sınıf ve IDE akışını tek bir nöral hafızada birleştirir. Sadece cevap vermez; düşünme yapınızı analiz edip mükemmelliğe ulaşana kadar sistemi yeniden kurgular.
+              {t("landing_body")}
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
               {modules.map((module) => (
@@ -145,10 +162,10 @@ export default function Landing() {
             </div>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/login" className="orka-button inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-extrabold">
-                Öğrenmeye Başla <ArrowRight className="h-4 w-4" />
+                {t("landing_primary")} <ArrowRight className="h-4 w-4" />
               </Link>
               <a href="#features" className="inline-flex items-center justify-center gap-2 rounded-full border border-[#526d82]/15 bg-[#f7f4ec]/72 px-6 py-3 text-sm font-bold text-[#344054] shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]">
-                Sistemi Gör
+                {t("landing_secondary")}
               </a>
             </div>
             <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">

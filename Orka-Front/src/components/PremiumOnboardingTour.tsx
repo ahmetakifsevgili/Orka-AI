@@ -1,88 +1,90 @@
 import { useEffect } from "react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
-import "./PremiumOnboardingTour.css"; // Custom overrides
+import "./PremiumOnboardingTour.css";
 import { storage } from "@/services/api";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export function usePremiumOnboarding() {
+  const { t, language } = useLanguage();
+
   useEffect(() => {
     const user = storage.getUser();
     if (!user) return;
 
-    const storageKey = `orka_premium_tour_seen_v2_${user.id}`;
+    const storageKey = `orka_premium_tour_seen_v3_${user.id}`;
 
-    // Sadece Dashboard / Home üzerindeyken ve daha önce izlenmemişse
     const tourSeen = localStorage.getItem(storageKey);
     if (tourSeen === "true") return;
 
-    // Elementlerin DOM'a yerleşmesi için kısa bir gecikme
     const timer = setTimeout(() => {
-      // Eğer ana elemanlardan biri yoksa (sayfa henüz render olmadıysa) başlama
       if (!document.getElementById("tour-new-topic")) return;
 
       const driverObj = driver({
         showProgress: true,
         animate: true,
-        allowClose: false,
-        doneBtnText: "Başla",
-        nextBtnText: "İleri →",
-        prevBtnText: "← Geri",
+        allowClose: true,
+        doneBtnText: t("done"),
+        nextBtnText: t("next"),
+        prevBtnText: t("back"),
         progressText: "{{current}} / {{total}}",
         popoverClass: "orka-premium-tour",
         onDestroyStarted: () => {
-          if (!driverObj.hasNextStep()) {
-            localStorage.setItem(storageKey, "true");
-            driverObj.destroy();
-          } else {
-             // İptal (skip) edilirse de kapatılsın ama belki de skip eden daha sonra görmek ister.
-             // Biz şimdilik her şekilde kapatıldığında bitmiş sayıyoruz ki sürekli çıkmasın.
-             localStorage.setItem(storageKey, "true");
-             driverObj.destroy();
-          }
+          localStorage.setItem(storageKey, "true");
+          driverObj.destroy();
         },
         steps: [
           {
             element: "#tour-new-topic",
             popover: {
-              title: "Öğrenme Serüveninizi Başlatın 🚀",
-              description: "Yeni bir konu başlatarak hedefinizi belirleyin. Orka sizin için dinamik ve kişiselleştirilmiş bir müfredat inşa edecek.",
+              title: t("onboarding_step_start_title"),
+              description: t("onboarding_step_start_desc"),
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-dashboard",
             popover: {
-              title: "Performans Analitiği 📊",
-              description: "Gelişim ivmenizi buradan takip edin. Başarı oranınız ve öğrenme seriniz hedeflerinize giden yolda en güçlü motivasyonunuz olacak.",
+              title: t("onboarding_step_dashboard_title"),
+              description: t("onboarding_step_dashboard_desc"),
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
+          },
+          {
+            element: "#tour-nav-learning",
+            popover: {
+              title: t("onboarding_step_learning_title"),
+              description: t("onboarding_step_learning_desc"),
+              side: "right",
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-wiki",
             popover: {
-              title: "Dinamik Bilgi Hafızası 🧠",
-              description: "Öğrendiğiniz her kavram, tamamen size özel ve sürekli güncellenen bir Wiki kütüphanesine dönüşür. Bilgi artık asla kaybolmaz.",
+              title: t("onboarding_step_wiki_title"),
+              description: t("onboarding_step_wiki_desc"),
               side: "right",
-              align: "start"
-            }
+              align: "start",
+            },
           },
           {
             element: "#tour-nav-ide",
             popover: {
-              title: "Entegre Kod Editörü 💻",
-              description: "Öğrendiklerinizi anında pratiğe dökün. Güvenli sandbox ortamında kodunuzu yazın, çalıştırın ve yapay zeka ile hata ayıklayın.",
+              title: t("onboarding_step_ide_title"),
+              description: t("onboarding_step_ide_desc"),
               side: "right",
-              align: "start"
-            }
-          }
-        ]
+              align: "start",
+            },
+          },
+        ],
       });
 
       driverObj.drive();
-    }, 1500); // 1.5 sn gecikme (yükleme animasyonları için)
+    }, 1500);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [language, t]);
 }

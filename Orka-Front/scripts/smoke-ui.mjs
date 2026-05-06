@@ -97,8 +97,15 @@ const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");
 addCheck("P5 premium onboarding is wired", packageJson.includes('"driver.js"') && home.includes("usePremiumOnboarding") && onboarding.includes("tour-new-topic") && onboarding.includes("tour-nav-dashboard") && onboarding.includes("tour-nav-wiki") && onboarding.includes("tour-nav-ide"));
 
+const languageContext = read("src/contexts/LanguageContext.tsx");
+const languages = read("src/i18n/languages.ts");
+const messages = read("src/i18n/messages.ts");
+const sidebar = read("src/components/LeftSidebar.tsx");
+addCheck("First-wave language foundation exists", languages.includes('"pt-BR"') && languages.includes('"pl"') && messages.includes("landing_title_a") && languageContext.includes("normalizeLocale"));
+addCheck("Landing and app shell expose language selector", landing.includes("setLanguage") && landing.includes("languages.map") && sidebar.includes("languages.map") && sidebar.includes("interface_language"));
+
 const classroomPlayer = read("src/components/ClassroomAudioPlayer.tsx");
-addCheck("Classroom active segment bridge", classroomPlayer.includes("activeSegment") && classroomPlayer.includes("Anlamadım"));
+addCheck("Classroom active segment bridge", classroomPlayer.includes("activeSegment") && (classroomPlayer.includes("Anlamadım") || classroomPlayer.includes('t("confused")')));
 addCheck("Classroom ask answer joins audio queue", classroomPlayer.includes("queuedLines") && classroomPlayer.includes("speakLine(startIndex"));
 addCheck("P5 classroom backend audio fallback", api.includes("interactionId") && api.includes("getInteractionAudio") && classroomPlayer.includes("tryPlayBackendAudio") && classroomPlayer.includes("speechSynthesis"));
 

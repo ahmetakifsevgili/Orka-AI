@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Send, Square, Volume2, X } from "lucide-react";
 import { ClassroomAPI } from "@/services/api";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ClassroomAudioPlayerProps {
   text: string;
@@ -206,6 +207,7 @@ export default function ClassroomAudioPlayer({
   audioOverviewJobId,
   onClose,
 }: ClassroomAudioPlayerProps) {
+  const { t } = useLanguage();
   const baseLines = useMemo(() => ensureClassroomDialogue(parseDialogue(text)), [text]);
   const [extraLines, setExtraLines] = useState<DialogueLine[]>([]);
   const lines = useMemo(() => [...baseLines, ...extraLines], [baseLines, extraLines]);
@@ -404,9 +406,9 @@ export default function ClassroomAudioPlayer({
       <div className="flex items-center justify-between px-4 py-3 bg-[#f7fbff]/80 border-b border-[#526d82]/12">
         <div className="flex items-center gap-2">
           <Volume2 className="w-4 h-4 text-[#47725d]" />
-          <span className="text-sm font-semibold text-[#172033]">Sesli Sınıf</span>
+          <span className="text-sm font-semibold text-[#172033]">{t("audio_lesson")}</span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-[#47725d] uppercase tracking-wider">
-            Podcast
+            {t("audio_mode_badge")}
           </span>
         </div>
         <button
@@ -415,7 +417,7 @@ export default function ClassroomAudioPlayer({
             onClose();
           }}
           className="text-[#667085] hover:text-[#172033] transition"
-          aria-label="Kapat"
+          aria-label={t("close")}
         >
           <X className="w-4 h-4" />
         </button>
@@ -424,7 +426,7 @@ export default function ClassroomAudioPlayer({
       <div className="px-4 py-3 max-h-48 overflow-y-auto space-y-2 sidebar-scrollbar bg-white/45">
         {!supports && (
           <p className="text-xs text-amber-400">
-            Tarayıcın Web Speech API desteklemiyor. Lütfen Chrome / Edge / Safari kullan.
+            {t("audio_browser_unsupported")}
           </p>
         )}
         {supports &&
@@ -450,7 +452,7 @@ export default function ClassroomAudioPlayer({
                     : "bg-white/70 text-[#667085]"
                 }`}
               >
-                {l.speaker === "NARRATOR" ? "ANLATICI" : l.speaker}
+                {l.speaker === "NARRATOR" ? t("narrator") : l.speaker === "HOCA" ? t("teacher") : l.speaker === "ASISTAN" ? t("assistant") : t("guest")}
               </span>
               <span className="text-[#344054] line-clamp-3">{l.text}</span>
             </div>
@@ -465,7 +467,7 @@ export default function ClassroomAudioPlayer({
               onClick={handlePause}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 hover:bg-white text-[#344054] border border-[#526d82]/12 text-xs transition"
             >
-              <Pause className="w-3.5 h-3.5" /> Duraklat
+              <Pause className="w-3.5 h-3.5" /> {t("pause")}
             </button>
           ) : (
             <button
@@ -474,14 +476,14 @@ export default function ClassroomAudioPlayer({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-[#47725d] text-xs transition disabled:opacity-50"
             >
               <Play className="w-3.5 h-3.5" />
-              {status === "paused" ? "Devam" : status === "done" ? "Tekrar" : "Oynat"}
+              {status === "paused" ? t("resume") : status === "done" ? t("replay") : t("play")}
             </button>
           )}
           <button
             onClick={handleStop}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/70 hover:bg-white text-[#344054] border border-[#526d82]/12 text-xs transition"
           >
-            <Square className="w-3.5 h-3.5" /> Durdur
+            <Square className="w-3.5 h-3.5" /> {t("stop")}
           </button>
           <span className="ml-auto text-[10px] font-mono text-[#667085]">
             {currentIdx + (status === "done" ? 0 : 1)} / {lines.length}
@@ -494,7 +496,7 @@ export default function ClassroomAudioPlayer({
               onClick={handleQuickConfusion}
               className="rounded-xl border border-[#526d82]/12 bg-[#fff8ee]/80 px-3 py-2 text-xs font-semibold text-[#8a641f] transition hover:bg-[#f4ecdc]"
             >
-              Anlamadım
+              {t("confused")}
             </button>
             <input
               value={question}
@@ -502,7 +504,7 @@ export default function ClassroomAudioPlayer({
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAsk();
               }}
-              placeholder="Anlamadığın yeri hocaya sor..."
+              placeholder={t("ask_teacher_placeholder")}
               className="flex-1 rounded-xl bg-white/72 border border-[#526d82]/15 px-3 py-2 text-xs text-[#172033] placeholder:text-[#98a2b3] outline-none focus:border-[#9ec7d9]"
             />
             <button
@@ -511,7 +513,7 @@ export default function ClassroomAudioPlayer({
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-[#47725d] text-xs transition disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
-              Sor
+              {t("ask")}
             </button>
           </div>
           {askError && <p className="text-[11px] text-amber-400">{askError}</p>}

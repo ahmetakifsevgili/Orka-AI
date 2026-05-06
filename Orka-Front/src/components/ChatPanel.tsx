@@ -26,6 +26,7 @@ import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ChatPanelProps {
   activeTopic: ApiTopic | null;
@@ -719,6 +720,23 @@ export default function ChatPanel({
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void }) {
+  const { t } = useLanguage();
+  const focus = localStorage.getItem("orka_study_focus") || "general";
+  const focusPrompt = (() => {
+    if (focus === "kpss") return t("starter_prompt_kpss");
+    if (focus === "yks") return t("starter_prompt_yks");
+    if (focus === "language") return t("starter_prompt_language");
+    if (focus === "software") return t("starter_prompt_software");
+    if (focus === "math") return t("starter_prompt_math");
+    return t("starter_prompt_general");
+  })();
+  const starterPrompts = [
+    { label: t("starter_learn_topic"), prompt: focusPrompt, hint: t("starter_hint_focus") },
+    { label: t("starter_source"), prompt: t("starter_prompt_source"), hint: t("starter_hint_demo") },
+    { label: t("starter_code"), prompt: t("starter_prompt_code"), hint: t("starter_hint_demo") },
+    { label: t("starter_review"), prompt: t("starter_prompt_review"), hint: t("starter_hint_demo") },
+  ];
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[40vh]">
       <motion.div
@@ -733,20 +751,33 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
           </div>
         </div>
         <h1 className="text-2xl font-bold text-[#172033] mb-3 tracking-tight">
-          Yeni bir öğrenme serüveni başlatın
+          {t("tutor_welcome_title")}
         </h1>
-        <p className="text-[13px] text-[#344054] mb-8 max-w-[440px] mx-auto leading-relaxed">
-          Öğrenmek istediğiniz herhangi bir yeteneği veya konuyu yazın. Orka AI sizin için
-          dinamik bir <code className="text-[#344054] bg-[#eef1f3] px-1.5 py-0.5 rounded text-[11px] font-mono border border-[#526d82]/10">/plan</code> oluştursun,
-          tüm süreci <strong>Wiki</strong> hafızasına işlesin ve <strong>Dashboard</strong>'da gelişiminizi analiz etsin.
+        <p className="text-[13px] text-[#344054] mb-6 max-w-[480px] mx-auto leading-relaxed">
+          {t("tutor_welcome_body")}
           <br/><br/>
-          Ya da araştırma asistanı <code className="text-[#344054] bg-[#eef1f3] px-1.5 py-0.5 rounded text-[11px] font-mono border border-[#526d82]/10">Korteks</code> ile web'in derinliklerine inerek sorularınıza detaylı cevaplar bulun.
+          Istersen <strong>Plan Modu</strong> ile mufredat ac, <strong>Korteks</strong> ile kaynakli arastirma yap veya IDE sonucunu Tutor'a gonder.
         </p>
 
+        <div className="mx-auto mb-6 grid max-w-[560px] grid-cols-1 gap-2 sm:grid-cols-2">
+          {starterPrompts.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => onPromptClick(item.prompt)}
+              className="rounded-2xl border border-[#526d82]/12 bg-white/62 px-4 py-3 text-left text-xs font-bold text-[#344054] shadow-sm transition hover:bg-[#f7f4ec] hover:text-[#172033] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+            >
+              {item.label}
+              <span className="mt-1 block text-[10px] font-medium leading-5 text-[#667085]">
+                {item.hint}
+              </span>
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10/50 bg-[#f7f9fa]/30 w-fit mx-auto">
-          <Sparkles className="w-3 h-3 text-[#344054]" />
+          <Bell className="w-3 h-3 text-[#344054]" />
           <span className="text-[10px] font-medium text-[#667085] tracking-wide uppercase">
-            SOLID Thinking Engine Ready
+            {t("small_step_first")}
           </span>
         </div>
       </motion.div>

@@ -106,7 +106,7 @@ function OptionRow<T extends string>({ label, value, options, onChange }: {
 
 export default function SettingsPanel() {
   const [, navigate] = useLocation();
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language, setLanguage, languages } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { fontSize, setFontSize } = useFontSize();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -221,6 +221,10 @@ export default function SettingsPanel() {
     { key: "Medium", label: t("medium") || "Orta" },
     { key: "Large", label: t("large") || "Büyük" },
   ];
+  const languageOptions = languages.map((item) => ({
+    key: item.code as Language,
+    label: item.nativeName,
+  }));
 
   return (
     <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
@@ -288,6 +292,12 @@ export default function SettingsPanel() {
 
           {/* ── APPEARANCE ── */}
           <SettingsSection title={t("appearance") || "Görünüm"} icon={<Palette className="w-4 h-4" />}>
+            <OptionRow<Language>
+              label={t("interface_language")}
+              value={language}
+              options={languageOptions}
+              onChange={handleLanguage}
+            />
             <OptionRow<FontSize>
               label={t("font_size") || "Yazı Boyutu"}
               value={fontSize}
