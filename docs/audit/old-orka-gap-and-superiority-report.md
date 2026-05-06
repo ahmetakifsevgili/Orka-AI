@@ -18,7 +18,7 @@ The old dirty folder mainly contains local development artifacts that should not
 | Piston / IDE code learning loop | dirty roadmap and architecture docs | `PistonService`, `IdeExecutionPlugin`, `InteractiveIDE`, code learning signal tests | `BETTER_THAN_OLD_IN_CLEAN` | Keep backend-only sandbox path |
 | Wolfram | dirty roadmap, SK plugin | Provider adapter and plugin are AppId-gated; LLM API endpoint documented | `BETTER_THAN_OLD_IN_CLEAN` | Live proof requires AppId provisioning |
 | News/weather/crypto | dirty roadmap | GDELT, Open-Meteo, CoinGecko public fallbacks plus backend capability contract | `BETTER_THAN_OLD_IN_CLEAN` | Keep provider-gated backend calls |
-| YouTube transcript pedagogy | dirty architecture/roadmap | Transcript provider abstraction, chunking/retrieval proof, teaching reference signal | `BETTER_THAN_OLD_IN_CLEAN` | Live provider remains provisioning item |
+| YouTube transcript pedagogy | dirty architecture/roadmap | Transcript provider abstraction, chunking/retrieval proof, teaching reference signal, YouTube Data API metadata/search proof | `BETTER_THAN_OLD_IN_CLEAN` | Transcript availability remains expected-degraded when public transcript is unavailable |
 | SRS / review | dirty roadmap | Durable ReviewItem, SRS service, due/complete endpoints, worker gate | `BETTER_THAN_OLD_IN_CLEAN` | Keep gated workers |
 | Flashcards | dirty roadmap/UI notes | Durable Flashcards API/service/frontend learning panel | `BETTER_THAN_OLD_IN_CLEAN` | Keep |
 | Daily Challenge | dirty roadmap | Durable challenge/submission/idempotent XP path | `BETTER_THAN_OLD_IN_CLEAN` | Keep |
@@ -42,6 +42,7 @@ The old dirty folder mainly contains local development artifacts that should not
 
 ## Remaining Notes
 
-- Wolfram and YouTube live provider proof require real configured credentials.
+- Wolfram live provider proof requires AppId.
+- YouTube Data API metadata/search proof is complete with local user-secrets/config; transcript proof remains separate because YouTube Data API does not guarantee public transcript access.
 - Redis vector activation for transcript search is a production/beta enhancement; deterministic chunk retrieval proof exists.
-- Teacher/multi-tenant/collaboration/3D/plagiarism features are v3 product-layer roadmap items, not missing core readiness blockers.
+- Institution/teacher/multi-tenant surfaces are not part of the current Orka product direction. Personal study coaching, motivation/routine support, adaptive practice, 3D/classroom experience and KPSS-style algorithms remain product-layer roadmap items, not missing core readiness blockers.

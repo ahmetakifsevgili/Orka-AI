@@ -64,6 +64,7 @@ Orka is a .NET 8 plus React/Vite adaptive learning system. The backend coordinat
 - This is a prototype with production-hardening gates, not a certified enterprise deployment.
 - Live Wolfram and YouTube transcript proofs require configured provider keys.
 - Public provider fallbacks may rate-limit.
+- YouTube Data API v3 metadata/search is locally proven when configured, but public transcript availability is separate and may degrade.
 - Production SLOs, SOC2/HIPAA/GDPR compliance and cloud-credit approval are not claimed.
 
 ## Roadmap Items
@@ -71,6 +72,6 @@ Orka is a .NET 8 plus React/Vite adaptive learning system. The backend coordinat
 - staging deployment and production provisioning
 - provider key proof and quota strategy
 - Redis/provider chaos testing
-- teacher/multi-tenant dashboard
-- collaborative learning
+- personal study-coach, motivation and adaptive routine loops
 - advanced analytics and observability dashboards
+- Google Cloud staging, provider quotas and Redis/provider chaos repeat

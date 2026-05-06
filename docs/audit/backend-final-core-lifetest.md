@@ -154,7 +154,7 @@ Additive `UsedToolDto` fields:
 | Restore | `dotnet restore` | success | restore up-to-date | PASS |
 | Build | `dotnet build` | 0 warnings/errors | 0 warnings/errors | PASS |
 | .NET tests | `dotnet test --no-build` | pass | 59 passed | PASS |
-| Contract tests | `python -m pytest contract_tests/ -q` | pass | 37 passed, 1 skipped, 2 existing mark warnings | PASS |
+| Contract tests | `python -m pytest contract_tests/ -q` | pass | 37 passed, 1 skipped; marker warnings closed in provider/Redis notes phase | PASS |
 | Wolfram no-key | unit test | safe fallback + telemetry | `provider_missing`, telemetry event | PASS |
 | Wolfram fake success | unit test | normalized computation | computation result normalized | PASS |
 | News fake success | unit test | citation metadata | source name, URL, published date present | PASS |

@@ -24,7 +24,7 @@ Orka's current kernel behaves as an adaptive learning loop:
 | Flashcard review | review result, optional learning signal | Flashcard, linked ReviewItem/SRS state | review due schedule changes | learning panel flashcards/review state | `ALREADY_SAFE` |
 | Daily challenge | submission, score clamp, XP idempotency | DailyChallengeSubmission, XpEvent, weak-skill pressure | future challenge/review targeting | daily challenge panel and XP result | `ALREADY_SAFE` |
 | Bookmark | bookmark create/list/delete metadata | Bookmark rows tied to topic/session/source/etc. | Tutor/plugin can recall saved context | bookmark panel and saved state | `ALREADY_SAFE` |
-| YouTube pedagogy | transcript/degraded telemetry, TeachingMoveApplied | learning signal and teaching reference cache/context | teaching flow/examples/misconceptions, not factual authority | YouTube pedagogy tool chip/degraded state | `ALREADY_SAFE_WITH_PROVIDER_NOTE` |
+| YouTube pedagogy | metadata/transcript/degraded telemetry, TeachingMoveApplied | learning signal and teaching reference cache/context | teaching flow/examples/misconceptions, not factual authority | YouTube pedagogy tool chip/degraded state | `ALREADY_SAFE_WITH_METADATA_PROOF` |
 | Provider tools | ToolTelemetryEvent, fallbackReason, source/citation metadata | telemetry/cost/fallback records | Tutor uses provider output only when available | provider tool chips and safe fallback notices | `ALREADY_SAFE` |
 
 ## Confirmed Core Gaps
@@ -32,12 +32,13 @@ Orka's current kernel behaves as an adaptive learning loop:
 No confirmed core learning-loop gap was found in this implementation pass. The remaining items are provisioning or product roadmap work:
 
 - live Wolfram AppId proof
-- live YouTube transcript provider proof
+- live YouTube transcript proof when a transcript is available; YouTube Data API metadata/search proof is now complete
 - staging Redis chaos test
-- richer product analytics/teacher/multi-tenant surfaces
+- richer personal analytics, motivation/routine support and study-coach surfaces
 
 ## Anti-Overclaim Notes
 
 - Orka is a prototype with production-hardening gates, not a certified enterprise deployment.
 - Local SQL/Redis runtime proof is required for this phase; production SLOs are not claimed.
 - Provider public fallback behavior is implemented, but public provider rate limits remain an operational provisioning risk.
+- YouTube Data API metadata is not the same as transcript access; transcript fallback/degraded behavior remains the honest contract.

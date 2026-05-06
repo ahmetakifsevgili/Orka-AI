@@ -41,6 +41,7 @@ The clean repo already includes the core old-Orka capabilities: Semantic Kernel 
 | SQL lifecycle | PASS: unique auth, topic, bookmark |
 | Redis health | PASS: health payload evidence |
 | contract tests with backend running | PASS, 37 passed / 1 skipped |
+| provider/Redis notes closure | PASS_WITH_NOTE: YouTube metadata, Open-Meteo and CoinGecko live; GDELT live with latency note; Redis degraded runtime survived |
 
 ## Confirmed Fixes
 
@@ -58,6 +59,7 @@ Orka is ready for a technical demo and cloud/AI credit technical review as a pro
 ## Remaining Notes
 
 - Live Wolfram requires AppId provisioning.
-- Live YouTube transcript provider proof requires provider configuration.
+- YouTube Data API v3 metadata/search proof passed with local user-secrets/config; transcript availability remains a separate expected-degraded path.
 - Public provider fallbacks are useful for testing/demo but may require commercial quotas for production.
-- Redis/provider chaos should be repeated in staging.
+- Redis unavailable/degraded mini-proof passed locally: live/capabilities survived while readiness reported Redis unhealthy. Repeat in staging.
+- Pytest marker warnings are closed through explicit marker registration.

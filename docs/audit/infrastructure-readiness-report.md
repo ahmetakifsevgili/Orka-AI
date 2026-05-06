@@ -24,7 +24,7 @@ Required proof for this phase:
 - Redis-dependent fallbacks do not crash normal runtime.
 - Redis-backed features are not tested by flushing or deleting real keys.
 
-Final observed result: `/health/ready` and `/health` returned 200 and the health payload contained Redis evidence. No Redis flush/delete/reset was run.
+Final observed result: `/health/ready` and `/health` returned 200 and the health payload contained Redis evidence. A non-destructive degraded proof was also run by starting a second backend process with a temporary invalid Redis connection string on port `5102`: `/health/live` stayed 200, `/api/tools/capabilities` stayed 200, `/api/korteks/ping` stayed 401 without auth, and `/health/ready` correctly returned 503 with Redis unhealthy while SQL stayed healthy. No Redis flush/delete/reset was run.
 
 Status: `READY_WITH_LOCAL_PROOF`
 
@@ -36,7 +36,7 @@ Status: `READY_WITH_LOCAL_PROOF`
 | Weather | Open-Meteo public fallback, OpenWeatherMap override | Add commercial key for production weather quota |
 | Crypto | CoinGecko public endpoint | Add paid market data provider if rate limits matter |
 | Wolfram | AppId-gated LLM API | Requires AppId for live computation proof |
-| YouTube pedagogy | provider-gated transcript path | Requires provider configuration for live transcript proof |
+| YouTube pedagogy | YouTube Data API metadata/search proof when configured; transcript path can degrade | YouTube Data API key proves metadata/search, but transcript availability is separate and not guaranteed |
 | IDE/Piston | backend sandbox execution | Never expose host shell; provision sandbox endpoint |
 
 ## Operational Notes
@@ -44,4 +44,5 @@ Status: `READY_WITH_LOCAL_PROOF`
 - Scheduled SRS and DailyChallenge workers are registered but default-disabled by configuration.
 - Push/Firebase delivery degrades safely when provider config is absent.
 - Runtime telemetry and cost writes are failure-safe and size-capped.
-- Staging should add Redis outage chaos, provider quota tests and slow-query monitoring before production launch.
+- Staging should repeat Redis outage chaos, provider quota tests and slow-query monitoring before production launch.
+- GDELT public news can be slow; safe fallback behavior is expected when it approaches backend timeout.

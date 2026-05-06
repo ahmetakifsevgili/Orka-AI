@@ -18,7 +18,7 @@ Frontend URL: `http://localhost:3000`
 | Frontend | `npm run smoke:ui` | pass | pass | PASS |
 | Frontend | `npm run smoke:contracts` | pass | pass | PASS |
 | Frontend | `npm run typecheck` | pass | pass | PASS |
-| Contract tests | `python -m pytest contract_tests/ -q` with backend running | pass | 37 passed, 1 skipped, 2 mark warnings | PASS |
+| Contract tests | `python -m pytest contract_tests/ -q` with backend running | pass | 37 passed, 1 skipped; marker warnings closed in provider/Redis notes phase | PASS |
 
 ## Runtime Smoke
 
@@ -73,6 +73,16 @@ Required final proof:
 | `/health/ready` | Redis healthy or infra block | 200 | PASS |
 | `/health` payload | Redis visible | Redis evidence present | PASS |
 | destructive Redis operations | none | none run | PASS |
+| Redis degraded mini-proof | app survives invalid Redis override | second runtime stayed live; `/health/live` 200, `/health/ready` 503 with Redis unhealthy, capabilities 200 | PASS_WITH_NOTE |
+
+## Provider Notes Closure
+
+| Provider/tool | Expected | Actual | Result |
+|---|---|---|---|
+| YouTube Data API metadata | configured key proves metadata/search without printing value | 2 video metadata results; transcript still expected-degraded when unavailable | PASS_WITH_NOTE |
+| News / GDELT | public fallback reachable | HTTP 200 with article records; latency can approach timeout | PASS_WITH_NOTE |
+| Weather / Open-Meteo | public fallback reachable | Istanbul current data contained temperature/weather code | PASS |
+| Crypto / CoinGecko | public fallback reachable | BTC price/timestamp present; no-investment-advice guard remains | PASS |
 
 ## Security / Artifact Guard
 
