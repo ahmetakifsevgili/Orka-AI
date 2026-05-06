@@ -719,6 +719,22 @@ export default function ChatPanel({
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void }) {
+  const focus = localStorage.getItem("orka_study_focus") || "general";
+  const focusPrompt = (() => {
+    if (focus === "kpss") return "KPSS icin bugun 25 dakikalik sade bir calisma yolu ac. Once seviyemi anlamak icin 3 kisa soru sor.";
+    if (focus === "yks") return "YKS icin temel kavramdan baslayan kisa bir calisma plani kur ve ilk mini pratigi ver.";
+    if (focus === "language") return "Dil ogrenmek istiyorum. Kelime, tekrar ve konusma pratigi icin bugunluk kucuk bir yol ac.";
+    if (focus === "software") return "Yazilim calisiyorum. Bana kucuk bir kod gorevi ver, sonra hatalarimi ogrenme adimina cevir.";
+    if (focus === "math") return "Matematikte bir konuyu adim adim ogrenmek istiyorum. Once seviyemi anlamak icin mini kontrol yap.";
+    return "Bugun yeni bir konuya baslamak istiyorum. Bana 20 dakikalik sade bir calisma yolu ac.";
+  })();
+  const starterPrompts = [
+    { label: "Konu ogren", prompt: focusPrompt },
+    { label: "Kaynakla calis", prompt: "Bir kaynaktan calisacagim. Bana once nasil yukleyecegimi ve sonra kaynaga dayali nasil soru soracagimi anlat." },
+    { label: "Kod hatasi coz", prompt: "Bir kod hatasini ogrenme firsatina cevirmek istiyorum. IDE'de ne calistirmaliyim ve sonucu sana nasil gondermeliyim?" },
+    { label: "Tekrar yap", prompt: "Bugun kisa bir tekrar seansi yapmak istiyorum. Bende veri yoksa once nasil baslayacagimi anlat." },
+  ];
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[40vh]">
       <motion.div
@@ -733,20 +749,34 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
           </div>
         </div>
         <h1 className="text-2xl font-bold text-[#172033] mb-3 tracking-tight">
-          Yeni bir öğrenme serüveni başlatın
+          Bugun ne calisacagiz?
         </h1>
-        <p className="text-[13px] text-[#344054] mb-8 max-w-[440px] mx-auto leading-relaxed">
-          Öğrenmek istediğiniz herhangi bir yeteneği veya konuyu yazın. Orka AI sizin için
-          dinamik bir <code className="text-[#344054] bg-[#eef1f3] px-1.5 py-0.5 rounded text-[11px] font-mono border border-[#526d82]/10">/plan</code> oluştursun,
-          tüm süreci <strong>Wiki</strong> hafızasına işlesin ve <strong>Dashboard</strong>'da gelişiminizi analiz etsin.
+        <p className="text-[13px] text-[#344054] mb-6 max-w-[480px] mx-auto leading-relaxed">
+          Kucuk bir hedef yaz; Orka bunu konu, kaynak, kod, tekrar ve Wiki akisi icinde duzenlesin.
+          Gercek sinyaller quiz, IDE, kaynak ve tekrar yaptikca olusur; burada sahte zayif alan gosterilmez.
           <br/><br/>
-          Ya da araştırma asistanı <code className="text-[#344054] bg-[#eef1f3] px-1.5 py-0.5 rounded text-[11px] font-mono border border-[#526d82]/10">Korteks</code> ile web'in derinliklerine inerek sorularınıza detaylı cevaplar bulun.
+          Istersen <strong>Plan Modu</strong> ile mufredat ac, <strong>Korteks</strong> ile kaynakli arastirma yap veya IDE sonucunu Tutor'a gonder.
         </p>
 
+        <div className="mx-auto mb-6 grid max-w-[560px] grid-cols-1 gap-2 sm:grid-cols-2">
+          {starterPrompts.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => onPromptClick(item.prompt)}
+              className="rounded-2xl border border-[#526d82]/12 bg-white/62 px-4 py-3 text-left text-xs font-bold text-[#344054] shadow-sm transition hover:bg-[#f7f4ec] hover:text-[#172033] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+            >
+              {item.label}
+              <span className="mt-1 block text-[10px] font-medium leading-5 text-[#667085]">
+                {item.label === "Konu ogren" ? "Secili hedef odagina gore baslatir." : "Demo akisi icin guvenli baslangic."}
+              </span>
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10/50 bg-[#f7f9fa]/30 w-fit mx-auto">
-          <Sparkles className="w-3 h-3 text-[#344054]" />
+          <Bell className="w-3 h-3 text-[#344054]" />
           <span className="text-[10px] font-medium text-[#667085] tracking-wide uppercase">
-            SOLID Thinking Engine Ready
+            Once kucuk adim, sonra gercek sinyal
           </span>
         </div>
       </motion.div>

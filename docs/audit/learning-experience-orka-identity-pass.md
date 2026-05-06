@@ -108,6 +108,7 @@ Final validation:
 
 | Note | Classification | Reason |
 |---|---|---|
+| First-run journey received a follow-up polish pass with study-focus starter prompts and a demo script. | NON_BLOCKING_NOTE | See `docs/audit/first-run-study-journey-demo-polish.md` and `docs/audit/orka-demo-scenario.md`. |
 | Some UI strings in existing files are still legacy Turkish encoding in source display, but smoke guards pass. | NON_BLOCKING_NOTE | Not introduced by this phase. |
 | Streaming chat metadata still depends on backend final metadata events; frontend does not infer metadata from prose. | NON_BLOCKING_NOTE | Correct contract behavior. |
 | Deeper V3 features such as 3D class modeling and KPSS-specific advanced algorithm surfaces are not implemented here. | PRODUCT_ROADMAP | This phase is polish and identity, not V3 expansion. |

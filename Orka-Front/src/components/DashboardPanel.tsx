@@ -9,8 +9,11 @@ import {
   ChevronRight,
   Activity,
   Award,
+  Code2,
   Compass,
   Cpu,
+  FileText,
+  GraduationCap,
   Lightbulb,
   MessageSquareText,
   Repeat2,
@@ -79,6 +82,15 @@ function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] 
   );
 }
 
+const STUDY_FOCUS_OPTIONS = [
+  { id: "general", label: "Genel calisma", hint: "Konu ac, Tutor ile basla." },
+  { id: "kpss", label: "KPSS", hint: "Baslangic onerileri sinav diline yaklasir." },
+  { id: "yks", label: "YKS", hint: "Temel kavram ve soru ritmi one cikar." },
+  { id: "language", label: "Dil", hint: "Kelime, tekrar ve speaking fikri one cikar." },
+  { id: "software", label: "Yazilim", hint: "IDE ve hata uzerinden ogrenme one cikar." },
+  { id: "math", label: "Matematik", hint: "Adimli cozum ve mini pratik one cikar." },
+];
+
 export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
   // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
@@ -88,6 +100,9 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
   const [loading, setLoading] = useState(true);
+  const [studyFocusPreference, setStudyFocusPreference] = useState(() => {
+    return localStorage.getItem("orka_study_focus") || "general";
+  });
 
   useEffect(() => {
     // Quiz istatistikleri (doğruluk oranı, sparkline)
@@ -139,6 +154,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
     : nextTopic
       ? "Konuya don, bir soru sor ve ardindan kisa bir tekrar karti olustur."
       : "Bir konu ac ve Tutor'a hedefini tek cumleyle anlat.";
+  const selectedFocus = STUDY_FOCUS_OPTIONS.find((item) => item.id === studyFocusPreference) ?? STUDY_FOCUS_OPTIONS[0];
+
+  const handleStudyFocusChange = (focusId: string) => {
+    setStudyFocusPreference(focusId);
+    localStorage.setItem("orka_study_focus", focusId);
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
@@ -249,6 +270,37 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                     <span className="text-[#667085]">calisma yolu</span>
                   </div>
                 </div>
+              </div>
+            </div>
+            <div className="mt-5 rounded-2xl border border-[#526d82]/12 bg-white/45 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
+                    <GraduationCap className="h-3.5 w-3.5 text-[#52768a]" />
+                    Hedef odagi
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[#667085]">
+                    Bu sadece baslangic rehberidir; tam KPSS/YKS algoritmasi V3 roadmap kapsaminda.
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#dcecf3]/70 px-3 py-1 text-[10px] font-bold text-[#2d5870]">
+                  {selectedFocus.hint}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {STUDY_FOCUS_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => handleStudyFocusChange(option.id)}
+                    className={`rounded-xl border px-3 py-2 text-[11px] font-black transition focus:outline-none focus:ring-2 focus:ring-[#9ec7d9] ${
+                      studyFocusPreference === option.id
+                        ? "border-[#52768a]/35 bg-[#dcecf3]/76 text-[#172033]"
+                        : "border-[#526d82]/12 bg-[#f7f9fa]/55 text-[#667085] hover:bg-white/70 hover:text-[#172033]"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
           </section>
@@ -379,8 +431,21 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
               </div>
 
               {topics.length === 0 ? (
-                <div className="py-16 text-center border border-dashed border-[#526d82]/15 rounded-3xl">
-                  <p className="text-xs text-[#667085]">Henüz aktif bir öğrenme yolunuz bulunmuyor.</p>
+                <div className="rounded-3xl border border-dashed border-[#526d82]/15 px-6 py-12 text-center">
+                  <div className="mx-auto mb-4 grid h-10 w-10 place-items-center rounded-2xl bg-[#dcecf3]/65">
+                    <FileText className="h-4 w-4 text-[#52768a]" />
+                  </div>
+                  <p className="text-sm font-bold text-[#172033]">Henuz aktif bir ogrenme yolunuz bulunmuyor.</p>
+                  <p className="mx-auto mt-2 max-w-sm text-xs leading-6 text-[#667085]">
+                    Tutor'a hedefini yaz; Orka ilk konu yolunu acsin. Kaynak, kod hatasi, quiz ve tekrar sinyalleri geldikce burasi gercek verilerle dolar.
+                  </p>
+                  <button
+                    onClick={() => onViewChange("chat")}
+                    className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white transition hover:bg-[#243044]"
+                  >
+                    <MessageSquareText className="h-4 w-4" />
+                    Ilk konuya basla
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -430,11 +495,24 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                   className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033] group-hover:text-white transition-colors">Öğrenmeye Devam</span>
+                    <span className="text-xs font-bold text-[#172033] transition-colors">Öğrenmeye Devam</span>
                     <span className="text-[10px] text-[#667085]">En son kaldığın ders</span>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
                     <ArrowRight className="w-4 h-4 text-[#667085]" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onViewChange("ide")}
+                  className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-[#172033]">Kod Hatasini Coz</span>
+                    <span className="text-[10px] text-[#667085]">IDE sonucunu Tutor'a bagla</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
+                    <Code2 className="w-4 h-4 text-[#667085]" />
                   </div>
                 </button>
 
