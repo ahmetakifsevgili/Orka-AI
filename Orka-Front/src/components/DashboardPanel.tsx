@@ -9,7 +9,11 @@ import {
   ChevronRight,
   Activity,
   Award,
+  Compass,
   Cpu,
+  Lightbulb,
+  MessageSquareText,
+  Repeat2,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
@@ -120,6 +124,21 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   const learningSignalBook = dashStats?.learningSignalBook;
   const weakSkills = learningSignalBook?.weakSkills ?? [];
   const recentSignals = learningSignalBook?.recentSignals ?? [];
+  const recentTopic = topics[0] ?? null;
+  const nextTopic = topics.find((topic) => (topic.progressPercentage ?? 0) > 0 && (topic.progressPercentage ?? 0) < 100) ?? recentTopic;
+  const strongestSignal = weakSkills[0] ?? null;
+  const hasStudyData = topics.length > 0 || weakSkills.length > 0 || recentSignals.length > 0 || totalQuizzes > 0;
+  const studyFocusTitle = strongestSignal?.skillTag || nextTopic?.title || "Ilk calisma yolunu ac";
+  const studyFocusReason = strongestSignal
+    ? `${strongestSignal.topicPath || "Bu konuda"} son denemelerde daha fazla tekrar istiyor.`
+    : nextTopic
+      ? `${nextTopic.title} kaldigin yerden devam etmeye hazir.`
+      : "Orka, calistikca sinyalleri burada gercek verilerle gosterecek.";
+  const nextSmallStep = strongestSignal
+    ? "Tutor'dan bu beceri icin 5 dakikalik mini pratik iste."
+    : nextTopic
+      ? "Konuya don, bir soru sor ve ardindan kisa bir tekrar karti olustur."
+      : "Bir konu ac ve Tutor'a hedefini tek cumleyle anlat.";
 
   return (
     <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
@@ -182,6 +201,57 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                {stats && <SuccessRateSparkline data={stats.dailyProgress} />}
             </div>
           </div>
+
+          <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl">
+            <div className="grid gap-5 lg:grid-cols-[1.35fr_0.9fr]">
+              <div>
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#9ec7d9]/35 bg-[#dcecf3]/65 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#2d5870]">
+                  <Compass className="h-3.5 w-3.5" />
+                  Bugunku odak
+                </div>
+                <h2 className="text-xl font-black tracking-tight text-[#172033]">{studyFocusTitle}</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f6f7b]">{studyFocusReason}</p>
+                {!hasStudyData && (
+                  <p className="mt-3 rounded-2xl border border-dashed border-[#526d82]/16 bg-white/48 px-4 py-3 text-xs leading-6 text-[#667085]">
+                    Burada sahte seri, sahte zayiflik veya uydurma ilerleme yok. Calismaya basladikca Orka gercek quiz, IDE, kaynak ve tekrar sinyallerini kullanacak.
+                  </p>
+                )}
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => onViewChange("chat")}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                  >
+                    <MessageSquareText className="h-4 w-4" />
+                    Tutor ile devam et
+                  </button>
+                  <button
+                    onClick={() => onViewChange("learning")}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/58 px-4 py-2.5 text-xs font-black text-[#172033] transition hover:bg-[#f7f9fa] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                  >
+                    <Repeat2 className="h-4 w-4" />
+                    Tekrar dongusunu ac
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#526d82]/12 bg-white/58 p-4">
+                <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
+                  <Lightbulb className="h-3.5 w-3.5 text-[#8a641f]" />
+                  Sonraki kucuk adim
+                </p>
+                <p className="text-sm font-bold leading-6 text-[#172033]">{nextSmallStep}</p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-xl bg-[#dcecf3]/55 px-3 py-2">
+                    <span className="block text-base font-black text-[#172033]">{weakSkills.length}</span>
+                    <span className="text-[#667085]">zayif sinyal</span>
+                  </div>
+                  <div className="rounded-xl bg-[#fff8ee]/85 px-3 py-2">
+                    <span className="block text-base font-black text-[#172033]">{topics.length}</span>
+                    <span className="text-[#667085]">calisma yolu</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* Core Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
@@ -300,10 +370,10 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                   Konu İlerlemesi
                 </h2>
                 <button
-                  onClick={() => onViewChange("courses")}
+                  onClick={() => onViewChange("chat")}
                    className="text-[11px] font-bold text-[#667085] hover:text-[#344054] flex items-center gap-1 transition-colors uppercase tracking-wider"
                 >
-                  Tümünü Gör
+                  Calismaya Gec
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
@@ -327,7 +397,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                               {topic.emoji}
                             </div>
                             <div>
-                              <p className="text-sm font-semibold text-[#172033] group-hover:text-white transition-colors">{topic.title}</p>
+                              <p className="text-sm font-semibold text-[#172033] group-hover:text-[#172033] transition-colors">{topic.title}</p>
                               <p className="text-[10px] text-[#98a2b3] uppercase font-bold tracking-tighter">{topic.category || 'GENEL'}</p>
                             </div>
                           </div>

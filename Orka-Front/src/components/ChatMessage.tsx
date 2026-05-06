@@ -284,6 +284,65 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
 
 // ── Main component ─────────────────────────────────────────────────────────
 
+function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"] }) {
+  const tools = metadata?.usedTools ?? [];
+  const citations = metadata?.citations ?? [];
+  const warnings = metadata?.providerWarnings ?? [];
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode;
+  if (!hasMeta) return null;
+
+  const toolLabel = (toolId?: string | null, name?: string | null) => {
+    const id = (toolId ?? name ?? "tool").toLowerCase();
+    if (id.includes("ide") || id.includes("code")) return "IDE";
+    if (id.includes("source")) return "Source/RAG";
+    if (id.includes("wiki")) return "Wiki";
+    if (id.includes("news")) return "News";
+    if (id.includes("weather")) return "Weather";
+    if (id.includes("crypto") || id.includes("market")) return "Crypto";
+    if (id.includes("wolfram")) return "Wolfram";
+    if (id.includes("youtube")) return "YouTube pedagogy";
+    if (id.includes("mermaid")) return "Mermaid";
+    return toolId ?? name ?? "tool";
+  };
+
+  const firstTool = tools[0];
+  const mode = metadata?.groundingMode?.toLowerCase() ?? "";
+  const groundingLabel = mode.includes("document") || mode.includes("source")
+    ? "Kaynaklarina dayandi"
+    : mode.includes("wiki")
+      ? "Wiki hafizasini kullandi"
+      : mode.includes("youtube")
+        ? "YouTube'u pedagojik referans olarak kullandi"
+        : mode.includes("web") || mode.includes("news") || mode.includes("provider")
+          ? "Saglayici verisiyle desteklendi"
+          : mode.includes("code") || mode.includes("ide")
+            ? "Kod ciktisini baglam olarak kullandi"
+            : metadata?.groundingMode ?? "Genel aciklama";
+
+  const learningHint = tools.some((tool) => (tool.toolId ?? tool.name ?? "").toLowerCase().includes("ide"))
+    ? "Kod ciktisi cevap baglamina girdi. Kalici tekrar gerekiyorsa bunu review'a donusturebilirsin."
+    : citations.length > 0
+      ? "Bu cevap kaynak isaretleriyle ayrildi; neye dayandigini sonradan kontrol edebilirsin."
+      : metadata?.fallbackReason || warnings.length > 0
+        ? "Orka sonucu uydurmak yerine siniri/fallback durumunu ayrica gostermeyi tercih etti."
+        : "Bu arac ve baglam bilgisi, sonraki calisma adimini daha net secmene yardim eder.";
+
+  return (
+    <div className="mt-2 rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/72 px-4 py-3 text-[#344054] shadow-sm">
+      <div className="grid gap-2 text-xs leading-5 md:grid-cols-[1fr_1.1fr]">
+        <p className="rounded-xl bg-white/48 px-3 py-2">
+          <span className="font-black text-[#172033]">Neye dayandi: </span>
+          {firstTool ? `${toolLabel(firstTool.toolId, firstTool.name)} baglami` : groundingLabel}.
+        </p>
+        <p className="rounded-xl bg-white/48 px-3 py-2">
+          <span className="font-black text-[#172033]">Ogrenme etkisi: </span>
+          {learningHint}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isTopicComplete = message.type === "topic_complete";
@@ -472,6 +531,7 @@ function ChatMessageInner({ message, topicId, sessionId, onSubmitAnswer, userNam
                   </div>
                 </div>
                   <ChatMetadataChips metadata={message.metadata} />
+                  <ChatLearningTrace metadata={message.metadata} />
                 </>
               );
             })()}

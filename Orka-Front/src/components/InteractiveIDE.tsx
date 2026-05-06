@@ -116,6 +116,16 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
   const hasOutput = stdout !== null || stderr !== null || success !== null;
   const runSucceeded = success === true;
   const outputText = formatRunOutput(stdout, stderr);
+  const ideLearningNote = (() => {
+    if (!hasOutput) return null;
+    if (runSucceeded) return "Kod calisti. Ciktiyi Tutor'a gondererek cozum mantigini kontrol ettirebilirsin.";
+    if (phase === "compile") return "Bu bir uygulama arizasi degil; derleme hatasi dil kurali veya eksik sembol sinyali verir.";
+    if (phase === "timeout") return "Kod zaman sinirina takildi. Dongu, girdi boyutu veya bitis kosulunu kontrol etmek iyi bir ilk adim.";
+    if (phase === "blocked") return "Sandbox guvenlik siniri devrede. Orka host shell calistirmaz ve bunu basarili sonuc gibi gostermez.";
+    if (phase === "provider_missing") return "Kod calistirma saglayicisi hazir degil. Orka bu durumda sonuc uydurmaz.";
+    if (phase === "network_error") return "Kod servisine ulasilamadi. Kodun kaybolmadi; biraz sonra tekrar deneyebilirsin.";
+    return "Bu hata bir ogrenme sinyali olabilir. Tutor'a gonderirsen neyin kirildigini adim adim aciklar.";
+  })();
 
   const resetOutput = useCallback(() => {
     setStdout(null);
@@ -417,6 +427,18 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
+                  {ideLearningNote && (
+                    <div className="px-4 pt-3">
+                      <div className={`rounded-2xl border px-4 py-3 text-xs leading-5 ${
+                        runSucceeded
+                          ? "border-[#8fb7a2]/25 bg-[#d9e7de]/62 text-[#456f55]"
+                          : "border-[#e8c46f]/30 bg-[#fff8ee]/82 text-[#8a641f]"
+                      }`}>
+                        <span className="font-black text-[#172033]">Ogrenme notu: </span>
+                        {ideLearningNote}
+                      </div>
+                    </div>
+                  )}
                   <pre className={`max-h-48 overflow-y-auto overflow-x-auto whitespace-pre-wrap px-4 py-3 text-[13px] font-mono leading-relaxed ${runSucceeded ? "text-[#456f55]" : "text-[#9a4e3e]"}`}>
                     {[compileError, runtimeError, outputText, safeTutorSummary ? `\nTutor notu: ${safeTutorSummary}` : ""].filter(Boolean).join("\n\n")}
                   </pre>

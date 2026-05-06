@@ -62,7 +62,7 @@ export default function Home() {
   // Initial view — localStorage'da geçerli bir kayıt varsa onu yükle
   const [activeView, setActiveView] = useState<string>(() => {
     const saved = localStorage.getItem(LS_ACTIVE_VIEW);
-    return saved && VALID_VIEWS.has(saved) ? saved : "chat";
+    return saved && VALID_VIEWS.has(saved) ? saved : "dashboard";
   });
   const [wikiTopicId, setWikiTopicId] = useState<string | null>(
     () => localStorage.getItem(LS_WIKI_TOPIC_ID)

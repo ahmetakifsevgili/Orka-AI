@@ -114,6 +114,35 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
+        <section className="mb-5 rounded-[1.5rem] border border-[#526d82]/12 bg-[#f7f4ec]/72 p-5 shadow-sm">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">Ogrenme dongusu</p>
+              <h2 className="mt-1 text-lg font-black text-[#172033]">Orka yanlis cevabi, kod hatasini ve kaydedilen notu bosa harcamaz.</h2>
+              <p className="mt-2 text-sm leading-6 text-[#667085]">
+                Buradaki her kart, tekrar, challenge ve bookmark sahte skor degil; backend'den gelen gercek calisma yuzeyidir. Veri yoksa Orka bunu bos durum olarak gosterir.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-2xl bg-white/58 px-4 py-3">
+                <span className="block text-lg font-black text-[#172033]">{flashcards.length}</span>
+                <span className="text-[#667085]">hafiza karti</span>
+              </div>
+              <div className="rounded-2xl bg-white/58 px-4 py-3">
+                <span className="block text-lg font-black text-[#172033]">{reviews.length}</span>
+                <span className="text-[#667085]">bekleyen tekrar</span>
+              </div>
+              <div className="rounded-2xl bg-white/58 px-4 py-3">
+                <span className="block text-lg font-black text-[#172033]">{challenge ? "hazir" : "yok"}</span>
+                <span className="text-[#667085]">gunluk gorev</span>
+              </div>
+              <div className="rounded-2xl bg-white/58 px-4 py-3">
+                <span className="block text-lg font-black text-[#172033]">{bookmarks.length}</span>
+                <span className="text-[#667085]">kaydedilen not</span>
+              </div>
+            </div>
+          </div>
+        </section>
         <div className="grid gap-5 xl:grid-cols-2">
           <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
