@@ -28,7 +28,7 @@ Frontend URL: `http://localhost:3000`
 | `dotnet build` | PASS, 0 warnings/errors | 0 warnings, 0 errors | PASS |
 | `dotnet test --no-build` | PASS | 61 passed | PASS |
 | `python -m pytest contract_tests/ -q` before backend runtime | should require running backend | connection refused because backend was not yet listening | PASS_WITH_NOTE |
-| `python -m pytest contract_tests/ -q` with backend runtime | PASS | 37 passed, 1 skipped, 2 mark warnings | PASS |
+| `python -m pytest contract_tests/ -q` with backend runtime | PASS | 37 passed, 1 skipped; marker warnings closed in later notes phase | PASS |
 | `npm run build` | PASS | serial build passed | PASS |
 | `npm run smoke:ui` | PASS | passed | PASS |
 | `npm run smoke:contracts` | PASS | passed | PASS |
@@ -208,3 +208,4 @@ Readiness:
 - Public provider fallbacks may have external public rate limits.
 - Wolfram remains AppId-gated.
 - `visual_generation` remains beta/gated.
+- YouTube Data API metadata/search can be live when configured, but transcript availability remains separate and may degrade safely.

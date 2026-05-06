@@ -43,7 +43,7 @@ Note: `python -m pytest contract_tests/ -q` requires the API to be running on po
 | DailyChallenge capability | `GET /api/tools/capabilities/daily_challenge` | 200 | 200 | PASS |
 | Bookmarks capability | `GET /api/tools/capabilities/bookmarks` | 200 | 200 | PASS |
 | Mermaid capability | `GET /api/tools/capabilities/mermaid` | 200 | 200 | PASS |
-| Contract tests | `python -m pytest contract_tests/ -q` | PASS | 37 passed, 1 skipped, 2 existing mark warnings | PASS |
+| Contract tests | `python -m pytest contract_tests/ -q` | PASS | 37 passed, 1 skipped; marker warnings closed in provider/Redis notes phase | PASS |
 
 ## Stress / Chaos Checks
 

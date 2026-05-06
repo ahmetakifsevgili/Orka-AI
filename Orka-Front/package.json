@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "smoke:contracts": "node scripts/smoke-endpoints.mjs",
+    "typecheck": "tsc --noEmit",
     "smoke:build": "vite build",
     "quick:build": "vite build",
     "quick:frontend": "npm run smoke:ui && npm run smoke:contracts && npm run smoke:build",

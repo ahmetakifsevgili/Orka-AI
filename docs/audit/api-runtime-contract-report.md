@@ -102,7 +102,7 @@ Focused proof:
 
 - PASS: `37 passed`
 - SKIPPED: `1 lifecycle AI/provider-heavy scenario`
-- Warnings: two pytest mark warnings from existing lifecycle markers.
+- Warnings: none after explicit marker registration in `contract_tests/pytest.ini`.
 
 ## Tool Activation + Tutor Consumption Addendum
 
@@ -211,7 +211,7 @@ Deterministic proof:
 
 - `dotnet build` -> PASS, 0 warnings, 0 errors.
 - `dotnet test --no-build` -> PASS, 59 passed.
-- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped, 2 existing mark warnings.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped. Pytest marker warnings are closed by explicit marker registration.
 
 Runtime smoke after final core intelligence:
 
@@ -252,7 +252,18 @@ Regression proof:
 
 - `dotnet build` -> PASS, 0 warnings, 0 errors.
 - `dotnet test --no-build` -> PASS.
-- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped, 2 existing mark warnings.
+- `python -m pytest contract_tests/ -q` -> PASS, 37 passed, 1 skipped. Marker warnings closed in the provider/Redis notes phase.
+
+Live provider notes closure:
+
+| Provider/tool | Runtime proof | Result |
+|---|---|---|
+| YouTube Data API | configured metadata/search returned 2 video results; key value was not printed | PASS_METADATA |
+| YouTube transcript | transcript availability is separate from Data API metadata | EXPECTED_DEGRADED |
+| GDELT | public endpoint returned HTTP 200 with article records, but latency can approach timeout | PASS_WITH_NOTE |
+| Open-Meteo | current Istanbul weather fields present | PASS |
+| CoinGecko | BTC price/timestamp present; no-investment-advice guard remains | PASS |
+| Redis degraded runtime | invalid Redis override on port `5102` kept live/capabilities available and made readiness 503 | PASS_WITH_NOTE |
 
 ## Optimization Lifecycle Gate Addendum
 

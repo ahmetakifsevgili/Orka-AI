@@ -49,7 +49,10 @@ export default function ToolCapabilityStrip({ compact = false }: { compact?: boo
   const { tools, loading, error } = useToolCapabilities();
   const visible = DISPLAY_TOOLS
     .map((id) => tools.find((tool) => tool.toolId === id))
-    .filter((tool): tool is ToolCapability => Boolean(tool) && !tool.requiresAdmin);
+    .filter((tool): tool is ToolCapability => {
+      if (!tool) return false;
+      return !tool.requiresAdmin;
+    });
 
   if (loading) {
     return <span className="text-[10px] font-semibold text-[#8ba8b5]">Araç sözleşmesi yükleniyor...</span>;

@@ -56,3 +56,5 @@ scripts/reports/
 scripts/llm-eval/output/
 *.log
 !.claude/*.log
+Orka.API/build.txt
+Orka.API/dotnet_log.txt
