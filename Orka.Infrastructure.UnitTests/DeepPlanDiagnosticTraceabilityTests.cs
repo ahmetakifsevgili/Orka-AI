@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Runtime.CompilerServices;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.Entities;
@@ -116,7 +117,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Custom Orka IDE Lab 1", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE sandbox ile custom setup", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Orka IDE sandbox'ta ilk C# programi", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -247,7 +248,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
               ]
             }
             """);
-        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "fake";
             await Task.CompletedTask;
@@ -327,7 +328,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
               ]
             }
             """);
-        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "fake";
             await Task.CompletedTask;
@@ -357,7 +358,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
     private sealed class FakeKorteksAgent : IKorteksAgent
     {
         public int CallCount { get; private set; }
-        public async IAsyncEnumerable<string> RunResearchAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, CancellationToken ct = default)
+        public async IAsyncEnumerable<string> RunResearchAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "legacy";
             await Task.CompletedTask;

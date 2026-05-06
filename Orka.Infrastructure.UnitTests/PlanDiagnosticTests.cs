@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Runtime.CompilerServices;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
@@ -40,7 +41,8 @@ public sealed class PlanDiagnosticTests
         Assert.Equal(1, harness.Korteks.CallCount);
         Assert.Equal(1, harness.Compressor.CompressCount);
         Assert.Equal(1, harness.Compressor.BuildPromptBlockCount);
-        Assert.Contains("stored compressed context", harness.Factory.LastSystemPrompt);
+        Assert.Contains("PLAN INTELLIGENCE BRIEF", harness.Factory.LastSystemPrompt);
+        Assert.DoesNotContain("stored compressed context", harness.Factory.LastSystemPrompt);
         Assert.Contains(response.QuizRunId.ToString(), (await harness.Store.GetAsync(response.PlanRequestId))!.QuizRunId.ToString());
     }
 
@@ -302,7 +304,7 @@ public sealed class PlanDiagnosticTests
     private sealed class FakeKorteksAgent : IKorteksAgent
     {
         public int CallCount { get; private set; }
-        public async IAsyncEnumerable<string> RunResearchAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, CancellationToken ct = default)
+        public async IAsyncEnumerable<string> RunResearchAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "legacy";
             await Task.CompletedTask;
@@ -360,7 +362,7 @@ public sealed class PlanDiagnosticTests
             LastSystemPrompt = systemPrompt;
             return Task.FromResult(DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C#"));
         }
-        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "fake";
             await Task.CompletedTask;

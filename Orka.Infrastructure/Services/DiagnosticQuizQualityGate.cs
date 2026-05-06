@@ -272,7 +272,7 @@ public static class DiagnosticQuizQualityGate
             return $"{objective}. {profile.Scenario}";
         }
 
-        return $"{objective}. Bu tanida Orka once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
+        return $"{objective}. {profile.Scenario} Bu tanida Orka once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
     }
 
     private static string BuildFirstExplanation(DiagnosticFallbackProfile profile, string objective)

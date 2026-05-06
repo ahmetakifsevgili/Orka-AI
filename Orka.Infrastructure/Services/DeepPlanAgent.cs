@@ -192,18 +192,22 @@ public class DeepPlanAgent : IDeepPlanAgent
             }
         }
 
-        // ── Sprint 2: Mikro-Teşhis (Baseline Analizi) ─────────────────────
-        if (!string.IsNullOrWhiteSpace(compressedResearchPromptBlock))
-        {
-            contextInfo = $"\n\n{compressedResearchPromptBlock}\n\nBu sıkıştırılmış araştırma bağlamını yalnızca konu kapsamı, güncellik ve kaynak farkındalığı desteği olarak kullan.";
-        }
-
         var baselineDiagnostic = !string.IsNullOrWhiteSpace(diagnosticQuizSummary)
             ? diagnosticQuizSummary
             : await AnalyzeBaselineQuizResultsAsync(parentTopicId, userId);
         if (!string.IsNullOrWhiteSpace(baselineDiagnostic))
         {
             _logger.LogInformation("[DeepPlan] Baseline mikro-teşhis raporu hazırlandı.");
+        }
+
+        // ── Sprint 2: Mikro-Teşhis + Korteks plan intelligence süzgeci ─────
+        if (!string.IsNullOrWhiteSpace(compressedResearchPromptBlock))
+        {
+            var intelligenceBrief = PlanIntelligenceBriefBuilder.BuildForPlan(
+                topicTitle,
+                compressedResearchPromptBlock,
+                baselineDiagnostic);
+            contextInfo = $"\n\n{intelligenceBrief}\n\nBu filtrelenmiş Korteks brief'ini yalnızca konu kapsamı, güncellik, önkoşul ve kaynak farkındalığı desteği olarak kullan; plan omurgasını domain şablonu, mikro-teşhis ve adaptif bağlam belirler.";
         }
 
         // Faz 17: Yapılandırılmış Adaptif Bağlam (Personalization v1)
@@ -237,7 +241,8 @@ public class DeepPlanAgent : IDeepPlanAgent
             {{domainGuidance}}
 
             ORGANİZASYON KURALI (TEŞHİS ODAKLI MİMARİ):
-            - [SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI] içindeki bounded Korteks bulgularını konu kapsamı/güncellik desteği olarak kullan; [ADAPTIF ÖĞRENME BAĞLAMI] önceliklidir.
+            - [PLAN INTELLIGENCE BRIEF - KORTEKS FILTERED] icindeki Korteks bulgularini yalnizca konu kapsami/guncellik/onkosul destegi olarak kullan; plan omurgasini [MIKRO-TESHIS RAPORU], [ADAPTIF OGRENME BAGLAMI] ve domain sablonu belirler.
+            - Korteks kaynak basliklarini, haber/SEO cumlelerini veya video basliklarini modul/ders basligi olarak kopyalama.
             - [MİKRO-TEŞHİS RAPORU] ve [ADAPTIF ÖĞRENME BAĞLAMI] içindeki zayıf noktaları plana "Derinlemesine İyileştirme" veya "Pratik Lab" dersleri olarak ekle.
             - Tekrar eden hata paternlerine (Mistake Patterns) yönelik ekstra pekiştirme modülleri öner.
             - SRS / Gözden Geçirme baskısı olan becerileri müfredatın başına veya ilgili modüllere 'Hızlı Tekrar' olarak serpiştir.
@@ -1174,12 +1179,15 @@ public class DeepPlanAgent : IDeepPlanAgent
             compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearch);
         }
 
+        var quizIntelligenceBrief = PlanIntelligenceBriefBuilder.BuildForDiagnosticQuiz(
+            topicTitle,
+            compressedResearchPromptBlock);
+
         var systemPrompt = $$"""
             Sen profesyonel bir 'Eğitim Tanılama Uzmanı (Educational Diagnostician)' botusun.
             Görevin: Kullanıcının '{{topicTitle}}' konusundaki gerçek bilgi seviyesini EN İNCE AYRINTISINA KADAR tespit etmek için 20 soru hazırlamak.
 
-            [SIKISTIRILMIS QUIZ ARASTIRMA BAGLAMI]
-            {{compressedResearchPromptBlock}}
+            {{quizIntelligenceBrief}}
 
             Eger GroundingMode FallbackInternalKnowledge veya BlockedProvider ise bu baglami guncel/kaynakli kanit gibi sunma.
             Bu durumda sorulari konu basligi, genel pedagojik tanilama kurallari ve temel mufredat kapsami ile uret.

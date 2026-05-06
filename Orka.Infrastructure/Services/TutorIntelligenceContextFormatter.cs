@@ -34,6 +34,7 @@ public static class TutorIntelligenceContextFormatter
 
                 [PLAN_INTENT_TEACHING_MODE]
                 - Active topic planIntent: {intentName}
+                - Raw planIntent/category: {planIntent ?? category ?? "(none)"}
                 - Backward category: {category ?? "(none)"}
                 - Teaching mode: {mode}
                 - Use this as style guidance only; do not change facts or invent missing learner signals.

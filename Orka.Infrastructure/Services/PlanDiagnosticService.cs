@@ -299,15 +299,19 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         string compressedResearchPromptBlock,
         CancellationToken ct)
     {
+        var quizIntelligenceBrief = PlanIntelligenceBriefBuilder.BuildForDiagnosticQuiz(
+            topicTitle,
+            compressedResearchPromptBlock);
+
         var systemPrompt = $$"""
             Sen profesyonel bir 'Egitim Tanilama Uzmani' botusun.
             Gorevin: '{{topicTitle}}' konusunda 20 soruluk seviye tespit quiz'i uretmek.
 
-            [SIKISTIRILMIS QUIZ ARASTIRMA BAGLAMI]
-            {{compressedResearchPromptBlock}}
+            {{quizIntelligenceBrief}}
 
             KURALLAR:
-            - Ham Korteks raporu varsayma; sadece bu sikistirilmis baglami ve konu basligini kullan.
+            - Ham Korteks raporu varsayma; sadece bu filtrelenmis brief'i ve konu basligini kullan.
+            - Korteks kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
             - conceptual, procedural, application, analysis ve misconception_probe soru tiplerini karisik kullan.
             - kolay, orta ve zor dagilimini dengeli kur.
             - Soru metinleri birbirinin kopyasi veya yakin tekrari olmasin.
