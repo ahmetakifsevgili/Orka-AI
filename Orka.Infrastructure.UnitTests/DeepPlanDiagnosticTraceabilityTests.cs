@@ -66,6 +66,80 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         Assert.Contains("Conceptual", profileB.TraceMetadata);
     }
 
+    [Fact]
+    public async Task DeepPlan_RejectsThinGeneratedPlanAndUsesProgrammingQualityFallback()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "C# Calismak",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 24);
+        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("C#", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DeepPlan_GeneralFallbackMeetsQualityFloorWhenModelReturnsThinPlan()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "Roma tarihi",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 15);
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DeepPlan_AcceptsRichGeneratedPlanWithoutReplacingItWithFallback()
+    {
+        var harness = await CreateHarnessAsync(new RichProgrammingModuleFactory());
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "C# Calismak",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 24);
+        Assert.Contains(result.Topics, t => t.Title.Contains("Custom Orka IDE Lab 1", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Orka IDE sandbox'ta ilk C# programi", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DeepPlan_ProgrammingFallbackDoesNotForceCSharpForPythonTopic()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "Python calismak",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 24);
+        Assert.Contains(result.Topics, t => t.Title.Contains("Python", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("C# programi", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("LINQ", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<TraceProfile> RunProfileAsync(string[] concepts, string[] mistakes)
     {
         var harness = await CreateHarnessAsync();
@@ -100,7 +174,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             $"MistakePatterns: {string.Join(" | ", mistakes.Select((m, i) => $"{m}: {(i == 2 ? 6 : 7)}"))}"
         ]);
 
-    private static async Task<Harness> CreateHarnessAsync()
+    private static async Task<Harness> CreateHarnessAsync(IAIAgentFactory? agentFactory = null)
     {
         var options = new DbContextOptionsBuilder<OrkaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -126,7 +200,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
         var korteks = new FakeKorteksAgent();
         var agent = new DeepPlanAgent(
-            new GenericModuleFactory(),
+            agentFactory ?? new GenericModuleFactory(),
             scopeFactory,
             new FakeSupervisor(),
             new FakeGrader(),
@@ -168,6 +242,86 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
                   "emoji": "🧪",
                   "lessons": [
                     { "title": "Generic Practice", "skillTag": "generic-practice", "intent": "PracticeLab" }
+                  ]
+                }
+              ]
+            }
+            """);
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
+        {
+            yield return "fake";
+            await Task.CompletedTask;
+        }
+        public Task<string> CompleteChatWithHistoryAsync(AgentRole role, string systemPrompt, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default) =>
+            Task.FromResult("fake");
+    }
+
+    private sealed class RichProgrammingModuleFactory : IAIAgentFactory
+    {
+        public string GetModel(AgentRole role) => "fake-rich";
+        public string GetProvider(AgentRole role) => "fake";
+        public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default) =>
+            Task.FromResult("""
+            {
+              "modules": [
+                {
+                  "title": "Custom Orka IDE Lab 1",
+                  "emoji": "💻",
+                  "lessons": [
+                    { "title": "Orka IDE sandbox ile custom setup", "skillTag": "custom-1", "intent": "PracticeLab" },
+                    { "title": "Custom topic map", "skillTag": "custom-2", "intent": "Core" },
+                    { "title": "Custom code reading", "skillTag": "custom-3", "intent": "DeepDive" },
+                    { "title": "Custom first checkpoint", "skillTag": "custom-4", "intent": "Assessment" }
+                  ]
+                },
+                {
+                  "title": "Custom Runtime Lab 2",
+                  "emoji": "🧪",
+                  "lessons": [
+                    { "title": "Custom runtime behavior", "skillTag": "custom-5", "intent": "Core" },
+                    { "title": "Custom error reading", "skillTag": "custom-6", "intent": "PracticeLab" },
+                    { "title": "Custom refactor", "skillTag": "custom-7", "intent": "PracticeLab" },
+                    { "title": "Custom mini quiz", "skillTag": "custom-8", "intent": "Assessment" }
+                  ]
+                },
+                {
+                  "title": "Custom Flow Lab 3",
+                  "emoji": "🧭",
+                  "lessons": [
+                    { "title": "Custom branch flow", "skillTag": "custom-9", "intent": "Core" },
+                    { "title": "Custom loop flow", "skillTag": "custom-10", "intent": "PracticeLab" },
+                    { "title": "Custom method flow", "skillTag": "custom-11", "intent": "Core" },
+                    { "title": "Custom flow assessment", "skillTag": "custom-12", "intent": "Assessment" }
+                  ]
+                },
+                {
+                  "title": "Custom Data Lab 4",
+                  "emoji": "📦",
+                  "lessons": [
+                    { "title": "Custom data shape", "skillTag": "custom-13", "intent": "Core" },
+                    { "title": "Custom collection use", "skillTag": "custom-14", "intent": "PracticeLab" },
+                    { "title": "Custom file or json path", "skillTag": "custom-15", "intent": "DeepDive" },
+                    { "title": "Custom data checkpoint", "skillTag": "custom-16", "intent": "Assessment" }
+                  ]
+                },
+                {
+                  "title": "Custom Project Lab 5",
+                  "emoji": "🚀",
+                  "lessons": [
+                    { "title": "Custom project slice", "skillTag": "custom-17", "intent": "PracticeLab" },
+                    { "title": "Custom test cases", "skillTag": "custom-18", "intent": "Assessment" },
+                    { "title": "Custom feedback loop", "skillTag": "custom-19", "intent": "Remediation" },
+                    { "title": "Custom project review", "skillTag": "custom-20", "intent": "QuickReview" }
+                  ]
+                },
+                {
+                  "title": "Custom Mastery Lab 6",
+                  "emoji": "🏁",
+                  "lessons": [
+                    { "title": "Custom mastery task", "skillTag": "custom-21", "intent": "Assessment" },
+                    { "title": "Custom weak point replay", "skillTag": "custom-22", "intent": "Remediation" },
+                    { "title": "Custom Tutor bridge", "skillTag": "custom-23", "intent": "PracticeLab" },
+                    { "title": "Custom final reflection", "skillTag": "custom-24", "intent": "QuickReview" }
                   ]
                 }
               ]

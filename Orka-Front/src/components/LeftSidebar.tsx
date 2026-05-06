@@ -182,6 +182,13 @@ export default function LeftSidebar({
   const expandedModules = expandedPlan
     ? topics.filter(t => t.parentTopicId === expandedPlan.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0))
     : [];
+  const expandedPlanProgress = typeof expandedPlan?.progressPercentage === "number" && expandedPlan.progressPercentage > 0
+    ? Math.min(100, Math.max(0, expandedPlan.progressPercentage))
+    : null;
+  const expandedPlanLessonCount = expandedModules.reduce((count, mod) => {
+    const lessons = topics.filter(t => t.parentTopicId === mod.id);
+    return count + (lessons.length > 0 ? lessons.length : 1);
+  }, 0);
 
   const renderLesson = (topicToRender: ApiTopic) => {
     const isActive = activeTopic?.id === topicToRender.id;
@@ -493,12 +500,14 @@ export default function LeftSidebar({
             <div className="px-4 py-2 border-b border-zinc-800/30 flex-shrink-0">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] text-[#667085]">İlerleme</span>
-                <span className="text-[10px] text-[#5f6f7b] font-medium">{Math.round(expandedPlan.progressPercentage || 0)}%</span>
+                <span className="text-[10px] text-[#5f6f7b] font-medium">
+                  {expandedPlanProgress != null ? `${Math.round(expandedPlanProgress)}%` : `${expandedModules.length} modul / ${expandedPlanLessonCount} ders`}
+                </span>
               </div>
               <div className="w-full h-1.5 bg-[#eef1f3] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-violet-500 to-emerald-500 transition-all duration-700"
-                  style={{ width: `${expandedPlan.progressPercentage || 0}%` }}
+                  style={{ width: `${expandedPlanProgress ?? 100}%`, opacity: expandedPlanProgress == null ? 0.18 : 1 }}
                 />
               </div>
             </div>

@@ -142,6 +142,39 @@ public sealed class PlanDiagnosticTests
     }
 
     [Fact]
+    public async Task PlanDiagnostic_Finalize_IsIdempotentAfterPlanGenerated()
+    {
+        var harness = await CreateHarnessAsync();
+        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        await CompleteQuizAsync(harness, start.PlanRequestId);
+
+        var first = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
+        var second = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
+
+        Assert.True(first.PlanGenerated);
+        Assert.True(second.PlanGenerated);
+        Assert.Equal(PlanDiagnosticStatus.PlanGenerated, second.Status);
+        Assert.Equal(1, harness.DeepPlan.FinalizeCallCount);
+        Assert.Contains("already generated", second.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PlanDiagnostic_Skip_IsIdempotentAfterPlanGenerated()
+    {
+        var harness = await CreateHarnessAsync();
+        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+
+        var first = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
+        var second = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
+
+        Assert.True(first.PlanGenerated);
+        Assert.True(second.PlanGenerated);
+        Assert.Equal(PlanDiagnosticStatus.PlanGenerated, second.Status);
+        Assert.Equal(1, harness.DeepPlan.FinalizeCallCount);
+        Assert.Contains("already generated", second.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PlanDiagnostic_DoesNotMutateExistingPlans()
     {
         var harness = await CreateHarnessAsync();

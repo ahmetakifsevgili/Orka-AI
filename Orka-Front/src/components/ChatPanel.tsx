@@ -837,7 +837,7 @@ export default function ChatPanel({
                       animate={{ opacity: 1, x: 0 }}
                       className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode ? "text-emerald-600" : "text-[#344054]"}`}
                     >
-                      {isKorteksMode ? "Deep Research Active" : "Plan akisi hazir"}
+	                      {isKorteksMode ? "Korteks aktif" : "Plan modu aktif - quiz chat'e karismaz"}
                     </motion.span>
                   )}
                 </div>

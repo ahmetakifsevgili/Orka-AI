@@ -24,6 +24,13 @@ namespace Orka.Infrastructure.Services;
 /// </summary>
 public class DeepPlanAgent : IDeepPlanAgent
 {
+    private const int MinimumGeneralModules = 6;
+    private const int MinimumGeneralLessonsPerModule = 4;
+    private const int MinimumGeneralTotalLessons = 24;
+    private const int MinimumProgrammingModules = 6;
+    private const int MinimumProgrammingLessonsPerModule = 4;
+    private const int MinimumProgrammingTotalLessons = 24;
+
     private readonly IAIAgentFactory _factory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISupervisorAgent _supervisor;
@@ -91,7 +98,9 @@ public class DeepPlanAgent : IDeepPlanAgent
             setGrounding: g => grounding = g,
             precompressedResearchPromptBlock: compressedResearchPromptBlock,
             diagnosticQuizSummary: diagnosticQuizSummary);
-        modules = ApplyDiagnosticTraceability(modules, DiagnosticWeaknessSummary.Parse(diagnosticQuizSummary));
+        var diagnostic = DiagnosticWeaknessSummary.Parse(diagnosticQuizSummary);
+        modules = EnsureBasePlanQualityBeforeSave(modules, topicTitle, diagnostic);
+        modules = ApplyDiagnosticTraceability(modules, diagnostic);
         var topics = await SaveModularSubTopicsAsync(parentTopicId, modules, userId);
         return new DeepPlanGenerationWithGroundingResultDto { Topics = topics, Grounding = grounding };
     }
@@ -234,6 +243,10 @@ public class DeepPlanAgent : IDeepPlanAgent
             - SRS / Gözden Geçirme baskısı olan becerileri müfredatın başına veya ilgili modüllere 'Hızlı Tekrar' olarak serpiştir.
             - Öğrencinin zaten bildiği (başarılı olduğu) kısımları müfredatta 'Hızlı Özet' veya 'Hatırlatma' olarak daralt.
             - Kullanıcı cümlesinden (Örn: "C# çalışmak istiyorum") ASIL KONUYU çıkar ("C# Programlama"). Kesinlikle "Selamlaşma", "İstek", "Giriş" gibi konulardan bahsetme!
+            - KALITE TABANI: En az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
+            - Programlama/teknoloji konularinda kalite tabani daha yuksektir: en az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
+            - Programlama planinda ilk modul Orka IDE / sandbox akisi ile baslamali; Visual Studio sadece opsiyonel yerel arac notu olabilir, ana yol Orka IDE'dir.
+            - Plan cok kisa, jenerik veya iki-uc baslikli olursa sistem tarafindan reddedilecektir.
             - Programlama/teknoloji → "Temel Yapı Taşları → Uygulama Becerileri → İleri Düzey" yaklaşımı
             - Tarih/toplum → "Dönemsel sıralama" veya "Tematik gruplama"
             - Bilim/matematik → "Teorik temeller → Uygulamalı konular → İleri araştırma"
@@ -255,7 +268,8 @@ public class DeepPlanAgent : IDeepPlanAgent
                   "emoji": "🧱",
                   "lessons": [
                     { "title": "Ders Başlığı 1", "skillTag": "beceri-etiketi-1", "intent": "Core" },
-                    { "title": "Ders Başlığı 2", "skillTag": "beceri-etiketi-2", "intent": "DeepDive" }
+                    { "title": "Ders Başlığı 2", "skillTag": "beceri-etiketi-2", "intent": "DeepDive" },
+                    { "title": "Ders Başlığı 3", "skillTag": "beceri-etiketi-3", "intent": "PracticeLab" }
                   ]
                 }
               ]
@@ -270,35 +284,27 @@ public class DeepPlanAgent : IDeepPlanAgent
         {
             var raw = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\"");
             var parsedModules = ParseModuleStructure(raw);
-            if (parsedModules != null)
+            if (TryAcceptPlanModules(parsedModules, topicTitle, out var acceptedModules, out var rejectionReason))
             {
                 setGrounding?.Invoke(groundingMetadata);
-                return parsedModules;
+                return acceptedModules;
             }
-            _logger.LogWarning("[DeepPlan] Parse hatası (Deneme {Attempt}/2). Çıktı: {Raw}", attempt, raw.Length > 200 ? raw[..200] + "..." : raw);
+            _logger.LogWarning(
+                "[DeepPlan] Plan kalite/parse reddi (Deneme {Attempt}/2). Reason={Reason}. Raw={Raw}",
+                attempt,
+                rejectionReason,
+                raw.Length > 200 ? raw[..200] + "..." : raw);
         }
 
-        _logger.LogError("[DeepPlan] JSON parse tüm denemelerde başarısız. Kapsamlı Fallback uygulanıyor.");
-        var domainFallback = BuildDomainFallbackModules(topicTitle, massive: false);
-        if (domainFallback != null)
-        {
-            setGrounding?.Invoke(groundingMetadata);
-            return domainFallback;
-        }
-
-        // Gelişmiş Dinamik Fallback (Sıradan olmaktan arındırılmış)
+        _logger.LogError("[DeepPlan] Plan kalite kapisi tum denemelerde basarisiz. Kapsamli fallback uygulanıyor.");
         setGrounding?.Invoke(groundingMetadata);
-        return new List<ModuleDefinition>
-        {
-            new($"{topicTitle} Sistem Yapısı", "🧱", new List<LessonDefinition> { new($"{topicTitle} Çekirdek Mimarisi", "basics"), new($"{topicTitle} Kurulum", "setup") }),
-            new($"{topicTitle} Süreç İşletimi", "⚙️", new List<LessonDefinition> { new($"{topicTitle} Veri İşleme", "process"), new($"{topicTitle} Senaryo Analizi", "analysis") }),
-            new($"{topicTitle} Performans Ayarları", "🚀", new List<LessonDefinition> { new($"{topicTitle} Optimizasyon", "optimization"), new($"{topicTitle} Problem Çözme", "troubleshooting") })
-        };
+        return BuildQualityFallbackModules(topicTitle);
     }
 
     private enum PlanDomain
     {
         General,
+        Programming,
         Exam,
         Algorithm,
         Math,
@@ -311,6 +317,9 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         if (ContainsAny(text, "hackerrank", "leetcode", "algoritma", "algorithm", "data structure", "veri yap", "competitive", "coding interview", "two pointer", "dynamic programming"))
             return PlanDomain.Algorithm;
+
+        if (IsProgrammingTopic(text))
+            return PlanDomain.Programming;
 
         if (ContainsAny(text, "kpss", "yks", "tyt", "ayt", "ales", "dgs", "lgs", "sınav", "sinav", "deneme", "genel yetenek", "genel kultur", "genel kültür"))
             return PlanDomain.Exam;
@@ -328,6 +337,14 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         return DetectPlanDomain(topicTitle) switch
         {
+            PlanDomain.Programming => """
+
+            [DOMAIN SABLONU - PROGRAMLAMA / YAZILIM]
+            - Ana yol Orka IDE / sandbox uzerinden ilerler; Visual Studio veya harici editorler sadece opsiyonel yerel arac notudur.
+            - Plan; temel dil modeli, kod okuma, uygulama, hata ayiklama, mini proje ve tekrar dongusunu birlikte tasimalidir.
+            - Her modulde en az bir Orka IDE pratigi, hata okuma veya mini refactor dersi bulunmalidir.
+            - Konu C#, .NET veya yazilim ise baslangic "Hello World" ile kalmamalidir; tipler, kontrol akisi, metotlar, OOP, koleksiyonlar ve proje akisi kurulmalidir.
+            """,
             PlanDomain.Exam => """
 
             [DOMAIN SABLONU - SINAV HAZIRLIK]
@@ -365,6 +382,7 @@ public class DeepPlanAgent : IDeepPlanAgent
         var title = string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
         var modules = DetectPlanDomain(title) switch
         {
+            PlanDomain.Programming => BuildProgrammingFallbackModules(title),
             PlanDomain.Exam => new List<ModuleDefinition>
             {
                 new($"{title} Kazanım Haritası", "🎯", new List<LessonDefinition> { new("Sınav kapsamı", "strategy"), new("Zaman yönetimi", "timing") }),
@@ -403,6 +421,165 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         return modules;
     }
+
+    private static List<ModuleDefinition> BuildQualityFallbackModules(string topicTitle)
+    {
+        var title = string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
+
+        if (IsProgrammingTopic(title))
+        {
+            return BuildProgrammingFallbackModules(title);
+        }
+
+        var domainFallback = BuildDomainFallbackModules(title, massive: true);
+        if (TryAcceptPlanModules(domainFallback, title, out var accepted, out _))
+        {
+            return accepted;
+        }
+
+        return BuildGeneralFallbackModules(title);
+    }
+
+    private sealed record ProgrammingPlanProfile(
+        string DisplayName,
+        string SkillPrefix,
+        string ProgramShape,
+        string RuntimeConcept,
+        string DataConcept,
+        string AbstractionConcept,
+        string ProjectShape);
+
+    private static ProgrammingPlanProfile DetectProgrammingProfile(string title)
+    {
+        var text = title.ToLowerInvariant();
+
+        if (ContainsAny(text, "python", "pyhton", "django", "flask", "fastapi"))
+        {
+            return new("Python", "python", "script/module yapisi ve virtual environment", "exception ve stack trace okuma", "list/dict/comprehension ve dosya/JSON akisi", "fonksiyon, class ve paketleme", "CLI veya FastAPI tabanli mini proje");
+        }
+
+        if (ContainsAny(text, "javascript", "typescript", "node", "react", "frontend", "next"))
+        {
+            var display = ContainsAny(text, "typescript", "ts") ? "TypeScript" : ContainsAny(text, "react", "frontend", "next") ? "React/TypeScript" : "JavaScript";
+            return new(display, "js-ts", "module, runtime ve package script akisi", "console/error trace ve async hata okuma", "array/object, promise ve API verisi", "component, function ve state ayrimi", "kucuk UI veya Node API mini projesi");
+        }
+
+        if (ContainsAny(text, "java ", " java", "spring"))
+        {
+            return new("Java", "java", "class, package ve main akisi", "exception ve stack trace okuma", "collection, stream ve dosya/JSON akisi", "OOP, interface ve service ayrimi", "CLI veya Spring tabanli mini proje");
+        }
+
+        if (ContainsAny(text, "sql", "database", "veritabani", "veri tabani", "postgres", "mssql"))
+        {
+            return new("SQL", "sql", "schema, tablo ve sorgu akisi", "query hata mesaji ve execution plan okuma", "join, index ve aggregation", "modelleme, transaction ve constraint ayrimi", "kucuk raporlama/veri analizi mini projesi");
+        }
+
+        if (ContainsAny(text, "c#", "c sharp", "csharp", ".net", "dotnet", "asp.net"))
+        {
+            return new("C#/.NET", "csharp", "program yapisi: using, namespace, class ve Main", "exception ve compile/runtime hata okuma", "List, Dictionary, LINQ ve JSON/dosya akisi", "class, interface, inheritance ve dependency ayrimi", "Orka IDE'de calisan kucuk C# uygulamasi");
+        }
+
+        return new(title, "code", "dil/runtime kurulumu ve dosya yapisi", "derleme/runtime hata mesajini okuma", "veri yapilari ve input-output akisi", "fonksiyon, modul ve sorumluluk ayrimi", "kucuk calisan uygulama");
+    }
+
+    private static List<ModuleDefinition> BuildProgrammingFallbackModules(string title)
+    {
+        var profile = DetectProgrammingProfile(title);
+        var subject = string.IsNullOrWhiteSpace(profile.DisplayName) ? title : profile.DisplayName;
+        var prefix = profile.SkillPrefix;
+
+        return
+        [
+            new("Orka IDE ile Baslangic", "💻",
+            [
+                new($"Orka IDE sandbox'ta ilk {subject} uygulamasi", $"{prefix}-orka-ide", "PracticeLab"),
+                new(profile.ProgramShape, $"{prefix}-program-shape"),
+                new("Console/output, log ve hata mesajini okuma", $"{prefix}-output-errors", "PracticeLab"),
+                new("Ilk mini alistirma: calistir, hatayi Tutor'a sor, duzelt", $"{prefix}-ide-feedback-loop", "PracticeLab")
+            ]),
+            new($"{subject} Dil ve Kavram Temeli", "🧱",
+            [
+                new("Degiskenler, tipler ve deger modeli", $"{prefix}-types"),
+                new("Ifade, operator ve kontrol mantigi", $"{prefix}-operators"),
+                new("Fonksiyon/metot parcalama", $"{prefix}-functions"),
+                new("Okunabilir kod ve isimlendirme", $"{prefix}-readable-code")
+            ]),
+            new("Akis Kontrolu ve Problem Okuma", "🧭",
+            [
+                new("if/else veya pattern secimi", $"{prefix}-decision-flow"),
+                new("Donguler ve tekrar eden isleri ayirma", $"{prefix}-loops", "PracticeLab"),
+                new("Input-output senaryosu kurma", $"{prefix}-io-scenario"),
+                new("Orka IDE hata laboratuvari: yanlis kosul, sonsuz dongu, eksik veri", $"{prefix}-debugging", "PracticeLab")
+            ]),
+            new("Veri, Abstraction ve Tasarim", "🏗️",
+            [
+                new(profile.DataConcept, $"{prefix}-data-flow"),
+                new(profile.AbstractionConcept, $"{prefix}-abstraction"),
+                new("Kodu daha kucuk sorumluluklara bolme", $"{prefix}-refactor"),
+                new("Mini refactor: tekrar eden kodu temizleme", $"{prefix}-mini-refactor", "PracticeLab")
+            ]),
+            new("Hata Yonetimi, Test ve Edge Case", "🧪",
+            [
+                new(profile.RuntimeConcept, $"{prefix}-runtime-errors"),
+                new("Test senaryosu ve edge-case listesi", $"{prefix}-test-cases", "Assessment"),
+                new("Yanlis cozumden kok neden cikarma", $"{prefix}-mistake-classification", "Remediation"),
+                new("IDE sonucunu Tutor aciklamasina cevirme", $"{prefix}-tutor-bridge", "PracticeLab")
+            ]),
+            new("Mini Proje ve Mastery Dongusu", "🚀",
+            [
+                new(profile.ProjectShape, $"{prefix}-mini-project"),
+                new("Kod okuma ve kucuk gelistirme turu", $"{prefix}-code-reading"),
+                new("Yanlis cevap ve IDE hatalarini tekrar kartina cevirme", $"{prefix}-remediation-loop", "Remediation"),
+                new($"Final pratik: Orka IDE'de {subject} ile calisan demo", $"{prefix}-final-practice", "Assessment")
+            ])
+        ];
+    }
+
+    private static List<ModuleDefinition> BuildGeneralFallbackModules(string title) =>
+    [
+        new($"{title} Kavram Haritasi", "🧭",
+        [
+            new("Ana kavramlari ayirma", "general-concepts"),
+            new("On bilgi kontrolu", "general-baseline"),
+            new("Kaynak ve wiki baglami", "general-grounding"),
+            new("Bugunku hedefe baglama", "general-study-focus")
+        ]),
+        new("Temel Yapitaslari", "🧱",
+        [
+            new("Birinci temel kavram", "general-core-1"),
+            new("Ikinci temel kavram", "general-core-2"),
+            new("Kavramlar arasi bag", "general-relations"),
+            new("Tutor ile kontrol sorusu", "general-tutor-check", "Assessment")
+        ]),
+        new("Uygulama ve Ornekler", "🧪",
+        [
+            new("Basit ornek", "general-example-basic"),
+            new("Uygulamali senaryo", "general-scenario", "PracticeLab"),
+            new("Karsilastirmali analiz", "general-compare"),
+            new("Kendi ornegini kurma", "general-own-example", "PracticeLab")
+        ]),
+        new("Yanlislar ve Telafi", "🔁",
+        [
+            new("Sik yanlislar", "general-mistakes", "Remediation"),
+            new("Telafi pratigi", "general-remediation", "Remediation"),
+            new("Mini quiz", "general-assessment", "Assessment"),
+            new("Yanlis cevabi review adimina cevirme", "general-review-pressure", "Remediation")
+        ]),
+        new("Pekistirme ve Sonraki Adim", "🚀",
+        [
+            new("Flashcard ozeti", "general-flashcards"),
+            new("Review dongusu", "general-review", "QuickReview"),
+            new("Sonraki kucuk hedef", "general-next-step"),
+            new("Kapanis pratigi", "general-closing-practice", "Assessment")
+        ]),
+        new("Proje / Uygulama Kapanisi", "🧩",
+        [
+            new("Kucuk demo gorevi", "general-demo-task", "PracticeLab"),
+            new("Ogrenilenleri kaynakla baglama", "general-source-link"),
+            new("Eksik noktalar icin ikinci tur", "general-second-pass", "Remediation"),
+            new("Final kontrol ve devam rotasi", "general-final-check", "Assessment")
+        ])
+    ];
 
     private static bool ContainsAny(string text, params string[] keywords)
     {
@@ -530,6 +707,102 @@ public class DeepPlanAgent : IDeepPlanAgent
         catch { /* yoksay, null dönecek */ }
 
         return null;
+    }
+
+    private static bool TryAcceptPlanModules(
+        List<ModuleDefinition>? modules,
+        string topicTitle,
+        out List<ModuleDefinition> acceptedModules,
+        out string rejectionReason)
+    {
+        acceptedModules = [];
+
+        if (modules == null || modules.Count == 0)
+        {
+            rejectionReason = "parse_failed";
+            return false;
+        }
+
+        var cleaned = modules
+            .Select(module => module with
+            {
+                Title = string.IsNullOrWhiteSpace(module.Title) ? "Modul" : module.Title.Trim(),
+                Emoji = string.IsNullOrWhiteSpace(module.Emoji) ? "📘" : module.Emoji,
+                Lessons = module.Lessons
+                    .Where(lesson => !string.IsNullOrWhiteSpace(lesson.Title))
+                    .Select(lesson => lesson with
+                    {
+                        Title = lesson.Title.Trim(),
+                        SkillTag = string.IsNullOrWhiteSpace(lesson.SkillTag) ? "genel-kavram" : lesson.SkillTag.Trim(),
+                        Intent = string.IsNullOrWhiteSpace(lesson.Intent) ? "Core" : lesson.Intent.Trim()
+                    })
+                    .ToList()
+            })
+            .Where(module => module.Lessons.Count > 0)
+            .ToList();
+
+        var domain = DetectPlanDomain(topicTitle);
+        var isProgramming = IsProgrammingTopic(topicTitle) || domain is PlanDomain.Programming or PlanDomain.Algorithm;
+        var minModules = isProgramming ? MinimumProgrammingModules : MinimumGeneralModules;
+        var minLessonsPerModule = isProgramming ? MinimumProgrammingLessonsPerModule : MinimumGeneralLessonsPerModule;
+        var minTotalLessons = isProgramming ? MinimumProgrammingTotalLessons : MinimumGeneralTotalLessons;
+        var totalLessons = cleaned.Sum(module => module.Lessons.Count);
+
+        if (cleaned.Count < minModules)
+        {
+            rejectionReason = $"too_few_modules:{cleaned.Count}/{minModules}";
+            return false;
+        }
+
+        if (totalLessons < minTotalLessons)
+        {
+            rejectionReason = $"too_few_lessons:{totalLessons}/{minTotalLessons}";
+            return false;
+        }
+
+        var thinModule = cleaned.FirstOrDefault(module => module.Lessons.Count < minLessonsPerModule);
+        if (thinModule != null)
+        {
+            rejectionReason = $"thin_module:{thinModule.Title}:{thinModule.Lessons.Count}/{minLessonsPerModule}";
+            return false;
+        }
+
+        if (isProgramming)
+        {
+            var allText = string.Join(" | ", cleaned.Select(m => m.Title).Concat(cleaned.SelectMany(m => m.Lessons.Select(l => l.Title))));
+            if (!allText.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase) &&
+                !allText.Contains("sandbox", StringComparison.OrdinalIgnoreCase))
+            {
+                rejectionReason = "programming_plan_missing_orka_ide";
+                return false;
+            }
+        }
+
+        acceptedModules = cleaned;
+        rejectionReason = "accepted";
+        return true;
+    }
+
+    private static List<ModuleDefinition> EnsureBasePlanQualityBeforeSave(
+        List<ModuleDefinition> modules,
+        string topicTitle,
+        DiagnosticWeaknessSummary diagnostic)
+    {
+        if (TryAcceptPlanModules(modules, topicTitle, out var accepted, out _))
+        {
+            return accepted;
+        }
+
+        return BuildQualityFallbackModules(topicTitle);
+    }
+
+    private static bool IsProgrammingTopic(string? topicTitle)
+    {
+        var text = (topicTitle ?? string.Empty).ToLowerInvariant();
+        return ContainsAny(text,
+            "c#", "c sharp", "csharp", ".net", "dotnet", "asp.net", "programlama", "programming", "yazilim", "yazılım",
+            "software", "backend", "frontend", "fullstack", "python", "javascript", "typescript", " java", "java ",
+            "react", "node", "sql", "database", "veritabani", "veri tabani", "kod", "coding", "ide");
     }
 
     private static List<ModuleDefinition> ApplyDiagnosticTraceability(

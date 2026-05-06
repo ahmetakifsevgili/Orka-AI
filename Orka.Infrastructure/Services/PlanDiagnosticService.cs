@@ -176,6 +176,19 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     {
         var state = await RequireStateAsync(userId, request.PlanRequestId, ct);
 
+        if (state.Status == PlanDiagnosticStatus.PlanGenerated && state.GeneratedPlanRootTopicId.HasValue)
+        {
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = true,
+                Message = "Plan was already generated.",
+                GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
+                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct)
+            };
+        }
+
         state.AnsweredQuestionCount = await _db.QuizAttempts
             .CountAsync(a => a.UserId == userId && a.QuizRunId == state.QuizRunId, ct);
 
@@ -235,7 +248,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 PlanRequestId = state.PlanRequestId,
                 Status = state.Status,
                 PlanGenerated = true,
-                GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId
+                Message = "Plan was already generated.",
+                GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
+                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct)
             };
         }
 
@@ -320,6 +335,28 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         return validatedQuiz;
+    }
+
+    private async Task<List<Guid>> GetGeneratedPlanTopicIdsAsync(Guid userId, Guid rootTopicId, CancellationToken ct)
+    {
+        var moduleIds = await _db.Topics.AsNoTracking()
+            .Where(t => t.UserId == userId && t.ParentTopicId == rootTopicId && t.PlanIntent == "Module")
+            .OrderBy(t => t.Order)
+            .Select(t => t.Id)
+            .ToListAsync(ct);
+
+        if (moduleIds.Count == 0)
+        {
+            return [];
+        }
+
+        var lessonIds = await _db.Topics.AsNoTracking()
+            .Where(t => t.UserId == userId && t.ParentTopicId.HasValue && moduleIds.Contains(t.ParentTopicId.Value))
+            .OrderBy(t => t.Order)
+            .Select(t => t.Id)
+            .ToListAsync(ct);
+
+        return lessonIds.Count > 0 ? lessonIds : moduleIds;
     }
 
     private async Task<string> BuildCurrentDiagnosticSummaryAsync(Guid userId, Guid quizRunId, CancellationToken ct)

@@ -120,6 +120,8 @@ const planQualityTests = readRepo("Orka.API.Tests/PlanQualityGuardTests.cs");
 const program = readRepo("Orka.API/Program.cs");
 addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
 addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
+addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("programming_plan_missing_orka_ide"));
+addCheck("Programming fallback is Orka IDE centered without hardcoded C# lock", deepPlanAgent.includes("BuildProgrammingFallbackModules") && deepPlanAgent.includes("DetectProgrammingProfile") && deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi") && deepPlanAgent.includes("Python"));
 addCheck("P4 language learning plan template exists", deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && deepPlanAgent.includes("Spaced Repetition") && deepPlanAgent.includes("Speaking Prompt"));
 addCheck("P4 plan quality backend guard exists", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesAreNotGeneric"));
 addCheck("P5 YouTube transcript plugin is in SK bridge", program.includes("YouTubeTranscriptPlugin") && program.includes("AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())"));

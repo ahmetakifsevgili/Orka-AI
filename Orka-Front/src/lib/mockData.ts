@@ -1,4 +1,4 @@
-// Quick prompts for the welcome screen — no more fake AI responses.
+// Quick prompts for the welcome screen. These are starter prompts only; no fake AI response data lives here.
 
 export const QUICK_PROMPTS = [
   { icon: "⚛️", label: "React öğren", prompt: "React'ı sıfırdan öğrenmek istiyorum. Nereden başlamalıyım?" },
@@ -9,13 +9,14 @@ export const QUICK_PROMPTS = [
 
 export const THINKING_STATES = [
   "Düşünüyor...",
-  "Analiz ediyor...",
-  "Yanıt hazırlanıyor...",
+  "Yanıtın dayanağını kontrol ediyor...",
+  "Öğretici bir cevap hazırlıyor...",
 ];
 
 export const PLANNING_THINKING_STATES = [
-  "🔍 Senin için en iyi kaynakları araştırıyorum...",
-  "🧠 Öğrenme tarzına uygun bilgiler sentezliyorum...",
-  "🎯 Seviyene ve hedeflerine özel müfredatını inşa ediyorum...",
-  "📝 Son dokunuşlar ve quiz materyalleri ekliyorum...",
+  "Hedefini temizliyorum: konu, seviye ve çalışma niyetini ayırıyorum...",
+  "Korteks kaynak sinyallerini ve güncel bağlamı güvenli şekilde tarıyor...",
+  "Seviye tespit sorularını hazırlıyorum; cevaplar chat'e karışmayacak...",
+  "Zayıf sinyalleri plana bağlayacak geniş ders haritasını kuruyorum...",
+  "Plan kalite kapısından geçiyor: modül, ders sayısı ve Orka IDE pratikleri kontrol ediliyor...",
 ];
