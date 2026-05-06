@@ -26,6 +26,7 @@ import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ChatPanelProps {
   activeTopic: ApiTopic | null;
@@ -719,20 +720,21 @@ export default function ChatPanel({
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void }) {
+  const { t } = useLanguage();
   const focus = localStorage.getItem("orka_study_focus") || "general";
   const focusPrompt = (() => {
-    if (focus === "kpss") return "KPSS icin bugun 25 dakikalik sade bir calisma yolu ac. Once seviyemi anlamak icin 3 kisa soru sor.";
-    if (focus === "yks") return "YKS icin temel kavramdan baslayan kisa bir calisma plani kur ve ilk mini pratigi ver.";
-    if (focus === "language") return "Dil ogrenmek istiyorum. Kelime, tekrar ve konusma pratigi icin bugunluk kucuk bir yol ac.";
-    if (focus === "software") return "Yazilim calisiyorum. Bana kucuk bir kod gorevi ver, sonra hatalarimi ogrenme adimina cevir.";
-    if (focus === "math") return "Matematikte bir konuyu adim adim ogrenmek istiyorum. Once seviyemi anlamak icin mini kontrol yap.";
-    return "Bugun yeni bir konuya baslamak istiyorum. Bana 20 dakikalik sade bir calisma yolu ac.";
+    if (focus === "kpss") return t("starter_prompt_kpss");
+    if (focus === "yks") return t("starter_prompt_yks");
+    if (focus === "language") return t("starter_prompt_language");
+    if (focus === "software") return t("starter_prompt_software");
+    if (focus === "math") return t("starter_prompt_math");
+    return t("starter_prompt_general");
   })();
   const starterPrompts = [
-    { label: "Konu ogren", prompt: focusPrompt },
-    { label: "Kaynakla calis", prompt: "Bir kaynaktan calisacagim. Bana once nasil yukleyecegimi ve sonra kaynaga dayali nasil soru soracagimi anlat." },
-    { label: "Kod hatasi coz", prompt: "Bir kod hatasini ogrenme firsatina cevirmek istiyorum. IDE'de ne calistirmaliyim ve sonucu sana nasil gondermeliyim?" },
-    { label: "Tekrar yap", prompt: "Bugun kisa bir tekrar seansi yapmak istiyorum. Bende veri yoksa once nasil baslayacagimi anlat." },
+    { label: t("starter_learn_topic"), prompt: focusPrompt, hint: t("starter_hint_focus") },
+    { label: t("starter_source"), prompt: t("starter_prompt_source"), hint: t("starter_hint_demo") },
+    { label: t("starter_code"), prompt: t("starter_prompt_code"), hint: t("starter_hint_demo") },
+    { label: t("starter_review"), prompt: t("starter_prompt_review"), hint: t("starter_hint_demo") },
   ];
 
   return (
@@ -749,11 +751,10 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
           </div>
         </div>
         <h1 className="text-2xl font-bold text-[#172033] mb-3 tracking-tight">
-          Bugun ne calisacagiz?
+          {t("tutor_welcome_title")}
         </h1>
         <p className="text-[13px] text-[#344054] mb-6 max-w-[480px] mx-auto leading-relaxed">
-          Kucuk bir hedef yaz; Orka bunu konu, kaynak, kod, tekrar ve Wiki akisi icinde duzenlesin.
-          Gercek sinyaller quiz, IDE, kaynak ve tekrar yaptikca olusur; burada sahte zayif alan gosterilmez.
+          {t("tutor_welcome_body")}
           <br/><br/>
           Istersen <strong>Plan Modu</strong> ile mufredat ac, <strong>Korteks</strong> ile kaynakli arastirma yap veya IDE sonucunu Tutor'a gonder.
         </p>
@@ -767,7 +768,7 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
             >
               {item.label}
               <span className="mt-1 block text-[10px] font-medium leading-5 text-[#667085]">
-                {item.label === "Konu ogren" ? "Secili hedef odagina gore baslatir." : "Demo akisi icin guvenli baslangic."}
+                {item.hint}
               </span>
             </button>
           ))}
@@ -776,7 +777,7 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
         <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10/50 bg-[#f7f9fa]/30 w-fit mx-auto">
           <Bell className="w-3 h-3 text-[#344054]" />
           <span className="text-[10px] font-medium text-[#667085] tracking-wide uppercase">
-            Once kucuk adim, sonra gercek sinyal
+            {t("small_step_first")}
           </span>
         </div>
       </motion.div>

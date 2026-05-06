@@ -22,6 +22,7 @@ import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface DashboardPanelProps {
   topics: ApiTopic[];
@@ -83,15 +84,16 @@ function SuccessRateSparkline({ data }: { data: ApiGlobalStats['dailyProgress'] 
 }
 
 const STUDY_FOCUS_OPTIONS = [
-  { id: "general", label: "Genel calisma", hint: "Konu ac, Tutor ile basla." },
-  { id: "kpss", label: "KPSS", hint: "Baslangic onerileri sinav diline yaklasir." },
-  { id: "yks", label: "YKS", hint: "Temel kavram ve soru ritmi one cikar." },
-  { id: "language", label: "Dil", hint: "Kelime, tekrar ve speaking fikri one cikar." },
-  { id: "software", label: "Yazilim", hint: "IDE ve hata uzerinden ogrenme one cikar." },
-  { id: "math", label: "Matematik", hint: "Adimli cozum ve mini pratik one cikar." },
+  { id: "general", labelKey: "focus_general", hintKey: "focus_general_hint" },
+  { id: "kpss", labelKey: "KPSS", hintKey: "focus_kpss_hint" },
+  { id: "yks", labelKey: "YKS", hintKey: "focus_yks_hint" },
+  { id: "language", labelKey: "focus_language", hintKey: "focus_language_hint" },
+  { id: "software", labelKey: "focus_software", hintKey: "focus_software_hint" },
+  { id: "math", labelKey: "focus_math", hintKey: "focus_math_hint" },
 ];
 
 export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
+  const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
   // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
   const isAdmin = storage.getUser()?.isAdmin === true;
@@ -143,17 +145,17 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   const nextTopic = topics.find((topic) => (topic.progressPercentage ?? 0) > 0 && (topic.progressPercentage ?? 0) < 100) ?? recentTopic;
   const strongestSignal = weakSkills[0] ?? null;
   const hasStudyData = topics.length > 0 || weakSkills.length > 0 || recentSignals.length > 0 || totalQuizzes > 0;
-  const studyFocusTitle = strongestSignal?.skillTag || nextTopic?.title || "Ilk calisma yolunu ac";
+  const studyFocusTitle = strongestSignal?.skillTag || nextTopic?.title || t("first_study_path");
   const studyFocusReason = strongestSignal
     ? `${strongestSignal.topicPath || "Bu konuda"} son denemelerde daha fazla tekrar istiyor.`
     : nextTopic
       ? `${nextTopic.title} kaldigin yerden devam etmeye hazir.`
-      : "Orka, calistikca sinyalleri burada gercek verilerle gosterecek.";
+      : t("no_fake_progress");
   const nextSmallStep = strongestSignal
-    ? "Tutor'dan bu beceri icin 5 dakikalik mini pratik iste."
+    ? t("small_step_weak")
     : nextTopic
-      ? "Konuya don, bir soru sor ve ardindan kisa bir tekrar karti olustur."
-      : "Bir konu ac ve Tutor'a hedefini tek cumleyle anlat.";
+      ? t("small_step_topic")
+      : t("small_step_first");
   const selectedFocus = STUDY_FOCUS_OPTIONS.find((item) => item.id === studyFocusPreference) ?? STUDY_FOCUS_OPTIONS[0];
 
   const handleStudyFocusChange = (focusId: string) => {
@@ -228,13 +230,13 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
               <div>
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#9ec7d9]/35 bg-[#dcecf3]/65 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#2d5870]">
                   <Compass className="h-3.5 w-3.5" />
-                  Bugunku odak
+                  {t("daily_focus")}
                 </div>
                 <h2 className="text-xl font-black tracking-tight text-[#172033]">{studyFocusTitle}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f6f7b]">{studyFocusReason}</p>
                 {!hasStudyData && (
                   <p className="mt-3 rounded-2xl border border-dashed border-[#526d82]/16 bg-white/48 px-4 py-3 text-xs leading-6 text-[#667085]">
-                    Burada sahte seri, sahte zayiflik veya uydurma ilerleme yok. Calismaya basladikca Orka gercek quiz, IDE, kaynak ve tekrar sinyallerini kullanacak.
+                    {t("no_fake_progress")}
                   </p>
                 )}
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -243,31 +245,31 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                     className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
                   >
                     <MessageSquareText className="h-4 w-4" />
-                    Tutor ile devam et
+                    {t("continue_with_tutor")}
                   </button>
                   <button
                     onClick={() => onViewChange("learning")}
                     className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/58 px-4 py-2.5 text-xs font-black text-[#172033] transition hover:bg-[#f7f9fa] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
                   >
                     <Repeat2 className="h-4 w-4" />
-                    Tekrar dongusunu ac
+                    {t("open_review_loop")}
                   </button>
                 </div>
               </div>
               <div className="rounded-2xl border border-[#526d82]/12 bg-white/58 p-4">
                 <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
                   <Lightbulb className="h-3.5 w-3.5 text-[#8a641f]" />
-                  Sonraki kucuk adim
+                  {t("next_small_step")}
                 </p>
                 <p className="text-sm font-bold leading-6 text-[#172033]">{nextSmallStep}</p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
                   <div className="rounded-xl bg-[#dcecf3]/55 px-3 py-2">
                     <span className="block text-base font-black text-[#172033]">{weakSkills.length}</span>
-                    <span className="text-[#667085]">zayif sinyal</span>
+                    <span className="text-[#667085]">{t("weak_signal")}</span>
                   </div>
                   <div className="rounded-xl bg-[#fff8ee]/85 px-3 py-2">
                     <span className="block text-base font-black text-[#172033]">{topics.length}</span>
-                    <span className="text-[#667085]">calisma yolu</span>
+                    <span className="text-[#667085]">{t("study_path")}</span>
                   </div>
                 </div>
               </div>
@@ -277,14 +279,14 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                 <div>
                   <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#667085]">
                     <GraduationCap className="h-3.5 w-3.5 text-[#52768a]" />
-                    Hedef odagi
+                    {t("study_focus")}
                   </p>
                   <p className="mt-1 text-xs leading-5 text-[#667085]">
-                    Bu sadece baslangic rehberidir; tam KPSS/YKS algoritmasi V3 roadmap kapsaminda.
+                    {t("study_focus_note")}
                   </p>
                 </div>
                 <span className="rounded-full bg-[#dcecf3]/70 px-3 py-1 text-[10px] font-bold text-[#2d5870]">
-                  {selectedFocus.hint}
+                  {t(selectedFocus.hintKey)}
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -298,7 +300,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                         : "border-[#526d82]/12 bg-[#f7f9fa]/55 text-[#667085] hover:bg-white/70 hover:text-[#172033]"
                     }`}
                   >
-                    {option.label}
+                    {option.labelKey === "KPSS" || option.labelKey === "YKS" ? option.labelKey : t(option.labelKey)}
                   </button>
                 ))}
               </div>

@@ -28,6 +28,7 @@ import {
   Code2,
   Trash2,
   ClipboardCheck,
+  Globe2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -73,7 +74,7 @@ export default function LeftSidebar({
   refreshTrigger,
 }: LeftSidebarProps) {
   const [, navigate] = useLocation();
-  const { t } = useLanguage();
+  const { t, language, setLanguage, languages } = useLanguage();
   const { isEnabled, isVisibleForUser } = useToolCapabilities();
   const [isPinned, setIsPinned] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
@@ -280,12 +281,12 @@ export default function LeftSidebar({
           {NAV_ITEMS.filter((item) => item.id !== "ide" || (isVisibleForUser("ide_execution") && isEnabled("ide_execution"))).map((item) => {
             const isActive = activeView === item.id;
             const label = (() => {
-              if (item.labelKey === "today") return "Bugun";
-              if (item.labelKey === "tutor") return "Tutor";
-              if (item.labelKey === "learning") return "Pratik";
+              if (item.labelKey === "today") return t("today");
+              if (item.labelKey === "tutor") return t("tutor");
+              if (item.labelKey === "learning") return t("learning");
               if (item.labelKey === "courses") return t("courses") || "Kurslar";
               if (item.labelKey === "wiki") return t("wiki") || "Wiki";
-              if (item.labelKey === "ide") return "Kod Editörü";
+              if (item.labelKey === "ide") return t("ide");
               return item.labelKey;
             })();
             return (
@@ -315,7 +316,7 @@ export default function LeftSidebar({
           <div className="px-3 pt-3 flex-shrink-0 mb-3">
             <div className="flex items-center justify-between pl-2 mb-2">
               <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
-                💬 Sohbet Geçmişi
+                {t("chat_history")}
               </span>
               <button
                 id="tour-new-topic"
@@ -328,7 +329,7 @@ export default function LeftSidebar({
             </div>
             <div className="space-y-0.5">
               {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').length === 0 && (
-                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">Henüz sohbet yok</p>
+                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">{t("no_chat")}</p>
               )}
               {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').map((chatTopic) => (
                 <div
@@ -371,12 +372,12 @@ export default function LeftSidebar({
           <div className="px-3 pt-1 pb-2 flex-shrink-0">
             <div className="flex items-center justify-between pl-2 mb-2">
               <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
-                📚 Öğrenme Müfredatları
+                {t("curriculum")}
               </span>
             </div>
             <div className="space-y-0.5">
               {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() === 'plan').length === 0 && (
-                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">Henüz müfredat yok</p>
+                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">{t("no_curriculum")}</p>
               )}
               {topics.filter(t =>
                 t.parentTopicId === null &&
@@ -433,6 +434,23 @@ export default function LeftSidebar({
 
         {/* Footer */}
         <div className="mt-auto border-t border-[#526d82]/10 px-3 py-3 flex-shrink-0 bg-[#f7f9fa]/40 backdrop-blur-md">
+          {isExpanded && (
+            <label className="mb-2 flex items-center gap-2 rounded-lg border border-[#526d82]/10 bg-white/42 px-2 py-2 text-[11px] font-semibold text-[#667085]">
+              <Globe2 className="h-3.5 w-3.5" />
+              <select
+                value={language}
+                onChange={(event) => setLanguage(event.target.value as typeof language)}
+                className="min-w-0 flex-1 bg-transparent text-[11px] font-bold text-[#344054] outline-none"
+                aria-label={t("interface_language")}
+              >
+                {languages.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.nativeName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             onClick={() => onViewChange("settings")}
             className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-lg text-[13px] transition-colors duration-150 ${

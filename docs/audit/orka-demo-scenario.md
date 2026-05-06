@@ -65,6 +65,21 @@ Do not claim:
 - Use capability endpoint/docs to explain provider gates.
 - Do not fake a successful provider/tool result.
 
+## Optional 30-Second Audio Branch
+
+1. From a Tutor answer, click `Sesli dinle` / `Listen` if available.
+2. Show the HOCA/ASISTAN/KONUK format.
+3. Say: "Orka can turn learning content into an AI-supported audio lesson."
+4. If MP3 generation is unavailable, show the script/browser TTS fallback and explain that it is intentionally safe.
+
+Do not claim this is a live classroom, microphone conversation, WebRTC room, or 3D voice environment.
+
+## Optional Language Branch
+
+1. On the landing page or app sidebar, switch from Turkish to English.
+2. Show that the homepage, nav, dashboard orientation, Tutor starter prompts, and audio labels can change language.
+3. Explain that backend Tutor prose follows the selected starter prompt language where practical, but Orka does not machine-translate user/source/provider content on the frontend.
+
 ## V3 Preview Boundary
 
 Safe to mention:
