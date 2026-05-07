@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
@@ -56,6 +57,86 @@ public sealed class PlanDiagnosticTests
         Assert.Contains("PLAN INTELLIGENCE BRIEF", harness.Factory.LastSystemPrompt);
         Assert.DoesNotContain("stored compressed context", harness.Factory.LastSystemPrompt);
         Assert.Contains(response.QuizRunId.ToString(), (await harness.Store.GetAsync(response.PlanRequestId))!.QuizRunId.ToString());
+    }
+
+    [Theory]
+    [InlineData(
+        "java programlamada algoritmalar ve veri yapilari calismak istiyorum",
+        "Java programlama",
+        "algoritmalar ve veri yapilari",
+        "Java programming algorithms and data structures learning path",
+        25)]
+    [InlineData(
+        "KPSS paragraf sorularinda hizlanmak istiyorum",
+        "KPSS",
+        "paragraf sorularinda hizlanmak",
+        "KPSS paragraph questions speed practice learning path",
+        20)]
+    [InlineData(
+        "SQL veritabani indeksleri ve sorgu optimizasyonu calismak istiyorum",
+        "SQL programlama",
+        "veritabani indeksleri ve sorgu optimizasyonu",
+        "SQL programming database indexes and query optimization learning path",
+        22)]
+    public async Task LifeTest_IntentKorteksQuizPlanPipeline_UsesApprovedIntentOnly(
+        string rawRequest,
+        string expectedMainTopic,
+        string expectedFocus,
+        string expectedResearchIntent,
+        int expectedQuestionCount)
+    {
+        var harness = await CreateHarnessAsync();
+        var analyzer = new StudyIntentAnalyzer(new ThrowingIntentAgentFactory(), NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var intent = await analyzer.AnalyzeAsync(
+            harness.UserId,
+            new AnalyzeStudyIntentRequest { RawRequest = rawRequest });
+
+        Assert.Equal(expectedMainTopic, intent.MainTopic);
+        Assert.Equal(expectedFocus, intent.FocusArea);
+        Assert.Equal(expectedResearchIntent, intent.ResearchIntent);
+        Assert.True(intent.RequiresUserConfirmation);
+
+        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest
+        {
+            TopicId = harness.TopicId,
+            TopicTitle = $"{intent.MainTopic}: {intent.FocusArea}",
+            RawStudyRequest = rawRequest,
+            IntentRequestId = intent.IntentRequestId,
+            ApprovedMainTopic = intent.MainTopic,
+            ApprovedFocusArea = intent.FocusArea,
+            ApprovedStudyGoal = intent.StudyGoal,
+            ApprovedResearchIntent = intent.ResearchIntent
+        });
+
+        Assert.Equal(1, harness.Korteks.CallCount);
+        Assert.Equal(intent.ResearchIntent, harness.Korteks.LastTopic);
+        Assert.NotEqual(rawRequest, harness.Korteks.LastTopic);
+        Assert.InRange(start.QuizQuestionCount, 15, 25);
+        Assert.Equal(expectedQuestionCount, start.QuizQuestionCount);
+        Assert.Equal(start.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(start.QuestionsJson));
+        Assert.DoesNotContain("Dogru secenek", start.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Yanlis secenek", start.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+
+        var half = start.QuizQuestionCount / 2;
+        for (var i = 1; i <= start.QuizQuestionCount; i++)
+        {
+            await harness.Service.RecordAnswerAsync(
+                harness.UserId,
+                start.PlanRequestId,
+                Answer($"q{i}", isCorrect: i <= half, conceptTag: i <= half ? $"known-{i}" : $"weak-{i}"));
+        }
+
+        var result = await harness.Service.FinalizeAsync(
+            harness.UserId,
+            new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
+
+        Assert.True(result.PlanGenerated);
+        Assert.Contains("AccuracyPercent:", harness.DeepPlan.LastDiagnosticQuizSummary);
+        Assert.Contains("MeasuredLevel:", harness.DeepPlan.LastDiagnosticQuizSummary);
+        Assert.Contains("KnownConcepts:", harness.DeepPlan.LastDiagnosticQuizSummary);
+        Assert.Contains("WeakConcepts:", harness.DeepPlan.LastDiagnosticQuizSummary);
+        Assert.Contains("weak-", harness.DeepPlan.LastDiagnosticQuizSummary);
     }
 
     [Fact]
@@ -386,7 +467,9 @@ public sealed class PlanDiagnosticTests
         public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
         {
             LastSystemPrompt = systemPrompt;
-            return Task.FromResult(BuildValidQuiz("C# async await", 20));
+            var topic = ExtractQuotedTopic(userMessage) ?? "C# async await";
+            var count = ExtractRequestedCount(systemPrompt) ?? ExtractRequestedCount(userMessage) ?? 20;
+            return Task.FromResult(BuildValidQuiz(topic, count));
         }
         public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
@@ -395,6 +478,21 @@ public sealed class PlanDiagnosticTests
         }
         public Task<string> CompleteChatWithHistoryAsync(AgentRole role, string systemPrompt, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default) =>
             Task.FromResult("fake");
+    }
+
+    private sealed class ThrowingIntentAgentFactory : IAIAgentFactory
+    {
+        public string GetModel(AgentRole role) => "throwing";
+        public string GetProvider(AgentRole role) => "throwing";
+        public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default) =>
+            throw new InvalidOperationException("Intent lifetest uses deterministic fallback.");
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public Task<string> CompleteChatWithHistoryAsync(AgentRole role, string systemPrompt, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default) =>
+            throw new InvalidOperationException("Intent lifetest uses deterministic fallback.");
     }
 
     private sealed class FakeQuizAttemptRecorder : IQuizAttemptRecorder
@@ -450,25 +548,74 @@ public sealed class PlanDiagnosticTests
     private static SourceEvidenceDto Source(string provider, string url) =>
         new(provider, $"{provider}Tool", url, $"{provider} source", "snippet", null, DateTimeOffset.UtcNow, 1, "web", null, null);
 
+    private static string? ExtractQuotedTopic(string text)
+    {
+        var match = Regex.Match(text, "Konu:\\s*[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.Trim() : null;
+    }
+
+    private static int? ExtractRequestedCount(string text)
+    {
+        var match = Regex.Match(text, @"(?:tam olarak|tam)\s+(\d+)\s+(?:adet\s+)?(?:soru|tanilayici)", RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups[1].Value, out var count) ? count : null;
+    }
+
+    private static string BuildCodeSnippet(string topic)
+    {
+        if (topic.Contains("Java", StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+                ```java
+                int[] values = {5, 2, 8};
+                Arrays.sort(values);
+                System.out.println(values[0]);
+                ```
+                """;
+        }
+
+        if (topic.Contains("SQL", StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+                ```sql
+                SELECT * FROM Orders WHERE CustomerId = 42 ORDER BY CreatedAt DESC;
+                ```
+                """;
+        }
+
+        if (topic.Contains("KPSS", StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+                Paragraf: Bir metinde ana düşünce, yazarın bütün cümleleri bağladığı temel yargıdır.
+                """;
+        }
+
+        return """
+            ```csharp
+            var result = await LoadAsync();
+            Console.WriteLine(result.Count);
+            ```
+            """;
+    }
+
     private static string BuildValidQuiz(string topic, int count)
     {
         var types = new[] { "conceptual", "procedural", "application", "analysis", "misconception_probe" };
         var difficulties = new[] { "kolay", "orta", "zor" };
         var questions = Enumerable.Range(1, count).Select(i =>
         {
-            var code = i == 4 ? "\n```csharp\nvar result = await LoadAsync();\nConsole.WriteLine(result.Count);\n```" : "";
+            var code = i % 4 == 0 ? $"\n{BuildCodeSnippet(topic)}" : "";
             return new
             {
                 type = "multiple_choice",
-                question = $"{topic} seviye sorusu {i}: async akista hangi karar dogru okunur?{code}",
+                question = $"{topic} seviye sorusu {i}: bu konuda hangi karar veya risk once incelenmelidir?{code}",
                 options = new[]
                 {
-                    new { text = "Once akis ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true },
-                    new { text = "Hata mesajini okumadan satir silmek.", isCorrect = false },
-                    new { text = "Kavram yerine dosya adini degistirmek.", isCorrect = false },
-                    new { text = "Ciktiyi okumadan en kisa secenegi secmek.", isCorrect = false }
+                    new { text = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true },
+                    new { text = "Metni okumadan ilk gorunen satiri silmek.", isCorrect = false },
+                    new { text = "Kavram yerine benzer gorunen terimi secmek.", isCorrect = false },
+                    new { text = "Sonucu yalnizca ilk kelimeye bakarak tahmin etmek.", isCorrect = false }
                 },
-                correctAnswer = "Once akis ve beklenen sonucu birlikte kontrol etmek.",
+                correctAnswer = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.",
                 explanation = $"Aciklama {i}",
                 skillTag = $"skill-{i}",
                 difficulty = difficulties[(i - 1) % difficulties.Length],

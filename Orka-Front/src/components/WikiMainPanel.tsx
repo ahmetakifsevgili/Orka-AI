@@ -51,6 +51,7 @@ interface WikiPage {
 interface WikiMainPanelProps {
   topicId: string;
   onClose: () => void;
+  mode?: "wiki" | "orkalm";
 }
 
 interface CopilotMessage {
@@ -98,7 +99,7 @@ interface MindMapNode {
 
 const MAX_POLL_ATTEMPTS = 20; // 20 × 3s = 60 saniye maksimum bekleme
 
-export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) {
+export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiMainPanelProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -580,6 +581,14 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
   };
 
   // ─── Render ──────────────────────────────────────────────
+  const isOrkaLm = mode === "orkalm";
+  const HeaderIcon = isOrkaLm ? Network : BookOpen;
+  const surfaceBreadcrumb = isOrkaLm ? "OrkaLM Notebook" : "Mufredat Haritasi";
+  const surfaceTitle = isOrkaLm ? "OrkaLM" : (activePage?.title || "Wiki");
+  const surfaceSubtitle = isOrkaLm
+    ? "PDF, TXT ve MD kaynaklarini yukle; kaynak grafigi, kanit paneli, ozet, terimler, zihin haritasi ve sesli ders akisini ayni kaynak merkezinde calistir."
+    : null;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -594,16 +603,21 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
         <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#526d82]/15 bg-[#f7f9fa]/62 backdrop-blur-sm z-10">
           <div className="flex flex-col gap-1 min-w-0 pr-8">
             <div className="flex items-center gap-1.5 text-xs text-[#667085] truncate font-medium tracking-wide">
-              <span>Müfredat Haritası</span>
+              <span>{surfaceBreadcrumb}</span>
               <span className="text-zinc-700">/</span>
               <span className="text-[#344054] truncate">
                 {activePage?.title || "Konu"}
               </span>
             </div>
             <h3 className="text-xl font-bold text-[#172033] truncate flex items-center gap-2.5">
-              <BookOpen className="w-5 h-5 text-[#667085]" />
-              <span>{activePage?.title || "Wiki"}</span>
+              <HeaderIcon className="w-5 h-5 text-[#667085]" />
+              <span>{surfaceTitle}</span>
             </h3>
+            {surfaceSubtitle && (
+              <p className="max-w-3xl text-xs leading-relaxed text-[#667085]">
+                {surfaceSubtitle}
+              </p>
+            )}
           </div>
           {/* Sadece kapatıp sohbet listesine dönmek istenebileceği ihtimali için ufak buton */}
           <button
@@ -791,7 +805,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-amber-400" />
                       <span className="text-xs font-semibold uppercase tracking-widest text-[#344054]">
-                        Notebook Kaynakları
+                        {isOrkaLm ? "OrkaLM Kaynak Notebook'u" : "Notebook Kaynakları"}
                       </span>
                     </div>
                     <div>
@@ -811,7 +825,7 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs transition disabled:opacity-50"
                       >
                         {uploadingSource ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                        Kaynak Yükle
+                        {isOrkaLm ? "PDF / Kaynak Yükle" : "Kaynak Yükle"}
                       </button>
                     </div>
                   </div>
@@ -824,7 +838,9 @@ export default function WikiMainPanel({ topicId, onClose }: WikiMainPanelProps) 
                     )}
                     {!sourcesLoading && sources.length === 0 && (
                       <p className="text-sm text-[#667085]">
-                        Bu konuya PDF, TXT veya MD yükleyerek belgeyle sohbeti başlatabilirsin.
+                        {isOrkaLm
+                          ? "PDF, TXT veya MD yukle. OrkaLM bu kaynaklardan kanit, ozet, terim, zihin haritasi, pekistirme karti ve sesli ders yuzeyi uretir."
+                          : "Bu konuya PDF, TXT veya MD yükleyerek belgeyle sohbeti başlatabilirsin."}
                       </p>
                     )}
                     {sources.length > 0 && (

@@ -296,3 +296,50 @@ Korteks kullanicinin ham cumlesiyle rastgele calismaz. Onayli, arastirilabilir n
 Kalan ana not:
 
 Mimari dogru kapilari koydu. Canli urun kalitesi icin birkac gercek konu uzerinden Korteks ciktisi, quiz kalitesi ve plan kalitesi elle puanlanarak promptlar daha da keskinlestirilmelidir.
+
+## 13. Uc Senaryolu Lifetest Guncellemesi
+
+Durum: PASS
+
+Bu turda canli urun sikayetlerinden cikan en kritik risk tekrar test seviyesine alindi: sistem tek bir C# senaryosuna kilitleniyor mu, yoksa farkli niyetleri dogru ayirip Korteks/quiz/plan hattina temiz tasiyor mu?
+
+Test edilen senaryolar:
+
+1. `java programlamada algoritmalar ve veri yapilari calismak istiyorum`
+2. `KPSS paragraf sorularinda hizlanmak istiyorum`
+3. `SQL veritabani indeksleri ve sorgu optimizasyonu calismak istiyorum`
+
+Kanıt:
+
+- Java senaryosu `Java programming algorithms and data structures learning path` niyetine dondu ve 25 soruluk diagnostic kapsam uretildi.
+- KPSS senaryosu `KPSS paragraph questions speed practice learning path` niyetine dondu ve odağa gereksiz KPSS tekrari basilmadi.
+- SQL senaryosu `SQL programming database indexes and query optimization learning path` niyetine dondu ve odaktan gereksiz `SQL` tekrari temizlendi.
+- Her uc senaryoda Korteks'e ham kullanici cumlesi degil, onaylanmis arastirma niyeti gitti.
+- Her uc senaryoda quiz 15-25 araliginda kaldi.
+- Her uc senaryoda diagnostic summary `KnownConcepts`, `WeakConcepts`, `AccuracyPercent` ve `MeasuredLevel` tasidi.
+
+Sonuc:
+
+Bu kisim artik sadece dokuman notu degil; backend unit test olarak kalici regresyon kapisi haline getirildi.
+
+## 14. OrkaLM / Wiki Ayrimi
+
+Durum: PASS
+
+Wiki ozelligi aktif tutuldu. Wiki, konu haritasi ve ders hafizasi yuzeyi olarak kalmaya devam eder.
+
+Yeni `OrkaLM` sol bara eklendi. OrkaLM, mevcut NotebookLM benzeri kaynak zekasini ayri ve daha dogru isimlendirilmis bir yuzeyde toplar:
+
+- PDF / TXT / MD kaynak yukleme
+- kaynak grafigi
+- kaynak kanit paneli
+- sayfa/chunk eslesmesi
+- ozet/briefing
+- terimler
+- zihin haritasi
+- pekistirme kartlari
+- audio overview
+
+Onemli karar:
+
+Bu fazda yeni bir backend sistemi icat edilmedi. Mevcut kaynak/wiki/audio altyapisi korunarak OrkaLM yuzeyine enjekte edildi. Daha derin NotebookLM optimizasyonlari V3 icin ayrildi.

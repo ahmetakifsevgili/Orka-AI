@@ -29,6 +29,7 @@ import {
   Trash2,
   ClipboardCheck,
   Globe2,
+  Network,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -57,6 +58,7 @@ const NAV_ITEMS = [
   { id: "chat", icon: MessageSquare, labelKey: "tutor", route: null },
   { id: "learning", icon: ClipboardCheck, labelKey: "learning", route: null },
   { id: "wiki",    icon: BookMarked,    labelKey: "wiki",    route: null },
+  { id: "orkalm",  icon: Network,       labelKey: "orkalm",  route: null },
   { id: "ide",     icon: Code2,         labelKey: "ide",     route: null },
 ];
 
@@ -293,6 +295,7 @@ export default function LeftSidebar({
               if (item.labelKey === "learning") return t("learning");
               if (item.labelKey === "courses") return t("courses") || "Kurslar";
               if (item.labelKey === "wiki") return t("wiki") || "Wiki";
+              if (item.labelKey === "orkalm") return t("orkalm") || "OrkaLM";
               if (item.labelKey === "ide") return t("ide");
               return item.labelKey;
             })();

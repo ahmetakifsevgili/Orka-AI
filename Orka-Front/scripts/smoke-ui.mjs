@@ -75,6 +75,7 @@ addCheck("Admin HUD shows learning bridges", healthHud.includes("learningBridge"
 
 const wiki = read("src/components/WikiMainPanel.tsx");
 addCheck("Wiki actions create learning signals", wiki.includes("recordWikiAction") && wiki.includes("WikiActionClicked"));
+addCheck("Wiki remains active while OrkaLM reuses notebook source surface", wiki.includes('mode?: "wiki" | "orkalm"') && wiki.includes("OrkaLM Kaynak Notebook") && wiki.includes("Notebook Kaynak"));
 addCheck("Notebook tools refresh after source activity", wiki.includes("notebookRefreshTick") && wiki.includes("setNotebookRefreshTick"));
 addCheck("Wiki source graph visible", wiki.includes("Kaynak graf") && wiki.includes("sourceGraph"));
 addCheck("Wiki source evidence panel visible", wiki.includes("Kaynak Kan") && wiki.includes("sourceCitations") && wiki.includes("handleSourcePageNav"));
@@ -106,6 +107,7 @@ const messages = read("src/i18n/messages.ts");
 const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("First-wave language foundation exists", languages.includes('"pt-BR"') && languages.includes('"pl"') && messages.includes("landing_title_a") && languageContext.includes("normalizeLocale"));
 addCheck("Landing and app shell expose language selector", landing.includes("setLanguage") && landing.includes("languages.map") && sidebar.includes("languages.map") && sidebar.includes("interface_language"));
+addCheck("OrkaLM source notebook is wired into app shell", home.includes('"orkalm"') && home.includes('mode="orkalm"') && sidebar.includes('labelKey: "orkalm"') && messages.includes("orkalm"));
 
 const classroomPlayer = read("src/components/ClassroomAudioPlayer.tsx");
 addCheck("Classroom active segment bridge", classroomPlayer.includes("activeSegment") && (classroomPlayer.includes("Anlamadım") || classroomPlayer.includes('t("confused")')));

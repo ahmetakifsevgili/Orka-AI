@@ -202,6 +202,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         }
 
         cleaned = Regex.Replace(cleaned, @"\b(programlama(?:da|de)?|programming|calismak|çalışmak|ogrenmek|öğrenmek|istiyorum|isterim|konusunda|hakkinda|hakkında|bana|anlat|ders|study|learn|learning|want|to)\b", " ", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"\b(kpss|yks|tyt|ayt)\b", " ", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '-');
         var normalizedCleaned = NormalizeForMatch(cleaned);
 
@@ -304,6 +305,29 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         };
 
         foreach (var pair in replacements)
+        {
+            text = Regex.Replace(text, Regex.Escape(pair.Key), pair.Value, RegexOptions.IgnoreCase);
+        }
+
+        var asciiReplacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["programlamada"] = "programming",
+            ["calismak"] = "study",
+            ["ogrenmek"] = "learn",
+            ["veritabani"] = "database",
+            ["veri tabani"] = "database",
+            ["indeksleri"] = "indexes",
+            ["indeks"] = "index",
+            ["sorgu"] = "query",
+            ["optimizasyonu"] = "optimization",
+            ["paragraf"] = "paragraph",
+            ["sorularinda"] = "questions",
+            ["sorular"] = "questions",
+            ["hizlanmak"] = "speed practice",
+            [" ve "] = " and "
+        };
+
+        foreach (var pair in asciiReplacements)
         {
             text = Regex.Replace(text, Regex.Escape(pair.Key), pair.Value, RegexOptions.IgnoreCase);
         }

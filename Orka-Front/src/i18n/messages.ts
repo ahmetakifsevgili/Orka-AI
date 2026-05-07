@@ -17,6 +17,7 @@ const tr: Messages = {
   interface_language: "Arayüz Dili",
   edit: "Düzenle",
   wiki: "Wiki",
+  orkalm: "OrkaLM",
   topics: "Konular",
   font_size: "Yazı Boyutu",
   small: "Küçük",

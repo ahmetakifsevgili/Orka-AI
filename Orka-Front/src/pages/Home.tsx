@@ -28,7 +28,7 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "ide", "learning"]);
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning"]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -175,6 +175,10 @@ export default function Home() {
         setActiveTopic(parent);
       }
       // IDE açıksa IDE kalsın, değilse chat'e geç
+      if (activeView === "wiki" || activeView === "orkalm") {
+        setWikiTopicId(topic.id);
+        return;
+      }
       if (activeView !== "ide") setActiveView("chat");
       setWikiTopicId(null);
       return;
@@ -182,8 +186,12 @@ export default function Home() {
 
     // Parent plan topic (children var) → chat session'a yönlendir
     setActiveTopic(topic);
-    if (activeView !== "ide") setActiveView("chat");
-    setWikiTopicId(null);
+    if (activeView === "wiki" || activeView === "orkalm") {
+      setWikiTopicId(topic.id);
+    } else {
+      if (activeView !== "ide") setActiveView("chat");
+      setWikiTopicId(null);
+    }
   }, [topics, activeTopic]);
 
   // ── Explicitly enter a chat session (Lesson Focus) ───────────────────
@@ -264,6 +272,15 @@ export default function Home() {
       }
       return;
     }
+    if (view === "orkalm") {
+      if (activeTopic) {
+        setWikiTopicId(activeTopic.id);
+        setActiveView("orkalm");
+      } else {
+        toast.error("OrkaLM icin once bir konu secmelisiniz.");
+      }
+      return;
+    }
     setActiveView(view);
   }, [activeTopic]);
 
@@ -308,6 +325,14 @@ export default function Home() {
         ) : (
           <div className="flex-1 flex items-center justify-center text-zinc-500">
             Bir ders seçilmedi.
+          </div>
+        );
+      case "orkalm":
+        return wikiTopicId ? (
+          <WikiMainPanel topicId={wikiTopicId} mode="orkalm" onClose={() => handleViewChange("chat")} />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-zinc-500">
+            OrkaLM icin once bir konu sec.
           </div>
         );
       case "ide": {
