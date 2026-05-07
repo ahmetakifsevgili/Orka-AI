@@ -82,11 +82,11 @@ public sealed class StudyIntentAnalyzerTests
         var analyzer = new StudyIntentAnalyzer(
             new JsonAgentFactory("""
                 {
-                  "mainTopic": "Java programming",
-                  "focusArea": "algorithms and data structures",
+                  "mainTopic": "Cognitive science",
+                  "focusArea": "learning strategies",
                   "studyGoal": "learning and practice",
-                  "researchIntent": "Java algorithms and data structures learning path",
-                  "confirmationText": "Java algoritmalarini calismak istedigini anladim.",
+                  "researchIntent": "cognitive science learning strategies learning path",
+                  "confirmationText": "Ogrenme stratejileri calismak istedigini anladim.",
                   "language": "tr",
                   "clarifyingNotes": ["Korteks onaydan sonra calisir."]
                 }
@@ -95,11 +95,63 @@ public sealed class StudyIntentAnalyzerTests
 
         var result = await analyzer.AnalyzeAsync(
             Guid.NewGuid(),
-            new AnalyzeStudyIntentRequest { RawRequest = "java algoritma" });
+            new AnalyzeStudyIntentRequest { RawRequest = "ogrenme stratejileri hakkinda kafam karisik" });
 
-        Assert.Equal("Java programming", result.MainTopic);
-        Assert.Equal("algorithms and data structures", result.FocusArea);
-        Assert.Equal("Java algorithms and data structures learning path", result.ResearchIntent);
+        Assert.Equal("Cognitive science", result.MainTopic);
+        Assert.Equal("learning strategies", result.FocusArea);
+        Assert.Equal("cognitive science learning strategies learning path", result.ResearchIntent);
+    }
+
+    [Fact]
+    public async Task StudyIntentAnalyzer_RefinesGenericModelIntentWithRawDomain()
+    {
+        var analyzer = new StudyIntentAnalyzer(
+            new JsonAgentFactory("""
+                {
+                  "mainTopic": "programming",
+                  "focusArea": "Java algorithms",
+                  "studyGoal": "learning and practice",
+                  "researchIntent": "study algorithms in Java programming",
+                  "confirmationText": "Java algoritmalarini calismak istedigini anladim.",
+                  "language": "tr",
+                  "clarifyingNotes": []
+                }
+                """),
+            NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest { RawRequest = "java programlamada algoritmalar calismak istiyorum" });
+
+        Assert.Equal("Java programlama", result.MainTopic);
+        Assert.Contains("Java", result.ResearchIntent);
+        Assert.Contains("learning path", result.ResearchIntent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StudyIntentAnalyzer_RejectsCrossDomainModelLeakage()
+    {
+        var analyzer = new StudyIntentAnalyzer(
+            new JsonAgentFactory("""
+                {
+                  "mainTopic": "programming",
+                  "focusArea": "JavaScript async",
+                  "studyGoal": "learning and practice",
+                  "researchIntent": "understand the difference between async await and parallel programming in JavaScript",
+                  "confirmationText": "Asenkron programlama calismak istedigini anladim.",
+                  "language": "tr",
+                  "clarifyingNotes": []
+                }
+                """),
+            NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest { RawRequest = "c# async await ile paralel programlama karisiyor" });
+
+        Assert.Equal("C# programlama", result.MainTopic);
+        Assert.Contains("C#", result.ResearchIntent);
+        Assert.DoesNotContain("JavaScript", result.ResearchIntent, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class ThrowingAgentFactory : IAIAgentFactory

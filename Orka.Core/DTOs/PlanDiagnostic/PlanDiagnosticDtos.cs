@@ -1,5 +1,6 @@
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.Enums;
+using System.Text.Json.Serialization;
 
 namespace Orka.Core.DTOs.PlanDiagnostic;
 
@@ -34,15 +35,25 @@ public sealed class PlanDiagnosticStateDto
 
 public sealed class StartPlanDiagnosticRequest
 {
+    [JsonPropertyName("topicId")]
     public Guid TopicId { get; set; }
+    [JsonPropertyName("sessionId")]
     public Guid? SessionId { get; set; }
+    [JsonPropertyName("topicTitle")]
     public string? TopicTitle { get; set; }
+    [JsonPropertyName("userLevel")]
     public string? UserLevel { get; set; }
+    [JsonPropertyName("intentRequestId")]
     public Guid? IntentRequestId { get; set; }
+    [JsonPropertyName("rawStudyRequest")]
     public string? RawStudyRequest { get; set; }
+    [JsonPropertyName("approvedMainTopic")]
     public string? ApprovedMainTopic { get; set; }
+    [JsonPropertyName("approvedFocusArea")]
     public string? ApprovedFocusArea { get; set; }
+    [JsonPropertyName("approvedStudyGoal")]
     public string? ApprovedStudyGoal { get; set; }
+    [JsonPropertyName("approvedResearchIntent")]
     public string? ApprovedResearchIntent { get; set; }
 }
 

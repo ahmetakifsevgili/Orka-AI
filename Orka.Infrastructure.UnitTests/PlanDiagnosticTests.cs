@@ -59,6 +59,32 @@ public sealed class PlanDiagnosticTests
         Assert.Contains(response.QuizRunId.ToString(), (await harness.Store.GetAsync(response.PlanRequestId))!.QuizRunId.ToString());
     }
 
+    [Fact]
+    public async Task PlanDiagnostic_Start_UsesDomainAwareFallbackWhenQuizProviderFails()
+    {
+        var harness = await CreateHarnessAsync();
+        harness.Factory.ReturnInvalidQuiz = true;
+
+        var response = await harness.Service.StartAsync(
+            harness.UserId,
+            new StartPlanDiagnosticRequest
+            {
+                TopicId = harness.TopicId,
+                TopicTitle = "Java programlama: algoritmalar",
+                RawStudyRequest = "java programlamada algoritmalar calismak istiyorum",
+                ApprovedMainTopic = "Java programlama",
+                ApprovedFocusArea = "algoritmalar",
+                ApprovedStudyGoal = "ogrenme ve pratik",
+                ApprovedResearchIntent = "Java programming algorithms learning path"
+            });
+
+        Assert.Equal(20, response.QuizQuestionCount);
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
+        Assert.Contains("```java", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("```csharp", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Visual Studio", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(
         "java programlamada algoritmalar ve veri yapilari calismak istiyorum",
@@ -75,9 +101,9 @@ public sealed class PlanDiagnosticTests
     [InlineData(
         "SQL veritabani indeksleri ve sorgu optimizasyonu calismak istiyorum",
         "SQL programlama",
-        "veritabani indeksleri ve sorgu optimizasyonu",
-        "SQL programming database indexes and query optimization learning path",
-        22)]
+        "index ve sorgu optimizasyonu",
+        "SQL programming index and query optimization learning path",
+        24)]
     public async Task LifeTest_IntentKorteksQuizPlanPipeline_UsesApprovedIntentOnly(
         string rawRequest,
         string expectedMainTopic,
@@ -461,12 +487,18 @@ public sealed class PlanDiagnosticTests
 
     private sealed class FakeAgentFactory : IAIAgentFactory
     {
+        public bool ReturnInvalidQuiz { get; set; }
         public string LastSystemPrompt { get; private set; } = "";
         public string GetModel(AgentRole role) => "fake";
         public string GetProvider(AgentRole role) => "fake";
         public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
         {
             LastSystemPrompt = systemPrompt;
+            if (ReturnInvalidQuiz)
+            {
+                return Task.FromResult("Z provider unavailable");
+            }
+
             var topic = ExtractQuotedTopic(userMessage) ?? "C# async await";
             var count = ExtractRequestedCount(systemPrompt) ?? ExtractRequestedCount(userMessage) ?? 20;
             return Task.FromResult(BuildValidQuiz(topic, count));

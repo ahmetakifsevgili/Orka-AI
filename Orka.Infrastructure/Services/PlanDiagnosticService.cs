@@ -348,6 +348,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             - Korteks kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
             - Konu Java algoritmalari ise sorular Java + algoritma/veri yapisi/pratik ekseninde kalmali; C#, .NET, Visual Studio veya baska teknoloji sizdirmamalı.
             - Generic pipeline, "input -> transform", "tani sorusu" gibi ic sistem kalibi kullanma.
+            - Orka IDE, sandbox veya urun arayuzu etiketlerini soru kokune, seceneklere ya da dogru cevaba yazma; quiz kavrami olcer, urun ozelligini degil.
             - conceptual, procedural, application, analysis ve misconception_probe soru tiplerini karisik kullan.
             - kolay, orta ve zor dagilimini dengeli kur.
             - Soru metinleri birbirinin kopyasi veya yakin tekrari olmasin.
@@ -365,16 +366,35 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             systemPrompt,
             $"Konu: \"{topicTitle}\" icin tam {requestedQuestionCount} adet tanilayici baseline sorusu uret.",
             ct);
-        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality);
-        if (!quality.IsAcceptable)
+        try
+        {
+            var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality);
+            if (!quality.IsAcceptable)
+            {
+                _logger.LogWarning(
+                    "[PlanDiagnostic] Diagnostic quiz quality failed. Topic={Topic} Failures={Failures}",
+                    topicTitle,
+                    string.Join(" | ", quality.Failures));
+            }
+
+            return validatedQuiz;
+        }
+        catch (InvalidOperationException ex)
         {
             _logger.LogWarning(
-                "[PlanDiagnostic] Diagnostic quiz quality failed. Topic={Topic} Failures={Failures}",
-                topicTitle,
-                string.Join(" | ", quality.Failures));
-        }
+                ex,
+                "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. Topic={Topic}",
+                topicTitle);
 
-        return validatedQuiz;
+            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle);
+            var fallbackCount = DiagnosticQuizQualityGate.CountQuestions(fallback);
+            if (fallbackCount is < 15 or > 25)
+            {
+                throw new InvalidOperationException($"Fallback diagnostic quiz is invalid; count={fallbackCount}.", ex);
+            }
+
+            return fallback;
+        }
     }
 
     private async Task<List<Guid>> GetGeneratedPlanTopicIdsAsync(Guid userId, Guid rootTopicId, CancellationToken ct)
@@ -574,6 +594,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             "veri yap",
             "programming",
             "programlama",
+            "sql",
             "kpss",
             "yks",
             "curriculum",

@@ -56,7 +56,8 @@ public static class DiagnosticQuizQualityGate
             failures.Add($"Diagnostic quiz must contain 15-25 questions; actual={report.QuestionCount}.");
         }
 
-        if (ContainsForbiddenPlanDiagnosticScaffold(cleaned))
+        if (ContainsForbiddenPlanDiagnosticScaffold(cleaned) ||
+            ContainsAny(cleaned, "orka ide", "sandbox"))
         {
             failures.Add("Quiz leaked internal diagnostic scaffold or generic pipeline wording.");
         }
@@ -180,7 +181,7 @@ public static class DiagnosticQuizQualityGate
         var profile = DetectFallbackProfile(topicTitle);
         var templates = new[]
         {
-            ("code_reading", "kolay", "async-blocking-debug", "Reading", "Kod parcasinda engelleyici async kullanimini tespit eder."),
+            ("code_reading", "kolay", "code-flow-debug", "Reading", "Kod parcasinda veri akisini ve karar noktasini tespit eder."),
             ("procedural", "kolay", "basic-flow", "Procedural", "Islem siralamasini kurar."),
             ("application", "orta", "real-world-use", "Application", "Kavrami senaryoda uygular."),
             ("analysis", "orta", "code-reading", "Reading", "Kod akisini analiz eder."),
@@ -189,12 +190,12 @@ public static class DiagnosticQuizQualityGate
             ("procedural", "orta", "workflow", "Procedural", "Dogru uygulama adimlarini secer."),
             ("application", "orta", "debugging", "Application", "Hata ayiklama yaklasimi secer."),
             ("analysis", "zor", "edge-case", "Reading", "Uc durumlari yorumlar."),
-            ("misconception_probe", "orta", "blocking-vs-async", "Application", "Engelleme ve asenkronluk farkini ayirt eder."),
-            ("conceptual", "orta", "task-model", "Conceptual", "Calisma modelini aciklar."),
+            ("misconception_probe", "orta", "concept-vs-implementation", "Application", "Kavram ile uygulama adimini ayirt eder."),
+            ("conceptual", "orta", "mental-model", "Conceptual", "Calisma modelini aciklar."),
             ("procedural", "orta", "error-handling", "Procedural", "Hata yonetimi adimini secer."),
-            ("application", "zor", "cancellation", "Application", "Iptal ve zaman asimi senaryosunu cozer."),
+            ("application", "zor", "constraint-handling", "Application", "Kisit ve sinir durum senaryosunu cozer."),
             ("analysis", "zor", "performance", "Reading", "Performans etkisini analiz eder."),
-            ("misconception_probe", "zor", "thread-confusion", "Conceptual", "Thread ve is mantigi karisikligini yakalar."),
+            ("misconception_probe", "zor", "execution-confusion", "Conceptual", "Isleyis ve kavram karisikligini yakalar."),
             ("conceptual", "orta", "api-shape", "MisreadQuestion", "API seklini dogru okur."),
             ("procedural", "zor", "composition", "Procedural", "Bilesik akisi tasarlar."),
             ("application", "zor", "production-scenario", "Application", "Uretim senaryosunda karar verir."),
@@ -214,7 +215,7 @@ public static class DiagnosticQuizQualityGate
             return new DiagnosticQuestionBlueprint
             {
                 Type = "multiple_choice",
-                Question = $"{topicTitle}: {i + 1}. seviye sorusu - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
+                Question = $"{topicTitle}: Soru {i + 1} - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
                 Options = options,
                 CorrectAnswer = correctOption,
                 Explanation = i == 0
@@ -247,7 +248,7 @@ public static class DiagnosticQuizQualityGate
                 "csharp",
                 "csharp",
                 "C#",
-                "Orka IDE sandbox'ta C# akisini okuyup derleme/runtime riskini ayirt etmek.",
+                "C# kod akisini okuyup derleme/runtime riskini ayirt etmek.",
                 "var user = users.First(u => u.Id == selectedId);\nConsole.WriteLine(user.Name.ToUpper());");
         }
 
@@ -258,7 +259,7 @@ public static class DiagnosticQuizQualityGate
                 "python",
                 "python",
                 "Python",
-                "Orka IDE sandbox'ta Python veri akisini ve hata kaynagini okumak.",
+                "Python veri akisini ve hata kaynagini okumak.",
                 "items = [1, 2, 3]\nprint(items[3])");
         }
 
@@ -269,7 +270,7 @@ public static class DiagnosticQuizQualityGate
                 "java",
                 "java",
                 "Java",
-                "Orka IDE sandbox'ta Java kod akisini, algoritma adimlarini ve veri yapisi kararini ayirt etmek.",
+                "Java kod akisini, algoritma adimlarini ve veri yapisi kararini ayirt etmek.",
                 "int[] numbers = {4, 1, 3};\nArrays.sort(numbers);\nSystem.out.println(numbers[0]);");
         }
 
@@ -280,7 +281,7 @@ public static class DiagnosticQuizQualityGate
                 "javascript",
                 "javascript",
                 "JavaScript",
-                "Orka IDE sandbox'ta async/veri akisini ve state etkisini ayirt etmek.",
+                "JavaScript async/veri akisini ve state etkisini ayirt etmek.",
                 "const data = fetch('/api/items');\nconsole.log(data.length);");
         }
 
@@ -302,7 +303,7 @@ public static class DiagnosticQuizQualityGate
                 "coding",
                 "text",
                 "programlama",
-                "Orka IDE akisi icinde kavrami kucuk bir kod veya pratik adimla test etmek.",
+                "Kavrami kucuk bir kod veya pratik adimla test etmek.",
                 "read input\napply the selected concept\ncompare the observed output with the expected result");
         }
 
@@ -351,7 +352,7 @@ public static class DiagnosticQuizQualityGate
     {
         if (profile.IsTechnical)
         {
-            return $"{objective} Bu soru, {profile.DisplayName} icin Orka IDE odakli hata okuma ve kavrami uygulama ayrimini olcer.";
+            return $"{objective} Bu soru, {profile.DisplayName} icin hata okuma, akisi izleme ve kavrami uygulama ayrimini olcer.";
         }
 
         return $"{objective} Bu soru, ezber cevapla senaryodan karar verme arasindaki farki olcer.";
@@ -363,7 +364,7 @@ public static class DiagnosticQuizQualityGate
         {
             new[]
             {
-                new DiagnosticOption("Orka IDE'de en kucuk akisi calistirip sonucu hatanin kok nedeniyle karsilastirmak.", true),
+                new DiagnosticOption("En kucuk calisan akisi kurup sonucu hatanin kok nedeniyle karsilastirmak.", true),
                 new DiagnosticOption("Hata mesajina bakmadan ilk gorunen satiri tamamen silmek.", false),
                 new DiagnosticOption("Kod calismiyorsa kavrami degil sadece dosya adini degistirmek.", false),
                 new DiagnosticOption("Ciktiyi okumadan en kisa secenegi secmek.", false)

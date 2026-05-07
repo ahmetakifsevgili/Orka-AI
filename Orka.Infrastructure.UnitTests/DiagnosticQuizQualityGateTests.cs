@@ -129,7 +129,21 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
         Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Python veri akisini", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_FallbackDoesNotLeakAsyncIntoJavaAlgorithms()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Java programlama: algoritmalar");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.Contains("```java", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("async", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Task.Result", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

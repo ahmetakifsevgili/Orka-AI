@@ -1,6 +1,37 @@
 # Orka V2.9 Yaşam Raporu
 
 Tarih: 2026-05-07
+
+## V2.10 Addendum - Heavy Eval, Browser QA, Quiz Product-Label Fix
+
+**Durum: PASS_WITH_NOTES**
+
+V2.10 fazinda `contract_tests/heavy/` altinda gated 40+ senaryolu kalite olcum katmani eklendi. Bu katman intent -> onay -> Korteks -> sentez -> quiz -> plan -> Tutor akisini sadece "test pass" diye degil, alan dogrulugu, onay kapisi, quiz kalitesi, Tutor davranisi ve UX sizintilari acisindan skorlar.
+
+En onemli karar: tablo mantigi milyonlarca konuyu elle sentezleyen statik bir konu ansiklopedisi olmayacak. Tablolar Orka icin kavram dugumleri, onkosul baglari, kaynak baglari, quiz/attempt olaylari, mistake sinyalleri ve kullanici ogrenme durumunu tutan dinamik bir omurga olmali. Konu icerigi Korteks + kaynaklar + sentez katmanindan dinamik cikar; kalici olan kullanicinin ogrenme izi ve kavram grafigidir.
+
+Kritik duzeltme: Quiz katmani artik Orka IDE/sandbox urun etiketlerini cevap seceneklerine veya aciklamalara sokmuyor. Bu anlatim Tutor/pratik akisi icin dogru yerde kalir; quiz sadece kavrami olcer.
+
+Kanit dosyalari:
+- `contract_tests/heavy/scenarios.json`
+- `contract_tests/heavy/scoring.py`
+- `docs/audit/orka-v2.10-heavy-learning-flow-eval.md`
+- `docs/audit/tutor-response-scoring-report.md`
+- `docs/audit/frontend-browser-qa-report.md`
+
+Son dogrulama:
+- `python -m pytest contract_tests/ -q` -> 37 passed, 42 skipped.
+- `ORKA_RUN_HEAVY_EVAL=1 ORKA_HEAVY_FULL_FLOW_LIMIT=1 python -m pytest contract_tests/heavy -q` -> 41 passed.
+- `npm run build` -> PASS.
+- `npm run smoke:ui` -> PASS.
+- `npm run smoke:contracts` -> PASS.
+- `npm run typecheck` -> PASS.
+
+V2.10 karar guncellemesi:
+- Quiz icinde Orka IDE/sandbox urun etiketi artik kritik kalite hatasi sayilir.
+- Orka IDE/sandbox anlatimi Tutor ve pratik akisi icin dogru yerde kalir.
+- Tablo stratejisi milyonlarca konuyu elle yazmak degildir; dinamik kavram grafigi, kullanici ogrenme izi, kaynak baglari ve sinav/attempt olaylarini tutan veri omurgasidir.
+- Sonraki buyuk arastirma/roadmap isinde `orka-derin-arastirma-raporu-2026-05-07.md` ve verilen sektor linki ana referans olarak karsilastirilacaktir.
 Faz: V2.9 Quality Reality Gate
 Amaç: Orka'nın öğrenme yaşam döngüsünü yeşil test üretmek için değil, gerçek kaliteyi ölçmek için değerlendirmek.
 

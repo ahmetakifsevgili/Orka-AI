@@ -6,6 +6,7 @@ using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace Orka.API.Controllers;
 
@@ -113,20 +114,22 @@ public class QuizController : ControllerBase
     }
 
     [HttpPost("plan-diagnostic/start")]
-    public async Task<IActionResult> StartPlanDiagnostic([FromBody] StartPlanDiagnosticRequest request)
+    public async Task<IActionResult> StartPlanDiagnostic()
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
         try
         {
+            using var requestDoc = await JsonDocument.ParseAsync(HttpContext.Request.Body, cancellationToken: HttpContext.RequestAborted);
+            var request = ParseStartPlanDiagnosticRequest(requestDoc.RootElement);
             var result = await _planDiagnostic.StartAsync(userId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(ex, "[QuizController] Plan diagnostic start rejected. UserId={UserId}", userId);
-            return BadRequest(new { error = "Approved study intent is required before plan research." });
+            return BadRequest(new { error = "Plan diagnostic request could not be accepted." });
         }
         catch (Exception ex)
         {
@@ -320,5 +323,58 @@ public class QuizController : ControllerBase
         {
             return null;
         }
+    }
+
+    private static StartPlanDiagnosticRequest ParseStartPlanDiagnosticRequest(JsonElement body)
+    {
+        if (body.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("Plan diagnostic request body is required.");
+        }
+
+        return new StartPlanDiagnosticRequest
+        {
+            TopicId = ReadGuid(body, "topicId") ?? Guid.Empty,
+            SessionId = ReadGuid(body, "sessionId"),
+            TopicTitle = ReadString(body, "topicTitle"),
+            UserLevel = ReadString(body, "userLevel"),
+            IntentRequestId = ReadGuid(body, "intentRequestId"),
+            RawStudyRequest = ReadString(body, "rawStudyRequest"),
+            ApprovedMainTopic = ReadString(body, "approvedMainTopic"),
+            ApprovedFocusArea = ReadString(body, "approvedFocusArea"),
+            ApprovedStudyGoal = ReadString(body, "approvedStudyGoal"),
+            ApprovedResearchIntent = ReadString(body, "approvedResearchIntent")
+        };
+    }
+
+    private static string? ReadString(JsonElement body, string camelName)
+    {
+        if (!TryGetPropertyCaseInsensitive(body, camelName, out var value) || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return value.GetString();
+    }
+
+    private static Guid? ReadGuid(JsonElement body, string camelName)
+    {
+        var text = ReadString(body, camelName);
+        return Guid.TryParse(text, out var value) ? value : null;
+    }
+
+    private static bool TryGetPropertyCaseInsensitive(JsonElement body, string camelName, out JsonElement value)
+    {
+        foreach (var property in body.EnumerateObject())
+        {
+            if (property.Name.Equals(camelName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }
