@@ -118,7 +118,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".Result", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("async/await", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Soru kokunu", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("dogru cevaba ulasmak", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -130,7 +130,19 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Python veri akisini", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Bu kodu dogru okumak icin hangi yaklasim", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_FallbackDoesNotShowInternalObjectiveAsQuestion()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Python listeler ve hata ayiklama");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.DoesNotContain("Kod parcasinda veri akisini ve karar noktasini tespit eder", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Bu parcada seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Islem siralamasini kurar", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Bu kodu dogru okumak icin hangi yaklasim", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

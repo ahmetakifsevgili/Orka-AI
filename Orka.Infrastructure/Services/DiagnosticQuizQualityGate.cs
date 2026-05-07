@@ -211,7 +211,7 @@ public static class DiagnosticQuizQualityGate
         var questions = templates.Select((t, i) =>
         {
             var codeSnippet = profile.IsTechnical && i is 0 or 3 or 7 or 18
-                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{profile.CodeSnippet}\n```\nBu parcada seviye belirlemek icin en onemli risk veya karar noktasi nedir?"
+                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{profile.CodeSnippet}\n```"
                 : string.Empty;
 
             var options = BuildNeutralDiagnosticOptions(i, profile);
@@ -220,16 +220,14 @@ public static class DiagnosticQuizQualityGate
             return new DiagnosticQuestionBlueprint
             {
                 Type = "multiple_choice",
-                Question = $"{topicTitle}: Soru {i + 1} - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
+                Question = BuildFallbackQuestionText(topicTitle, i, profile, codeSnippet),
                 Options = options,
                 CorrectAnswer = correctOption,
-                Explanation = i == 0
-                    ? BuildFirstExplanation(profile, t.Item5)
-                    : $"{t.Item5} Bu soru, {topicTitle} icin seviye belirleme amacli kavram ve uygulama ayrimini olcer.",
+                Explanation = BuildFallbackExplanation(profile, topicTitle, i),
                 SkillTag = $"{profile.SkillPrefix}-{t.Item3}",
                 Difficulty = t.Item2,
                 ConceptTag = $"{t.Item3}-{i + 1}",
-                LearningObjective = t.Item5,
+                LearningObjective = BuildSafeLearningObjective(profile, i),
                 QuestionType = t.Item1,
                 ExpectedMisconceptionCategory = t.Item4,
                 Topic = topicTitle
@@ -501,24 +499,99 @@ public static class DiagnosticQuizQualityGate
             string.Empty);
     }
 
-    private static string BuildQuestionStem(DiagnosticFallbackProfile profile, string objective)
+    private static string BuildFallbackQuestionText(
+        string topicTitle,
+        int index,
+        DiagnosticFallbackProfile profile,
+        string codeSnippet)
     {
-        if (profile.IsTechnical)
+        if (profile.IsTechnical && !string.IsNullOrWhiteSpace(codeSnippet))
         {
-            return $"{objective}. {profile.Scenario}";
+            var prompt = (index % 4) switch
+            {
+                0 => "Bu kodu dogru okumak icin hangi yaklasim en saglamdir?",
+                1 => "Bu ornekte hata veya sonucu anlamak icin once ne kontrol edilmelidir?",
+                2 => "Bu kod parcasi hangi kavrami uygulamayi gerektirir?",
+                _ => "Bu ornekte beklenen sonucu bulmak icin hangi akil yurutme kullanilmalidir?"
+            };
+            return $"{topicTitle}: Soru {index + 1} - {prompt}{codeSnippet}";
         }
 
-        return $"{objective}. {profile.Scenario} Once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
+        if (profile.IsTechnical)
+        {
+            var prompt = (index % 4) switch
+            {
+                0 => "Bu konuda verilen senaryoyu cozmek icin hangi bilgi once ayrilmalidir?",
+                1 => "Kavrami uygularken hangi secim daha guvenilir olur?",
+                2 => "Benzer gorunen iki kavram arasinda karar verirken hangi adim gerekir?",
+                _ => "Hata nedenini anlamak icin hangi okuma sirasi daha dogrudur?"
+            };
+            return $"{topicTitle}: Soru {index + 1} - {prompt}";
+        }
+
+        var generalPrompt = profile.SkillPrefix switch
+        {
+            "exam" => (index % 3) switch
+            {
+                0 => "Bu soru tipinde dogru cevaba ulasmak icin hangi adim en guvenilirdir?",
+                1 => "Distractor tuzagina dusmemek icin once ne ayrilmalidir?",
+                _ => "Verilen kosulu yoruma cevirirken hangi yaklasim daha saglamdir?"
+            },
+            "math" => (index % 3) switch
+            {
+                0 => "Bu tur bir problemde cozumden once hangi bilgi netlestirilmelidir?",
+                1 => "Formulu uygulamadan once hangi kosul kontrol edilmelidir?",
+                _ => "Sonucun mantikli olup olmadigini denetlemek icin hangi adim gerekir?"
+            },
+            _ => (index % 3) switch
+            {
+                0 => "Bu kavrami senaryoda uygulamak icin hangi adim en dogrudur?",
+                1 => "Ezber cevap yerine anlamli karar vermek icin ne yapilmalidir?",
+                _ => "Bu durumda kavram yanilgisini ayirmak icin hangi ipucu onemlidir?"
+            }
+        };
+
+        return $"{topicTitle}: Soru {index + 1} - {generalPrompt}";
     }
 
-    private static string BuildFirstExplanation(DiagnosticFallbackProfile profile, string objective)
+    private static string BuildFallbackExplanation(DiagnosticFallbackProfile profile, string topicTitle, int index)
     {
         if (profile.IsTechnical)
         {
-            return $"{objective} Bu soru, {profile.DisplayName} icin hata okuma, akisi izleme ve kavrami uygulama ayrimini olcer.";
+            return (index % 4) switch
+            {
+                0 => $"{profile.DisplayName} icin kodu satir satir okuyup veri, sonuc ve kavram iliskisini kurmak gerekir.",
+                1 => $"{profile.DisplayName} sorularinda benzer terimleri ayirmak icin once verilen kisit okunmalidir.",
+                2 => $"{profile.DisplayName} pratiginde hata belirtisi ile kok neden farkli olabilir.",
+                _ => $"{profile.DisplayName} konusunda dogru cevap, ezberden degil senaryodaki kosullardan cikmalidir."
+            };
         }
 
-        return $"{objective} Bu soru, ezber cevapla senaryodan karar verme arasindaki farki olcer.";
+        return $"{topicTitle} icin dogru cevap, basliktan tahmin etmek yerine soru kosulunu ve kavram iliskisini okumayi gerektirir.";
+    }
+
+    private static string BuildSafeLearningObjective(DiagnosticFallbackProfile profile, int index)
+    {
+        if (profile.IsTechnical)
+        {
+            return (index % 5) switch
+            {
+                0 => "Kod okuma ve veri akisini yorumlama",
+                1 => "Kavrami senaryo kisitlarina gore uygulama",
+                2 => "Hata belirtisi ile kok nedeni ayirma",
+                3 => "Dogru uygulama adimini secme",
+                _ => "Kavram yanilgisini fark etme"
+            };
+        }
+
+        return (index % 5) switch
+        {
+            0 => "Soru kosulunu dogru okuma",
+            1 => "Kavrami senaryoya uygulama",
+            2 => "Distractor veya yanilgi ayirma",
+            3 => "Cozum adimini siralama",
+            _ => "Sonucu gerekceyle kontrol etme"
+        };
     }
 
     private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(int index, DiagnosticFallbackProfile profile)

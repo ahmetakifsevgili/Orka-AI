@@ -33,7 +33,7 @@ public static class PlanIntelligenceBriefBuilder
         var domain = DetectDomain(topic);
         var sb = new StringBuilder();
 
-        sb.AppendLine("[PLAN INTELLIGENCE BRIEF - KORTEKS FILTERED]");
+        sb.AppendLine("[PLAN INTELLIGENCE BRIEF - LEARNING RESEARCH FILTERED]");
         sb.AppendLine($"Purpose: {purpose}");
         sb.AppendLine($"Topic: {topic}");
         sb.AppendLine($"DomainPolicy: {BuildDomainPolicy(domain)}");
@@ -53,18 +53,18 @@ public static class PlanIntelligenceBriefBuilder
 
         AppendDiagnosticPriority(sb, diagnosticQuizSummary);
 
-        sb.AppendLine("DecisionRule: Korteks is advisory evidence. Diagnostic results, domain scaffold, and adaptive learning context have priority.");
+        sb.AppendLine("DecisionRule: Learning research is advisory evidence. Diagnostic results, domain scaffold, and adaptive learning context have priority.");
         sb.AppendLine("MustUse:");
         foreach (var item in BuildMustUse(domain))
         {
             sb.AppendLine($"- {item}");
         }
 
-        AppendSection(sb, "MayUseFromKorteks.Curriculum", parsed, "CurriculumMapHints", 5);
-        AppendSection(sb, "MayUseFromKorteks.Prerequisites", parsed, "PrerequisiteHints", 4);
-        AppendSection(sb, "MayUseFromKorteks.Misconceptions", parsed, "LikelyMisconceptions", 4);
-        AppendSection(sb, "MayUseFromKorteks.Freshness", parsed, "WebFreshnessFacts", 3);
-        AppendSection(sb, "MayUseFromKorteks.YouTubePedagogy", parsed, "YouTubeLearningReferences", 3);
+        AppendSection(sb, "MayUseFromResearch.Curriculum", parsed, "CurriculumMapHints", 5);
+        AppendSection(sb, "MayUseFromResearch.Prerequisites", parsed, "PrerequisiteHints", 4);
+        AppendSection(sb, "MayUseFromResearch.Misconceptions", parsed, "LikelyMisconceptions", 4);
+        AppendSection(sb, "MayUseFromResearch.Freshness", parsed, "WebFreshnessFacts", 3);
+        AppendSection(sb, "MayUseFromResearch.YouTubePedagogy", parsed, "YouTubeLearningReferences", 3);
         AppendKeyFactsOnlyIfUseful(sb, parsed, topic);
 
         sb.AppendLine("MustIgnore:");
@@ -209,7 +209,7 @@ public static class PlanIntelligenceBriefBuilder
             return;
         }
 
-        sb.AppendLine("MayUseFromKorteks.KeyFactsHighSignalOnly:");
+        sb.AppendLine("MayUseFromResearch.KeyFactsHighSignalOnly:");
         foreach (var fact in usefulFacts)
         {
             sb.AppendLine($"- {Trim(RemoveUrlTail(fact), 190)}");

@@ -35,7 +35,7 @@ public sealed class PlanIntelligenceBriefBuilderTests
             "WeakConcepts: async-await: 2 | methods: 1\nMistakePatterns: Conceptual: 2");
 
         Assert.Contains("PLAN INTELLIGENCE BRIEF", brief);
-        Assert.Contains("Korteks is advisory", brief);
+        Assert.Contains("Learning research is advisory", brief);
         Assert.Contains("Orka IDE/sandbox", brief);
         Assert.Contains("syntax foundations", brief, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("async", brief, StringComparison.OrdinalIgnoreCase);

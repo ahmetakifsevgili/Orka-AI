@@ -361,9 +361,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
             KURALLAR:
             - Soru sayisi tam olarak {{requestedQuestionCount}} olacak; 15'ten az, 25'ten fazla olmayacak.
-            - Ham Korteks raporu varsayma; sadece bu filtrelenmis brief'i ve konu basligini kullan.
-            - Korteks kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
-            - Konu Java algoritmalari ise sorular Java + algoritma/veri yapisi/pratik ekseninde kalmali; C#, .NET, Visual Studio veya baska teknoloji sizdirmamalı.
+            - Ham arastirma raporu varsayma; sadece bu filtrelenmis brief'i ve konu basligini kullan.
+            - Kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
+            - Sorular onayli konu ve odak alaninda kalmali; baska teknoloji, sinav veya alan sizdirmamali.
             - Generic pipeline, "input -> transform", "tani sorusu" gibi ic sistem kalibi kullanma.
             - Orka IDE, sandbox veya urun arayuzu etiketlerini soru kokune, seceneklere ya da dogru cevaba yazma; quiz kavrami olcer, urun ozelligini degil.
             - conceptual, procedural, application, analysis ve misconception_probe soru tiplerini karisik kullan.
