@@ -178,6 +178,11 @@ public static class DiagnosticQuizQualityGate
 
     public static string BuildFallbackDiagnosticBlueprint(string topicTitle)
     {
+        if (IsJavaAlgorithmTopic(topicTitle))
+        {
+            return BuildJavaAlgorithmsFallbackDiagnostic(topicTitle);
+        }
+
         var profile = DetectFallbackProfile(topicTitle);
         var templates = new[]
         {
@@ -233,6 +238,164 @@ public static class DiagnosticQuizQualityGate
 
         return JsonSerializer.Serialize(questions, JsonOptions)
             .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildJavaAlgorithmsFallbackDiagnostic(string topicTitle)
+    {
+        var questions = new List<DiagnosticQuestionBlueprint>
+        {
+            Q(topicTitle, 1, "kolay", "array-sorting", "analysis", "Reading",
+                "Asagidaki Java kodu calistiginda ekrana hangi deger yazilir?\n\nKod:\n```java\nint[] numbers = {4, 1, 3};\nArrays.sort(numbers);\nSystem.out.println(numbers[0]);\n```",
+                ["1", "3", "4", "Kod derlenmez; int[] siralanamaz."],
+                "1",
+                "Arrays.sort int dizisini artan siraya dizer; ilk eleman 1 olur.",
+                "Array siralama sonrasi indeks okuma"),
+            Q(topicTitle, 2, "kolay", "binary-search-precondition", "misconception_probe", "Conceptual",
+                "Binary search kullanmadan once Java'da dizi/list icin hangi kosul en kritiktir?",
+                ["Aranacak veri sirali olmalidir.", "Dizide mutlaka tek sayida eleman olmalidir.", "Elemanlar String olmak zorundadir.", "Dizi once ters cevrilmelidir."],
+                "Aranacak veri sirali olmalidir.",
+                "Binary search sirali veri uzerinde anlamli sonuc verir; siralanmamis veride sonuc guvenilir degildir.",
+                "Binary search on kosulu"),
+            Q(topicTitle, 3, "kolay", "linear-search", "procedural", "Procedural",
+                "Bir int dizisinde belirli bir degeri bulmak icin bastan sona tek tek bakiyorsan hangi yaklasimi kullaniyorsun?",
+                ["Linear search", "Binary search", "Hashing", "Merge sort"],
+                "Linear search",
+                "Linear search elemanlari sirayla kontrol eder ve en kotu durumda n elemana bakar.",
+                "Linear arama"),
+            Q(topicTitle, 4, "orta", "big-o-loop", "analysis", "Reading",
+                "Asagidaki dongunun n elemanli bir dizide zaman karmasikligi nedir?\n\nKod:\n```java\nfor (int i = 0; i < arr.length; i++) {\n    System.out.println(arr[i]);\n}\n```",
+                ["O(n)", "O(1)", "O(n^2)", "O(log n)"],
+                "O(n)",
+                "Dongu her elemani bir kez ziyaret eder; islem sayisi n ile dogrusal artar.",
+                "Tek dongu karmasikligi"),
+            Q(topicTitle, 5, "orta", "nested-loop", "analysis", "Reading",
+                "Ic ice iki dongu ayni n uzunlugundaki dizi uzerinde tum ikilileri geziyorsa tipik zaman karmasikligi nedir?",
+                ["O(n^2)", "O(n)", "O(log n)", "O(1)"],
+                "O(n^2)",
+                "Her dis dongu adimi icin ic dongu n kez calisir; yaklasik n*n islem olur.",
+                "Ic ice dongu karmasikligi"),
+            Q(topicTitle, 6, "kolay", "stack-lifo", "conceptual", "Conceptual",
+                "Stack veri yapisinda en son eklenen elemanin once cikmasi hangi prensiptir?",
+                ["LIFO", "FIFO", "Binary search", "Stable sort"],
+                "LIFO",
+                "Stack Last-In-First-Out prensibiyle calisir.",
+                "Stack davranisi"),
+            Q(topicTitle, 7, "kolay", "queue-fifo", "conceptual", "Conceptual",
+                "Queue veri yapisinda ilk eklenen elemanin once cikmasi hangi prensiptir?",
+                ["FIFO", "LIFO", "Hashing", "Recursion"],
+                "FIFO",
+                "Queue First-In-First-Out prensibiyle calisir.",
+                "Queue davranisi"),
+            Q(topicTitle, 8, "orta", "hashmap-lookup", "application", "Application",
+                "Kullanici id'sinden kullanici nesnesine sik erisim gerekiyorsa Java'da hangi veri yapisi ortalama durumda uygundur?",
+                ["HashMap<Integer, User>", "ArrayList<User> ile her seferinde bastan arama", "Stack<User>", "PriorityQueue<User>"],
+                "HashMap<Integer, User>",
+                "HashMap anahtar uzerinden ortalama O(1) erisim hedefler; sirali gezinme gerekmiyorsa uygundur.",
+                "Map ile anahtarli erisim"),
+            Q(topicTitle, 9, "orta", "hashset-duplicates", "misconception_probe", "Conceptual",
+                "Bir listedeki tekrar eden sayilari tekillestirmek icin hangi Java koleksiyonu dogal secimdir?",
+                ["HashSet", "Stack", "Queue", "StringBuilder"],
+                "HashSet",
+                "Set ayni degeri birden fazla kez tutmaz; tekrar temizleme icin dogru soyutlamadir.",
+                "Set ve tekrarlar"),
+            Q(topicTitle, 10, "orta", "arraylist-insert", "analysis", "Application",
+                "ArrayList'in ortasina eleman eklemek neden pahali olabilir?",
+                ["Sonraki elemanlarin kaydirilmasi gerekebilir.", "ArrayList hic eleman tutamaz.", "Her ekleme binary search calistirir.", "Elemanlar otomatik siralanir."],
+                "Sonraki elemanlarin kaydirilmasi gerekebilir.",
+                "ArrayList indeks tabanli dizi mantigina yakindir; ortadan ekleme kaydirma maliyeti dogurabilir.",
+                "ArrayList ekleme maliyeti"),
+            Q(topicTitle, 11, "orta", "recursion-base-case", "misconception_probe", "Conceptual",
+                "Recursive bir metotta base case eksikse en olasi risk nedir?",
+                ["Cagri zinciri durmayip stack overflow'a gidebilir.", "Kod her zaman O(1) olur.", "Java recursion'a izin vermez.", "Metot otomatik olarak binary search'e donusur."],
+                "Cagri zinciri durmayip stack overflow'a gidebilir.",
+                "Base case recursion'in durma kosuludur; eksikse cagri kendini bitiremeyebilir.",
+                "Recursion durma kosulu"),
+            Q(topicTitle, 12, "orta", "bfs", "procedural", "Procedural",
+                "Bir grafi katman katman gezmek icin tipik BFS uygulamasinda hangi yapi kullanilir?",
+                ["Queue", "Stack", "HashMap tek basina", "Comparator"],
+                "Queue",
+                "BFS once yakin komsulari isler; FIFO queue bu katmanli akisi tasir.",
+                "BFS veri yapisi"),
+            Q(topicTitle, 13, "orta", "dfs", "procedural", "Procedural",
+                "Derinlige oncelikli arama (DFS) Java'da hangi iki yaklasimla sik uygulanir?",
+                ["Recursion veya Stack", "Queue veya HashSet siralamasi", "Binary search veya Comparator", "PriorityQueue veya StringBuilder"],
+                "Recursion veya Stack",
+                "DFS derine inmeyi hedefler; recursion call stack'i veya acik Stack kullanilabilir.",
+                "DFS uygulama bicimi"),
+            Q(topicTitle, 14, "zor", "priorityqueue", "application", "Application",
+                "Her adimda en kucuk oncelikli elemani almak istiyorsan Java'da hangi yapi uygundur?",
+                ["PriorityQueue", "HashSet", "LinkedList'i rastgele indeksle okumak", "String[]"],
+                "PriorityQueue",
+                "PriorityQueue dogal siralama veya Comparator ile oncelikli elemani verir.",
+                "Oncelik kuyrugu"),
+            Q(topicTitle, 15, "zor", "comparator", "analysis", "Reading",
+                "Collections.sort(list, comparator) kullaniminda Comparator neyi belirler?",
+                ["Elemanlarin hangi kurala gore siralanacagini", "Listenin kac eleman tutabilecegini", "Kodun kac thread acacagini", "Java surumunu"],
+                "Elemanlarin hangi kurala gore siralanacagini",
+                "Comparator karsilastirma kuralini tanimlar; siralama bu kurala gore yapilir.",
+                "Comparator siralama kurali"),
+            Q(topicTitle, 16, "zor", "two-pointer", "misconception_probe", "Application",
+                "Two-pointer teknigi hangi durumda daha anlamli hale gelir?",
+                ["Veride siralama/yon/kisit gibi iki uctan ilerlemeyi anlamli kilan bir ozellik varsa.", "Her problemde rastgele iki indeks secilirse.", "Sadece HashMap kullanilinca.", "Kodda hic dongu yoksa."],
+                "Veride siralama/yon/kisit gibi iki uctan ilerlemeyi anlamli kilan bir ozellik varsa.",
+                "Two-pointer bir ezber degil; veri duzeni ve problem kisiti teknigi mumkun kilar.",
+                "Two-pointer on kosulu"),
+            Q(topicTitle, 17, "zor", "prefix-sum", "application", "Application",
+                "Ayni dizi uzerinde cok sayida aralik toplami soruluyorsa hangi fikir pratik avantaj saglar?",
+                ["Prefix sum", "Her sorguda araligi bastan sona tekrar toplamak", "Diziyi String'e cevirmek", "Stack ile tum elemanlari silmek"],
+                "Prefix sum",
+                "Prefix sum once on hesaplama yaparak aralik toplamini hizli cevaplamayi saglar.",
+                "Prefix sum"),
+            Q(topicTitle, 18, "zor", "greedy-limits", "misconception_probe", "Conceptual",
+                "Greedy algoritmalarla ilgili en dogru ifade hangisidir?",
+                ["Yerel en iyi secim her problemde dogru sonucu garanti etmez; problem ozelligi kontrol edilmelidir.", "Greedy her zaman dynamic programming'den dogrudur.", "Greedy sadece Java'da vardir.", "Greedy algoritmada karar verilmez."],
+                "Yerel en iyi secim her problemde dogru sonucu garanti etmez; problem ozelligi kontrol edilmelidir.",
+                "Greedy yaklasim icin yerel secimin global optimuma goturdugu gerekcelenmelidir.",
+                "Greedy yanilgisi"),
+            Q(topicTitle, 19, "zor", "dynamic-programming", "analysis", "Conceptual",
+                "Dynamic programming hangi problem ozelliklerinde guclu bir aday olur?",
+                ["Tekrarlanan alt problemler ve optimal alt yapi varsa.", "Problemde hic tekrar yoksa ve tek adimsa.", "Sadece liste alfabetik siradaysa.", "Sadece cikti ekrana yazdiriliyorsa."],
+                "Tekrarlanan alt problemler ve optimal alt yapi varsa.",
+                "DP ayni alt problemleri tekrar cozmemek icin sonuc saklama/tablolasitirma fikrine dayanir.",
+                "DP problem tanima"),
+            Q(topicTitle, 20, "zor", "off-by-one", "misconception_probe", "Reading",
+                "Asagidaki Java dongusundeki temel hata riski nedir?\n\nKod:\n```java\nfor (int i = 0; i <= arr.length; i++) {\n    System.out.println(arr[i]);\n}\n```",
+                ["i == arr.length oldugunda dizi siniri asilir.", "Dongu hic calismaz.", "arr.length her zaman -1 doner.", "Java for dongusunu desteklemez."],
+                "i == arr.length oldugunda dizi siniri asilir.",
+                "Java dizilerinde son gecerli indeks length - 1'dir; <= siniri son adimda tasma uretir.",
+                "Off-by-one hata")
+        };
+
+        return JsonSerializer.Serialize(questions, JsonOptions)
+            .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
+
+        static DiagnosticQuestionBlueprint Q(
+            string topic,
+            int index,
+            string difficulty,
+            string concept,
+            string questionType,
+            string misconception,
+            string question,
+            string[] options,
+            string correct,
+            string explanation,
+            string objective) =>
+            new()
+            {
+                Type = "multiple_choice",
+                Question = $"{topic}: Soru {index} - {question}",
+                Options = options.Select(option => new DiagnosticOption(option, option == correct)).ToList(),
+                CorrectAnswer = correct,
+                Explanation = explanation,
+                SkillTag = $"java-algorithms-{concept}",
+                Difficulty = difficulty,
+                ConceptTag = concept,
+                LearningObjective = objective,
+                QuestionType = questionType,
+                ExpectedMisconceptionCategory = misconception,
+                Topic = topic
+            };
     }
 
     private static DiagnosticFallbackProfile DetectFallbackProfile(string topicTitle)
@@ -345,7 +508,7 @@ public static class DiagnosticQuizQualityGate
             return $"{objective}. {profile.Scenario}";
         }
 
-        return $"{objective}. {profile.Scenario} Bu tanida Orka once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
+        return $"{objective}. {profile.Scenario} Once kosullari, sonra kavrami ve son olarak uygulanacak kucuk adimi olcer.";
     }
 
     private static string BuildFirstExplanation(DiagnosticFallbackProfile profile, string objective)
@@ -364,7 +527,7 @@ public static class DiagnosticQuizQualityGate
         {
             new[]
             {
-                new DiagnosticOption("En kucuk calisan akisi kurup sonucu hatanin kok nedeniyle karsilastirmak.", true),
+                new DiagnosticOption("Veriyi, beklenen sonucu ve kavram kuralini birlikte kontrol etmek.", true),
                 new DiagnosticOption("Hata mesajina bakmadan ilk gorunen satiri tamamen silmek.", false),
                 new DiagnosticOption("Kod calismiyorsa kavrami degil sadece dosya adini degistirmek.", false),
                 new DiagnosticOption("Ciktiyi okumadan en kisa secenegi secmek.", false)

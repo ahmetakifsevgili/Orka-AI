@@ -95,7 +95,7 @@ addCheck("Learning panel uses durable backend surfaces", learningPanel.includes(
 const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
-addCheck("Plan mode requires intent confirmation before Korteks", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
+addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayriliyor") && chatPanel.includes("Baglam taraniyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Ogrenme yolu uretiliyor"));
 
 const packageJson = read("package.json");
@@ -136,7 +136,7 @@ addCheck("V2.9 quality reality gate is wired", v29QualityTests.includes("Quality
 addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
 addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
 addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("programming_plan_missing_orka_ide"));
-addCheck("Programming fallback is Orka IDE centered without hardcoded C# lock", deepPlanAgent.includes("BuildProgrammingFallbackModules") && deepPlanAgent.includes("DetectProgrammingProfile") && deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi") && deepPlanAgent.includes("Python"));
+addCheck("Programming fallback mentions Orka IDE practice without hardcoded C# lock", deepPlanAgent.includes("BuildProgrammingFallbackModules") && deepPlanAgent.includes("DetectProgrammingProfile") && deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi") && deepPlanAgent.includes("Python"));
 addCheck("Tutor coding lessons default to Orka IDE", tutorAgent.includes("ORKA IDE VARSAYILAN ORTAMDIR") && tutorAgent.includes("harici kurulumları ilk adım gibi anlatma"));
 addCheck("P4 language learning plan template exists", deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && deepPlanAgent.includes("Spaced Repetition") && deepPlanAgent.includes("Speaking Prompt"));
 addCheck("P4 plan quality backend guard exists", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesAreNotGeneric"));

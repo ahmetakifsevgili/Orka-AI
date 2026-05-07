@@ -2,11 +2,13 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
+using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.SemanticKernel.Plugins;
 
 namespace Orka.Infrastructure.Services;
 
@@ -23,6 +25,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private readonly IQuizAttemptRecorder _quizRecorder;
     private readonly IDeepPlanAgent _deepPlan;
     private readonly ILogger<PlanDiagnosticService> _logger;
+    private readonly TavilySearchPlugin? _webSearch;
+    private readonly WikipediaPlugin? _wikipedia;
+    private readonly YouTubeTranscriptPlugin? _youtube;
 
     public PlanDiagnosticService(
         OrkaDbContext db,
@@ -32,7 +37,10 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         IPlanDiagnosticStateStore stateStore,
         IQuizAttemptRecorder quizRecorder,
         IDeepPlanAgent deepPlan,
-        ILogger<PlanDiagnosticService> logger)
+        ILogger<PlanDiagnosticService> logger,
+        TavilySearchPlugin? webSearch = null,
+        WikipediaPlugin? wikipedia = null,
+        YouTubeTranscriptPlugin? youtube = null)
     {
         _db = db;
         _korteks = korteks;
@@ -42,6 +50,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         _quizRecorder = quizRecorder;
         _deepPlan = deepPlan;
         _logger = logger;
+        _webSearch = webSearch;
+        _wikipedia = wikipedia;
+        _youtube = youtube;
     }
 
     public async Task<StartPlanDiagnosticResponse> StartAsync(
@@ -60,7 +71,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         var approvedResearchIntent = NormalizeApprovedIntent(request.ApprovedResearchIntent);
         if (string.IsNullOrWhiteSpace(approvedResearchIntent))
         {
-            throw new InvalidOperationException("Approved study intent is required before Korteks research.");
+            throw new InvalidOperationException("Approved study intent is required before learning research.");
         }
 
         var approvedMainTopic = CleanOrDefault(request.ApprovedMainTopic, topic.Title);
@@ -96,7 +107,13 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
         try
         {
-            var research = await _korteks.RunResearchWithEvidenceAsync(approvedResearchIntent, userId, request.TopicId, ct: ct);
+            var research = await BuildDirectLearningResearchAsync(
+                approvedResearchIntent,
+                topicTitle,
+                approvedMainTopic,
+                approvedFocusArea,
+                request.TopicId,
+                ct);
             var compressed = _compressor.Compress(research);
             var compressedBlock = _compressor.BuildPromptBlock(compressed);
 
@@ -395,6 +412,319 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
             return fallback;
         }
+    }
+
+    private async Task<KorteksResearchResultDto> BuildDirectLearningResearchAsync(
+        string approvedResearchIntent,
+        string topicTitle,
+        string approvedMainTopic,
+        string approvedFocusArea,
+        Guid topicId,
+        CancellationToken ct)
+    {
+        var retrievedAt = DateTimeOffset.UtcNow;
+        var providerBlocks = new List<string>();
+        var sources = new List<SourceEvidenceDto>();
+        var failures = new List<string>();
+        var warnings = new List<string>();
+
+        var webQueries = BuildLearningResearchQueries(approvedResearchIntent, approvedMainTopic, approvedFocusArea);
+        if (_webSearch != null)
+        {
+            var webResult = await TryProviderCallAsync(
+                "WebSearch",
+                () => _webSearch.SearchWebDeep(string.Join(", ", webQueries)),
+                failures,
+                ct);
+            providerBlocks.Add(BuildProviderBlock("WebSearch", webResult));
+            sources.AddRange(KorteksSourceEvidenceExtractor.Extract("WebSearch", "SearchWebDeep", webResult, retrievedAt));
+            AddDegradedWarning("WebSearch", webResult, warnings);
+        }
+        else
+        {
+            warnings.Add("WebSearch plugin is not available in this runtime; learning research used internal curriculum synthesis.");
+        }
+
+        if (_wikipedia != null)
+        {
+            var wikiResult = await TryProviderCallAsync(
+                "Wikipedia",
+                () => _wikipedia.SearchWikipedia(approvedResearchIntent),
+                failures,
+                ct);
+            providerBlocks.Add(BuildProviderBlock("Wikipedia", wikiResult));
+            sources.AddRange(KorteksSourceEvidenceExtractor.Extract("Wikipedia", "SearchWikipedia", wikiResult, retrievedAt));
+            AddDegradedWarning("Wikipedia", wikiResult, warnings);
+        }
+        else
+        {
+            warnings.Add("Wikipedia plugin is not available in this runtime.");
+        }
+
+        if (_youtube != null)
+        {
+            var youtubeResult = await TryProviderCallAsync(
+                "YouTube",
+                () => _youtube.SearchYouTubeVideos(approvedResearchIntent),
+                failures,
+                ct);
+            providerBlocks.Add(BuildProviderBlock("YouTube", youtubeResult));
+            sources.AddRange(KorteksSourceEvidenceExtractor.Extract("YouTube", "SearchYouTubeVideos", youtubeResult, retrievedAt));
+            AddDegradedWarning("YouTube", youtubeResult, warnings);
+        }
+        else
+        {
+            warnings.Add("YouTube plugin is not available in this runtime.");
+        }
+
+        var deterministicBrief = BuildDeterministicLearningBrief(
+            approvedResearchIntent,
+            topicTitle,
+            approvedMainTopic,
+            approvedFocusArea);
+
+        var systemPrompt = """
+            You are Orka's Learning Research Synthesizer.
+            You do not create the final quiz and you do not create the final study plan.
+            Convert the approved study intent and available source snippets into a compact learning-research brief.
+
+            Requirements:
+            - Use the approved study intent, not the raw user sentence.
+            - Prefer source-aware learning routes when source snippets are available.
+            - If live sources are missing/degraded, be explicit and use conservative curriculum knowledge.
+            - Extract prerequisites, sub-concepts, common mistakes, practice order, quiz scope, and recommended question count.
+            - For programming topics, keep quiz material about language/concept knowledge; do not mention Orka IDE, sandbox, Visual Studio, or product UI inside quiz scope.
+            - Do not invent citations. Do not claim current web grounding when providers are disabled.
+            - Return a concise markdown brief with stable section headings.
+            """;
+
+        var userMessage = $$"""
+            Approved study intent: {{approvedResearchIntent}}
+            Main topic: {{approvedMainTopic}}
+            Focus area: {{approvedFocusArea}}
+            Display topic title: {{topicTitle}}
+
+            Deterministic curriculum seed:
+            {{deterministicBrief}}
+
+            Provider notes:
+            {{string.Join("\n\n", providerBlocks)}}
+
+            Produce sections:
+            [DIRECT LEARNING RESEARCH BRIEF]
+            LearningRoute
+            ReliableSources
+            YouTubeLearningReferences
+            Prerequisites
+            SubConcepts
+            CommonMistakes
+            PracticeOrder
+            QuizScope
+            RecommendedQuestionCount
+            PlanningNotes
+            """;
+
+        string report;
+        try
+        {
+            report = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, userMessage, ct);
+            if (LooksLikeQuizJson(report) || !report.Contains("QuizScope", StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add("Learning research synthesizer returned an invalid brief shape; deterministic curriculum brief was used.");
+                report = deterministicBrief;
+            }
+        }
+        catch (Exception ex)
+        {
+            warnings.Add("Learning research synthesizer failed; deterministic curriculum brief was used.");
+            failures.Add($"LearningResearchSynthesizer: {ex.GetType().Name}");
+            report = deterministicBrief;
+        }
+
+        sources = sources
+            .GroupBy(s => s.Url, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Take(12)
+            .ToList();
+
+        var groundingMode = sources.Count switch
+        {
+            > 2 => GroundingMode.SourceGrounded,
+            > 0 => GroundingMode.PartialSourceGrounded,
+            _ => GroundingMode.FallbackInternalKnowledge
+        };
+
+        return new KorteksResearchResultDto
+        {
+            Topic = approvedResearchIntent,
+            TopicId = topicId,
+            Report = report,
+            GroundingMode = groundingMode,
+            Sources = sources,
+            ProviderFailures = failures,
+            Warnings = warnings,
+            IsFallback = sources.Count == 0,
+            CreatedAt = retrievedAt
+        };
+    }
+
+    private static string[] BuildLearningResearchQueries(
+        string approvedResearchIntent,
+        string approvedMainTopic,
+        string approvedFocusArea)
+    {
+        var baseIntent = string.Join(' ', new[] { approvedResearchIntent, approvedMainTopic, approvedFocusArea }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+
+        return
+        [
+            $"{baseIntent} learning path",
+            $"{baseIntent} prerequisites common mistakes practice exercises",
+            $"{baseIntent} tutorial course roadmap"
+        ];
+    }
+
+    private static async Task<string> TryProviderCallAsync(
+        string provider,
+        Func<Task<string>> call,
+        List<string> failures,
+        CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            return await call();
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"{provider}: {ex.GetType().Name}");
+            return $"[{provider}:degraded] {provider} unavailable during direct learning research.";
+        }
+    }
+
+    private static string BuildProviderBlock(string provider, string? result)
+    {
+        var text = string.IsNullOrWhiteSpace(result)
+            ? "[empty]"
+            : result.Trim();
+        if (text.Length > 2500)
+        {
+            text = text[..2500] + "...";
+        }
+
+        return $"[{provider}]\n{text}";
+    }
+
+    private static void AddDegradedWarning(string provider, string? result, List<string> warnings)
+    {
+        var marker = KorteksSourceEvidenceExtractor.FindDegradedMarker(result);
+        if (!string.IsNullOrWhiteSpace(marker))
+        {
+            warnings.Add($"{provider} returned degraded marker: {marker}");
+        }
+    }
+
+    private static bool LooksLikeQuizJson(string value)
+    {
+        var trimmed = value.TrimStart();
+        return trimmed.StartsWith("[", StringComparison.Ordinal) &&
+               value.Contains("\"question\"", StringComparison.OrdinalIgnoreCase) &&
+               value.Contains("\"options\"", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildDeterministicLearningBrief(
+        string approvedResearchIntent,
+        string topicTitle,
+        string approvedMainTopic,
+        string approvedFocusArea)
+    {
+        if (LooksLikeJavaAlgorithmsIntent(approvedResearchIntent, topicTitle, approvedMainTopic, approvedFocusArea))
+        {
+            return $$"""
+                [DIRECT LEARNING RESEARCH BRIEF]
+                LearningRoute:
+                1. Java array/list basics and iteration.
+                2. Big-O intuition through simple loops, nested loops, and collection operations.
+                3. Sorting and searching: Arrays.sort, Collections.sort, binary search prerequisites.
+                4. Core data structures: ArrayList, LinkedList, Stack, Queue, HashSet, HashMap, PriorityQueue.
+                5. Recursion, base cases, and call-stack reasoning.
+                6. Graph basics: BFS with queue, DFS with recursion/stack.
+                7. Practical patterns: two pointers, prefix sums, greedy checks, dynamic programming basics.
+
+                ReliableSources:
+                - Oracle Java Collections algorithms documentation is a stable reference for sorting/searching collection behavior.
+                - Princeton Algorithms Part I is a strong Java-oriented algorithms/data structures curriculum reference.
+                - OpenDSA/Open Data Structures are useful open learning references for practice and conceptual checks.
+
+                YouTubeLearningReferences:
+                - Use YouTube only as a teaching reference when configured. Prefer Java algorithms/data structures tutorials that show code traces and practice problems.
+
+                Prerequisites:
+                Java syntax, methods, loops, arrays, object basics, generics basics, and reading small code traces.
+
+                SubConcepts:
+                arrays, lists, sorting, searching, binary search precondition, Big-O, stack, queue, set, map, priority queue, recursion, BFS, DFS, greedy, dynamic programming.
+
+                CommonMistakes:
+                assuming binary search works on unsorted data; confusing HashMap with ordered maps; off-by-one loop bounds; ignoring base cases; treating every greedy idea as correct; mixing stack and queue behavior; memorizing Big-O without reading the code path.
+
+                PracticeOrder:
+                trace small arrays -> implement search -> compare linear/binary search -> sort custom objects with Comparator -> use stack/queue -> map/set frequency tasks -> recursion base cases -> BFS/DFS toy graph -> prefix sum/two pointer -> small DP table.
+
+                QuizScope:
+                Diagnostic questions must measure Java algorithm/data-structure understanding, not product UI usage. Include code reading, data-structure choice, complexity, and misconception probes.
+
+                RecommendedQuestionCount:
+                20
+
+                PlanningNotes:
+                Move already-known Java syntax quickly into practice. Spend more time on misconceptions found in quiz attempts, especially complexity, data-structure choice, and algorithm preconditions.
+                """;
+        }
+
+        return $$"""
+            [DIRECT LEARNING RESEARCH BRIEF]
+            LearningRoute:
+            Start from prerequisites, map the focus area into sub-concepts, then move from small examples to applied practice.
+
+            ReliableSources:
+            Live source grounding was unavailable or partial. Use conservative curriculum knowledge until provider-backed sources are available.
+
+            YouTubeLearningReferences:
+            Use as teaching references only when configured; do not treat video metadata as factual proof.
+
+            Prerequisites:
+            Identify vocabulary, prior skills, and basic examples needed before the learner starts the focus area.
+
+            SubConcepts:
+            Break "{{approvedResearchIntent}}" into measurable concept groups before quiz generation.
+
+            CommonMistakes:
+            Watch for memorized definitions, skipped prerequisites, confused terminology, and applying a rule outside its constraints.
+
+            PracticeOrder:
+            Concept check -> small worked example -> guided practice -> mixed practice -> error reflection.
+
+            QuizScope:
+            Questions should measure the approved intent directly and avoid internal product/system wording.
+
+            RecommendedQuestionCount:
+            20
+
+            PlanningNotes:
+            Use quiz results to fast-track known concepts and slow down on weak/misunderstood concepts.
+            """;
+    }
+
+    private static bool LooksLikeJavaAlgorithmsIntent(params string[] values)
+    {
+        var text = string.Join(' ', values).ToLowerInvariant();
+        return text.Contains("java", StringComparison.OrdinalIgnoreCase) &&
+               (text.Contains("algoritma", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("algorithm", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("veri yapi", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("data structure", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<List<Guid>> GetGeneratedPlanTopicIdsAsync(Guid userId, Guid rootTopicId, CancellationToken ct)

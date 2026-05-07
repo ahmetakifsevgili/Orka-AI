@@ -17,7 +17,7 @@ namespace Orka.Infrastructure.UnitTests;
 public sealed class PlanDiagnosticTests
 {
     [Fact]
-    public async Task PlanDiagnostic_Start_RequiresApprovedIntentBeforeKorteks()
+    public async Task PlanDiagnostic_Start_RequiresApprovedIntentBeforeLearningResearch()
     {
         var harness = await CreateHarnessAsync();
 
@@ -39,8 +39,8 @@ public sealed class PlanDiagnosticTests
         Assert.NotNull(state);
         Assert.False(string.IsNullOrWhiteSpace(state!.CompressedResearchContextJson));
         Assert.Equal(PlanDiagnosticStatus.QuizPending, state.Status);
-        Assert.Equal(GroundingMode.SourceGrounded, state.GroundingMode);
-        Assert.Equal(2, state.SourceCount);
+        Assert.Equal(GroundingMode.FallbackInternalKnowledge, state.GroundingMode);
+        Assert.Equal(0, state.SourceCount);
     }
 
     [Fact]
@@ -50,8 +50,7 @@ public sealed class PlanDiagnosticTests
 
         var response = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
-        Assert.Equal(1, harness.Korteks.CallCount);
-        Assert.Equal("C# programming async await learning path", harness.Korteks.LastTopic);
+        Assert.Equal(0, harness.Korteks.CallCount);
         Assert.Equal(1, harness.Compressor.CompressCount);
         Assert.Equal(1, harness.Compressor.BuildPromptBlockCount);
         Assert.Contains("PLAN INTELLIGENCE BRIEF", harness.Factory.LastSystemPrompt);
@@ -104,7 +103,7 @@ public sealed class PlanDiagnosticTests
         "index ve sorgu optimizasyonu",
         "SQL programming index and query optimization learning path",
         24)]
-    public async Task LifeTest_IntentKorteksQuizPlanPipeline_UsesApprovedIntentOnly(
+    public async Task LifeTest_IntentLearningResearchQuizPlanPipeline_UsesApprovedIntentOnly(
         string rawRequest,
         string expectedMainTopic,
         string expectedFocus,
@@ -135,9 +134,9 @@ public sealed class PlanDiagnosticTests
             ApprovedResearchIntent = intent.ResearchIntent
         });
 
-        Assert.Equal(1, harness.Korteks.CallCount);
-        Assert.Equal(intent.ResearchIntent, harness.Korteks.LastTopic);
-        Assert.NotEqual(rawRequest, harness.Korteks.LastTopic);
+        Assert.Equal(0, harness.Korteks.CallCount);
+        Assert.Equal(intent.ResearchIntent, start.ApprovedResearchIntent);
+        Assert.NotEqual(rawRequest, start.ApprovedResearchIntent);
         Assert.InRange(start.QuizQuestionCount, 15, 25);
         Assert.Equal(expectedQuestionCount, start.QuizQuestionCount);
         Assert.Equal(start.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(start.QuestionsJson));
@@ -227,7 +226,7 @@ public sealed class PlanDiagnosticTests
         Assert.Contains("stored compressed context", harness.DeepPlan.LastCompressedResearchPromptBlock);
         Assert.Contains(start.QuizRunId.ToString(), harness.DeepPlan.LastDiagnosticQuizSummary);
         Assert.Contains("variables", harness.DeepPlan.LastDiagnosticQuizSummary);
-        Assert.Equal(1, harness.Korteks.CallCount);
+        Assert.Equal(0, harness.Korteks.CallCount);
         Assert.Equal(1, harness.Compressor.CompressCount);
     }
 

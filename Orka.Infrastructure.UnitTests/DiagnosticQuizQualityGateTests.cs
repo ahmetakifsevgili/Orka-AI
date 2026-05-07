@@ -140,10 +140,18 @@ public sealed class DiagnosticQuizQualityGateTests
 
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
         Assert.Contains("```java", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Arrays.sort", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Binary search", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HashMap", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Dynamic programming", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("async", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Task.Result", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("En kucuk calisan akisi", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("tani sorusu", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(DiagnosticQuizQualityGate.Validate(result, "Java programlama: algoritmalar").IsAcceptable);
     }
 
     [Fact]
