@@ -58,3 +58,7 @@ scripts/llm-eval/output/
 !.claude/*.log
 Orka.API/build.txt
 Orka.API/dotnet_log.txt
+
+# Python test cache
+__pycache__/
+*.pyc

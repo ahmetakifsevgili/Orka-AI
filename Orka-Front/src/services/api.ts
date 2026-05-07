@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
+import type { StudyIntentPreview, ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -511,11 +511,24 @@ type QuizAttemptPayload = {
 };
 
 export const QuizAPI = {
+  analyzePlanIntent: (data: {
+    rawRequest: string;
+    topicId?: string;
+    existingTopicTitle?: string;
+    correction?: string;
+  }) =>
+    api.post<StudyIntentPreview>("/quiz/plan-diagnostic/intent", data).then((r) => r.data),
   startPlanDiagnostic: (data: {
     topicId: string;
     sessionId?: string;
     topicTitle?: string;
     userLevel?: string;
+    intentRequestId?: string;
+    rawStudyRequest?: string;
+    approvedMainTopic?: string;
+    approvedFocusArea?: string;
+    approvedStudyGoal?: string;
+    approvedResearchIntent?: string;
   }) =>
     api.post<{
       planRequestId: string;
@@ -527,6 +540,11 @@ export const QuizAPI = {
       groundingMode: string;
       sourceCount: number;
       quizQuestionCount: number;
+      intentRequestId?: string | null;
+      approvedMainTopic: string;
+      approvedFocusArea: string;
+      approvedStudyGoal: string;
+      approvedResearchIntent: string;
     }>("/quiz/plan-diagnostic/start", data).then((r) => r.data),
   recordPlanDiagnosticAttempt: (planRequestId: string, data: QuizAttemptPayload) =>
     api.post<{

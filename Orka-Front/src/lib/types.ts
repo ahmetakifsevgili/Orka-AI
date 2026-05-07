@@ -83,6 +83,24 @@ export interface PlanDiagnosticMeta {
   topicTitle: string;
   status?: string;
   quizQuestionCount?: number;
+  intentRequestId?: string | null;
+  approvedMainTopic?: string;
+  approvedFocusArea?: string;
+  approvedStudyGoal?: string;
+  approvedResearchIntent?: string;
+}
+
+export interface StudyIntentPreview {
+  intentRequestId: string;
+  rawRequest: string;
+  mainTopic: string;
+  focusArea: string;
+  studyGoal: string;
+  researchIntent: string;
+  confirmationText: string;
+  language: string;
+  clarifyingNotes: string[];
+  requiresUserConfirmation: boolean;
 }
 
 export interface SubLesson {

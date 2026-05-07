@@ -1,9 +1,9 @@
-/*
- * ChatPanel — uygulamanın kalbi.
- * - POST /Chat/message ile mesaj gönderir.
- * - activeTopic NULL olabilir: backend yeni topic otomatik oluşturur.
- * - messageType "quiz" → tryParseQuiz ile QuizData extract edilir.
- * - Her AI yanıtından sonra onTopicsRefresh çağrılır (sidebar senkronizasyonu).
+﻿/*
+ * ChatPanel â€” uygulamanÄ±n kalbi.
+ * - POST /Chat/message ile mesaj gÃ¶nderir.
+ * - activeTopic NULL olabilir: backend yeni topic otomatik oluÅŸturur.
+ * - messageType "quiz" â†’ tryParseQuiz ile QuizData extract edilir.
+ * - Her AI yanÄ±tÄ±ndan sonra onTopicsRefresh Ã§aÄŸrÄ±lÄ±r (sidebar senkronizasyonu).
  */
 
 import {
@@ -14,11 +14,11 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Send, Sparkles, BookOpen, Bell, Globe } from "lucide-react";
+import { Send, Sparkles, BookOpen, Bell, Globe, CheckCircle2, Edit3, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
-import type { ChatMessage, ApiTopic, QuizData } from "@/lib/types";
+import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview } from "@/lib/types";
 import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
@@ -28,7 +28,7 @@ import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-type PlanFlowStage = "idle" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
+type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
 
 type PlanCompletion = {
   planGenerated: boolean;
@@ -48,17 +48,17 @@ interface ChatPanelProps {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   sessionLoading: boolean;
   onOpenWiki: (topicId: string) => void;
-  /** AI yanıtı geldikten sonra sidebar topic listesini yeniler. */
+  /** AI yanÄ±tÄ± geldikten sonra sidebar topic listesini yeniler. */
   onTopicsRefresh: () => void;
-  /** Backend yanıtı yeni bir topic oluşturduysa (null topic modunda) çağrılır. */
+  /** Backend yanÄ±tÄ± yeni bir topic oluÅŸturduysa (null topic modunda) Ã§aÄŸrÄ±lÄ±r. */
   onTopicAutoCreated?: (topicId: string) => void;
   currentSubtopic?: { title: string; index: number; total: number; progress: number } | null;
   defaultMode?: "plan" | "chat";
-  /** IDE'den gelen mesaj — mount sonrası otomatik gönderilir ve sıfırlanır. */
+  /** IDE'den gelen mesaj â€” mount sonrasÄ± otomatik gÃ¶nderilir ve sÄ±fÄ±rlanÄ±r. */
   pendingMessage?: string | null;
-  /** pendingMessage tüketildikten sonra parent'i bilgilendirir */
+  /** pendingMessage tÃ¼ketildikten sonra parent'i bilgilendirir */
   onPendingMessageConsumed?: () => void;
-  /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar; quiz sorusu opsiyonel iletilir */
+  /** IDE sayfasÄ±nÄ±n otomatik veya manuel split view modunda aÃ§Ä±lmasÄ±nÄ± saÄŸlar; quiz sorusu opsiyonel iletilir */
   onOpenIDE?: (question?: string) => void;
 }
 
@@ -86,8 +86,10 @@ export default function ChatPanel({
   const [thinkingState, setThinkingState] = useState(THINKING_STATES[0]);
   const [planFlowStage, setPlanFlowStage] = useState<PlanFlowStage>("idle");
   const [planFlowDetail, setPlanFlowDetail] = useState<string | null>(null);
+  const [pendingPlanIntent, setPendingPlanIntent] = useState<StudyIntentPreview | null>(null);
+  const [pendingPlanRawRequest, setPendingPlanRawRequest] = useState("");
 
-  // Yeni topic modu aktifleştirildiğinde reset at
+  // Yeni topic modu aktifleÅŸtirildiÄŸinde reset at
   useEffect(() => {
     if (!activeTopic && messages.length === 0) {
       setIsPlanMode(defaultMode === "plan");
@@ -97,7 +99,7 @@ export default function ChatPanel({
   const [userInitial, setUserInitial] = useState<string>("U");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // IDE → Chat mesaj tetikleyici için sendMessage ref'i
+  // IDE â†’ Chat mesaj tetikleyici iÃ§in sendMessage ref'i
   const sendMessageRef = useRef<((content: string) => void) | null>(null);
 
   // Fetch user info
@@ -113,7 +115,7 @@ export default function ChatPanel({
     }).catch(() => {});
   }, []);
 
-  // ── Thinking state rotator ─────────────────────────────────────────────
+  // â”€â”€ Thinking state rotator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!isThinking) return;
     if (planFlowStage !== "idle") return;
@@ -129,7 +131,7 @@ export default function ChatPanel({
     return () => clearInterval(id);
   }, [isThinking, isPlanMode, planFlowStage]);
 
-  // ── Auto-scroll (only if user is near bottom) ───────────────────────────
+  // â”€â”€ Auto-scroll (only if user is near bottom) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const isNearBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
 
@@ -147,7 +149,7 @@ export default function ChatPanel({
   // Force scroll to bottom when messages first load (history) or new message added
   useEffect(() => {
     if (messages.length > 0 && isInitialLoadRef.current) {
-      // Initial load — force to bottom with a slight delay for DOM to render
+      // Initial load â€” force to bottom with a slight delay for DOM to render
       isInitialLoadRef.current = false;
       requestAnimationFrame(() => scrollToBottom(true));
       return;
@@ -180,15 +182,57 @@ export default function ChatPanel({
       setIsThinking(true);
       setIsPlanMode(false);
       setIsKorteksMode(false);
+      setPendingPlanIntent(null);
+      setPendingPlanRawRequest(content);
+      setPlanFlowStage("intent");
+      setPlanFlowDetail("Once calisma niyetini ayiriyorum. Onay vermeden Korteks arastirmasi, quiz veya plan baslamayacak.");
+
+      try {
+        const intent = await QuizAPI.analyzePlanIntent({
+          rawRequest: content,
+          topicId: activeTopic?.id,
+          existingTopicTitle: activeTopic?.title,
+        });
+        setPendingPlanIntent(intent);
+        setPlanFlowStage("idle");
+        setPlanFlowDetail(null);
+      } catch (err) {
+        console.error("Study intent analysis error:", err);
+        setPlanFlowStage("error");
+        setPlanFlowDetail("Niyet analizi baslatilamadi; Korteks ve quiz cagrisi yapilmadi.");
+        toast.error("Niyet analizi baslatilamadi. Backend durumunu kontrol ediyoruz.");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `plan-error-${Date.now()}`,
+            role: "ai",
+            type: "text",
+            content:
+              "Niyet analizinde bir sorun olustu. Korteks arastirmasi ve quiz baslatilmadi; once ne calismak istedigini netlestirmemiz gerekiyor.",
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsThinking(false);
+      }
+    },
+    [activeTopic, isThinking, setMessages]
+  );
+
+  const confirmPlanIntent = useCallback(
+    async (intent: StudyIntentPreview) => {
+      if (!intent || isThinking) return;
+
+      setIsThinking(true);
       setPlanFlowStage("topic");
-      setPlanFlowDetail("Hedefi konu, seviye ve uygulama alanina ayiriyorum. Bu akista quiz cevaplari chat'e komut olarak basilmayacak.");
+      setPlanFlowDetail("Onaylanan niyete gore konu aciliyor. Ham kullanici cumlesi Korteks'e gonderilmeyecek.");
 
       try {
         let topicId = activeTopic?.id;
-        let topicTitle = activeTopic?.title ?? content;
+        let topicTitle = activeTopic?.title ?? `${intent.mainTopic}: ${intent.focusArea}`;
 
         if (!topicId) {
-          const title = content.replace(/\s+/g, " ").trim().slice(0, 70) || "Yeni calisma hedefi";
+          const title = `${intent.mainTopic}: ${intent.focusArea}`.replace(/\s+/g, " ").trim().slice(0, 90) || "Yeni calisma hedefi";
           const created = await TopicsAPI.create({
             title,
             emoji: "📘",
@@ -199,18 +243,24 @@ export default function ChatPanel({
           onTopicAutoCreated?.(topicId!);
           onTopicsRefresh();
         }
+
         if (!topicId) {
           throw new Error("Topic could not be prepared for plan diagnostic.");
         }
-        const ensuredTopicId = topicId;
 
         setPlanFlowStage("research");
-        setPlanFlowDetail("Korteks mevcut konu, kaynak, wiki ve guvenli pedagojik sinyalleri yokluyor. Canli veri yoksa bunu uydurmayacak.");
+        setPlanFlowDetail(`Korteks arastiriyor: ${intent.researchIntent}. Kaynak, YouTube, on kosul, alt kavram, yaygin hata ve pratik sirasi toplanacak.`);
 
         const start = await QuizAPI.startPlanDiagnostic({
-          topicId: ensuredTopicId,
+          topicId,
           sessionId: sessionId ?? undefined,
           topicTitle,
+          intentRequestId: intent.intentRequestId,
+          rawStudyRequest: pendingPlanRawRequest || intent.rawRequest,
+          approvedMainTopic: intent.mainTopic,
+          approvedFocusArea: intent.focusArea,
+          approvedStudyGoal: intent.studyGoal,
+          approvedResearchIntent: intent.researchIntent,
         });
 
         const quizData = tryParseQuiz(start.questionsJson);
@@ -218,8 +268,9 @@ export default function ChatPanel({
           throw new Error("Plan diagnostic quiz payload could not be parsed.");
         }
 
+        setPendingPlanIntent(null);
         setPlanFlowStage("quiz");
-        setPlanFlowDetail("Seviye testi hazir. Sorular tek kartta akacak; sonraki soru yeni chat mesaji olarak basilmiyor.");
+        setPlanFlowDetail("Seviye testi hazir. Sorular tek quiz kartinda akacak; cevaplar chat mesaji olmayacak.");
 
         setMessages((prev) => [
           ...prev,
@@ -239,6 +290,11 @@ export default function ChatPanel({
                 topicTitle: start.topicTitle,
                 status: start.status,
                 quizQuestionCount: start.quizQuestionCount,
+                intentRequestId: start.intentRequestId,
+                approvedMainTopic: start.approvedMainTopic,
+                approvedFocusArea: start.approvedFocusArea,
+                approvedStudyGoal: start.approvedStudyGoal,
+                approvedResearchIntent: start.approvedResearchIntent,
               },
             },
             timestamp: new Date(),
@@ -248,19 +304,8 @@ export default function ChatPanel({
       } catch (err) {
         console.error("Plan diagnostic start error:", err);
         setPlanFlowStage("error");
-        setPlanFlowDetail("Plan akisi baslatilamadi; normal Tutor modunda devam edebilirsin.");
+        setPlanFlowDetail("Onaylanan niyetle plan akisi baslatilamadi; quiz veya plan sahte olarak uretilmedi.");
         toast.error("Plan akisi baslatilamadi. Backend durumunu kontrol ediyoruz.");
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `plan-error-${Date.now()}`,
-            role: "ai",
-            type: "text",
-            content:
-              "Plan akisini baslatirken bir sorun olustu. Bu cevap chat'e quiz komutu basmadan durduruldu; istersen konuyu Tutor'a normal soru olarak sorabiliriz.",
-            timestamp: new Date(),
-          },
-        ]);
       } finally {
         setIsThinking(false);
       }
@@ -270,12 +315,49 @@ export default function ChatPanel({
       isThinking,
       onTopicAutoCreated,
       onTopicsRefresh,
+      pendingPlanRawRequest,
       sessionId,
       setMessages,
     ]
   );
 
-  // ── Core send logic ────────────────────────────────────────────────────
+  const revisePlanIntent = useCallback(
+    async (correction: string) => {
+      const nextText = correction.trim();
+      if (!nextText || isThinking) return;
+
+      setIsThinking(true);
+      setPlanFlowStage("intent");
+      setPlanFlowDetail("Duzeltmeyi tekrar niyet analizinden geciriyorum. Hala Korteks cagrisi yok.");
+      try {
+        const intent = await QuizAPI.analyzePlanIntent({
+          rawRequest: pendingPlanRawRequest || nextText,
+          correction: nextText,
+          topicId: activeTopic?.id,
+          existingTopicTitle: activeTopic?.title,
+        });
+        setPendingPlanIntent(intent);
+        setPlanFlowStage("idle");
+        setPlanFlowDetail(null);
+      } catch (err) {
+        console.error("Study intent revision error:", err);
+        toast.error("Niyet duzeltmesi analiz edilemedi.");
+        setPlanFlowStage("error");
+      } finally {
+        setIsThinking(false);
+      }
+    },
+    [activeTopic, isThinking, pendingPlanRawRequest]
+  );
+
+  const resetPlanIntent = useCallback(() => {
+    setPendingPlanIntent(null);
+    setPendingPlanRawRequest("");
+    setIsPlanMode(true);
+    setPlanFlowStage("idle");
+    setPlanFlowDetail(null);
+    textareaRef.current?.focus();
+  }, []);
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -303,7 +385,7 @@ export default function ChatPanel({
       setPlanFlowStage("idle");
       setPlanFlowDetail(null);
 
-      const isPlanRequest = isPlanMode || content.toLowerCase().includes("plan") || content.toLowerCase().includes("müfredat");
+      const isPlanRequest = isPlanMode || content.toLowerCase().includes("plan") || content.toLowerCase().includes("mufredat");
       const initStates = isPlanRequest ? PLANNING_THINKING_STATES : THINKING_STATES;
       setThinkingState(initStates[0]);
 
@@ -345,7 +427,7 @@ export default function ChatPanel({
                 const data = line.substring(6).replace(/\r$/, "");
                 if (data === "[DONE]") break;
                 if (data.startsWith("[ERROR]:")) {
-                  const errMsg = data.replace("[ERROR]:", "").trim() || "Yanıt akışında bir hata oluştu.";
+                  const errMsg = data.replace("[ERROR]:", "").trim() || "Yanit akisinda bir hata olustu.";
                   toast.error(errMsg, { duration: 6000 });
                   setIsThinking(false);
                   setMessages((prev) =>
@@ -358,7 +440,7 @@ export default function ChatPanel({
                   return;
                 }
 
-                // [THINKING:... ] chunk'ları — chat'e yazma, sadece thinking state güncelle
+                // [THINKING:... ] chunk'larÄ± â€” chat'e yazma, sadece thinking state gÃ¼ncelle
                 if (data.startsWith("[THINKING:")) {
                   const thinkingText = data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, "");
                   setThinkingState(thinkingText);
@@ -369,7 +451,7 @@ export default function ChatPanel({
                 // First append the decoded chunk to our content buffer
                 currentContent += data.replaceAll("[NEWLINE]", "\n");
 
-                // Konu tamamlanma sinyali — frontend'e wiki kısayol butonu göstermek için
+                // Konu tamamlanma sinyali â€” frontend'e wiki kÄ±sayol butonu gÃ¶stermek iÃ§in
                 const topicMatch = currentContent.match(/\[TOPIC_COMPLETE:([^\]]+)\]/i);
                 if (topicMatch) {
                   completedTopicId = topicMatch[1];
@@ -390,10 +472,10 @@ export default function ChatPanel({
 
                   // Extract Topic Title cleanly or default to generic string
                   const match = currentContent.match(/\*\*(.*?)\*\*/);
-                  const subjectName = match ? match[1] : "Seçili Eğitim";
-                  toast.success(`${subjectName} konunuzun Çalışma müfredatı oluşmuştur 🎯`, {
+                  const subjectName = match ? match[1] : "Secili egitim";
+                  toast.success(`${subjectName} calisma mufredati olustu.`, {
                     duration: 5000,
-                    icon: "📚"
+                    icon: "OK"
                   });
                 }
 
@@ -414,7 +496,7 @@ export default function ChatPanel({
         // Finalize: Check for Quiz/Rich content or Topic Completion
         const quizData = tryParseQuiz(currentContent);
         if (completedTopicId) {
-          // Konu tamamlandı: AI mesajını bitir, ardından tamamlama kartı ekle
+          // Konu tamamlandÄ±: AI mesajÄ±nÄ± bitir, ardÄ±ndan tamamlama kartÄ± ekle
           setMessages((prev) =>
             prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
           );
@@ -454,9 +536,9 @@ export default function ChatPanel({
         }
       } catch (err) {
         console.error("Streaming error:", err);
-        toast.error("Yanıt akışında bir sorun oluştu.");
+        toast.error("Yanit akisinda bir sorun olustu.");
         setMessages((prev) =>
-          prev.map(m => m.id === assistantId ? { ...m, content: "Üzgünüm, bir bağlantı hatası oluştu." } : m)
+          prev.map(m => m.id === assistantId ? { ...m, content: "Baglanti tarafinda bir sorun olustu. Backend durumunu kontrol edip tekrar deneyelim." } : m)
         );
       } finally {
         setIsThinking(false);
@@ -473,12 +555,12 @@ export default function ChatPanel({
     ]
   );
 
-  // sendMessage ref'i güncel tut — IDE→Chat tetikleyici için
+  // sendMessage ref'i gÃ¼ncel tut â€” IDEâ†’Chat tetikleyici iÃ§in
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // IDE'den gelen pending mesajı otomatik gönder
+  // IDE'den gelen pending mesajÄ± otomatik gÃ¶nder
   useEffect(() => {
     if (!pendingMessage || isThinking) return;
     const fn = sendMessageRef.current;
@@ -487,7 +569,7 @@ export default function ChatPanel({
     onPendingMessageConsumed?.();
   }, [pendingMessage]);
 
-  // ── Korteks stream send ────────────────────────────────────────────────
+  // â”€â”€ Korteks stream send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const sendKorteksMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -509,7 +591,7 @@ export default function ChatPanel({
       };
       setMessages((prev) => [...prev, userMsg, placeholderMsg]);
       setIsThinking(true);
-      setThinkingState("Korteks derin arastirma yapıyor...");
+      setThinkingState("Korteks derin arastirma yapiyor...");
       let currentContent = "";
       try {
         const response = await KorteksAPI.stream({
@@ -551,9 +633,9 @@ export default function ChatPanel({
         onTopicsRefresh();
       } catch (err) {
         console.error("Korteks error:", err);
-        toast.error("Korteks araştırması başarısız oldu.");
+        toast.error("Korteks arastirmasi basarisiz oldu.");
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: "Korteks araştırması sırasında bir hata oluştu.", isStreaming: false } : m))
+          prev.map((m) => (m.id === assistantId ? { ...m, content: "Korteks arastirmasi sirasinda bir hata olustu. Bu sonuc plana aktarilmadi.", isStreaming: false } : m))
         );
       } finally {
         setIsThinking(false);
@@ -562,7 +644,7 @@ export default function ChatPanel({
     [isThinking, activeTopic, setMessages, onTopicsRefresh]
   );
 
-  // ── Textarea send ──────────────────────────────────────────────────────
+  // â”€â”€ Textarea send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSend = useCallback(
     (text?: string) => {
       const content = (text ?? input).trim();
@@ -580,7 +662,7 @@ export default function ChatPanel({
     [input, isKorteksMode, isPlanMode, sendMessage, sendKorteksMessage, startStructuredPlanDiagnostic]
   );
 
-  // ── Quiz answer callback ───────────────────────────────────────────────
+  // â”€â”€ Quiz answer callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleQuizFlowComplete = useCallback(
     (completion: PlanCompletion) => {
       if (!completion.planGenerated) return;
@@ -624,7 +706,7 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
-  // ── Session loading spinner ────────────────────────────────────────────
+  // â”€â”€ Session loading spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (sessionLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#f7f9fa] h-full">
@@ -643,7 +725,7 @@ export default function ChatPanel({
 
   return (
     <div className="flex-1 flex flex-col bg-[#f7f9fa] h-full overflow-hidden">
-      {/* Topic Header — topic varsa adını, yoksa AI assistant markasını göster */}
+      {/* Topic Header â€” topic varsa adÄ±nÄ±, yoksa AI assistant markasÄ±nÄ± gÃ¶ster */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#526d82]/10/50">
         <div className="flex items-center gap-2.5">
           {activeTopic ? (
@@ -691,7 +773,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* Aktif Konu Göstergesi (U1) */}
+      {/* Aktif Konu GÃ¶stergesi (U1) */}
       <AnimatePresence>
         {currentSubtopic && (
           <motion.div
@@ -704,7 +786,7 @@ export default function ChatPanel({
               <BookOpen className="w-4 h-4 text-emerald-500" />
               <div className="flex items-center gap-2 text-xs font-medium">
                 <span className="text-[#344054]">{activeTopic?.title}</span>
-                <span className="text-[#8ba8b5]">❯</span>
+                <span className="text-[#8ba8b5]">â¯</span>
                 <span className="text-[#172033]">{currentSubtopic.title}</span>
               </div>
 
@@ -742,6 +824,15 @@ export default function ChatPanel({
                   onOpenIDE={onOpenIDE}
                 />
               ))}
+              {pendingPlanIntent && (
+                <PlanIntentConfirmationCard
+                  intent={pendingPlanIntent}
+                  isBusy={isThinking}
+                  onConfirm={confirmPlanIntent}
+                  onRevise={revisePlanIntent}
+                  onReset={resetPlanIntent}
+                />
+              )}
             </div>
           )}
 
@@ -769,7 +860,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* Floating Input Frame — Claude/Gemini Style */}
+      {/* Floating Input Frame â€” Claude/Gemini Style */}
       <div className="flex-shrink-0 relative pointer-events-none">
         <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
           <motion.div
@@ -791,10 +882,10 @@ export default function ChatPanel({
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isKorteksMode
-                    ? "Arastirmamı istediğin konuyu yaz, web'de derinlemesine arastırayım..."
+                    ? "Arastirmami istedigin konuyu yaz, web'de derinlemesine arastirayim..."
                     : isPlanMode
-                    ? "Bana bir konu ver, senin icin en güncel müfredatı olusturayım..."
-                    : "Bir sey sor veya müfredat olusturmak icin Plan Modu'nu ac..."
+                    ? "Bana bir konu ver; once niyeti netlestireyim, sonra Korteks arastirsin..."
+                    : "Bir sey sor veya mufredat olusturmak icin Plan Modu'nu ac..."
                 }
                 rows={1}
                 disabled={isThinking}
@@ -811,7 +902,7 @@ export default function ChatPanel({
                         ? "bg-[#dcecf3] border-[#9ec7d9]/60 text-[#172033] shadow-sm"
                         : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
                     `}
-                    title="Plan Modu — Ogrenme mufredati olusturur"
+                    title="Plan Modu - once niyet analizi, sonra Korteks arastirmasi"
                   >
                     <Sparkles className={`w-3.5 h-3.5 ${isPlanMode ? "text-emerald-400" : ""}`} />
                     <span>Plan Modu</span>
@@ -825,7 +916,7 @@ export default function ChatPanel({
                         ? "bg-emerald-900/30 border-emerald-700/50 text-emerald-400 shadow-sm"
                         : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
                     `}
-                    title="Korteks — Web'de derin arastirma yapar ve wiki'ye kaydeder"
+                    title="Korteks - web'de derin arastirma yapar ve wiki'ye kaydeder"
                   >
                     <Globe className={`w-3.5 h-3.5 ${isKorteksMode ? "text-emerald-400" : ""}`} />
                     <span>Korteks</span>
@@ -844,7 +935,7 @@ export default function ChatPanel({
 
                 <div className="flex items-center gap-3">
                    <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block">
-                     {input.length > 0 ? "Shift+Enter yeni satır" : ""}
+                     {input.length > 0 ? "Shift+Enter yeni satir" : ""}
                    </span>
                    <button
                     onClick={() => handleSend()}
@@ -863,7 +954,7 @@ export default function ChatPanel({
             </div>
           </motion.div>
           <p className="text-[9px] text-[#8ba8b5] mt-3 text-center tracking-wide uppercase opacity-50 font-medium">
-            Orka AI · SOLID Planning Engine v4.2 · Streaming Enabled
+            Orka AI Â· SOLID Planning Engine v4.2 Â· Streaming Enabled
           </p>
         </div>
       </div>
@@ -871,20 +962,130 @@ export default function ChatPanel({
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function PlanIntentConfirmationCard({
+  intent,
+  isBusy,
+  onConfirm,
+  onRevise,
+  onReset,
+}: {
+  intent: StudyIntentPreview;
+  isBusy: boolean;
+  onConfirm: (intent: StudyIntentPreview) => void;
+  onRevise: (correction: string) => void;
+  onReset: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(`${intent.mainTopic} ${intent.focusArea}`.trim());
+
+  useEffect(() => {
+    setDraft(`${intent.mainTopic} ${intent.focusArea}`.trim());
+    setIsEditing(false);
+  }, [intent.intentRequestId, intent.mainTopic, intent.focusArea]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="my-4 ml-12 rounded-3xl border border-[#9ec7d9]/40 bg-white/86 p-5 shadow-[0_18px_48px_rgba(66,91,112,0.14)]"
+    >
+      <div className="mb-4 flex items-start gap-3">
+        <div className="mt-0.5 rounded-2xl bg-[#dcecf3] p-2 text-[#2d5870]">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-[#667085]">Niyet analizi</div>
+          <h3 className="mt-1 text-lg font-black text-[#172033]">Korteks'e gitmeden once bunu onayla</h3>
+          <p className="mt-1 text-sm leading-6 text-[#526d82]">
+            {intent.confirmationText || "Calisma niyetini ayirdim. Onay verirsen Korteks arastirmasi baslayacak."}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <IntentField label="Ana alan" value={intent.mainTopic} />
+        <IntentField label="Odak konu" value={intent.focusArea} />
+        <IntentField label="Amac" value={intent.studyGoal} />
+        <IntentField label="Korteks arastirma niyeti" value={intent.researchIntent} mono />
+      </div>
+
+      {intent.clarifyingNotes?.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-4 py-3 text-xs leading-5 text-[#667085]">
+          {intent.clarifyingNotes.slice(0, 3).map((note) => (
+            <div key={note}>• {note}</div>
+          ))}
+        </div>
+      )}
+
+      {isEditing && (
+        <div className="mt-4">
+          <label className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#667085]">
+            Duzeltme
+          </label>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="min-h-[86px] w-full rounded-2xl border border-[#526d82]/15 bg-[#f7f9fa] px-4 py-3 text-sm text-[#172033] outline-none focus:border-[#9ec7d9] focus:ring-2 focus:ring-[#9ec7d9]/25"
+            placeholder="Ornek: Java programlamada algoritmalar ve veri yapilari calismak istiyorum"
+          />
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => onConfirm(intent)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-2 rounded-full bg-[#172033] px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-[#2d5870] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          Onayla ve arastir
+        </button>
+        <button
+          onClick={() => (isEditing ? onRevise(draft) : setIsEditing(true))}
+          disabled={isBusy}
+          className="inline-flex items-center gap-2 rounded-full border border-[#526d82]/15 bg-[#f7f9fa] px-4 py-2 text-xs font-black text-[#344054] transition hover:border-[#9ec7d9] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Edit3 className="h-4 w-4" />
+          {isEditing ? "Duzeltmeyi analiz et" : "Duzelt"}
+        </button>
+        <button
+          onClick={onReset}
+          disabled={isBusy}
+          className="inline-flex items-center gap-2 rounded-full border border-[#526d82]/10 bg-white px-4 py-2 text-xs font-black text-[#667085] transition hover:text-[#172033] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Yeniden yaz
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function IntentField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-[#526d82]/10 bg-[#f7f9fa]/75 px-4 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#667085]">{label}</div>
+      <div className={`mt-1 text-sm font-bold text-[#172033] ${mono ? "font-mono text-[12px]" : ""}`}>
+        {value || "-"}
+      </div>
+    </div>
+  );
+}
 function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: string | null }) {
   const steps: Array<{ id: PlanFlowStage; label: string; body: string }> = [
-    { id: "topic", label: "Hedef okunuyor", body: "Konu, hedef ve başlangıç niyeti ayrılıyor." },
-    { id: "research", label: "Bağlam taranıyor", body: "Kaynak, wiki, YouTube pedagojisi ve güvenli araç sinyalleri kontrol ediliyor." },
-    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yüzeyinde açılır; chat'e sistem komutu düşmez." },
-    { id: "plan", label: "Öğrenme yolu üretiliyor", body: "Cevaplar, zayıf kavramlar, IDE pratikleri ve tekrar baskısı plana çevrilir." },
+    { id: "intent", label: "Niyet ayriliyor", body: "Ham istek konu, odak ve arastirma niyetine cevrilir; onay olmadan Korteks calismaz." },
+    { id: "topic", label: "Hedef okunuyor", body: "Konu, hedef ve baslangic niyeti ayriliyor." },
+    { id: "research", label: "Baglam taraniyor", body: "Kaynak, wiki, YouTube pedagojisi ve guvenli arac sinyalleri kontrol ediliyor." },
+    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yuzeyinde acilir; chat'e sistem komutu dusmez." },
+    { id: "plan", label: "Ogrenme yolu uretiliyor", body: "Cevaplar, zayif kavramlar, IDE pratikleri ve tekrar baskisi plana cevrilir." },
   ];
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === stage));
 
   return (
     <div className="rounded-2xl border border-[#9ec7d9]/35 bg-white/76 px-4 py-3 shadow-[0_14px_36px_rgba(66,91,112,0.12)] backdrop-blur-xl">
-      <div className="mb-2 text-xs font-black text-[#172033]">Plan motoru çalışıyor</div>
+      <div className="mb-2 text-xs font-black text-[#172033]">Plan motoru calisiyor</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {steps.map((step, index) => {
           const done = index < currentIndex || stage === "done";
@@ -900,7 +1101,7 @@ function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: s
                     : "border-[#526d82]/10 bg-[#f7f9fa]/72 text-[#667085]"
               }`}
             >
-              <div className="font-black">{done ? "✓ " : active ? "• " : ""}{step.label}</div>
+              <div className="font-black">{done ? "âœ“ " : active ? "â€¢ " : ""}{step.label}</div>
               <div className="mt-0.5 leading-4 opacity-80">{step.body}</div>
             </div>
           );
@@ -976,3 +1177,5 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
     </div>
   );
 }
+
+

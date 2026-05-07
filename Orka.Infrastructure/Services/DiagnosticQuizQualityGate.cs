@@ -36,6 +36,59 @@ public static class DiagnosticQuizQualityGate
         return BuildFallbackDiagnosticBlueprint(topicTitle);
     }
 
+    public static string EnsureQualityOrThrow(
+        string rawJson,
+        string topicTitle,
+        int expectedQuestionCount,
+        out DiagnosticQuizQualityReport report)
+    {
+        var cleaned = ExtractJsonArray(rawJson);
+        report = Validate(cleaned, topicTitle);
+
+        var failures = report.Failures.ToList();
+        if (report.QuestionCount != expectedQuestionCount)
+        {
+            failures.Add($"Question count mismatch: {report.QuestionCount}/{expectedQuestionCount}.");
+        }
+
+        if (report.QuestionCount is < 15 or > 25)
+        {
+            failures.Add($"Diagnostic quiz must contain 15-25 questions; actual={report.QuestionCount}.");
+        }
+
+        if (ContainsForbiddenPlanDiagnosticScaffold(cleaned))
+        {
+            failures.Add("Quiz leaked internal diagnostic scaffold or generic pipeline wording.");
+        }
+
+        if (IsJavaAlgorithmTopic(topicTitle) && !LooksLikeJavaAlgorithmQuiz(cleaned))
+        {
+            failures.Add("Java algorithms diagnostic must stay on Java + algorithms/data-structures concepts.");
+        }
+
+        if (IsJavaAlgorithmTopic(topicTitle) &&
+            Regex.IsMatch(cleaned, @"\b(c#|csharp|\.net|visual studio)\b", RegexOptions.IgnoreCase))
+        {
+            failures.Add("Java diagnostic leaked unrelated C#/.NET/Visual Studio wording.");
+        }
+
+        report = new DiagnosticQuizQualityReport(
+            failures.Count == 0,
+            report.QuestionCount,
+            report.DuplicateQuestionCount,
+            report.ConceptDiversity,
+            report.QuestionTypeDiversity,
+            report.HasCodeLikeQuestion,
+            failures);
+
+        if (!report.IsAcceptable)
+        {
+            throw new InvalidOperationException($"Diagnostic quiz quality failed: {string.Join(" | ", failures.Take(5))}");
+        }
+
+        return cleaned;
+    }
+
     public static DiagnosticQuizQualityReport Validate(string rawJson, string topicTitle)
     {
         var failures = new List<string>();
@@ -144,7 +197,7 @@ public static class DiagnosticQuizQualityGate
         var questions = templates.Select((t, i) =>
         {
             var codeSnippet = profile.IsTechnical && i is 0 or 3 or 7 or 18
-                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{profile.CodeSnippet}\n```\nBu parçada tani icin en onemli risk veya karar noktasi nedir?"
+                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{profile.CodeSnippet}\n```\nBu parcada seviye belirlemek icin en onemli risk veya karar noktasi nedir?"
                 : string.Empty;
 
             var options = BuildNeutralDiagnosticOptions(i, profile);
@@ -153,12 +206,12 @@ public static class DiagnosticQuizQualityGate
             return new DiagnosticQuestionBlueprint
             {
                 Type = "multiple_choice",
-                Question = $"{topicTitle}: {i + 1}. tani sorusu - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
+                Question = $"{topicTitle}: {i + 1}. seviye sorusu - {BuildQuestionStem(profile, t.Item5)}{codeSnippet}",
                 Options = options,
                 CorrectAnswer = correctOption,
                 Explanation = i == 0
                     ? BuildFirstExplanation(profile, t.Item5)
-                    : $"{t.Item5} Bu soru, {topicTitle} icin tani amacli kavram ve uygulama ayrimini olcer.",
+                    : $"{t.Item5} Bu soru, {topicTitle} icin seviye belirleme amacli kavram ve uygulama ayrimini olcer.",
                 SkillTag = $"{profile.SkillPrefix}-{t.Item3}",
                 Difficulty = t.Item2,
                 ConceptTag = $"{t.Item3}-{i + 1}",
@@ -201,6 +254,17 @@ public static class DiagnosticQuizQualityGate
                 "items = [1, 2, 3]\nprint(items[3])");
         }
 
+        if (Regex.IsMatch(normalized, @"\bjava\b", RegexOptions.IgnoreCase))
+        {
+            return new DiagnosticFallbackProfile(
+                true,
+                "java",
+                "java",
+                "Java",
+                "Orka IDE sandbox'ta Java kod akisini, algoritma adimlarini ve veri yapisi kararini ayirt etmek.",
+                "int[] numbers = {4, 1, 3};\nArrays.sort(numbers);\nSystem.out.println(numbers[0]);");
+        }
+
         if (Regex.IsMatch(normalized, @"\b(javascript|typescript|react|node|js|ts)\b", RegexOptions.IgnoreCase))
         {
             return new DiagnosticFallbackProfile(
@@ -230,8 +294,8 @@ public static class DiagnosticQuizQualityGate
                 "coding",
                 "text",
                 "programlama",
-                "Orka IDE akisi icinde problemi kucuk parcalara ayirip test etmek.",
-                "input -> transform -> validate -> output\nif validation fails: inspect the smallest failing step");
+                "Orka IDE akisi icinde kavrami kucuk bir kod veya pratik adimla test etmek.",
+                "read input\napply the selected concept\ncompare the observed output with the expected result");
         }
 
         if (Regex.IsMatch(normalized, @"\bkpss|yks|tyt|ayt|sinav|exam\b", RegexOptions.IgnoreCase))
@@ -491,6 +555,28 @@ public static class DiagnosticQuizQualityGate
 
         return Regex.IsMatch(topicTitle, @"\b(csharp|java|python|javascript|typescript|sql|async|await|task|api|programlama|kod|debug|thread)\b", RegexOptions.IgnoreCase);
     }
+
+    private static bool ContainsForbiddenPlanDiagnosticScaffold(string text) =>
+        ContainsAny(text, "tani sorusu", "tanı sorusu", "input -> transform", "validation fails", "generic pipeline", "basic-flow");
+
+    private static bool IsJavaAlgorithmTopic(string topicTitle)
+    {
+        var normalized = topicTitle.ToLowerInvariant();
+        return normalized.Contains("java", StringComparison.OrdinalIgnoreCase) &&
+               ContainsAny(normalized, "algoritma", "algorithm", "data structure", "veri yap");
+    }
+
+    private static bool LooksLikeJavaAlgorithmQuiz(string text)
+    {
+        var normalized = text.ToLowerInvariant();
+        var hasJava = normalized.Contains("java", StringComparison.OrdinalIgnoreCase) ||
+                      ContainsAny(normalized, "public static void main", "arraylist", "hashmap", "int[]", "list<");
+        var hasAlgorithm = ContainsAny(normalized, "algoritma", "algorithm", "veri yap", "data structure", "big-o", "complexity", "karmaşıklık", "karmasiklik", "siralama", "sorting", "arama", "search");
+        return hasJava && hasAlgorithm;
+    }
+
+    private static bool ContainsAny(string text, params string[] needles) =>
+        needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksCodeLike(string text) =>
         !string.IsNullOrWhiteSpace(text) &&

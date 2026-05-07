@@ -127,6 +127,15 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Equal(DiagnosticQuizQualityGate.ExtractJsonArray(json), result);
     }
 
+    [Fact]
+    public void DiagnosticQuizQuality_ThrowsWhenPlanDiagnosticLeaksGenericJavaScaffold()
+    {
+        var generic = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async await");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            DiagnosticQuizQualityGate.EnsureQualityOrThrow(generic, "Java programlama: algoritmalar", 20, out _));
+    }
+
     private static string BuildQuiz(
         string? questionOverride = null,
         bool includeCodeQuestion = true,

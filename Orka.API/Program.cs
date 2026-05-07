@@ -104,6 +104,7 @@ builder.Services.AddScoped<IAdaptiveLearningContextBuilder, AdaptiveLearningCont
 builder.Services.AddScoped<IQuizAttemptRecorder, QuizAttemptRecorder>();
 builder.Services.AddScoped<IPlanDiagnosticStateStore, RedisPlanDiagnosticStateStore>();
 builder.Services.AddScoped<IPlanDiagnosticService, PlanDiagnosticService>();
+builder.Services.AddScoped<IStudyIntentAnalyzer, StudyIntentAnalyzer>();
 builder.Services.AddScoped<IWikiAgent, WikiAgent>();
 builder.Services.AddScoped<IKorteksAgent, KorteksAgent>();
 builder.Services.AddScoped<ISupervisorAgent, SupervisorAgent>();

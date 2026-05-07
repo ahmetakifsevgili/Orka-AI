@@ -30,6 +30,8 @@ const frontendContracts = [
   ["/wiki/", "Wiki routes"],
   ["/sources/upload", "Sources upload"],
   ["/quiz/attempt", "Quiz attempt"],
+  ["/quiz/plan-diagnostic/intent", "Plan diagnostic intent gate"],
+  ["/quiz/plan-diagnostic/start", "Plan diagnostic start"],
   ["/learning/signal", "Learning signal"],
   ["/classroom/session", "Classroom session"],
   ["/audio/overview", "Audio overview"],

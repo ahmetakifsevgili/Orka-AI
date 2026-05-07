@@ -18,6 +18,7 @@ public class QuizController : ControllerBase
     private readonly IQuizAttemptRecorder _quizRecorder;
     private readonly IDeepPlanAgent _deepPlan;
     private readonly IPlanDiagnosticService _planDiagnostic;
+    private readonly IStudyIntentAnalyzer _studyIntentAnalyzer;
     private readonly ILogger<QuizController> _logger;
 
     public QuizController(
@@ -25,12 +26,14 @@ public class QuizController : ControllerBase
         IQuizAttemptRecorder quizRecorder,
         IDeepPlanAgent deepPlan,
         IPlanDiagnosticService planDiagnostic,
+        IStudyIntentAnalyzer studyIntentAnalyzer,
         ILogger<QuizController> logger)
     {
         _db = db;
         _quizRecorder = quizRecorder;
         _deepPlan = deepPlan;
         _planDiagnostic = planDiagnostic;
+        _studyIntentAnalyzer = studyIntentAnalyzer;
         _logger = logger;
     }
 
@@ -120,10 +123,38 @@ public class QuizController : ControllerBase
             var result = await _planDiagnostic.StartAsync(userId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "[QuizController] Plan diagnostic start rejected. UserId={UserId}", userId);
+            return BadRequest(new { error = "Approved study intent is required before plan research." });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[QuizController] Plan diagnostic start failed. UserId={UserId}", userId);
             return StatusCode(500, new { error = "Plan diagnostic could not be started." });
+        }
+    }
+
+    [HttpPost("plan-diagnostic/intent")]
+    public async Task<IActionResult> AnalyzePlanIntent([FromBody] AnalyzeStudyIntentRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _studyIntentAnalyzer.AnalyzeAsync(userId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "[QuizController] Study intent analysis rejected. UserId={UserId}", userId);
+            return BadRequest(new { error = "Study intent request is required." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Study intent analysis failed. UserId={UserId}", userId);
+            return StatusCode(500, new { error = "Study intent could not be analyzed." });
         }
     }
 

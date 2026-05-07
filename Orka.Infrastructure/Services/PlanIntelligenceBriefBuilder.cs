@@ -77,6 +77,8 @@ public static class PlanIntelligenceBriefBuilder
         sb.AppendLine("- Produce at least 6 modules, at least 4 lessons per module, and at least 24 lessons.");
         sb.AppendLine("- Module and lesson names must be specific to the topic and domain, not generic placeholders.");
         sb.AppendLine("- Programming plans must start from Orka IDE/sandbox practice and include code reading, debugging, refactor, mini project, and review loops.");
+        sb.AppendLine("- Known concepts from the diagnostic should move faster and become practice checkpoints, not long lectures.");
+        sb.AppendLine("- Weak or mistaken concepts should get slower logical explanations, examples, and remediation drills.");
         sb.AppendLine("- Exam/math/language plans must follow their own domain sequence instead of programming patterns.");
         sb.AppendLine("- If the diagnostic was skipped, start beginner-safe but do not invent weak skills.");
 
@@ -142,9 +144,13 @@ public static class PlanIntelligenceBriefBuilder
                 line.StartsWith("Answered:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("Correct:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("Wrong:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("KnownConcepts:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("FastTrackConcepts:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("PracticeConcepts:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("WeakConcepts:", StringComparison.OrdinalIgnoreCase) ||
-                line.StartsWith("MistakePatterns:", StringComparison.OrdinalIgnoreCase))
-            .Take(6)
+                line.StartsWith("MistakePatterns:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("Instruction:", StringComparison.OrdinalIgnoreCase))
+            .Take(10)
             .Select(line => Trim(line, 220))
             .ToList();
 

@@ -10,6 +10,12 @@ public sealed class PlanDiagnosticStateDto
     public Guid TopicId { get; set; }
     public Guid? SessionId { get; set; }
     public string TopicTitle { get; set; } = string.Empty;
+    public Guid? IntentRequestId { get; set; }
+    public string RawStudyRequest { get; set; } = string.Empty;
+    public string ApprovedMainTopic { get; set; } = string.Empty;
+    public string ApprovedFocusArea { get; set; } = string.Empty;
+    public string ApprovedStudyGoal { get; set; } = string.Empty;
+    public string ApprovedResearchIntent { get; set; } = string.Empty;
     public string UserLevel { get; set; } = "Bilinmiyor";
     public PlanDiagnosticStatus Status { get; set; }
     public string CompressedResearchContextJson { get; set; } = string.Empty;
@@ -32,6 +38,12 @@ public sealed class StartPlanDiagnosticRequest
     public Guid? SessionId { get; set; }
     public string? TopicTitle { get; set; }
     public string? UserLevel { get; set; }
+    public Guid? IntentRequestId { get; set; }
+    public string? RawStudyRequest { get; set; }
+    public string? ApprovedMainTopic { get; set; }
+    public string? ApprovedFocusArea { get; set; }
+    public string? ApprovedStudyGoal { get; set; }
+    public string? ApprovedResearchIntent { get; set; }
 }
 
 public sealed class StartPlanDiagnosticResponse
@@ -45,6 +57,33 @@ public sealed class StartPlanDiagnosticResponse
     public GroundingMode GroundingMode { get; set; }
     public int SourceCount { get; set; }
     public int QuizQuestionCount { get; set; }
+    public Guid? IntentRequestId { get; set; }
+    public string ApprovedMainTopic { get; set; } = string.Empty;
+    public string ApprovedFocusArea { get; set; } = string.Empty;
+    public string ApprovedStudyGoal { get; set; } = string.Empty;
+    public string ApprovedResearchIntent { get; set; } = string.Empty;
+}
+
+public sealed class AnalyzeStudyIntentRequest
+{
+    public string RawRequest { get; set; } = string.Empty;
+    public Guid? TopicId { get; set; }
+    public string? ExistingTopicTitle { get; set; }
+    public string? Correction { get; set; }
+}
+
+public sealed class StudyIntentPreviewResponse
+{
+    public Guid IntentRequestId { get; set; } = Guid.NewGuid();
+    public string RawRequest { get; set; } = string.Empty;
+    public string MainTopic { get; set; } = string.Empty;
+    public string FocusArea { get; set; } = string.Empty;
+    public string StudyGoal { get; set; } = string.Empty;
+    public string ResearchIntent { get; set; } = string.Empty;
+    public string ConfirmationText { get; set; } = string.Empty;
+    public string Language { get; set; } = "tr";
+    public List<string> ClarifyingNotes { get; set; } = [];
+    public bool RequiresUserConfirmation { get; set; } = true;
 }
 
 public sealed class FinalizePlanDiagnosticRequest

@@ -62,6 +62,7 @@ const api = read("src/services/api.ts");
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
+addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
 
 const toolContext = read("src/contexts/ToolCapabilitiesContext.tsx");
 addCheck("Tool capability context drives visibility", toolContext.includes("ToolsAPI.getCapabilities") && toolContext.includes("isVisibleForUser"));
@@ -91,7 +92,9 @@ const learningPanel = read("src/components/LearningPanel.tsx");
 addCheck("Learning panel uses durable backend surfaces", learningPanel.includes("FlashcardsAPI") && learningPanel.includes("ReviewAPI") && learningPanel.includes("DailyChallengeAPI") && learningPanel.includes("BookmarksAPI"));
 
 const chatMessage = read("src/components/ChatMessage.tsx");
+const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
+addCheck("Plan mode requires intent confirmation before Korteks", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
 
 const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");
@@ -121,6 +124,9 @@ const tutorAgent = readRepo("Orka.Infrastructure/Services/TutorAgent.cs");
 const deepPlanAgent = readRepo("Orka.Infrastructure/Services/DeepPlanAgent.cs");
 const planQualityTests = readRepo("Orka.API.Tests/PlanQualityGuardTests.cs");
 const program = readRepo("Orka.API/Program.cs");
+const studyIntentAnalyzer = readRepo("Orka.Infrastructure/Services/StudyIntentAnalyzer.cs");
+const planDiagnostic = readRepo("Orka.Infrastructure/Services/PlanDiagnosticService.cs");
+addCheck("Backend StudyIntentAnalyzer is the plan gate", studyIntentAnalyzer.includes("StudyIntentAnalyzer") && studyIntentAnalyzer.includes("researchIntent") && planDiagnostic.includes("Approved study intent is required"));
 addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
 addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
 addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("programming_plan_missing_orka_ide"));

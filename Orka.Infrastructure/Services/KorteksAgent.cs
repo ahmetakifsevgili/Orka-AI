@@ -173,8 +173,24 @@ public class KorteksAgent : IKorteksAgent
             stage = KorteksFailureStage.ModelStreamStart;
             var chatService = kernel.GetRequiredService<IChatCompletionService>();
             var chatHistory = new ChatHistory(BuildStructuredSystemPrompt(topic, userId, topicId, fileContext));
-            chatHistory.AddUserMessage(
-                $"Konu: \"{topic}\"\n\nAdımları sırayla uygula: önce WebSearch-SearchWebDeep ile ara, sonra Wikipedia, Academic ve YouTube araçlarıyla doğrula, ardından kaynaklı raporu yaz.");
+            chatHistory.AddUserMessage($"""
+                Approved study intent: "{topic}"
+
+                Research this as a learning preparation task, not as a generic encyclopedia summary.
+
+                Find and compare:
+                - a practical learning route for the approved study intent
+                - reliable web sources for learning the topic
+                - useful YouTube educational references when available
+                - prerequisites the learner should know first
+                - important sub-concepts and topic hierarchy
+                - common misconceptions and beginner mistakes
+                - practice order and hands-on exercises
+                - when relevant, coding practice ideas suitable for the Orka IDE/sandbox
+
+                Return source-aware research notes. Do not create the final quiz or final study plan.
+                Your output will be synthesized by another Orka component before quiz and plan generation.
+                """);
 
             await foreach (var chunk in chatService.GetStreamingChatMessageContentsAsync(
                                chatHistory,
@@ -464,10 +480,14 @@ public class KorteksAgent : IKorteksAgent
             3. Use Academic-SearchSemanticScholar and Academic-SearchArXiv for scientific or technical claims.
             4. Use YouTube-SearchYouTubeVideos and YouTube-GetVideoTranscript for educational references when useful.
             Output rules:
+            - Treat Target topic as an approved research intent, not a raw learner message.
             - Write the final report in Turkish Markdown.
             - Put source links beside important claims.
             - If a source cannot be found, state that explicitly.
             - Do not invent citations.
+            - Do not create the final quiz.
+            - Do not create the final study plan.
+            - Focus on learning route, reliable web sources, YouTube educational references, prerequisites, sub-concepts, common mistakes, and practice order.
             - Include a short bibliography section with title and URL when sources are available.
 
             Topic context: {topicContext}

@@ -57,7 +57,17 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             throw new InvalidOperationException("Topic not found for plan diagnostic start.");
         }
 
-        var topicTitle = string.IsNullOrWhiteSpace(request.TopicTitle) ? topic.Title : request.TopicTitle.Trim();
+        var approvedResearchIntent = NormalizeApprovedIntent(request.ApprovedResearchIntent);
+        if (string.IsNullOrWhiteSpace(approvedResearchIntent))
+        {
+            throw new InvalidOperationException("Approved study intent is required before Korteks research.");
+        }
+
+        var approvedMainTopic = CleanOrDefault(request.ApprovedMainTopic, topic.Title);
+        var approvedFocusArea = CleanOrDefault(request.ApprovedFocusArea, "genel kapsam");
+        var approvedStudyGoal = CleanOrDefault(request.ApprovedStudyGoal, "ogrenme ve pratik");
+        var topicTitle = BuildApprovedTopicTitle(request.TopicTitle, approvedMainTopic, approvedFocusArea, topic.Title);
+        var requestedQuestionCount = DetermineDiagnosticQuestionCount(approvedMainTopic, approvedFocusArea, approvedResearchIntent);
         var planRequestId = Guid.NewGuid();
         var quizRunId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -69,6 +79,12 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             TopicId = request.TopicId,
             SessionId = request.SessionId,
             TopicTitle = topicTitle,
+            IntentRequestId = request.IntentRequestId,
+            RawStudyRequest = CleanOrDefault(request.RawStudyRequest, topicTitle),
+            ApprovedMainTopic = approvedMainTopic,
+            ApprovedFocusArea = approvedFocusArea,
+            ApprovedStudyGoal = approvedStudyGoal,
+            ApprovedResearchIntent = approvedResearchIntent,
             UserLevel = string.IsNullOrWhiteSpace(request.UserLevel) ? topic.LanguageLevel ?? "Bilinmiyor" : request.UserLevel.Trim(),
             Status = PlanDiagnosticStatus.Researching,
             QuizRunId = quizRunId,
@@ -80,7 +96,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
         try
         {
-            var research = await _korteks.RunResearchWithEvidenceAsync(topicTitle, userId, request.TopicId, ct: ct);
+            var research = await _korteks.RunResearchWithEvidenceAsync(approvedResearchIntent, userId, request.TopicId, ct: ct);
             var compressed = _compressor.Compress(research);
             var compressedBlock = _compressor.BuildPromptBlock(compressed);
 
@@ -91,7 +107,11 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             state.SourceCount = compressed.SourceCount;
             await _stateStore.SaveAsync(state, ct);
 
-            var quizJson = await GenerateDiagnosticQuizFromStoredContextAsync(topicTitle, compressedBlock, ct);
+            var quizJson = await GenerateDiagnosticQuizFromStoredContextAsync(
+                topicTitle,
+                compressedBlock,
+                requestedQuestionCount,
+                ct);
             var questionCount = CountQuestions(quizJson);
 
             _db.QuizRuns.Add(new QuizRun
@@ -103,7 +123,14 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 QuizType = "baseline",
                 Status = "active",
                 TotalQuestions = questionCount,
-                MetadataJson = JsonSerializer.Serialize(new { planRequestId }, JsonOptions),
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    planRequestId,
+                    intentRequestId = request.IntentRequestId,
+                    approvedMainTopic,
+                    approvedFocusArea,
+                    approvedResearchIntent
+                }, JsonOptions),
                 CreatedAt = now
             });
             await _db.SaveChangesAsync(ct);
@@ -122,7 +149,12 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 QuestionsJson = quizJson,
                 GroundingMode = state.GroundingMode,
                 SourceCount = state.SourceCount,
-                QuizQuestionCount = state.QuizQuestionCount
+                QuizQuestionCount = state.QuizQuestionCount,
+                IntentRequestId = state.IntentRequestId,
+                ApprovedMainTopic = state.ApprovedMainTopic,
+                ApprovedFocusArea = state.ApprovedFocusArea,
+                ApprovedStudyGoal = state.ApprovedStudyGoal,
+                ApprovedResearchIntent = state.ApprovedResearchIntent
             };
         }
         catch (Exception ex)
@@ -297,6 +329,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private async Task<string> GenerateDiagnosticQuizFromStoredContextAsync(
         string topicTitle,
         string compressedResearchPromptBlock,
+        int requestedQuestionCount,
         CancellationToken ct)
     {
         var quizIntelligenceBrief = PlanIntelligenceBriefBuilder.BuildForDiagnosticQuiz(
@@ -305,13 +338,16 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
         var systemPrompt = $$"""
             Sen profesyonel bir 'Egitim Tanilama Uzmani' botusun.
-            Gorevin: '{{topicTitle}}' konusunda 20 soruluk seviye tespit quiz'i uretmek.
+            Gorevin: '{{topicTitle}}' konusunda {{requestedQuestionCount}} soruluk seviye tespit quiz'i uretmek.
 
             {{quizIntelligenceBrief}}
 
             KURALLAR:
+            - Soru sayisi tam olarak {{requestedQuestionCount}} olacak; 15'ten az, 25'ten fazla olmayacak.
             - Ham Korteks raporu varsayma; sadece bu filtrelenmis brief'i ve konu basligini kullan.
             - Korteks kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
+            - Konu Java algoritmalari ise sorular Java + algoritma/veri yapisi/pratik ekseninde kalmali; C#, .NET, Visual Studio veya baska teknoloji sizdirmamalı.
+            - Generic pipeline, "input -> transform", "tani sorusu" gibi ic sistem kalibi kullanma.
             - conceptual, procedural, application, analysis ve misconception_probe soru tiplerini karisik kullan.
             - kolay, orta ve zor dagilimini dengeli kur.
             - Soru metinleri birbirinin kopyasi veya yakin tekrari olmasin.
@@ -327,9 +363,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         var rawQuiz = await _factory.CompleteChatAsync(
             AgentRole.DeepPlan,
             systemPrompt,
-            $"Konu: \"{topicTitle}\" icin 20 adet tanilayici baseline sorusu uret.",
+            $"Konu: \"{topicTitle}\" icin tam {requestedQuestionCount} adet tanilayici baseline sorusu uret.",
             ct);
-        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrFallback(rawQuiz, topicTitle, out var quality);
+        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality);
         if (!quality.IsAcceptable)
         {
             _logger.LogWarning(
@@ -375,12 +411,23 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             return "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nNo answers were recorded.";
         }
 
+        var correct = attempts.Where(a => a.IsCorrect).ToList();
         var wrong = attempts.Where(a => !a.IsCorrect).ToList();
+        var knownSummary = correct
+            .Select(ExtractWeakConcept)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .GroupBy(value => value!, StringComparer.OrdinalIgnoreCase)
+            .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
         var conceptSummary = wrong
             .Select(ExtractWeakConcept)
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .GroupBy(value => value!, StringComparer.OrdinalIgnoreCase)
             .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
+        var fastTrack = knownSummary
+            .Where(item => !conceptSummary.Any(weak => weak.StartsWith(item.Split(':')[0], StringComparison.OrdinalIgnoreCase)))
+            .Take(8)
             .ToList();
         var mistakeSummary = wrong
             .Select(ExtractMistakePattern)
@@ -396,8 +443,12 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             $"Answered: {attempts.Count}",
             $"Correct: {attempts.Count(a => a.IsCorrect)}",
             $"Wrong: {wrong.Count}",
+            $"KnownConcepts: {(knownSummary.Count == 0 ? "none" : string.Join(" | ", knownSummary))}",
+            $"FastTrackConcepts: {(fastTrack.Count == 0 ? "none" : string.Join(" | ", fastTrack))}",
+            $"PracticeConcepts: {(knownSummary.Count == 0 ? "none" : string.Join(" | ", knownSummary.Take(8)))}",
             $"WeakConcepts: {(conceptSummary.Count == 0 ? "none" : string.Join(" | ", conceptSummary))}",
-            $"MistakePatterns: {(mistakeSummary.Count == 0 ? "none" : string.Join(" | ", mistakeSummary))}"
+            $"MistakePatterns: {(mistakeSummary.Count == 0 ? "none" : string.Join(" | ", mistakeSummary))}",
+            "Instruction: Move known concepts faster with short practice. Teach weak or mistaken concepts more slowly, logically, and with examples. Do not claim skipped or unanswered concepts are weaknesses."
         });
     }
 
@@ -461,6 +512,76 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         return state;
+    }
+
+    private static string NormalizeApprovedIntent(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = string.Join(' ', value.Split(default(string[]), StringSplitOptions.RemoveEmptyEntries));
+        return normalized.Length <= 160 ? normalized : normalized[..160];
+    }
+
+    private static string CleanOrDefault(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var normalized = string.Join(' ', value.Split(default(string[]), StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(normalized) ? fallback : normalized;
+    }
+
+    private static string BuildApprovedTopicTitle(string? requestedTitle, string mainTopic, string focusArea, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedTitle))
+        {
+            return CleanOrDefault(requestedTitle, fallback);
+        }
+
+        if (string.IsNullOrWhiteSpace(focusArea) || focusArea.Equals("genel kapsam", StringComparison.OrdinalIgnoreCase))
+        {
+            return CleanOrDefault(mainTopic, fallback);
+        }
+
+        return $"{mainTopic}: {focusArea}";
+    }
+
+    private static int DetermineDiagnosticQuestionCount(string mainTopic, string focusArea, string researchIntent)
+    {
+        var text = $"{mainTopic} {focusArea} {researchIntent}".ToLowerInvariant();
+        var broadSignals = new[]
+        {
+            "algorithm",
+            "algoritma",
+            "data structure",
+            "veri yap",
+            "programming",
+            "programlama",
+            "kpss",
+            "yks",
+            "curriculum",
+            "roadmap"
+        };
+
+        var narrowSignals = new[]
+        {
+            "temel",
+            "intro",
+            "giris",
+            "syntax",
+            "tek konu",
+            "single topic"
+        };
+
+        var score = broadSignals.Count(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase)) -
+                    narrowSignals.Count(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase));
+
+        return Math.Clamp(18 + score * 2, 15, 25);
     }
 
     private static int CountQuestions(string quizJson)

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
 using Orka.Core.DTOs;
@@ -16,11 +16,22 @@ namespace Orka.Infrastructure.UnitTests;
 public sealed class PlanDiagnosticTests
 {
     [Fact]
+    public async Task PlanDiagnostic_Start_RequiresApprovedIntentBeforeKorteks()
+    {
+        var harness = await CreateHarnessAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId }));
+
+        Assert.Equal(0, harness.Korteks.CallCount);
+    }
+
+    [Fact]
     public async Task PlanDiagnostic_Start_CreatesStateWithCompressedContext()
     {
         var harness = await CreateHarnessAsync();
 
-        var response = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var response = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         var state = await harness.Store.GetAsync(response.PlanRequestId);
 
         Assert.NotEqual(Guid.Empty, response.PlanRequestId);
@@ -36,9 +47,10 @@ public sealed class PlanDiagnosticTests
     {
         var harness = await CreateHarnessAsync();
 
-        var response = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var response = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         Assert.Equal(1, harness.Korteks.CallCount);
+        Assert.Equal("C# programming async await learning path", harness.Korteks.LastTopic);
         Assert.Equal(1, harness.Compressor.CompressCount);
         Assert.Equal(1, harness.Compressor.BuildPromptBlockCount);
         Assert.Contains("PLAN INTELLIGENCE BRIEF", harness.Factory.LastSystemPrompt);
@@ -51,7 +63,7 @@ public sealed class PlanDiagnosticTests
     {
         var harness = await CreateHarnessAsync();
 
-        var response = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var response = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         Assert.NotEqual(Guid.Empty, response.PlanRequestId);
         Assert.NotEqual(Guid.Empty, response.QuizRunId);
@@ -63,7 +75,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_RecordAnswer_UpdatesAnsweredCount()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         var first = await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1"));
         PlanDiagnosticAnswerResponse second = first;
@@ -81,7 +93,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Finalize_RefusesWhenQuizIncomplete()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         var result = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
 
@@ -94,7 +106,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Finalize_UsesStoredContextAndCurrentQuizRunSummary()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1", isCorrect: false, conceptTag: "variables"));
         for (var i = 2; i <= 20; i++)
         {
@@ -116,7 +128,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Finalize_MarksPlanGenerated()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         await CompleteQuizAsync(harness, start.PlanRequestId);
 
         var result = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
@@ -131,7 +143,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Skip_GeneratesBeginnerPlanWithoutFakeAttempts()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         var result = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
         var attemptCount = await harness.Db.QuizAttempts.CountAsync(a => a.UserId == harness.UserId && a.QuizRunId == start.QuizRunId);
@@ -147,7 +159,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Finalize_IsIdempotentAfterPlanGenerated()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         await CompleteQuizAsync(harness, start.PlanRequestId);
 
         var first = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
@@ -164,7 +176,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Skip_IsIdempotentAfterPlanGenerated()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
 
         var first = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
         var second = await harness.Service.SkipAndGenerateAsync(harness.UserId, start.PlanRequestId);
@@ -194,7 +206,7 @@ public sealed class PlanDiagnosticTests
         await harness.Db.SaveChangesAsync();
         var originalCategory = existing.Category;
 
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         await CompleteQuizAsync(harness, start.PlanRequestId);
         await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
 
@@ -206,7 +218,7 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_DoesNotChangeTopicCategoryBehavior()
     {
         var harness = await CreateHarnessAsync();
-        var start = await harness.Service.StartAsync(harness.UserId, new StartPlanDiagnosticRequest { TopicId = harness.TopicId });
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
         await CompleteQuizAsync(harness, start.PlanRequestId);
 
         await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
@@ -228,7 +240,7 @@ public sealed class PlanDiagnosticTests
             UserId = userId,
             Title = "C#",
             Category = "Programming",
-            LanguageLevel = "Başlangıç",
+            LanguageLevel = "BaÅŸlangÄ±Ã§",
             CreatedAt = DateTime.UtcNow,
             LastAccessedAt = DateTime.UtcNow
         });
@@ -263,6 +275,18 @@ public sealed class PlanDiagnosticTests
             SkillTag = conceptTag ?? "skill",
             Explanation = "explanation",
             SourceRefsJson = isCorrect ? null : """{"mistakeCategory":"Conceptual"}"""
+        };
+
+    private static StartPlanDiagnosticRequest StartRequest(Guid topicId) =>
+        new()
+        {
+            TopicId = topicId,
+            TopicTitle = "C#: async await",
+            RawStudyRequest = "C# async await calismak istiyorum",
+            ApprovedMainTopic = "C# programming",
+            ApprovedFocusArea = "async await",
+            ApprovedStudyGoal = "ogrenme ve pratik",
+            ApprovedResearchIntent = "C# programming async await learning path"
         };
 
     private static async Task CompleteQuizAsync(Harness harness, Guid planRequestId)
@@ -304,6 +328,7 @@ public sealed class PlanDiagnosticTests
     private sealed class FakeKorteksAgent : IKorteksAgent
     {
         public int CallCount { get; private set; }
+        public string LastTopic { get; private set; } = string.Empty;
         public async IAsyncEnumerable<string> RunResearchAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, [EnumeratorCancellation] CancellationToken ct = default)
         {
             yield return "legacy";
@@ -312,6 +337,7 @@ public sealed class PlanDiagnosticTests
         public Task<KorteksResearchResultDto> RunResearchWithEvidenceAsync(string topic, Guid userId, Guid? topicId = null, string? fileContext = null, CancellationToken ct = default)
         {
             CallCount++;
+            LastTopic = topic;
             return Task.FromResult(new KorteksResearchResultDto
             {
                 Topic = topic,
@@ -360,7 +386,7 @@ public sealed class PlanDiagnosticTests
         public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
         {
             LastSystemPrompt = systemPrompt;
-            return Task.FromResult(DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C#"));
+            return Task.FromResult(BuildValidQuiz("C# async await", 20));
         }
         public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
@@ -423,4 +449,38 @@ public sealed class PlanDiagnosticTests
 
     private static SourceEvidenceDto Source(string provider, string url) =>
         new(provider, $"{provider}Tool", url, $"{provider} source", "snippet", null, DateTimeOffset.UtcNow, 1, "web", null, null);
+
+    private static string BuildValidQuiz(string topic, int count)
+    {
+        var types = new[] { "conceptual", "procedural", "application", "analysis", "misconception_probe" };
+        var difficulties = new[] { "kolay", "orta", "zor" };
+        var questions = Enumerable.Range(1, count).Select(i =>
+        {
+            var code = i == 4 ? "\n```csharp\nvar result = await LoadAsync();\nConsole.WriteLine(result.Count);\n```" : "";
+            return new
+            {
+                type = "multiple_choice",
+                question = $"{topic} seviye sorusu {i}: async akista hangi karar dogru okunur?{code}",
+                options = new[]
+                {
+                    new { text = "Once akis ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true },
+                    new { text = "Hata mesajini okumadan satir silmek.", isCorrect = false },
+                    new { text = "Kavram yerine dosya adini degistirmek.", isCorrect = false },
+                    new { text = "Ciktiyi okumadan en kisa secenegi secmek.", isCorrect = false }
+                },
+                correctAnswer = "Once akis ve beklenen sonucu birlikte kontrol etmek.",
+                explanation = $"Aciklama {i}",
+                skillTag = $"skill-{i}",
+                difficulty = difficulties[(i - 1) % difficulties.Length],
+                conceptTag = $"concept-{i}",
+                learningObjective = $"Hedef {i}",
+                questionType = types[(i - 1) % types.Length],
+                expectedMisconceptionCategory = i <= 5 ? "Conceptual" : "Careless",
+                topic
+            };
+        });
+
+        return System.Text.Json.JsonSerializer.Serialize(questions, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+    }
 }
+
