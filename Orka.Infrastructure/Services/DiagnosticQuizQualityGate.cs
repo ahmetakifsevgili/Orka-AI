@@ -507,6 +507,18 @@ public static class DiagnosticQuizQualityGate
     {
         if (profile.IsTechnical && !string.IsNullOrWhiteSpace(codeSnippet))
         {
+            if (profile.SkillPrefix == "sql")
+            {
+                var sqlPrompt = (index % 4) switch
+                {
+                    0 => "Bu sorguda performans riskini anlamak icin once hangi nokta incelenmelidir?",
+                    1 => "Bu SQL orneginde index kararini etkileyen temel ipucu hangisidir?",
+                    2 => "Bu sorgunun sonucunu veya maliyetini anlamak icin hangi akil yurutme gerekir?",
+                    _ => "Bu SQL akisini optimize etmeden once hangi kanit gerekir?"
+                };
+                return $"{topicTitle}: Soru {index + 1} - {sqlPrompt}{codeSnippet}";
+            }
+
             var prompt = (index % 4) switch
             {
                 0 => "Bu kodu dogru okumak icin hangi yaklasim en saglamdir?",
@@ -519,6 +531,18 @@ public static class DiagnosticQuizQualityGate
 
         if (profile.IsTechnical)
         {
+            if (profile.SkillPrefix == "sql")
+            {
+                var sqlPrompt = (index % 4) switch
+                {
+                    0 => "Yavas bir sorguyu analiz ederken hangi bilgi once ayrilmalidir?",
+                    1 => "Index eklemeden once hangi secim daha guvenilir olur?",
+                    2 => "Benzer gorunen iki sorgu planinda karar verirken hangi adim gerekir?",
+                    _ => "Sorgu sonucunu bozmadan optimizasyon yapmak icin hangi okuma sirasi daha dogrudur?"
+                };
+                return $"{topicTitle}: Soru {index + 1} - {sqlPrompt}";
+            }
+
             var prompt = (index % 4) switch
             {
                 0 => "Bu konuda verilen senaryoyu cozmek icin hangi bilgi once ayrilmalidir?",
@@ -531,6 +555,13 @@ public static class DiagnosticQuizQualityGate
 
         var generalPrompt = profile.SkillPrefix switch
         {
+            "exam" when topicTitle.Contains("paragraf", StringComparison.OrdinalIgnoreCase) => (index % 4) switch
+            {
+                0 => "Bu paragraf sorusunda hiz kaybetmeden once hangi bilgi ayrilmalidir?",
+                1 => "Ana fikir ile yardimci dusunceyi karistirmamak icin hangi adim gerekir?",
+                2 => "Celdirici secenegi elemek icin hangi okuma stratejisi daha saglamdir?",
+                _ => "Sure baskisinda cevabi isaretlemeden once hangi kontrol yapilmalidir?"
+            },
             "exam" => (index % 3) switch
             {
                 0 => "Bu soru tipinde dogru cevaba ulasmak icin hangi adim en guvenilirdir?",
@@ -596,6 +627,80 @@ public static class DiagnosticQuizQualityGate
 
     private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(int index, DiagnosticFallbackProfile profile)
     {
+        if (profile.SkillPrefix == "sql")
+        {
+            var sqlSets = new[]
+            {
+                new[]
+                {
+                    new DiagnosticOption("Filtre, join ve index adaylarini execution plan kanitiyla birlikte incelemek.", true),
+                    new DiagnosticOption("Her yavas sorguya ayni index'i eklemek.", false),
+                    new DiagnosticOption("WHERE kosulunu kaldirip sonucu hizli sanmak.", false),
+                    new DiagnosticOption("Sadece SELECT listesini kisaltarak her zaman cozum beklemek.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Yuksek secicilikli filtre ve join kolonlarini veri dagilimiyle birlikte degerlendirmek.", true),
+                    new DiagnosticOption("Tablodaki tum kolonlara index eklemek.", false),
+                    new DiagnosticOption("Index'in yazma maliyetini hic hesaba katmamak.", false),
+                    new DiagnosticOption("Query plan okumadan tahmine gore karar vermek.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Sorgunun sonucunu koruyup maliyeti azaltan dar degisikligi test etmek.", true),
+                    new DiagnosticOption("JOIN kosulunu silerek sorguyu hizlandirmaya calismak.", false),
+                    new DiagnosticOption("NULL ve duplicate etkisini yok saymak.", false),
+                    new DiagnosticOption("Transaction ve constraint etkisini her durumda gereksiz saymak.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Once darbogazi olcen kaniti bulup sonra index/sorgu seklini denemek.", true),
+                    new DiagnosticOption("Sorgu yavas diye veriyi rastgele denormalize etmek.", false),
+                    new DiagnosticOption("EXPLAIN/actual rows farkini okumamak.", false),
+                    new DiagnosticOption("Cache hizini kalici optimizasyon sanmak.", false)
+                }
+            };
+
+            return sqlSets[index % 4].ToList();
+        }
+
+        if (profile.SkillPrefix == "exam")
+        {
+            var examSets = new[]
+            {
+                new[]
+                {
+                    new DiagnosticOption("Once soru kokunu ve istenen dusunce turunu ayirmak.", true),
+                    new DiagnosticOption("Paragrafi okumadan en tanidik secenegi isaretlemek.", false),
+                    new DiagnosticOption("Kendi yorumunu metnin yerine koymak.", false),
+                    new DiagnosticOption("Celdiricideki tek dogru kelimeyi yeterli saymak.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Ana fikir, yardimci fikir ve yazar tutumunu ayri isaretlemek.", true),
+                    new DiagnosticOption("Ilk cumleyi her zaman cevap kabul etmek.", false),
+                    new DiagnosticOption("Paragraftaki ornegi ana fikirle karistirmak.", false),
+                    new DiagnosticOption("Olumsuz soru kokunu olumlu gibi okumak.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Secenekleri metindeki kanitla tek tek eslestirmek.", true),
+                    new DiagnosticOption("Uzun secenegi otomatik dogru saymak.", false),
+                    new DiagnosticOption("Metinde olmayan genellemeyi kabul etmek.", false),
+                    new DiagnosticOption("Benzer anlamli iki secenegi kanitsiz ayirmamak.", false)
+                },
+                new[]
+                {
+                    new DiagnosticOption("Sureyi korumak icin once soru kokunu, sonra kanit cumlesini aramak.", true),
+                    new DiagnosticOption("Her paragrafi ayni hizda ayrintili okumak.", false),
+                    new DiagnosticOption("Bilmedigin kelime cikinca soruyu tamamen birakmak.", false),
+                    new DiagnosticOption("Cevabi sadece son cumleden tahmin etmek.", false)
+                }
+            };
+
+            return examSets[index % 4].ToList();
+        }
+
         var technicalSets = new[]
         {
             new[]

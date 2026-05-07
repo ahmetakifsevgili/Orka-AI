@@ -816,6 +816,18 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
     private static string? ExtractWeakConcept(QuizAttempt attempt)
     {
+        var conceptTag = ExtractAttemptMetadata(attempt.SourceRefsJson, "conceptTag");
+        if (!string.IsNullOrWhiteSpace(conceptTag))
+        {
+            return conceptTag.Trim();
+        }
+
+        var learningObjective = ExtractAttemptMetadata(attempt.SourceRefsJson, "learningObjective");
+        if (!string.IsNullOrWhiteSpace(learningObjective))
+        {
+            return learningObjective.Trim();
+        }
+
         if (!string.IsNullOrWhiteSpace(attempt.SkillTag))
         {
             return attempt.SkillTag.Trim();
@@ -832,6 +844,31 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         if (!string.IsNullOrWhiteSpace(attempt.QuestionHash))
         {
             return attempt.QuestionHash.Trim();
+        }
+
+        return null;
+    }
+
+    private static string? ExtractAttemptMetadata(string? json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty(key, out var value) &&
+                value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
         }
 
         return null;
@@ -900,7 +937,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
     private static string BuildApprovedTopicTitle(string? requestedTitle, string mainTopic, string focusArea, string fallback)
     {
-        if (!string.IsNullOrWhiteSpace(requestedTitle))
+        if (!string.IsNullOrWhiteSpace(requestedTitle) && !LooksLikeRawStudyRequest(requestedTitle))
         {
             return CleanOrDefault(requestedTitle, fallback);
         }
@@ -911,6 +948,14 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         return $"{mainTopic}: {focusArea}";
+    }
+
+    private static bool LooksLikeRawStudyRequest(string value)
+    {
+        var text = value.Trim().ToLowerInvariant();
+        return text.Contains("calismak istiyorum", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("ogrenmek istiyorum", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("istiyorum", StringComparison.OrdinalIgnoreCase);
     }
 
     private static int DetermineDiagnosticQuestionCount(string mainTopic, string focusArea, string researchIntent)

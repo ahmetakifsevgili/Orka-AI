@@ -36,7 +36,8 @@ public sealed class PlanIntelligenceBriefBuilderTests
 
         Assert.Contains("PLAN INTELLIGENCE BRIEF", brief);
         Assert.Contains("Learning research is advisory", brief);
-        Assert.Contains("Orka IDE/sandbox", brief);
+        Assert.Contains("concept-first", brief, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orka IDE/sandbox only as practice support", brief);
         Assert.Contains("syntax foundations", brief, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("async", brief, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Random blog source", brief);

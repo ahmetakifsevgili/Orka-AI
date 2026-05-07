@@ -76,7 +76,7 @@ public static class PlanIntelligenceBriefBuilder
         sb.AppendLine("QualityContract:");
         sb.AppendLine("- Produce at least 6 modules, at least 4 lessons per module, and at least 24 lessons.");
         sb.AppendLine("- Module and lesson names must be specific to the topic and domain, not generic placeholders.");
-        sb.AppendLine("- Programming plans must start from Orka IDE/sandbox practice and include code reading, debugging, refactor, mini project, and review loops.");
+        sb.AppendLine("- Programming plans must start from topic logic and prerequisites; use Orka IDE/sandbox only as a supporting practice environment where useful.");
         sb.AppendLine("- Known concepts from the diagnostic should move faster and become practice checkpoints, not long lectures.");
         sb.AppendLine("- Weak or mistaken concepts should get slower logical explanations, examples, and remediation drills.");
         sb.AppendLine("- Exam/math/language plans must follow their own domain sequence instead of programming patterns.");
@@ -224,8 +224,8 @@ public static class PlanIntelligenceBriefBuilder
         switch (domain)
         {
             case PlanBriefDomain.Programming:
-                yield return "For programming, Orka IDE/sandbox is the primary practice environment.";
-                yield return "Include code reading, debugging, refactor, mini project, and review checkpoints.";
+                yield return "For programming, start from language/concept logic, then add code reading, debugging, refactor, mini project, and review checkpoints.";
+                yield return "Mention Orka IDE/sandbox only inside suitable practice lessons, not as the curriculum spine.";
                 break;
             case PlanBriefDomain.Algorithm:
                 yield return "For algorithms, sequence by patterns, data structures, complexity, drills, and timed problem solving.";
@@ -247,7 +247,7 @@ public static class PlanIntelligenceBriefBuilder
 
     private static string BuildDomainPolicy(PlanBriefDomain domain) => domain switch
     {
-        PlanBriefDomain.Programming => "Programming/Yazilim: Orka IDE first, external IDEs optional only, code practice required.",
+        PlanBriefDomain.Programming => "Programming/Yazilim: concept-first route, code practice required, Orka IDE/sandbox only as practice support.",
         PlanBriefDomain.Algorithm => "Algorithm: pattern taxonomy, data structures, complexity, drills, timed practice.",
         PlanBriefDomain.Exam => "Exam: kazanım map, soru tipi, deneme, wrong-answer analysis, review pressure.",
         PlanBriefDomain.Math => "Math: theory intuition, worked examples, mixed practice, misconception repair.",

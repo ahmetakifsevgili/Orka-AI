@@ -178,6 +178,22 @@ public sealed class PlanDiagnosticTests
     }
 
     [Fact]
+    public async Task PlanDiagnostic_Start_NormalizesRawStudyRequestTitleFromApprovedIntent()
+    {
+        var harness = await CreateHarnessAsync();
+        var request = StartRequest(harness.TopicId);
+        request.TopicTitle = "java programlamada algoritmalar calismak istiyorum";
+        request.ApprovedMainTopic = "Java programlama";
+        request.ApprovedFocusArea = "algoritmalar";
+
+        var response = await harness.Service.StartAsync(harness.UserId, request);
+
+        Assert.Equal("Java programlama: algoritmalar", response.TopicTitle);
+        Assert.DoesNotContain("calismak istiyorum", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Java programlama: algoritmalar", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PlanDiagnostic_RecordAnswer_UpdatesAnsweredCount()
     {
         var harness = await CreateHarnessAsync();
@@ -380,7 +396,9 @@ public sealed class PlanDiagnosticTests
             IsCorrect = isCorrect,
             SkillTag = conceptTag ?? "skill",
             Explanation = "explanation",
-            SourceRefsJson = isCorrect ? null : """{"mistakeCategory":"Conceptual"}"""
+            SourceRefsJson = isCorrect || string.IsNullOrWhiteSpace(conceptTag)
+                ? null
+                : $$"""{"conceptTag":"{{conceptTag}}","learningObjective":"{{conceptTag}}","mistakeCategory":"Conceptual"}"""
         };
 
     private static StartPlanDiagnosticRequest StartRequest(Guid topicId) =>

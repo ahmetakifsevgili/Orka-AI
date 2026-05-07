@@ -122,6 +122,34 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
+    public void DiagnosticQuizQuality_FallbackUsesExamReadingOptionsForKpssParagraph()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS paragraf sorularinda hizlanmak");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.Contains("paragraf", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ana fikir", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("celdirici", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(DiagnosticQuizQualityGate.Validate(result, "KPSS paragraf sorularinda hizlanmak").IsAcceptable);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_FallbackUsesSqlOptimizationOptions()
+    {
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("SQL index ve sorgu optimizasyonu");
+
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.Contains("```sql", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("index", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("execution plan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(DiagnosticQuizQualityGate.Validate(result, "SQL index ve sorgu optimizasyonu").IsAcceptable);
+    }
+
+    [Fact]
     public void DiagnosticQuizQuality_FallbackUsesRequestedProgrammingProfile()
     {
         var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Python listeler ve hata ayiklama");

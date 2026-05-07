@@ -241,7 +241,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             {{domainGuidance}}
 
             ORGANİZASYON KURALI (TEŞHİS ODAKLI MİMARİ):
-            - [PLAN INTELLIGENCE BRIEF - KORTEKS FILTERED] icindeki Korteks bulgularini yalnizca konu kapsami/guncellik/onkosul destegi olarak kullan; plan omurgasini [MIKRO-TESHIS RAPORU], [ADAPTIF OGRENME BAGLAMI] ve domain sablonu belirler.
+            - [PLAN INTELLIGENCE BRIEF - LEARNING RESEARCH FILTERED] icindeki arastirma bulgularini yalnizca konu kapsami/guncellik/onkosul destegi olarak kullan; plan omurgasini [MIKRO-TESHIS RAPORU], [ADAPTIF OGRENME BAGLAMI] ve domain sablonu belirler.
             - Korteks kaynak basliklarini, haber/SEO cumlelerini veya video basliklarini modul/ders basligi olarak kopyalama.
             - [MİKRO-TEŞHİS RAPORU] ve [ADAPTIF ÖĞRENME BAĞLAMI] içindeki zayıf noktaları plana "Derinlemesine İyileştirme" veya "Pratik Lab" dersleri olarak ekle.
             - Tekrar eden hata paternlerine (Mistake Patterns) yönelik ekstra pekiştirme modülleri öner.
@@ -250,7 +250,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             - Kullanıcı cümlesinden (Örn: "C# çalışmak istiyorum") ASIL KONUYU çıkar ("C# Programlama"). Kesinlikle "Selamlaşma", "İstek", "Giriş" gibi konulardan bahsetme!
             - KALITE TABANI: En az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
             - Programlama/teknoloji konularinda kalite tabani daha yuksektir: en az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
-            - Programlama planinda ilk modul Orka IDE / sandbox akisi ile baslamali; Visual Studio sadece opsiyonel yerel arac notu olabilir, ana yol Orka IDE'dir.
+            - Programlama planinda ilk modul konu mantigi ve on kosullarla baslamali; Orka IDE/sandbox yalnizca uygun pratik derslerinde destekleyici ortam olarak gecmelidir.
             - Plan cok kisa, jenerik veya iki-uc baslikli olursa sistem tarafindan reddedilecektir.
             - Programlama/teknoloji → "Temel Yapı Taşları → Uygulama Becerileri → İleri Düzey" yaklaşımı
             - Tarih/toplum → "Dönemsel sıralama" veya "Tematik gruplama"
@@ -345,9 +345,9 @@ public class DeepPlanAgent : IDeepPlanAgent
             PlanDomain.Programming => """
 
             [DOMAIN SABLONU - PROGRAMLAMA / YAZILIM]
-            - Ana yol Orka IDE / sandbox uzerinden ilerler; Visual Studio veya harici editorler sadece opsiyonel yerel arac notudur.
+            - Plan once dil/kavram ve problem okuma mantigini kurar; Orka IDE/sandbox uygun pratiklerde destekleyici calisma ortami olarak kullanilir.
             - Plan; temel dil modeli, kod okuma, uygulama, hata ayiklama, mini proje ve tekrar dongusunu birlikte tasimalidir.
-            - Her modulde en az bir Orka IDE pratigi, hata okuma veya mini refactor dersi bulunmalidir.
+            - Her modulde pratik, hata okuma veya mini refactor dersi bulunmalidir; urun arayuzu modul basligini ele gecirmemelidir.
             - Konu C#, .NET veya yazilim ise baslangic "Hello World" ile kalmamalidir; tipler, kontrol akisi, metotlar, OOP, koleksiyonlar ve proje akisi kurulmalidir.
             """,
             PlanDomain.Exam => """
@@ -361,7 +361,7 @@ public class DeepPlanAgent : IDeepPlanAgent
 
             [DOMAIN SABLONU - ALGORITMA / HACKERRANK]
             - Plan; pattern temelli ilerlemelidir: arrays, two pointers, sliding window, stack/queue, graph, Dynamic Programming ve complexity.
-            - Her modülde IDE pratiği, test case okuma, edge-case analizi ve HackerRank tarzı problem çözümü bulunmalıdır.
+            - Her modulde test case okuma, edge-case analizi ve problem cozumu bulunmalidir; Orka IDE yalnizca kod pratiklerinde destekleyici ortamdir.
             - Sadece teori verme; kodlama becerisi, yanlış çözüm teşhisi ve mikro refactor alıştırmaları ekle.
             """,
             PlanDomain.Math => """
@@ -395,13 +395,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 new("Matematik Rotası", "🧮", new List<LessonDefinition> { new("Problem çözme", "math"), new("Hata izleme", "analysis") }),
                 new("Deneme Döngüsü", "🔁", new List<LessonDefinition> { new("Skill raporu", "mastery"), new("Tekrar planı", "remediation") })
             },
-            PlanDomain.Algorithm => new List<ModuleDefinition>
-            {
-                new("Problem Okuma", "🧠", new List<LessonDefinition> { new("Input-output analizi", "complexity"), new("Edge-case listesi", "testing") }),
-                new("Two Pointers & Sliding Window", "🧭", new List<LessonDefinition> { new("Two Pointers", "algo"), new("Sliding Window", "algo") }),
-                new("Traversal Pratiği", "🕸️", new List<LessonDefinition> { new("BFS/DFS", "graph"), new("Debug teknikleri", "ide") }),
-                new("Dynamic Programming ve HackerRank", "⚙️", new List<LessonDefinition> { new("State tanımı", "dp"), new("HackerRank pratik seti", "optimization") })
-            },
+            PlanDomain.Algorithm => BuildAlgorithmFallbackModules(title),
             PlanDomain.Math => new List<ModuleDefinition>
             {
                 new($"{title} Formulun Kavram Sezgisi", "📐", new List<LessonDefinition> { new("Formulun sezgisel anlamı", "concept"), new("İşlem dili", "notation") }),
@@ -430,8 +424,9 @@ public class DeepPlanAgent : IDeepPlanAgent
     private static List<ModuleDefinition> BuildQualityFallbackModules(string topicTitle)
     {
         var title = string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
+        var domain = DetectPlanDomain(title);
 
-        if (IsProgrammingTopic(title))
+        if (domain == PlanDomain.Programming)
         {
             return BuildProgrammingFallbackModules(title);
         }
@@ -463,13 +458,6 @@ public class DeepPlanAgent : IDeepPlanAgent
             })
             .Where(module => module.Lessons.Count > 0)
             .ToList();
-
-        var domain = DetectPlanDomain(title);
-        var requiresOrkaIde = domain is PlanDomain.Programming or PlanDomain.Algorithm || IsProgrammingTopic(title);
-        if (requiresOrkaIde)
-        {
-            EnsureOrkaIdeLesson(result, title);
-        }
 
         foreach (var module in result.ToList())
         {
@@ -543,6 +531,52 @@ public class DeepPlanAgent : IDeepPlanAgent
         string AbstractionConcept,
         string ProjectShape);
 
+    private static List<ModuleDefinition> BuildAlgorithmFallbackModules(string title) =>
+    [
+        new("Problem Okuma ve Java Kod Izleme", "book",
+        [
+            new("Input-output ve kisitlari okuma", "algo-problem-reading"),
+            new("Kucuk Java kodunda veri akisini izleme", "java-code-trace", "PracticeLab"),
+            new("Edge-case ve sinir deger listesi cikarma", "algo-edge-cases"),
+            new("Yanlis varsayimi test case ile yakalama", "algo-testcase-misconception", "Remediation")
+        ]),
+        new("Diziler, Listeler ve Arama Mantigi", "array",
+        [
+            new("Array/List indeks modeli ve maliyetleri", "array-list-model"),
+            new("Linear search ve binary search on kosullari", "search-preconditions"),
+            new("Siralama sonrasi veri okuma", "sorting-read"),
+            new("Arama/siralama mini pratigi", "search-sort-practice", "PracticeLab")
+        ]),
+        new("Karmasiklik ve Veri Yapisi Secimi", "chart",
+        [
+            new("Big-O'yu kod akisi uzerinden okuma", "big-o-code-reading"),
+            new("HashMap, HashSet, Stack, Queue secimi", "data-structure-choice"),
+            new("PriorityQueue ve Comparator karar noktasi", "priority-comparator"),
+            new("Yanlis veri yapisi secimini onarma", "wrong-structure-remediation", "Remediation")
+        ]),
+        new("Two Pointers ve Algoritma Patternleri", "pattern",
+        [
+            new("Two Pointers on kosullari", "two-pointer"),
+            new("Sliding window ile tekrar eden araliklar", "sliding-window", "PracticeLab"),
+            new("Prefix sum ile tekrarli sorgular", "prefix-sum"),
+            new("Greedy kararinin kanit ihtiyaci", "greedy-proof", "DeepDive")
+        ]),
+        new("Recursion, Graph ve Dynamic Programming", "graph",
+        [
+            new("Recursion base case ve call stack", "recursion-base-case", "Remediation"),
+            new("BFS/DFS icin queue-stack farki", "bfs-dfs"),
+            new("DP icin state ve tekrar eden alt problem", "dynamic-programming"),
+            new("Kucuk problemden tablo/graph izine gecis", "trace-to-model", "PracticeLab")
+        ]),
+        new($"{title} Karma Pratik ve Mastery Kontrolu", "target",
+        [
+            new("Karar agaci: hangi problemde hangi pattern", "pattern-selection"),
+            new("Zamanli mini problem seti", "timed-drills", "PracticeLab"),
+            new("Yanlis cozumden kok neden cikarma", "mistake-analysis", "Remediation"),
+            new("Final mastery quiz ve sonraki rota", "mastery-check", "Assessment")
+        ])
+    ];
+
     private static ProgrammingPlanProfile DetectProgrammingProfile(string title)
     {
         var text = title.ToLowerInvariant();
@@ -570,7 +604,7 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         if (ContainsAny(text, "c#", "c sharp", "csharp", ".net", "dotnet", "asp.net"))
         {
-            return new("C#/.NET", "csharp", "program yapisi: using, namespace, class ve Main", "exception ve compile/runtime hata okuma", "List, Dictionary, LINQ ve JSON/dosya akisi", "class, interface, inheritance ve dependency ayrimi", "Orka IDE'de calisan kucuk C# uygulamasi");
+            return new("C#/.NET", "csharp", "program yapisi: using, namespace, class ve Main", "exception ve compile/runtime hata okuma", "List, Dictionary, LINQ ve JSON/dosya akisi", "class, interface, inheritance ve dependency ayrimi", "kucuk C#/.NET uygulamasi");
         }
 
         return new(title, "code", "dil/runtime kurulumu ve dosya yapisi", "derleme/runtime hata mesajini okuma", "veri yapilari ve input-output akisi", "fonksiyon, modul ve sorumluluk ayrimi", "kucuk calisan uygulama");
@@ -584,12 +618,12 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         return
         [
-            new("Orka IDE ile Baslangic", "💻",
+            new($"{subject} Temel Okuma ve Calisma Modeli", "book",
             [
-                new($"Orka IDE sandbox'ta ilk {subject} uygulamasi", $"{prefix}-orka-ide", "PracticeLab"),
                 new(profile.ProgramShape, $"{prefix}-program-shape"),
+                new("Temel kod akisini elle izleme", $"{prefix}-code-trace"),
                 new("Console/output, log ve hata mesajini okuma", $"{prefix}-output-errors", "PracticeLab"),
-                new("Ilk mini alistirma: calistir, hatayi Tutor'a sor, duzelt", $"{prefix}-ide-feedback-loop", "PracticeLab")
+                new("Ilk mini alistirma: calistir, hatayi acikla, duzelt", $"{prefix}-feedback-loop", "PracticeLab")
             ]),
             new($"{subject} Dil ve Kavram Temeli", "🧱",
             [
@@ -603,7 +637,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 new("if/else veya pattern secimi", $"{prefix}-decision-flow"),
                 new("Donguler ve tekrar eden isleri ayirma", $"{prefix}-loops", "PracticeLab"),
                 new("Input-output senaryosu kurma", $"{prefix}-io-scenario"),
-                new("Orka IDE hata laboratuvari: yanlis kosul, sonsuz dongu, eksik veri", $"{prefix}-debugging", "PracticeLab")
+                new("Hata laboratuvari: yanlis kosul, sonsuz dongu, eksik veri", $"{prefix}-debugging", "PracticeLab")
             ]),
             new("Veri, Abstraction ve Tasarim", "🏗️",
             [
@@ -617,14 +651,14 @@ public class DeepPlanAgent : IDeepPlanAgent
                 new(profile.RuntimeConcept, $"{prefix}-runtime-errors"),
                 new("Test senaryosu ve edge-case listesi", $"{prefix}-test-cases", "Assessment"),
                 new("Yanlis cozumden kok neden cikarma", $"{prefix}-mistake-classification", "Remediation"),
-                new("IDE sonucunu Tutor aciklamasina cevirme", $"{prefix}-tutor-bridge", "PracticeLab")
+                new("Kod calistirma sonucunu Tutor aciklamasina cevirme", $"{prefix}-tutor-bridge", "PracticeLab")
             ]),
             new("Mini Proje ve Mastery Dongusu", "🚀",
             [
                 new(profile.ProjectShape, $"{prefix}-mini-project"),
                 new("Kod okuma ve kucuk gelistirme turu", $"{prefix}-code-reading"),
                 new("Yanlis cevap ve IDE hatalarini tekrar kartina cevirme", $"{prefix}-remediation-loop", "Remediation"),
-                new($"Final pratik: Orka IDE'de {subject} ile calisan demo", $"{prefix}-final-practice", "Assessment")
+                new($"Final pratik: {subject} ile calisan kucuk demo", $"{prefix}-final-practice", "Assessment")
             ])
         ];
     }
@@ -861,17 +895,6 @@ public class DeepPlanAgent : IDeepPlanAgent
             return false;
         }
 
-        if (isProgramming)
-        {
-            var allText = string.Join(" | ", cleaned.Select(m => m.Title).Concat(cleaned.SelectMany(m => m.Lessons.Select(l => l.Title))));
-            if (!allText.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase) &&
-                !allText.Contains("sandbox", StringComparison.OrdinalIgnoreCase))
-            {
-                rejectionReason = "programming_plan_missing_orka_ide";
-                return false;
-            }
-        }
-
         acceptedModules = cleaned;
         rejectionReason = "accepted";
         return true;
@@ -935,7 +958,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 {
                     var label = HumanizeDiagnosticLabel(mistake.Value);
                     return new LessonDefinition(
-                        $"{label} Tanisal Calisma",
+                        $"{label} Calisma Pratigi",
                         $"diagnostic:mistake:{mistake.Value}",
                         IntentForMistake(mistake.Value),
                         BuildDiagnosticPhaseMetadata(diagnostic, null, mistake));
@@ -948,11 +971,20 @@ public class DeepPlanAgent : IDeepPlanAgent
             return modules;
         }
 
-        var tracedModules = new List<ModuleDefinition>(modules.Count + 1)
+        var tracedModules = modules
+            .Select(module => module with { Lessons = module.Lessons.ToList() })
+            .ToList();
+
+        if (tracedModules.Count == 0)
         {
-            new("Tanisal Iyilestirme", "🧭", diagnosticLessons)
-        };
-        tracedModules.AddRange(modules);
+            tracedModules.Add(new("Kisisel Telafi ve Pratik", "target", []));
+        }
+
+        for (var i = 0; i < diagnosticLessons.Count; i++)
+        {
+            tracedModules[i % tracedModules.Count].Lessons.Add(diagnosticLessons[i]);
+        }
+
         return tracedModules;
     }
 
@@ -995,7 +1027,7 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         if (string.IsNullOrWhiteSpace(mistake))
         {
-            return "Tanisal Calisma";
+            return "Calisma Pratigi";
         }
 
         return mistake.Trim() switch
@@ -1006,7 +1038,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             "MisreadQuestion" => "Soru Okuma Kontrolu",
             "Conceptual" => "Kavram Onarimi",
             "Careless" => "Dikkat Kontrolu",
-            _ => "Tanisal Calisma"
+            _ => "Calisma Pratigi"
         };
     }
 
@@ -1026,7 +1058,7 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            return "Tanisal Zayiflik";
+            return "Eksik Kavram";
         }
 
         var words = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)

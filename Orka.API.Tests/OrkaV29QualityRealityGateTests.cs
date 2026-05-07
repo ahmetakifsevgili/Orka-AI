@@ -284,7 +284,8 @@ public sealed class OrkaV29QualityRealityGateTests
 
         Assert.Contains("MinimumProgrammingTotalLessons = 24", source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("MinimumProgrammingModules = 6", source, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("programming_plan_missing_orka_ide", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orka IDE/sandbox uygun pratiklerde destekleyici", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("programming_plan_missing_orka_ide", source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ApplyDiagnosticTraceability", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Take(3).Select(module", source, StringComparison.OrdinalIgnoreCase);
     }

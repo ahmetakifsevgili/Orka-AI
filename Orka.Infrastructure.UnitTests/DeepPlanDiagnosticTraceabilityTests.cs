@@ -81,8 +81,9 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Topics, t => t.Title.Contains("C#", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Tanisal Iyilestirme", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -136,7 +137,6 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
 
         Assert.True(result.Topics.Count >= 24);
         Assert.Contains(result.Topics, t => t.Title.Contains("Python", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("C# programi", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("LINQ", StringComparison.OrdinalIgnoreCase));
     }
@@ -155,10 +155,10 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Topics, t => t.Title.Contains("Two Pointers", StringComparison.OrdinalIgnoreCase) ||
                                             t.Title.Contains("Sliding Window", StringComparison.OrdinalIgnoreCase) ||
                                             t.Title.Contains("Dynamic Programming", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
     }
 
