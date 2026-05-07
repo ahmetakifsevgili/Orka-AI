@@ -437,12 +437,101 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
 
         var domainFallback = BuildDomainFallbackModules(title, massive: true);
-        if (TryAcceptPlanModules(domainFallback, title, out var accepted, out _))
+        var expandedDomainFallback = EnsureFallbackQualityFloor(domainFallback, title);
+        if (TryAcceptPlanModules(expandedDomainFallback, title, out var accepted, out _))
         {
             return accepted;
         }
 
         return BuildGeneralFallbackModules(title);
+    }
+
+    private static List<ModuleDefinition>? EnsureFallbackQualityFloor(List<ModuleDefinition>? modules, string title)
+    {
+        if (modules == null || modules.Count == 0)
+        {
+            return modules;
+        }
+
+        var result = modules
+            .Where(module => !string.IsNullOrWhiteSpace(module.Title))
+            .Select(module => module with
+            {
+                Lessons = module.Lessons
+                    .Where(lesson => !string.IsNullOrWhiteSpace(lesson.Title))
+                    .ToList()
+            })
+            .Where(module => module.Lessons.Count > 0)
+            .ToList();
+
+        var domain = DetectPlanDomain(title);
+        var requiresOrkaIde = domain is PlanDomain.Programming or PlanDomain.Algorithm || IsProgrammingTopic(title);
+        if (requiresOrkaIde)
+        {
+            EnsureOrkaIdeLesson(result, title);
+        }
+
+        foreach (var module in result.ToList())
+        {
+            var lessonIndex = module.Lessons.Count + 1;
+            while (module.Lessons.Count < 4)
+            {
+                module.Lessons.Add(new LessonDefinition(
+                    $"{module.Title} uygulama kontrolu {lessonIndex}",
+                    $"{Slug(module.Title)}-practice-{lessonIndex}",
+                    lessonIndex % 2 == 0 ? "PracticeLab" : "Core"));
+                lessonIndex++;
+            }
+        }
+
+        var moduleIndex = result.Count + 1;
+        while (result.Count < 6)
+        {
+            result.Add(new ModuleDefinition(
+                $"{title} Pekistirme Turu {moduleIndex}",
+                "🧩",
+                [
+                    new LessonDefinition("Kavram ozeti ve on kosul kontrolu", $"fallback-{moduleIndex}-concept"),
+                    new LessonDefinition("Uygulamali ornek ve adim adim cozum", $"fallback-{moduleIndex}-practice", "PracticeLab"),
+                    new LessonDefinition("Sik hata ve yanilgi onarimi", $"fallback-{moduleIndex}-remediation", "Remediation"),
+                    new LessonDefinition("Mini quiz ve sonraki adim", $"fallback-{moduleIndex}-assessment", "Assessment")
+                ]));
+            moduleIndex++;
+        }
+
+        return result;
+    }
+
+    private static void EnsureOrkaIdeLesson(List<ModuleDefinition> modules, string title)
+    {
+        var allText = string.Join(" | ", modules.Select(m => m.Title).Concat(modules.SelectMany(m => m.Lessons.Select(l => l.Title))));
+        if (allText.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase) ||
+            allText.Contains("sandbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        modules.Insert(0, new ModuleDefinition(
+            "Orka IDE ile Problem Cozme",
+            "💻",
+            [
+                new LessonDefinition($"Orka IDE sandbox'ta {title} icin ilk mikro pratik", "orka-ide-first-practice", "PracticeLab"),
+                new LessonDefinition("Test case okuma ve beklenen ciktiyi kurma", "orka-ide-testcase-reading", "PracticeLab"),
+                new LessonDefinition("Hata mesajindan kok neden cikarma", "orka-ide-debug-root-cause", "Remediation"),
+                new LessonDefinition("Tutor'a IDE sonucunu gonderip aciklama alma", "orka-ide-tutor-bridge", "PracticeLab")
+            ]));
+    }
+
+    private static string Slug(string value)
+    {
+        var normalized = value.ToLowerInvariant()
+            .Replace('ç', 'c')
+            .Replace('ğ', 'g')
+            .Replace('ı', 'i')
+            .Replace('ö', 'o')
+            .Replace('ş', 's')
+            .Replace('ü', 'u');
+        return System.Text.RegularExpressions.Regex.Replace(normalized, @"[^a-z0-9]+", "-").Trim('-');
     }
 
     private sealed record ProgrammingPlanProfile(

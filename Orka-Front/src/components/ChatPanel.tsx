@@ -1001,6 +1001,9 @@ function PlanIntentConfirmationCard({
           <p className="mt-1 text-sm leading-6 text-[#526d82]">
             {intent.confirmationText || "Calisma niyetini ayirdim. Onay verirsen Korteks arastirmasi baslayacak."}
           </p>
+          <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-800">
+            Onay yoksa arastirma, quiz ve plan baslamaz
+          </div>
         </div>
       </div>
 
@@ -1018,6 +1021,22 @@ function PlanIntentConfirmationCard({
           ))}
         </div>
       )}
+
+      <div className="mt-4 grid gap-2 rounded-2xl border border-[#9ec7d9]/25 bg-[#f7fbfd] p-3 text-xs text-[#526d82] sm:grid-cols-4">
+        {[
+          ["1", "Niyet onayi"],
+          ["2", "Korteks arastirmasi"],
+          ["3", "15-25 soru seviye testi"],
+          ["4", "Kisisel plan"],
+        ].map(([step, label]) => (
+          <div key={step} className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dcecf3] text-[11px] font-black text-[#2d5870]">
+              {step}
+            </span>
+            <span className="font-bold">{label}</span>
+          </div>
+        ))}
+      </div>
 
       {isEditing && (
         <div className="mt-4">

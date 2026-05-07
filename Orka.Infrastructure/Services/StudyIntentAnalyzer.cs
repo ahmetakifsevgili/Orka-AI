@@ -54,6 +54,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
                 - Do not invent learner weaknesses.
                 - Split broad requests into a researchable intent.
                 - For programming requests, keep the language and the exact focus together.
+                - For exam requests, preserve the exam acronym and the concrete subject/focus.
                 - The researchIntent must be in English and must not be the raw user sentence.
                 """;
 
@@ -137,7 +138,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             MainTopic = Limit(mainTopic, 90),
             FocusArea = Limit(focusArea, 90),
             StudyGoal = Limit(studyGoal, 120),
-            ResearchIntent = Limit(EnsureEnglishResearchIntent(researchIntent, mainTopic, focusArea), 140),
+            ResearchIntent = Limit(EnsureEnglishResearchIntent(researchIntent, mainTopic, focusArea), 160),
             ConfirmationText = string.IsNullOrWhiteSpace(value.ConfirmationText)
                 ? BuildConfirmation(mainTopic, focusArea)
                 : Limit(value.ConfirmationText.Trim(), 180),
@@ -150,16 +151,16 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
     private static StudyIntentPreviewResponse BuildFallback(string rawRequest)
     {
         var raw = Clean(rawRequest) ?? string.Empty;
-        var lower = raw.ToLowerInvariant();
-        var language = LooksEnglish(lower) ? "en" : "tr";
+        var normalized = NormalizeForMatch(raw);
+        var language = LooksEnglish(normalized) ? "en" : "tr";
 
-        var detectedLanguage = DetectProgrammingLanguage(raw);
-        var focus = DetectFocus(raw, detectedLanguage);
+        var detectedLanguage = DetectProgrammingLanguage(normalized);
+        var focus = DetectFocus(raw, normalized, detectedLanguage);
         var mainTopic = detectedLanguage is not null
             ? $"{detectedLanguage} programlama"
-            : BuildMainTopic(raw, focus);
+            : BuildMainTopic(raw, normalized, focus);
 
-        var studyGoal = ContainsAny(lower, "pratik", "practice", "problem", "soru")
+        var studyGoal = ContainsAny(normalized, "pratik", "practice", "problem", "soru", "uygulama", "exercise")
             ? "ogrenme ve pratik"
             : "ogrenme ve temel uygulama";
 
@@ -172,7 +173,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             MainTopic = Limit(mainTopic, 90),
             FocusArea = Limit(focus, 90),
             StudyGoal = studyGoal,
-            ResearchIntent = Limit(researchIntent, 140),
+            ResearchIntent = Limit(researchIntent, 160),
             ConfirmationText = BuildConfirmation(mainTopic, focus),
             Language = language,
             ClarifyingNotes = ["Korteks arastirmasi baslamadan once bu niyeti onaylamalisin."],
@@ -180,18 +181,19 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         };
     }
 
-    private static string? DetectProgrammingLanguage(string raw)
+    private static string? DetectProgrammingLanguage(string normalized)
     {
-        if (Regex.IsMatch(raw, @"\bc#|csharp|\.net\b", RegexOptions.IgnoreCase)) return "C#";
-        if (Regex.IsMatch(raw, @"\bjava\b", RegexOptions.IgnoreCase)) return "Java";
-        if (Regex.IsMatch(raw, @"\bpython\b", RegexOptions.IgnoreCase)) return "Python";
-        if (Regex.IsMatch(raw, @"\bjavascript|node\.?js|js\b", RegexOptions.IgnoreCase)) return "JavaScript";
-        if (Regex.IsMatch(raw, @"\btypescript|ts\b", RegexOptions.IgnoreCase)) return "TypeScript";
-        if (Regex.IsMatch(raw, @"\bsql|postgres|mssql\b", RegexOptions.IgnoreCase)) return "SQL";
+        if (Regex.IsMatch(normalized, @"\bc#|csharp|c sharp|\.net|dotnet\b", RegexOptions.IgnoreCase)) return "C#";
+        if (Regex.IsMatch(normalized, @"\bjava\b", RegexOptions.IgnoreCase)) return "Java";
+        if (Regex.IsMatch(normalized, @"\bpython\b", RegexOptions.IgnoreCase)) return "Python";
+        if (Regex.IsMatch(normalized, @"\bjavascript|node\.?js| js\b", RegexOptions.IgnoreCase)) return "JavaScript";
+        if (Regex.IsMatch(normalized, @"\btypescript\b", RegexOptions.IgnoreCase)) return "TypeScript";
+        if (Regex.IsMatch(normalized, @"\bsql|postgres|mssql|veritabani|veri tabani\b", RegexOptions.IgnoreCase)) return "SQL";
+        if (Regex.IsMatch(normalized, @"\bc\+\+|cpp\b", RegexOptions.IgnoreCase)) return "C++";
         return null;
     }
 
-    private static string DetectFocus(string raw, string? detectedLanguage)
+    private static string DetectFocus(string raw, string normalizedRaw, string? detectedLanguage)
     {
         var cleaned = raw;
         if (!string.IsNullOrWhiteSpace(detectedLanguage))
@@ -201,32 +203,59 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
 
         cleaned = Regex.Replace(cleaned, @"\b(programlama(?:da|de)?|programming|calismak|çalışmak|ogrenmek|öğrenmek|istiyorum|isterim|konusunda|hakkinda|hakkında|bana|anlat|ders|study|learn|learning|want|to)\b", " ", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '-');
+        var normalizedCleaned = NormalizeForMatch(cleaned);
 
-        if (ContainsAny(cleaned.ToLowerInvariant(), "algoritma", "algorithm"))
+        if (ContainsAny(normalizedRaw, "algoritma", "algorithm") &&
+            ContainsAny(normalizedRaw, "veri yap", "data structure", "collection"))
+        {
+            return "algoritmalar ve veri yapilari";
+        }
+
+        if (ContainsAny(normalizedRaw, "algoritma", "algorithm"))
         {
             return "algoritmalar";
         }
 
-        if (ContainsAny(cleaned.ToLowerInvariant(), "veri yap", "data structure"))
+        if (ContainsAny(normalizedRaw, "veri yap", "data structure", "collection"))
         {
             return "veri yapilari";
         }
 
-        if (ContainsAny(cleaned.ToLowerInvariant(), "oop", "nesne", "object oriented"))
+        if (ContainsAny(normalizedRaw, "oop", "nesne", "object oriented"))
         {
             return "nesne yonelimli programlama";
         }
 
-        return string.IsNullOrWhiteSpace(cleaned) ? "temel kavramlar ve pratik" : Limit(cleaned, 90);
+        if (ContainsAny(normalizedRaw, "async", "await", "task"))
+        {
+            return "asenkron programlama ve hata ayiklama";
+        }
+
+        if (ContainsAny(normalizedRaw, "sinav", "kpss", "yks", "tyt", "ayt"))
+        {
+            return string.IsNullOrWhiteSpace(normalizedCleaned) ? "sinav odakli konu calismasi" : Limit(cleaned, 90);
+        }
+
+        return string.IsNullOrWhiteSpace(normalizedCleaned) ? "temel kavramlar ve pratik" : Limit(cleaned, 90);
     }
 
-    private static string BuildMainTopic(string raw, string focus)
+    private static string BuildMainTopic(string raw, string normalizedRaw, string focus)
     {
         var cleaned = Regex.Replace(raw, @"\b(calismak|çalışmak|ogrenmek|öğrenmek|istiyorum|isterim|bana|anlat|study|learn|want|to)\b", " ", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '-');
         if (string.IsNullOrWhiteSpace(cleaned))
         {
             return focus;
+        }
+
+        if (ContainsAny(normalizedRaw, "kpss"))
+        {
+            return "KPSS";
+        }
+
+        if (ContainsAny(normalizedRaw, "yks", "tyt", "ayt"))
+        {
+            return "YKS";
         }
 
         return cleaned.Contains(focus, StringComparison.OrdinalIgnoreCase)
@@ -236,7 +265,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
 
     private static string EnsureEnglishResearchIntent(string researchIntent, string mainTopic, string focusArea)
     {
-        if (!string.IsNullOrWhiteSpace(researchIntent) && LooksEnglish(researchIntent.ToLowerInvariant()))
+        if (!string.IsNullOrWhiteSpace(researchIntent) && LooksEnglish(NormalizeForMatch(researchIntent)))
         {
             return researchIntent.Trim();
         }
@@ -260,12 +289,18 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ["programlama"] = "programming",
             ["algoritmalar"] = "algorithms",
             ["algoritma"] = "algorithms",
+            ["çalışmak"] = "study",
+            ["öğrenmek"] = "learn",
             ["veri yapilari"] = "data structures",
             ["veri yapıları"] = "data structures",
             ["temel kavramlar"] = "fundamentals",
             ["pratik"] = "practice",
             ["nesne yonelimli programlama"] = "object oriented programming",
-            ["nesne yönelimli programlama"] = "object oriented programming"
+            ["nesne yönelimli programlama"] = "object oriented programming",
+            ["asenkron programlama"] = "asynchronous programming",
+            ["hata ayiklama"] = "debugging",
+            ["sınav"] = "exam",
+            ["sinav"] = "exam"
         };
 
         foreach (var pair in replacements)
@@ -315,5 +350,18 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksEnglish(string text) =>
-        !ContainsAny(text, "calismak", "çalışmak", "ogren", "öğren", "istiyorum", "konu", "hakkinda", "hakkında", "algoritmalar", "veri yapilari");
+        !ContainsAny(NormalizeForMatch(text), "calismak", "ogren", "istiyorum", "konu", "hakkinda", "algoritmalar", "veri yapilari", "sinav");
+
+    private static string NormalizeForMatch(string value)
+    {
+        var text = value.ToLowerInvariant()
+            .Replace('ç', 'c')
+            .Replace('ğ', 'g')
+            .Replace('ı', 'i')
+            .Replace('ö', 'o')
+            .Replace('ş', 's')
+            .Replace('ü', 'u');
+
+        return Regex.Replace(text, @"\s+", " ").Trim();
+    }
 }

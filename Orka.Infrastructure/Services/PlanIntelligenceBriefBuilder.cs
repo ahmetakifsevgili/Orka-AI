@@ -144,6 +144,8 @@ public static class PlanIntelligenceBriefBuilder
                 line.StartsWith("Answered:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("Correct:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("Wrong:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("AccuracyPercent:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("MeasuredLevel:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("KnownConcepts:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("FastTrackConcepts:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("PracticeConcepts:", StringComparison.OrdinalIgnoreCase) ||

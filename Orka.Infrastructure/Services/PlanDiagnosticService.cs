@@ -435,6 +435,16 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             .GroupBy(value => value!, StringComparer.OrdinalIgnoreCase)
             .Select(g => $"{g.Key}: {g.Count()}")
             .ToList();
+        var accuracyPercent = attempts.Count == 0
+            ? 0
+            : (int)Math.Round(attempts.Count(a => a.IsCorrect) * 100.0 / attempts.Count);
+        var measuredLevel = accuracyPercent switch
+        {
+            >= 85 => "advanced",
+            >= 65 => "intermediate",
+            >= 40 => "developing",
+            _ => "beginner"
+        };
 
         return string.Join("\n", new[]
         {
@@ -443,6 +453,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             $"Answered: {attempts.Count}",
             $"Correct: {attempts.Count(a => a.IsCorrect)}",
             $"Wrong: {wrong.Count}",
+            $"AccuracyPercent: {accuracyPercent}",
+            $"MeasuredLevel: {measuredLevel}",
             $"KnownConcepts: {(knownSummary.Count == 0 ? "none" : string.Join(" | ", knownSummary))}",
             $"FastTrackConcepts: {(fastTrack.Count == 0 ? "none" : string.Join(" | ", fastTrack))}",
             $"PracticeConcepts: {(knownSummary.Count == 0 ? "none" : string.Join(" | ", knownSummary.Take(8)))}",

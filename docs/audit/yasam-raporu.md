@@ -1,93 +1,96 @@
-# Yaşam Raporu
+# Yasam Raporu
 
 ## 1. Niyet Analizi
 
 Durum: PASS_WITH_NOTE
 
-Orka artık Plan Modu'nda ham kullanıcı mesajını doğrudan Korteks'e göndermiyor. İlk kapı `StudyIntentAnalyzer`.
+Orka Plan Modu'nda ham kullanici mesajini dogrudan Korteks'e gondermez. Ilk kapi `StudyIntentAnalyzer` katmanidir.
 
-Beklenen akış:
+Beklenen akis:
 
-1. Kullanıcı ne çalışmak istediğini yazar.
-2. Sistem ana alanı, odak konuyu, hedefi ve araştırılabilir niyeti ayırır.
-3. Frontend kullanıcıya onay kartı gösterir.
-4. Kullanıcı onaylamadan Korteks, quiz ve plan başlamaz.
+1. Kullanici ne calismak istedigini yazar.
+2. Sistem ana alani, odak konuyu, hedefi ve arastirilabilir niyeti ayirir.
+3. Frontend kullaniciya onay karti gosterir.
+4. Kullanici onaylamadan Korteks, quiz ve plan baslamaz.
 
-Örnek:
+Ornek:
 
-- Kullanıcı: `java programlamada algoritmalar çalışmak istiyorum`
-- Beklenen analiz: Java programlama / algoritmalar / öğrenme ve pratik / Java programming algorithms learning path
+- Kullanici: `java programlamada algoritmalar ve veri yapilari calismak istiyorum`
+- Beklenen analiz: Java programlama / algoritmalar ve veri yapilari / ogrenme ve pratik / Java programming algorithms and data structures learning path
 
-Puan: 8.5 / 10
+Puan: 9 / 10
 
-Güçlü taraf:
+Guclu taraf:
 
-- Analiz artık sistemde zorunlu ilk kapı.
-- Fallback analiz Java + algoritmalar gibi yaygın ifadeleri ham konu olarak bırakmıyor.
-- Model JSON dönerse yapılandırılmış analiz kullanılıyor.
+- Analiz sistemde zorunlu ilk kapi.
+- Turkce karakterli isteklerde Java + algoritmalar + veri yapilari birlikte yakalaniyor.
+- Duzeltme metni yeni bir niyet turu gibi ele aliniyor; otomatik Korteks'e gitmiyor.
+- KPSS/YKS gibi sinav kisaltmalari korunuyor, sahte zayif alan uretilmiyor.
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- Canlı model çıktılarıyla daha fazla Türkçe konu örneği test edilmeli.
-- KPSS/YKS gibi sınav odaklarında niyet analizi ileride daha özel alt alan sözlüğü kullanabilir.
+- Canli model ciktilariyla daha fazla Turkce konu ornegi puanlanmali.
+- Sinav odaklarinda ileride daha zengin alt alan sozlugu kullanilabilir.
 
 ## 2. Onay UX'i
 
 Durum: PASS
 
-Frontend artık Plan Modu mesajından sonra niyet onay kartı gösteriyor.
+Frontend Plan Modu mesajindan sonra niyet onay karti gosterir.
 
-Kartta görünenler:
+Kartta gorunenler:
 
 - Ana alan
 - Odak konu
-- Çalışma amacı
-- Korteks'e gidecek araştırma niyeti
+- Calisma amaci
+- Korteks'e gidecek arastirma niyeti
+- "Onay yoksa arastirma, quiz ve plan baslamaz" guvenlik notu
+- Niyet onayi -> Korteks arastirmasi -> 15-25 soru seviye testi -> kisisel plan adimlari
 
 Butonlar:
 
-- Onayla ve araştır
-- Düzelt
+- Onayla ve arastir
+- Duzelt
 - Yeniden yaz
 
-Puan: 8 / 10
+Puan: 8.5 / 10
 
-Güçlü taraf:
+Guclu taraf:
 
-- Kullanıcı artık sistemin ne anladığını görmeden araştırma başlatmıyor.
-- "Düzelt" alanı analizi tekrar backend'e gönderiyor.
-- "Yeniden yaz" pending niyeti temizliyor.
+- Kullanici sistemin ne anladigini gormeden arastirma baslatmaz.
+- Duzelt alani analizi tekrar backend'e gonderir.
+- Yeniden yaz pending niyeti temizler.
+- Kart artik surecin tamamini daha anlasilir gosterir.
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- İleride kart daha görsel hale getirilebilir: konu kırılımı, kapsam uyarısı, tahmini quiz soru sayısı.
-- Bu fazda shadcn ilkeleriyle sade kart düzeni korundu; büyük UI framework eklenmedi.
+- Ileride kart daha gorsel hale getirilebilir: konu kirilimi, kapsam uyarisi, tahmini quiz soru sayisi.
 
-## 3. Düzeltme Akışı
+## 3. Duzeltme Akisi
 
 Durum: PASS
 
-Düzeltme girilince sistem bunu doğrudan Korteks'e iletmiyor. Tekrar `StudyIntentAnalyzer` çalışıyor ve yeni onay kartı üretiyor.
+Duzeltme girilince sistem bunu dogrudan Korteks'e iletmez. Tekrar `StudyIntentAnalyzer` calisir ve yeni onay karti uretir.
 
-Kötü sonuç engeli:
+Kotu sonuc engeli:
 
-- Düzeltme sonrası otomatik Korteks çağrısı yok.
-- Onay gelmeden araştırma yok.
+- Duzeltme sonrasi otomatik Korteks cagrisi yok.
+- Onay gelmeden arastirma yok.
 - Quiz yok.
 - Plan yok.
 
 Puan: 9 / 10
 
-## 4. Korteks Çağrı Kapısı
+## 4. Korteks Cagri Kapisi
 
 Durum: PASS
 
-`PlanDiagnosticService.StartAsync` artık `ApprovedResearchIntent` olmadan çalışmıyor. Bu backend seviyesinde güvenlik kapısıdır; frontend bypass edilse bile Korteks çağrısı başlamaz.
+`PlanDiagnosticService.StartAsync` `ApprovedResearchIntent` olmadan calismaz. Bu backend seviyesinde guvenlik kapisidir; frontend bypass edilse bile Korteks cagrisi baslamaz.
 
-Kanıt:
+Kanit:
 
-- Unit test: onaylı niyet yoksa exception oluşur ve FakeKorteks çağrı sayısı 0 kalır.
-- Controller bu durumu 500 yerine güvenli 400'e çevirir.
+- Unit test: onayli niyet yoksa hata doner ve FakeKorteks cagri sayisi 0 kalir.
+- Controller bu durumu 500 yerine guvenli 400'e cevirir.
 
 Puan: 9.5 / 10
 
@@ -95,9 +98,9 @@ Puan: 9.5 / 10
 
 Durum: PASS_WITH_NOTE
 
-Korteks'e artık ham kullanıcı cümlesi değil, onaylanmış araştırma niyeti gider.
+Korteks'e ham kullanici cumlesi degil, onaylanmis arastirma niyeti gider.
 
-Sistemsel İngilizce yönerge Korteks'ten şunları ister:
+Sistemsel Ingilizce yonerge Korteks'ten sunlari ister:
 
 - learning route
 - reliable web sources
@@ -108,182 +111,188 @@ Sistemsel İngilizce yönerge Korteks'ten şunları ister:
 - practice order and hands-on exercises
 - Orka IDE/sandbox practice ideas when relevant
 
-Korteks'e özellikle quiz veya final plan üretmemesi söylenir. Bu doğru mimari ayrımdır.
+Korteks'e quiz veya final plan uretmemesi soylenir. Bu dogru mimari ayrimdir.
 
 Puan: 8.5 / 10
 
-Güçlü taraf:
+Guclu taraf:
 
-- Araştırma görevi artık ansiklopedi özeti değil, öğrenme hazırlığı.
-- Araştırma ile quiz/plan üretimi ayrıldı.
+- Arastirma gorevi ansiklopedi ozeti degil, ogrenme hazirligi.
+- Arastirma ile quiz/plan uretimi ayrildi.
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- Canlı Korteks çıktıları kaynak kalitesi açısından örneklem bazında puanlanmalı.
-- İleride kaynak skorlaması, YouTube süre/kalite filtresi ve kaynak çeşitliliği metriği eklenebilir.
+- Canli Korteks ciktilari kaynak kalitesi acisindan orneklem bazinda puanlanmali.
+- Ileride kaynak skorlamasi, YouTube sure/kalite filtresi ve kaynak cesitliligi metriği eklenebilir.
 
-## 6. Korteks Çıktısını Anlamlandıran Katman
+## 6. Korteks Ciktisini Anlamlandiran Katman
 
 Durum: PASS_WITH_NOTE
 
-Mevcut `PlanResearchCompressor` ve `PlanIntelligenceBriefBuilder` hattı korunarak güçlendirildi. Yeni büyük servis açılmadı.
+Mevcut `PlanResearchCompressor` ve `PlanIntelligenceBriefBuilder` hatti korunarak guclendirildi. Yeni buyuk servis acilmadi.
 
-Sentez katmanının hedefi:
+Sentez katmaninin hedefi:
 
-- Korteks çıktısını quiz kapsamına çevirmek
-- Plan omurgası çıkarmak
-- Ön koşul, alt kavram, pratik ve hata örüntülerini kullanılabilir hale getirmek
-- Quiz sonucundan gelen bilinen / eksik ayrımını plana geçirmek
+- Korteks ciktisini quiz kapsamina cevirmek
+- Plan omurgasi cikarmak
+- On kosul, alt kavram, pratik ve hata oruntulerini kullanilabilir hale getirmek
+- Quiz sonucundan gelen bilinen / eksik ayrimini plana gecirmek
+- `AccuracyPercent` ve `MeasuredLevel` sinyallerini plana tasimak
 
-Puan: 8 / 10
+Puan: 8.5 / 10
 
-Güçlü taraf:
+Guclu taraf:
 
-- Mevcut mimari bozulmadı.
-- Diagnostic summary artık `KnownConcepts`, `FastTrackConcepts`, `PracticeConcepts`, `WeakConcepts`, `MistakePatterns` taşıyor.
+- Mevcut mimari bozulmadi.
+- Diagnostic summary `KnownConcepts`, `FastTrackConcepts`, `PracticeConcepts`, `WeakConcepts`, `MistakePatterns`, `AccuracyPercent`, `MeasuredLevel` tasir.
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- Korteks çıktısı çok zayıf gelirse sentez katmanı hâlâ kalite kapısına ihtiyaç duyar.
-- Canlı örneklerde "anlamlı veriyi siliyor mu?" kontrolü için birkaç gerçek konu lifetest'i yapılmalı.
+- Canli orneklerde "anlamli veriyi siliyor mu?" kontrolu icin birkac gercek konu lifetest'i yapilmali.
 
 ## 7. Quiz Kalitesi
 
 Durum: PASS_WITH_NOTE
 
-Quiz artık 15-25 soru hedefiyle üretiliyor. Soru sayısı konu kapsamı sinyallerine göre belirleniyor.
+Quiz 15-25 soru hedefiyle uretilir. Soru sayisi konu kapsami sinyallerine gore belirlenir.
 
-Soru sayısı mantığı:
+Soru sayisi mantigi:
 
-- Dar konu: 15 civarı
-- Orta konu: 18-20 civarı
-- Geniş programlama / algoritma / framework kapsamı: 20-25 arası
+- Dar konu: 15 civari
+- Orta konu: 18-20 civari
+- Genis programlama / algoritma / framework kapsami: 20-25 arasi
 
-Kalite kapısı şunları reddeder:
+Kalite kapisi sunlari reddeder:
 
-- İç sistem dili sızıntısı
-- Generic pipeline soruları
-- `input -> transform -> validate` gibi sahte kod blokları
-- Java algoritmaları istenirken C# / .NET / Visual Studio sızıntısı
-- Beklenen soru sayısından farklı quiz
-- 15-25 dışı diagnostic quiz
+- Ic sistem dili sizintisi
+- Generic pipeline sorulari
+- `input -> transform -> validate` gibi sahte kod bloklari
+- Java algoritmalari istenirken C# / .NET / Visual Studio sizintisi
+- "Dogru secenek", "Yanlis secenek", "Correct option", "Wrong answer" gibi cevabi ele veren secenekler
+- Beklenen soru sayisindan farkli quiz
+- 15-25 disi diagnostic quiz
 
-Puan: 8 / 10
+Puan: 8.5 / 10
 
-Güçlü taraf:
+Guclu taraf:
 
-- Kötü fallback quiz artık kullanıcıya güzelmiş gibi gösterilmeyecek.
-- Model kötü üretirse sistem sahte başarı yerine güvenli hata verir.
+- Kotu fallback quiz kullaniciya guzelmis gibi gosterilmez.
+- Model kotu uretirse sistem sahte basari yerine guvenli hata verir.
+- Secenekler artik dogru/yanlis etiketini disari sizdiramaz.
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- Gerçek seviye ölçme için her soru kavram etiketi, zorluk, beceri alanı ve yanılgı tipiyle daha zenginleştirilebilir.
-- İleride adaptive next-question mantığı eklenebilir; bu fazda sabit diagnostic akış korundu.
+- Gercek seviye olcme icin her soru kavram etiketi, zorluk, beceri alani ve yanilgi tipiyle daha da zenginlestirilebilir.
+- Ileride adaptive next-question mantigi eklenebilir; bu fazda sabit diagnostic akis korunur.
 
-## 8. Quiz Sonuç Analizi
+## 8. Quiz Sonuc Analizi
 
 Durum: PASS_WITH_NOTE
 
-Quiz sonucunda sistem artık yalnızca doğru / yanlış sayısı yazmıyor. Şu ayrımlar plan brief'ine gider:
+Quiz sonucunda sistem yalnizca dogru / yanlis sayisi yazmaz. Su ayrimlar plan brief'ine gider:
 
 - Bilinen konular
-- Hızlı geçilecek konular
-- Pratiğe dökülecek konular
-- Eksik veya hatalı konular
-- Kavram yanılgıları
+- Hizli gecilecek konular
+- Pratige dokulecek konular
+- Eksik veya hatali konular
+- Kavram yanilgilari
+- Dogruluk yuzdesi
+- Olculen seviye
 
-Gerçek seviye ölçme durumu:
+Gercek seviye olcme durumu:
 
-- Doğru / yanlış oranı ölçülüyor.
-- Yanlış cevaplardan zayıf kavramlar çıkarılıyor.
-- Boş / skip durumları sahte yanlış gibi ele alınmamalı.
+- Dogru / yanlis orani olculur.
+- Yanlis cevaplardan zayif kavramlar cikarilir.
+- Bos / skip durumlari sahte yanlis gibi ele alinmamalidir.
+
+Puan: 8.5 / 10
+
+Gelistirilecek taraf:
+
+- Her yanlis cevabin neden yanlis oldugunu backend tarafinda daha deterministik siniflandirmak icin ileride rubric tablosu eklenebilir.
+
+## 9. Kisisel Plan
+
+Durum: PASS_WITH_NOTE
+
+Plan uretimi uc alt basliga dusen zayif fallback'e teslim edilmez. Domain fallback kalite zemini genisletildi: gerekli durumlarda en az 6 modul ve modul basina en az 4 ders olacak sekilde korunur.
+
+Beklenen plan davranisi:
+
+- Bilinen konular hizli tekrar + uygulama ile gecilir.
+- Eksik konular mantiksal, detayli, ornekli islenir.
+- Yazilim ve algoritma konularinda Orka IDE/sandbox pratigi one alinir.
+- Plan, internetten bulunan arastirma ve kullanici seviyesine gore sekillenir.
+- Algoritma/veri yapilari gibi konular generic "birinci temel kavram" listesine dusmez.
 
 Puan: 8 / 10
 
-Geliştirilecek taraf:
+Guclu taraf:
 
-- Her yanlış cevabın neden yanlış olduğunu backend tarafında daha deterministik sınıflandırmak için ileride rubric tablosu eklenebilir.
+- Uc baslik gibi sert bir frontend kisiti yok.
+- Plan kalite zemini backend fallback tarafinda da guclendirildi.
+- Algoritma fallback testi Orka IDE ve alan kavramlarini korur.
 
-## 9. Kişisel Plan
+Gelistirilecek taraf:
 
-Durum: PASS_WITH_NOTE
+- Canli plan ciktilari birkac gercek konuda elle puanlanmali.
+- Plan node'larinin kalici graph/progress modeli ileride daha gorunur hale getirilmeli.
 
-Plan artık yalnızca üç alt başlıkla sınırlanacak şekilde tasarlanmıyor. Plan brief'i, araştırma ve quiz sonucundan gelen kavramları kullanacak şekilde güçlendirildi.
-
-Beklenen plan davranışı:
-
-- Bilinen konular hızlı tekrar + uygulama ile geçilir.
-- Eksik konular mantıksal, detaylı, örnekli işlenir.
-- Yazılım konularında Orka IDE/sandbox pratiği öne alınır.
-- Plan, internetten bulunan araştırma ve kullanıcı seviyesine göre şekillenir.
-
-Puan: 7.5 / 10
-
-Güçlü taraf:
-
-- Üç başlık gibi sert bir frontend kısıtı eklenmedi.
-- Plan üretim brief'i kullanıcının quiz profiline göre daha net yönlendirildi.
-
-Geliştirilecek taraf:
-
-- Canlı plan çıktıları birkaç gerçek konuda elle puanlanmalı.
-- Plan node'larının kalıcı graph/progress modeli ileride daha görünür hale getirilmeli.
-
-## 10. Tutor Hafızası ve Davranışı
+## 10. Tutor Hafizasi ve Davranisi
 
 Durum: PASS_WITH_NOTE
 
-Anlamlandırılmış quiz sonuçları plan intelligence brief içinde Tutor/plan hattına taşınıyor.
+Anlamlandirilmis quiz sonuclari plan intelligence brief icinde Tutor/plan hattina tasinir.
 
-Tutor için doğru davranış:
+Tutor icin dogru davranis:
 
-- Bildiği konuyu gereksiz uzatmaz.
-- Bildiği konuyu hızlı uygulama/pratikle pekiştirir.
-- Eksik konuyu daha mantıksal, anlaşılır ve örnekli anlatır.
-- Yazılımda Orka IDE/sandbox akışını merkeze alır.
+- Bildigi konuyu gereksiz uzatmaz.
+- Bildigi konuyu hizli uygulama/pratikle pekistirir.
+- Eksik konuyu daha mantiksal, anlasilir ve ornekli anlatir.
+- Yazilimda Orka IDE/sandbox akisini merkeze alir.
 
 Puan: 7.5 / 10
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- Tutor cevaplarında bu profilin ne kadar uygulandığı canlı konuşma lifetest'iyle ayrıca ölçülmeli.
-- Öğrenme profilinin UI'da daha görünür olması V3 için iyi bir geliştirme alanı.
+- Tutor cevaplarinda bu profilin ne kadar uygulandigi canli konusma lifetest'iyle ayrica olculmeli.
+- Ogrenme profilinin UI'da daha gorunur olmasi V3 icin iyi bir gelistirme alanidir.
 
 ## 11. UX Dengesi
 
 Durum: PASS
 
-Bu fazda en kritik UX kararı alındı: quiz, plan ve sistem komutları chat mesajı gibi görünmeyecek. Chat Tutor cevabı için kalacak; plan/quiz ayrı öğrenme yüzeyi olarak ilerleyecek.
+En kritik UX karari korunuyor: quiz, plan ve sistem komutlari chat mesaji gibi gorunmez. Chat Tutor cevabi icin kalir; plan/quiz ayri ogrenme yuzeyi olarak ilerler.
 
-İyileştirilenler:
+Iyilestirilenler:
 
-- Plan Mode aktif metni görünür ve anlamlı.
-- Niyet onayı ayrı kart.
-- Araştırma başlamadan önce kullanıcının kontrolü var.
-- Düzeltme ayrı bir analiz turu.
-- Quiz tek yüzeyde kalacak şekilde akış güvence altına alındı.
-- Hata metinleri "sahte başarı" yerine güvenli ve dürüst.
+- Plan Mode aktif metni gorunur ve anlamli.
+- Niyet onayi ayri kart.
+- Arastirma baslamadan once kullanicinin kontrolu var.
+- Duzeltme ayri bir analiz turu.
+- Niyet kartinda tum akis adimlari gorunur.
+- Quiz tek yuzeyde kalacak sekilde akis guvence altina alindi.
+- Hata metinleri "sahte basari" yerine guvenli ve durust.
 
-Puan: 8.5 / 10
+Puan: 9 / 10
 
-Geliştirilecek taraf:
+Gelistirilecek taraf:
 
-- İleride niyet kartı daha profesyonel e-learning tasarımına çekilebilir.
-- Plan ilerleme animasyonu gerçek backend event'leriyle daha zenginleştirilebilir.
-- Quiz sonuç ekranı kavram haritası ve çalışma yolu olarak daha görsel hale getirilebilir.
+- Plan ilerleme animasyonu gercek backend event'leriyle daha zenginlesebilir.
+- Quiz sonuc ekrani kavram haritasi ve calisma yolu olarak daha gorsel hale getirilebilir.
 
-## 12. Genel Sonuç
+## 12. Genel Sonuc
 
-Yaşam Raporu kararı: ACCEPTED_WITH_NOTES
+Yasam Raporu karari: ACCEPTED_WITH_NOTES
 
-Bu patch sistemin ana zihinsel hattını doğru yere çekti:
+Bu patch sistemin ana zihinsel hattini dogru yere cekti:
 
-Kullanıcı isteği -> niyet analizi -> kullanıcı onayı -> Korteks araştırması -> sentez -> quiz -> seviye analizi -> kişisel plan -> Tutor temposu.
+Kullanici istegi -> niyet analizi -> kullanici onayi -> Korteks arastirmasi -> sentez -> quiz -> seviye analizi -> kisisel plan -> Tutor temposu.
 
-En önemli kazanım:
+En onemli kazanim:
 
-Korteks artık kullanıcının ham cümlesiyle rastgele çalışmıyor. Onaylı, araştırılabilir niyetle ve öğrenme hazırlığı promptuyla çalışıyor.
+Korteks kullanicinin ham cumlesiyle rastgele calismaz. Onayli, arastirilabilir niyetle ve ogrenme hazirligi promptuyla calisir.
 
 Kalan ana not:
 
-Bu mimari doğru kapıları koydu. Canlı ürün kalitesi için birkaç gerçek konu üzerinden Korteks çıktısı, quiz kalitesi ve plan kalitesi elle puanlanarak promptlar daha da keskinleştirilmeli.
+Mimari dogru kapilari koydu. Canli urun kalitesi icin birkac gercek konu uzerinden Korteks ciktisi, quiz kalitesi ve plan kalitesi elle puanlanarak promptlar daha da keskinlestirilmelidir.

@@ -27,6 +27,56 @@ public sealed class StudyIntentAnalyzerTests
     }
 
     [Fact]
+    public async Task StudyIntentAnalyzer_HandlesTurkishCharactersAndDataStructures()
+    {
+        var analyzer = new StudyIntentAnalyzer(new ThrowingAgentFactory(), NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest { RawRequest = "Java programlamada algoritmalar ve veri yapıları çalışmak istiyorum" });
+
+        Assert.Equal("Java programlama", result.MainTopic);
+        Assert.Equal("algoritmalar ve veri yapilari", result.FocusArea);
+        Assert.Contains("Java", result.ResearchIntent);
+        Assert.Contains("data structures", result.ResearchIntent, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("çalışmak", result.ResearchIntent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StudyIntentAnalyzer_UsesCorrectionAsFreshIntentPreview()
+    {
+        var analyzer = new StudyIntentAnalyzer(new ThrowingAgentFactory(), NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest
+            {
+                RawRequest = "java calismak istiyorum",
+                Correction = "Hayir, Java algoritmalar ve veri yapilari istiyorum"
+            });
+
+        Assert.Equal("Hayir, Java algoritmalar ve veri yapilari istiyorum", result.RawRequest);
+        Assert.Equal("Java programlama", result.MainTopic);
+        Assert.Equal("algoritmalar ve veri yapilari", result.FocusArea);
+        Assert.True(result.RequiresUserConfirmation);
+    }
+
+    [Fact]
+    public async Task StudyIntentAnalyzer_PreservesExamAcronymWithoutInventingWeakness()
+    {
+        var analyzer = new StudyIntentAnalyzer(new ThrowingAgentFactory(), NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest { RawRequest = "KPSS paragraf sorularında hızlanmak istiyorum" });
+
+        Assert.Equal("KPSS", result.MainTopic);
+        Assert.Contains("paragraf", result.FocusArea, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("KPSS", result.ResearchIntent, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.RequiresUserConfirmation);
+    }
+
+    [Fact]
     public async Task StudyIntentAnalyzer_UsesModelJsonWhenValid()
     {
         var analyzer = new StudyIntentAnalyzer(

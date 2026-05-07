@@ -65,6 +65,23 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
+    public void DiagnosticQuizQuality_FailsWhenOptionsLeakCorrectnessLabels()
+    {
+        var json = BuildQuiz(optionFactory: i => new[]
+        {
+            new { text = $"Dogru secenek: kavrami uygula {i}", isCorrect = true },
+            new { text = $"Yanlis secenek: ezberle {i}", isCorrect = false },
+            new { text = $"Yanlis secenek: tahmin et {i}", isCorrect = false },
+            new { text = $"Yanlis secenek: konuyu yok say {i}", isCorrect = false }
+        });
+
+        var report = DiagnosticQuizQualityGate.Validate(json, "Java programlama: algoritmalar");
+
+        Assert.False(report.IsAcceptable);
+        Assert.Contains(report.Failures, f => f.Contains("correctness labels", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void DiagnosticQuizQuality_ReturnsFallbackBlueprintWhenQualityIsLow()
     {
         var lowQuality = """
@@ -141,7 +158,8 @@ public sealed class DiagnosticQuizQualityGateTests
         bool includeCodeQuestion = true,
         Func<int, string>? conceptFactory = null,
         Func<int, string>? questionTypeFactory = null,
-        Func<int, string>? misconceptionFactory = null)
+        Func<int, string>? misconceptionFactory = null,
+        Func<int, object[]>? optionFactory = null)
     {
         var types = new[] { "conceptual", "procedural", "application", "analysis", "misconception_probe" };
         var misconceptions = new[] { "Conceptual", "Procedural", "Application", "Reading", "Careless" };
@@ -157,18 +175,20 @@ public sealed class DiagnosticQuizQualityGateTests
                 question += "\n```csharp\nvar result = LoadAsync().Result;\n```";
             }
 
+            var options = optionFactory?.Invoke(i) ?? new object[]
+            {
+                new { text = $"Kavrami senaryodaki kisitlara gore uygula {i}", isCorrect = true },
+                new { text = $"Tanimi ezberden yazip senaryoyu atla {i}", isCorrect = false },
+                new { text = $"Benzer gorunen terimi asil kavram yerine sec {i}", isCorrect = false },
+                new { text = $"Sonucu hata mesajinin ilk kelimesinden tahmin et {i}", isCorrect = false }
+            };
+
             return new
             {
                 type = "multiple_choice",
                 question,
-                options = new[]
-                {
-                    new { text = "Dogru secenek", isCorrect = true },
-                    new { text = "Yanlis secenek 1", isCorrect = false },
-                    new { text = "Yanlis secenek 2", isCorrect = false },
-                    new { text = "Yanlis secenek 3", isCorrect = false }
-                },
-                correctAnswer = "Dogru secenek",
+                options,
+                correctAnswer = $"Kavrami senaryodaki kisitlara gore uygula {i}",
                 explanation = $"Aciklama {i}",
                 skillTag = $"skill-{i}",
                 difficulty = difficulties[(i - 1) % difficulties.Length],

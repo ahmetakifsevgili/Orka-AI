@@ -122,6 +122,14 @@ public static class DiagnosticQuizQualityGate
             failures.Add($"Questions with missing required metadata/options: {missingMetadata}.");
         }
 
+        var correctnessLabelLeakCount = questions.Count(q =>
+            q.Options.Any(LeaksCorrectnessLabel) ||
+            LeaksCorrectnessLabel(q.CorrectAnswer));
+        if (correctnessLabelLeakCount > 0)
+        {
+            failures.Add($"Answer options leak correctness labels instead of testing knowledge: {correctnessLabelLeakCount}.");
+        }
+
         var conceptDiversity = questions
             .Select(q => NormalizeTag(q.ConceptTag))
             .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -583,6 +591,28 @@ public static class DiagnosticQuizQualityGate
         (text.Contains("```", StringComparison.Ordinal) ||
          Regex.IsMatch(text, @"\b(await|async|Task|Thread|try|catch|return|if|for|while|class|public|var)\b") &&
          Regex.IsMatch(text, @"[;{}()=]"));
+
+    private static bool LeaksCorrectnessLabel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeOptionText(text);
+        return Regex.IsMatch(normalized, @"^(a\)|b\)|c\)|d\))?\s*(dogru|yanlis|correct|wrong)(\s+(yaklasim|secenek|option|answer))?\s*[:\-.]", RegexOptions.IgnoreCase) ||
+               Regex.IsMatch(normalized, @"^(dogru|yanlis|correct|wrong)\s+(secenek|option|answer)$", RegexOptions.IgnoreCase);
+    }
+
+    private static string NormalizeOptionText(string value) =>
+        value.Trim()
+            .ToLowerInvariant()
+            .Replace('ç', 'c')
+            .Replace('ğ', 'g')
+            .Replace('ı', 'i')
+            .Replace('ö', 'o')
+            .Replace('ş', 's')
+            .Replace('ü', 'u');
 
     private sealed record DiagnosticQuestion(
         string Question,

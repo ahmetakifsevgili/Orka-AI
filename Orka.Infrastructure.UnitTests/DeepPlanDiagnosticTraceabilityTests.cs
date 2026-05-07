@@ -141,6 +141,27 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("LINQ", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task DeepPlan_AlgorithmFallbackKeepsDomainAndMeetsQualityFloor()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "Algoritmalar ve veri yapilari",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 24);
+        Assert.Contains(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Two Pointers", StringComparison.OrdinalIgnoreCase) ||
+                                            t.Title.Contains("Sliding Window", StringComparison.OrdinalIgnoreCase) ||
+                                            t.Title.Contains("Dynamic Programming", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<TraceProfile> RunProfileAsync(string[] concepts, string[] mistakes)
     {
         var harness = await CreateHarnessAsync();
