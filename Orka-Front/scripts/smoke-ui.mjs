@@ -96,6 +96,7 @@ const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Plan mode requires intent confirmation before Korteks", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
+addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayriliyor") && chatPanel.includes("Baglam taraniyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Ogrenme yolu uretiliyor"));
 
 const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");
@@ -121,6 +122,7 @@ addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && 
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
 addCheck("Quiz parser strips correctness labels from options", quizParser.includes("dogru") && quizParser.includes("yanlis") && quizParser.includes("incorrect"));
 addCheck("Mermaid error SVG falls back safely", chatMessage.includes("looksLikeMermaidFailure") && chatMessage.includes("Mermaid returned an error SVG."));
+addCheck("Favicon is present for runtime browser noise", fs.existsSync(path.join(root, "public", "favicon.ico")) && fs.statSync(path.join(root, "public", "favicon.ico")).size > 0);
 
 const tutorAgent = readRepo("Orka.Infrastructure/Services/TutorAgent.cs");
 const deepPlanAgent = readRepo("Orka.Infrastructure/Services/DeepPlanAgent.cs");
@@ -128,7 +130,9 @@ const planQualityTests = readRepo("Orka.API.Tests/PlanQualityGuardTests.cs");
 const program = readRepo("Orka.API/Program.cs");
 const studyIntentAnalyzer = readRepo("Orka.Infrastructure/Services/StudyIntentAnalyzer.cs");
 const planDiagnostic = readRepo("Orka.Infrastructure/Services/PlanDiagnosticService.cs");
+const v29QualityTests = readRepo("Orka.API.Tests/OrkaV29QualityRealityGateTests.cs");
 addCheck("Backend StudyIntentAnalyzer is the plan gate", studyIntentAnalyzer.includes("StudyIntentAnalyzer") && studyIntentAnalyzer.includes("researchIntent") && planDiagnostic.includes("Approved study intent is required"));
+addCheck("V2.9 quality reality gate is wired", v29QualityTests.includes("QualityScenarioCatalog") && v29QualityTests.includes("A01") && v29QualityTests.includes("E56") && v29QualityTests.includes("StudyIntentAnalyzer_ProducesApprovedResearchIntentQualitySignals"));
 addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
 addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
 addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("programming_plan_missing_orka_ide"));

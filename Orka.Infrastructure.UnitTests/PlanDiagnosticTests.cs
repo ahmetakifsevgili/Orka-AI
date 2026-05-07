@@ -70,7 +70,7 @@ public sealed class PlanDiagnosticTests
         "KPSS paragraf sorularinda hizlanmak istiyorum",
         "KPSS",
         "paragraf sorularinda hizlanmak",
-        "KPSS paragraph questions speed practice learning path",
+        "KPSS exam paragraph questions speed practice learning path",
         20)]
     [InlineData(
         "SQL veritabani indeksleri ve sorgu optimizasyonu calismak istiyorum",

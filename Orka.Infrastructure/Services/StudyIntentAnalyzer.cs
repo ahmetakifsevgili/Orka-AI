@@ -184,7 +184,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
     private static string? DetectProgrammingLanguage(string normalized)
     {
         if (Regex.IsMatch(normalized, @"\bc#|csharp|c sharp|\.net|dotnet\b", RegexOptions.IgnoreCase)) return "C#";
-        if (Regex.IsMatch(normalized, @"\bjava\b", RegexOptions.IgnoreCase)) return "Java";
+        if (Regex.IsMatch(normalized, @"\bjava|jva|jav\b", RegexOptions.IgnoreCase)) return "Java";
         if (Regex.IsMatch(normalized, @"\bpython\b", RegexOptions.IgnoreCase)) return "Python";
         if (Regex.IsMatch(normalized, @"\bjavascript|node\.?js| js\b", RegexOptions.IgnoreCase)) return "JavaScript";
         if (Regex.IsMatch(normalized, @"\btypescript\b", RegexOptions.IgnoreCase)) return "TypeScript";
@@ -206,13 +206,13 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '-');
         var normalizedCleaned = NormalizeForMatch(cleaned);
 
-        if (ContainsAny(normalizedRaw, "algoritma", "algorithm") &&
+        if (ContainsAny(normalizedRaw, "algoritma", "algortima", "algoritm", "algorithm") &&
             ContainsAny(normalizedRaw, "veri yap", "data structure", "collection"))
         {
             return "algoritmalar ve veri yapilari";
         }
 
-        if (ContainsAny(normalizedRaw, "algoritma", "algorithm"))
+        if (ContainsAny(normalizedRaw, "algoritma", "algortima", "algoritm", "algorithm"))
         {
             return "algoritmalar";
         }
@@ -320,6 +320,16 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ["indeks"] = "index",
             ["sorgu"] = "query",
             ["optimizasyonu"] = "optimization",
+            ["matematik"] = "math",
+            ["olasilik"] = "probability",
+            ["kombinasyon"] = "combinatorics",
+            ["ingilizce"] = "English",
+            ["konusma"] = "speaking",
+            ["gelistirmek"] = "improve",
+            ["gelistirme"] = "improvement",
+            ["asenkron"] = "asynchronous",
+            ["problem"] = "problem solving",
+            ["kpss"] = "KPSS exam",
             ["paragraf"] = "paragraph",
             ["sorularinda"] = "questions",
             ["sorular"] = "questions",
@@ -330,6 +340,26 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         foreach (var pair in asciiReplacements)
         {
             text = Regex.Replace(text, Regex.Escape(pair.Key), pair.Value, RegexOptions.IgnoreCase);
+        }
+
+        var typoFixes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["jva"] = "java",
+            ["jav"] = "java",
+            ["algortima"] = "algoritma",
+            ["algoritm"] = "algoritma",
+            ["algoritmlar"] = "algoritmalar",
+            ["calismk"] = "calismak",
+            ["calisicam"] = "calismak",
+            ["istiyom"] = "istiyorum",
+            ["istiyrum"] = "istiyorum",
+            ["indek"] = "index",
+            ["indx"] = "index"
+        };
+
+        foreach (var pair in typoFixes)
+        {
+            text = Regex.Replace(text, $@"\b{Regex.Escape(pair.Key)}\b", pair.Value, RegexOptions.IgnoreCase);
         }
 
         return Regex.Replace(text, @"\s+", " ").Trim();
