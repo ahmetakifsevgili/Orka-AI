@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Infrastructure.Services;
 using Xunit;
 
@@ -118,7 +119,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".Result", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("async/await", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("dogru cevaba ulasmak", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("neden-sonuc", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -147,6 +148,31 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
         Assert.True(DiagnosticQuizQualityGate.Validate(result, "SQL index ve sorgu optimizasyonu").IsAcceptable);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_FallbackUsesHistoryBlueprintForSeljuk()
+    {
+        var blueprint = LearningBlueprintBuilder.Build(
+            "Seljuk Empire history learning path",
+            "Selcuklu tarihi: tarih",
+            "Selcuklu tarihi",
+            "tarih",
+            new Orka.Core.DTOs.Korteks.CompressedPlanResearchContextDto());
+
+        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Selcuklu tarihi: tarih", blueprint);
+        var report = DiagnosticQuizQualityGate.Validate(result, "Selcuklu tarihi: tarih");
+
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
+        Assert.Contains("Dandanakan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Malazgirt", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nizam", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Katvan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("debugging", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("api-shape", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

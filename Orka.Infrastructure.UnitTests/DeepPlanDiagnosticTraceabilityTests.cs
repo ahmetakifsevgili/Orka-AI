@@ -162,6 +162,28 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task DeepPlan_HistoryFallbackUsesChronologyAndRealTopicAxis()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+            harness.TopicId,
+            "Selcuklu tarihi: tarih",
+            harness.UserId,
+            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nstored context\n[LEARNING BLUEPRINT]\nBlueprintDomain: history\nBlueprintPlanModules:\n- Koken ve Ilk Yukselis: Oghuz/Kinik | Khorasan\n- Devletlesme ve Mesruiyet: Dandanakan | Baghdad",
+            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+            "beginner");
+
+        Assert.True(result.Topics.Count >= 24);
+        Assert.Contains(result.Topics, t => t.Title.Contains("Dandanakan", StringComparison.OrdinalIgnoreCase) ||
+                                            t.Title.Contains("Malazgirt", StringComparison.OrdinalIgnoreCase) ||
+                                            t.Title.Contains("Nizam", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Proje / Uygulama Kapanisi", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<TraceProfile> RunProfileAsync(string[] concepts, string[] mistakes)
     {
         var harness = await CreateHarnessAsync();

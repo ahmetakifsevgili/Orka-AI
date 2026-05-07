@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Orka.Core.DTOs.PlanDiagnostic;
 
 namespace Orka.Infrastructure.Services;
 
@@ -40,7 +41,8 @@ public static class DiagnosticQuizQualityGate
         string rawJson,
         string topicTitle,
         int expectedQuestionCount,
-        out DiagnosticQuizQualityReport report)
+        out DiagnosticQuizQualityReport report,
+        LearningBlueprintDto? learningBlueprint = null)
     {
         var cleaned = ExtractJsonArray(rawJson);
         report = Validate(cleaned, topicTitle);
@@ -65,6 +67,13 @@ public static class DiagnosticQuizQualityGate
         if (IsJavaAlgorithmTopic(topicTitle) && !LooksLikeJavaAlgorithmQuiz(cleaned))
         {
             failures.Add("Java algorithms diagnostic must stay on Java + algorithms/data-structures concepts.");
+        }
+
+        if ((learningBlueprint?.Domain.Equals("history", StringComparison.OrdinalIgnoreCase) == true ||
+             IsHistoryTopic(topicTitle)) &&
+            LooksLikeProgrammingDiagnostic(cleaned))
+        {
+            failures.Add("History diagnostic leaked programming/debugging/API/performance scaffolding.");
         }
 
         if (IsJavaAlgorithmTopic(topicTitle) &&
@@ -176,8 +185,14 @@ public static class DiagnosticQuizQualityGate
             failures);
     }
 
-    public static string BuildFallbackDiagnosticBlueprint(string topicTitle)
+    public static string BuildFallbackDiagnosticBlueprint(string topicTitle, LearningBlueprintDto? learningBlueprint = null)
     {
+        if (learningBlueprint?.Domain.Equals("history", StringComparison.OrdinalIgnoreCase) == true ||
+            IsHistoryTopic(topicTitle))
+        {
+            return BuildHistoryFallbackDiagnostic(topicTitle, learningBlueprint);
+        }
+
         if (IsJavaAlgorithmTopic(topicTitle))
         {
             return BuildJavaAlgorithmsFallbackDiagnostic(topicTitle);
@@ -395,6 +410,217 @@ public static class DiagnosticQuizQualityGate
                 Topic = topic
             };
     }
+
+    private static string BuildHistoryFallbackDiagnostic(string topicTitle, LearningBlueprintDto? blueprint)
+    {
+        var isSeljuk = IsSeljukTopic(topicTitle, blueprint);
+        var topic = string.IsNullOrWhiteSpace(topicTitle) ? "Tarih" : topicTitle.Trim();
+        var questions = isSeljuk
+            ? BuildSeljukHistoryQuestions(topic)
+            : BuildGenericHistoryQuestions(topic, blueprint);
+
+        return JsonSerializer.Serialize(questions, JsonOptions)
+            .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<DiagnosticQuestionBlueprint> BuildSeljukHistoryQuestions(string topic)
+    {
+        return
+        [
+            HQ(topic, 1, "kolay", "seljuk-origins", "conceptual", "Conceptual",
+                "Buyuk Selcuklularin Oghuz/Turkmen kokeni hangi boyla en cok iliskilendirilir?",
+                ["Kinik", "Kayi", "Avsar", "Karluk"],
+                "Kinik",
+                "Selcuklu hanedani Oghuzlarin Kinik boyu ile iliskilendirilir.",
+                "Selcuklu koken bilgisini ayirt etme"),
+            HQ(topic, 2, "kolay", "khorasan-rise", "chronology", "Reading",
+                "Selcuklularin devletlesme surecinde Horasan bolgesinin onemi nedir?",
+                ["Gaznelilerle mucadele ve siyasi guc kazanma sahasidir.", "Sadece Anadolu'daki ilk baskenttir.", "Bizans'in merkezidir.", "Haçli seferlerinin baslangic noktasidir."],
+                "Gaznelilerle mucadele ve siyasi guc kazanma sahasidir.",
+                "Horasan, Selcuklularin Gazneliler karsisinda guc kazandigi ana sahalardan biridir.",
+                "Bolge-siyasi yukselis iliskisi"),
+            HQ(topic, 3, "kolay", "dandanakan", "chronology", "Procedural",
+                "1040 Dandanakan Savasi'nin Selcuklu tarihi acisindan temel sonucu hangisidir?",
+                ["Gaznelilere karsi ustunluk ve Buyuk Selcuklu devletlesmesinin hizlanmasi", "Anadolu Selcuklu Devleti'nin yikilmasi", "Osmanli Devleti'nin kurulmasi", "Abbasi Devleti'nin sona ermesi"],
+                "Gaznelilere karsi ustunluk ve Buyuk Selcuklu devletlesmesinin hizlanmasi",
+                "Dandanakan, Selcuklularin Gaznelilere karsi siyasi ustunlugunu pekistiren donum noktalarindandir.",
+                "Olay-sonuc baglantisi"),
+            HQ(topic, 4, "orta", "tughril-baghdad", "application", "Application",
+                "Tughril Bey'in Bagdat'a girmesi Selcuklu siyasetinde en cok hangi anlamla baglantilidir?",
+                ["Abbasi halifesiyle mesruiyet iliskisi kurmak", "Bizans'in baskentini almak", "Deniz ticaretini baslatmak", "Mogollari durdurmak"],
+                "Abbasi halifesiyle mesruiyet iliskisi kurmak",
+                "Bagdat ve Abbasi halifesiyle iliski, Selcuklu siyasi mesruiyetini guclendirdi.",
+                "Mesruiyet kavrami"),
+            HQ(topic, 5, "orta", "alp-arslan-manzikert", "analysis", "Reading",
+                "1071 Malazgirt Savasi'nin tarihsel onemi en dogru nasil aciklanir?",
+                ["Anadolu'ya Turk yerlesimi ve siyasi gecis surecini hizlandiran donum noktasi", "Selcuklularin ilk kez Horasan'a girmesi", "Nizamiye medreselerinin kurulmasi", "Gaznelilerin kurulmasi"],
+                "Anadolu'ya Turk yerlesimi ve siyasi gecis surecini hizlandiran donum noktasi",
+                "Malazgirt, Anadolu'nun Turklesme surecinde askeri ve siyasi acilim yaratan kritik olaydir.",
+                "Malazgirt neden-sonuc okuma"),
+            HQ(topic, 6, "orta", "malikshah-high-period", "conceptual", "Conceptual",
+                "Meliksah donemi genellikle hangi ozelliklerle one cikar?",
+                ["Siyasi genisleme, idari duzen ve Nizam al-Mulk etkisi", "Selcuklularin tamamen dagilmasi", "Osmanliyla ittifak", "Anadolu Selcuklu Devleti'nin yikilmasi"],
+                "Siyasi genisleme, idari duzen ve Nizam al-Mulk etkisi",
+                "Meliksah donemi Buyuk Selcuklularin guclu donemlerinden biridir; Nizam al-Mulk idari duzende etkilidir.",
+                "Yuksek donem ozelligi"),
+            HQ(topic, 7, "orta", "nizam-al-mulk", "application", "Application",
+                "Nizam al-Mulk hangi baslikla en dogru iliskilendirilir?",
+                ["Vezirlik, idari duzen ve Nizamiye medreseleri", "Haçli donanmasi", "Mogol istilasi liderligi", "Bizans imparatorlugu"],
+                "Vezirlik, idari duzen ve Nizamiye medreseleri",
+                "Nizam al-Mulk, Selcuklu idaresi ve Nizamiye medreseleriyle anilir.",
+                "Kisi-kurum eslestirme"),
+            HQ(topic, 8, "orta", "iqta", "conceptual", "Conceptual",
+                "Iqta sistemi Selcuklu idaresinde hangi alanla ilgilidir?",
+                ["Toprak gelirleri, asker besleme ve idari duzen", "Denizcilik teknolojisi", "Matbaa uretimi", "Roma hukuku"],
+                "Toprak gelirleri, asker besleme ve idari duzen",
+                "Iqta, gelir ve asker/idare organizasyonuyla baglantili bir kurumdur.",
+                "Kurum-islev baglantisi"),
+            HQ(topic, 9, "orta", "nizamiya-madrasa", "analysis", "Application",
+                "Nizamiye medreseleri hangi amaca hizmet eden kurumlar olarak okunmalidir?",
+                ["Egitim, Sunni dusunce ve idari kadro yetistirme", "Sadece askeri kale sistemi", "Bizans saray okulu", "Deniz ticareti birligi"],
+                "Egitim, Sunni dusunce ve idari kadro yetistirme",
+                "Nizamiye medreseleri egitim ve siyasi-dini kurumlasma acisindan onemlidir.",
+                "Kurum-amac analizi"),
+            HQ(topic, 10, "zor", "chronology-order", "chronology", "Procedural",
+                "Asagidaki siralamalardan hangisi Selcuklu tarihi icin daha dogrudur?",
+                ["Dandanakan -> Malazgirt -> Meliksah yuksek donemi -> Katvan", "Malazgirt -> Dandanakan -> Katvan -> Tughril Bey", "Katvan -> Dandanakan -> Malazgirt -> Meliksah", "Osmanli kurulusu -> Dandanakan -> Malazgirt -> Katvan"],
+                "Dandanakan -> Malazgirt -> Meliksah yuksek donemi -> Katvan",
+                "Dandanakan 1040, Malazgirt 1071, Meliksah yuksek donemi 11. yuzyil sonu, Katvan 1141 olarak siralanir.",
+                "Kronoloji kurma"),
+            HQ(topic, 11, "zor", "sanjar-qatwan", "analysis", "Reading",
+                "Katvan Savasi ve Sultan Sencer donemi hangi surecle iliskilidir?",
+                ["Buyuk Selcuklu gucunun zayiflamasi ve parcalanma sureci", "Devletin ilk kurulus ani", "Malazgirt'in hemen oncesi", "Osmanli'nin Avrupa'ya gecisi"],
+                "Buyuk Selcuklu gucunun zayiflamasi ve parcalanma sureci",
+                "Sencer donemi ve Katvan, Buyuk Selcuklu guc kaybi ve parcalanmayla iliskili okunur.",
+                "Gerileme sureci"),
+            HQ(topic, 12, "orta", "anatolian-link", "application", "Application",
+                "Buyuk Selcuklu tarihi ile Anadolu Selcuklu tarihi arasindaki bag nasil kurulmalidir?",
+                ["Malazgirt ve Anadolu'ya yonelen siyasi-goc hareketleri uzerinden", "Ikisi tamamen ayni devlet oldugu icin ayirim yapmadan", "Sadece Osmanli padisahlari uzerinden", "Roma Cumhuriyeti kurumlari uzerinden"],
+                "Malazgirt ve Anadolu'ya yonelen siyasi-goc hareketleri uzerinden",
+                "Buyuk Selcuklu ile Anadolu Selcuklu birbirine bagli ama ayni siyasi evre degildir.",
+                "Donem ayrimi"),
+            HQ(topic, 13, "zor", "common-confusion-great-anatolian", "misconception_probe", "Conceptual",
+                "En yaygin kavram karisikligi hangisidir?",
+                ["Buyuk Selcuklu ile Anadolu Selcuklu evrelerini ayni siyasi yapi gibi anlatmak", "Dandanakan'in Gaznelilerle ilgili oldugunu soylemek", "Nizam al-Mulk'u vezirlikle iliskilendirmek", "Malazgirt'i Bizans-Selcuklu savasi olarak gormek"],
+                "Buyuk Selcuklu ile Anadolu Selcuklu evrelerini ayni siyasi yapi gibi anlatmak",
+                "Bu iki evre iliskili olsa da ayni siyasi yapi gibi anlatmak ogrenme hatasi uretir.",
+                "Buyuk/Anadolu Selcuklu ayrimi"),
+            HQ(topic, 14, "orta", "cause-effect-manzikert", "misconception_probe", "Application",
+                "Malazgirt'i yalnizca 'bir savas kazanildi' diye ezberlemek neden eksiktir?",
+                ["Cunku savasin Anadolu'daki siyasi, demografik ve askeri sonuclarini gormezden gelir.", "Cunku Malazgirt hic olmamistir.", "Cunku konu sadece medrese tarihidir.", "Cunku Selcuklular Bizans'la hic karsilasmamistir."],
+                "Cunku savasin Anadolu'daki siyasi, demografik ve askeri sonuclarini gormezden gelir.",
+                "Tarih sorulari olay kadar sonuclari ve uzun vadeli etkileri de olcer.",
+                "Tek olay ezberi yanilgisi"),
+            HQ(topic, 15, "zor", "actor-event-confusion", "misconception_probe", "Reading",
+                "Alp Arslan, Nizam al-Mulk ve Meliksah'i karistiran bir ogrenci icin en iyi calisma adimi hangisidir?",
+                ["Kisi-rol-olay tablosu kurup her birini donemle eslestirmek", "Uc ismi tek kisilik bir lider gibi ezberlemek", "Malazgirt'i tamamen atlamak", "Kronoloji yerine rastgele kaynak okumak"],
+                "Kisi-rol-olay tablosu kurup her birini donemle eslestirmek",
+                "Kisi, rol ve olay eslestirmesi kronolojik hatalari azaltir.",
+                "Kisi-rol ayirma"),
+            HQ(topic, 16, "zor", "institution-politics", "analysis", "Conceptual",
+                "Iqta ve Nizamiye gibi kurumlari plan icinde neden siyasi olaylarla birlikte calismak gerekir?",
+                ["Cunku devletin gucu sadece savasla degil kurumlasmayla da aciklanir.", "Cunku kurumlar tarih disi konulardir.", "Cunku siyasi olaylar kurumlardan tamamen bagimsizdir.", "Cunku medreseler sadece modern donemde vardir."],
+                "Cunku devletin gucu sadece savasla degil kurumlasmayla da aciklanir.",
+                "Selcuklu gucu askeri, idari ve kulturel kurumlarin birlikte okunmasiyla anlasilir.",
+                "Kurum-siyaset baglantisi"),
+            HQ(topic, 17, "orta", "geography", "application", "Application",
+                "Selcuklu haritasini okurken Khorasan-Iran-Iraq-Anatolia hattini takip etmek hangi beceriyi guclendirir?",
+                ["Siyasi genisleme ve olaylarin mekan baglamini kurma", "Sadece isim ezberleme", "Kronolojiyi tamamen gereksiz sayma", "Kultur konularini silme"],
+                "Siyasi genisleme ve olaylarin mekan baglamini kurma",
+                "Harita baglami olaylarin neden ve sonuclarini daha anlamli kilar.",
+                "Cografya-tarih baglantisi"),
+            HQ(topic, 18, "zor", "culture-legacy", "misconception_probe", "Conceptual",
+                "Selcuklu kultur ve sanat konularini planin disina atmak neden zayif bir yaklasimdir?",
+                ["Cunku medrese, mimari ve burokrasi Selcuklu mirasini anlamanin parcasidir.", "Cunku tarih sadece savas listesidir.", "Cunku kultur kaynaklari hic yoktur.", "Cunku idari kurumlar onemsizdir."],
+                "Cunku medrese, mimari ve burokrasi Selcuklu mirasini anlamanin parcasidir.",
+                "Kultur ve kurumlar siyasi tarihin tamamlayici boyutudur.",
+                "Kultur mirasi yanilgisi"),
+            HQ(topic, 19, "zor", "source-reading", "analysis", "Reading",
+                "Farkli kaynaklarda Selcuklu basliklari degisik sirada gelirse en saglam kontrol hangisidir?",
+                ["Tarihleri, aktorleri ve olay-sonuc iliskilerini karsilastirmak", "En uzun metni otomatik dogru kabul etmek", "Ilk kaynagi ezberleyip digerlerini atmak", "YouTube basligini tek kanit saymak"],
+                "Tarihleri, aktorleri ve olay-sonuc iliskilerini karsilastirmak",
+                "Kaynaklar rota sinyali verir; dogrulama icin kronoloji ve neden-sonuc kontrolu gerekir.",
+                "Kaynak karsilastirma"),
+            HQ(topic, 20, "zor", "mixed-synthesis", "misconception_probe", "Application",
+                "Selcuklu konusunu gercekten ogrenmek icin final tekrar hangi uc ayagi birlikte tasimalidir?",
+                ["Kronoloji, aktor-olay eslestirme ve neden-sonuc yazimi", "Sadece savas isimleri", "Sadece tek video basligi", "Sadece rastgele tarih ezberi"],
+                "Kronoloji, aktor-olay eslestirme ve neden-sonuc yazimi",
+                "Seviye tespiti tarih bilgisini ezber degil, siralama ve iliski kurma olarak olcmelidir.",
+                "Karma tarih sentezi")
+        ];
+    }
+
+    private static List<DiagnosticQuestionBlueprint> BuildGenericHistoryQuestions(string topic, LearningBlueprintDto? blueprint)
+    {
+        var axes = (blueprint?.AssessmentAxes.Count > 0 ? blueprint.AssessmentAxes : ["chronology", "actor-event matching", "cause-effect", "geography", "institutions", "common-confusions"])
+            .Take(8)
+            .ToList();
+        var events = (blueprint?.Events.Count > 0 ? blueprint.Events : ["ana olay", "donum noktasi", "kurumlasma"])
+            .Take(6)
+            .ToList();
+        var actors = (blueprint?.Actors.Count > 0 ? blueprint.Actors : ["ana aktor", "siyasi guc", "kurum"])
+            .Take(6)
+            .ToList();
+
+        var questions = new List<DiagnosticQuestionBlueprint>();
+        for (var i = 0; i < 20; i++)
+        {
+            var axis = axes[i % axes.Count];
+            var ev = events[i % events.Count];
+            var actor = actors[i % actors.Count];
+            var questionType = (i % 5) switch
+            {
+                0 => "conceptual",
+                1 => "procedural",
+                2 => "application",
+                3 => "analysis",
+                _ => "misconception_probe"
+            };
+            var misconception = questionType == "misconception_probe" ? "Conceptual" : i % 2 == 0 ? "Reading" : "Application";
+
+            questions.Add(HQ(topic, i + 1, i < 6 ? "kolay" : i < 14 ? "orta" : "zor", $"history-{axis}-{i + 1}", questionType, misconception,
+                $"{topic} icin {axis} ekseninde {ev} ve {actor} bilgisini calisirken en saglam seviye tespit adimi hangisidir?",
+                [
+                    "Olayi zaman, aktor ve neden-sonuc baglamiyla eslestirmek",
+                    "Sadece en tanidik ismi ezberlemek",
+                    "Kaynaktaki ilk cumleyi tek dogru saymak",
+                    "Benzer donemleri ayni olay gibi kabul etmek"
+                ],
+                "Olayi zaman, aktor ve neden-sonuc baglamiyla eslestirmek",
+                "Tarih seviye tespiti olay, aktor, zaman ve neden-sonuc iliskisini birlikte olcer.",
+                $"{axis} uzerinden tarihsel iliski kurma"));
+        }
+
+        return questions;
+    }
+
+    private static DiagnosticQuestionBlueprint HQ(
+        string topic,
+        int index,
+        string difficulty,
+        string concept,
+        string questionType,
+        string misconception,
+        string question,
+        string[] options,
+        string correct,
+        string explanation,
+        string objective) =>
+        new()
+        {
+            Type = "multiple_choice",
+            Question = $"{topic}: Soru {index} - {question}",
+            Options = options.Select(option => new DiagnosticOption(option, option == correct)).ToList(),
+            CorrectAnswer = correct,
+            Explanation = explanation,
+            SkillTag = $"history-{concept}",
+            Difficulty = difficulty,
+            ConceptTag = concept,
+            LearningObjective = objective,
+            QuestionType = questionType,
+            ExpectedMisconceptionCategory = misconception,
+            Topic = topic
+        };
 
     private static DiagnosticFallbackProfile DetectFallbackProfile(string topicTitle)
     {
@@ -914,6 +1140,38 @@ public static class DiagnosticQuizQualityGate
         var normalized = topicTitle.ToLowerInvariant();
         return normalized.Contains("java", StringComparison.OrdinalIgnoreCase) &&
                ContainsAny(normalized, "algoritma", "algorithm", "data structure", "veri yap");
+    }
+
+    private static bool IsHistoryTopic(string topicTitle)
+    {
+        var normalized = NormalizeOptionText(topicTitle);
+        return ContainsAny(normalized, "tarih", "history", "selcuk", "selcuklu", "ottoman", "osmanli", "roma", "medieval");
+    }
+
+    private static bool IsSeljukTopic(string topicTitle, LearningBlueprintDto? blueprint)
+    {
+        var text = NormalizeOptionText(string.Join(' ', new[]
+        {
+            topicTitle,
+            blueprint?.ApprovedResearchIntent ?? string.Empty
+        }.Concat(blueprint?.SubConcepts ?? [])));
+        return ContainsAny(text, "seljuk", "selcuk", "selcuklu");
+    }
+
+    private static bool LooksLikeProgrammingDiagnostic(string text)
+    {
+        var normalized = NormalizeOptionText(text);
+        return ContainsAny(normalized,
+            "code-flow",
+            "api-shape",
+            "debugging",
+            "production-scenario",
+            "performance",
+            "orka ide",
+            "sandbox",
+            "visual studio",
+            "java code",
+            "sql query");
     }
 
     private static bool LooksLikeJavaAlgorithmQuiz(string text)

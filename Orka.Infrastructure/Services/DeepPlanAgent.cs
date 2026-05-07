@@ -313,7 +313,8 @@ public class DeepPlanAgent : IDeepPlanAgent
         Exam,
         Algorithm,
         Math,
-        Language
+        Language,
+        History
     }
 
     private static PlanDomain DetectPlanDomain(string topicTitle)
@@ -334,6 +335,9 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         if (ContainsAny(text, "ielts", "toefl", "yds", "yökdil", "yokdil", "ingilizce", "almanca", "fransızca", "fransizca", "language", "speaking", "konuşma", "konusma", "dil öğren", "dil ogren"))
             return PlanDomain.Language;
+
+        if (ContainsAny(text, "tarih", "history", "selcuk", "selcuklu", "seljuk", "osmanli", "ottoman", "roma", "medieval"))
+            return PlanDomain.History;
 
         return PlanDomain.General;
     }
@@ -378,6 +382,13 @@ public class DeepPlanAgent : IDeepPlanAgent
             - Spaced Repetition tekrarları, Speaking Prompt görevleri ve kısa role-play alıştırmaları ekle.
             - Dil öğreniminde sadece kural anlatma; aktif üretim, hata düzeltme ve seviye uyumlu günlük pratik ver.
             """,
+            PlanDomain.History => """
+
+            [DOMAIN SABLONU - TARIH / SOSYAL BILIMLER]
+            - Plan kronoloji, cografya, aktorler, olaylar, kurumlar, neden-sonuc ve miras eksenlerini birlikte tasimalidir.
+            - Savas listesi veya isim ezberiyle kalma; actor-event eslestirme, zaman sirasi ve kisa neden-sonuc yazimi ekle.
+            - Tarih planinda programlama/debugging/IDE dili kullanma; kaynak rotasi ve tarihsel kavramlar omurga olmalidir.
+            """,
             _ => string.Empty
         };
     }
@@ -410,6 +421,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 new("Speaking & Role-play", "🎙️", new List<LessonDefinition> { new("Diyalog kurma", "speaking"), new("Feedback analizi", "fluency") }),
                 new("Spaced Repetition Active Recall", "🔁", new List<LessonDefinition> { new("Spaced Repetition", "memory"), new("Haftalık kapanış", "review") })
             },
+            PlanDomain.History => BuildHistoryFallbackModules(title),
             _ => null
         };
 
@@ -576,6 +588,106 @@ public class DeepPlanAgent : IDeepPlanAgent
             new("Final mastery quiz ve sonraki rota", "mastery-check", "Assessment")
         ])
     ];
+
+    private static List<ModuleDefinition> BuildHistoryFallbackModules(string title)
+    {
+        var text = title.ToLowerInvariant();
+        var isSeljuk = ContainsAny(text, "selcuk", "selcuklu", "seljuk");
+        if (isSeljuk)
+        {
+            return
+            [
+                new("Koken ve Ilk Yukselis", "history",
+                [
+                    new("Oghuz/Kinik arka plani", "seljuk-origins"),
+                    new("Khorasan ve Gaznelilerle mucadele", "seljuk-khorasan"),
+                    new("Tughril ve Chaghri Beg rolleri", "seljuk-founders"),
+                    new("Ilk harita ve kronoloji kontrolu", "seljuk-map-timeline", "Assessment")
+                ]),
+                new("Devletlesme ve Mesruiyet", "state",
+                [
+                    new("Dandanakan'in neden ve sonucu", "seljuk-dandanakan"),
+                    new("Baghdad ve Abbasi mesruiyeti", "seljuk-baghdad"),
+                    new("Sultanlik fikri ve siyasi guc", "seljuk-legitimacy"),
+                    new("Actor-event eslestirme pratigi", "seljuk-actor-event", "PracticeLab")
+                ]),
+                new("Alp Arslan ve Malazgirt", "map",
+                [
+                    new("Bizans-Seljuk iliski zemini", "seljuk-byzantine"),
+                    new("Malazgirt sebepleri", "seljuk-manzikert-cause"),
+                    new("Malazgirt sonuclari", "seljuk-manzikert-effect"),
+                    new("Anadolu baglantisi neden-sonuc yazimi", "seljuk-anatolia-link", "PracticeLab")
+                ]),
+                new("Meliksah ve Nizam al-Mulk Donemi", "institution",
+                [
+                    new("Yuksek donem ve siyasi genisleme", "seljuk-malikshah"),
+                    new("Nizam al-Mulk ve vezirlik", "seljuk-nizam"),
+                    new("Iqta ve idari duzen", "seljuk-iqta"),
+                    new("Nizamiye medreseleri", "seljuk-nizamiya")
+                ]),
+                new("Kultur, Kurumlar ve Toplum", "culture",
+                [
+                    new("Ordu ve idari yapi", "seljuk-army-admin"),
+                    new("Medrese ve ilim hayati", "seljuk-education"),
+                    new("Sanat, mimari ve burokrasi", "seljuk-culture"),
+                    new("Kurumlari siyasi tarihe baglama", "seljuk-institution-synthesis", "DeepDive")
+                ]),
+                new("Dagilma ve Miras", "review",
+                [
+                    new("Sencer donemi ve Katvan", "seljuk-sanjar-qatwan"),
+                    new("Parcalanma nedenleri", "seljuk-fragmentation"),
+                    new("Anadolu Selcuklu mirasi", "seljuk-anatolian-legacy"),
+                    new("Karma kronoloji ve final seviye kontrolu", "seljuk-final-check", "Assessment")
+                ])
+            ];
+        }
+
+        return
+        [
+            new($"{title} Donem ve Kronoloji", "history",
+            [
+                new("Baslangic baglami", "history-context"),
+                new("Zaman sirasi", "history-chronology"),
+                new("Harita ve cografya baglami", "history-geography"),
+                new("Ana kavram kontrolu", "history-baseline", "Assessment")
+            ]),
+            new("Aktorler ve Olaylar", "people",
+            [
+                new("Liderler ve gruplar", "history-actors"),
+                new("Ana olaylar", "history-events"),
+                new("Donum noktalari", "history-turning-points"),
+                new("Actor-event pratigi", "history-actor-event", "PracticeLab")
+            ]),
+            new("Neden-Sonuc ve Kurumlar", "cause",
+            [
+                new("Sebep-sonuc zinciri", "history-cause-effect"),
+                new("Idari kurumlar", "history-institutions"),
+                new("Toplum ve ekonomi", "history-society"),
+                new("Kisa neden-sonuc yazimi", "history-short-writing", "PracticeLab")
+            ]),
+            new("Kultur ve Miras", "culture",
+            [
+                new("Kultur ve sanat", "history-culture"),
+                new("Uzun vadeli etkiler", "history-legacy"),
+                new("Kaynak karsilastirma", "history-source-compare"),
+                new("Yanilgi ayirma", "history-misconception", "Remediation")
+            ]),
+            new("Yanilgi Onarimi", "repair",
+            [
+                new("Karisan donemler", "history-period-confusion", "Remediation"),
+                new("Karisan aktorler", "history-actor-confusion", "Remediation"),
+                new("Kronoloji mini quiz", "history-timeline-quiz", "Assessment"),
+                new("Harita-kavram baglantisi", "history-map-concept", "PracticeLab")
+            ]),
+            new("Karma Tarih Pratigi", "target",
+            [
+                new("Kronoloji testi", "history-chronology-test", "Assessment"),
+                new("Neden-sonuc yazimi", "history-cause-writing", "PracticeLab"),
+                new("Karma aktor-olay eslestirme", "history-mixed-match", "PracticeLab"),
+                new("Final kontrol ve sonraki rota", "history-final-check", "Assessment")
+            ])
+        ];
+    }
 
     private static ProgrammingPlanProfile DetectProgrammingProfile(string title)
     {

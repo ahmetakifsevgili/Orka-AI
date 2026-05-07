@@ -90,4 +90,42 @@ public sealed class PlanIntelligenceBriefBuilderTests
         Assert.DoesNotContain("Noisy provider source", brief);
         Assert.Contains("QualityContract", brief);
     }
+
+    [Fact]
+    public void BuildForPlan_UsesLearningBlueprintSectionsAsCurriculumSpine()
+    {
+        var compressed = """
+            [SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]
+            Topic: Selcuklu tarihi
+            GroundingMode: FallbackInternalKnowledge
+            SourceCount: 0
+            [LEARNING BLUEPRINT]
+            BlueprintDomain: history
+            BlueprintLearningRoute:
+            - Oghuz and Kinik origins of the Seljuks
+            - Dandanakan and the formation of the Great Seljuk state
+            BlueprintAssessmentAxes:
+            - chronology
+            - actor-event matching
+            - cause-effect
+            BlueprintPlanModules:
+            - Koken ve Ilk Yukselis: Oghuz/Kinik arka plani | Khorasan ve Gazneliler
+            - Devletlesme ve Mesruiyet: Dandanakan | Baghdad
+            BlueprintTimeline:
+            - 1040 Dandanakan
+            - 1071 Manzikert
+            BlueprintCauseEffectPairs:
+            - Dandanakan -> Great Seljuk state formation
+            """;
+
+        var brief = PlanIntelligenceBriefBuilder.BuildForPlan(
+            "Selcuklu tarihi",
+            compressed,
+            "WeakConcepts: chronology: 2");
+
+        Assert.Contains("History", brief, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MustUseFromBlueprint.Route", brief, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Dandanakan", brief, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("actor-event", brief, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -21,6 +21,10 @@ public sealed class PlanDiagnosticStateDto
     public PlanDiagnosticStatus Status { get; set; }
     public string CompressedResearchContextJson { get; set; } = string.Empty;
     public string CompressedResearchPromptBlock { get; set; } = string.Empty;
+    public string LearningBlueprintJson { get; set; } = string.Empty;
+    public string LearningBlueprintHash { get; set; } = string.Empty;
+    public string LearningBlueprintDomain { get; set; } = string.Empty;
+    public string LearningBlueprintSourceConfidence { get; set; } = string.Empty;
     public GroundingMode GroundingMode { get; set; }
     public int SourceCount { get; set; }
     public Guid QuizRunId { get; set; }

@@ -24,6 +24,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private readonly IPlanDiagnosticStateStore _stateStore;
     private readonly IQuizAttemptRecorder _quizRecorder;
     private readonly IDeepPlanAgent _deepPlan;
+    private readonly IRedisMemoryService? _redis;
     private readonly ILogger<PlanDiagnosticService> _logger;
     private readonly TavilySearchPlugin? _webSearch;
     private readonly WikipediaPlugin? _wikipedia;
@@ -37,6 +38,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         IPlanDiagnosticStateStore stateStore,
         IQuizAttemptRecorder quizRecorder,
         IDeepPlanAgent deepPlan,
+        IRedisMemoryService? redis,
         ILogger<PlanDiagnosticService> logger,
         TavilySearchPlugin? webSearch = null,
         WikipediaPlugin? wikipedia = null,
@@ -49,6 +51,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         _stateStore = stateStore;
         _quizRecorder = quizRecorder;
         _deepPlan = deepPlan;
+        _redis = redis;
         _logger = logger;
         _webSearch = webSearch;
         _wikipedia = wikipedia;
@@ -115,11 +118,30 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 request.TopicId,
                 ct);
             var compressed = _compressor.Compress(research);
-            var compressedBlock = _compressor.BuildPromptBlock(compressed);
+            var learningBlueprint = await BuildOrLoadLearningBlueprintAsync(
+                approvedResearchIntent,
+                topicTitle,
+                approvedMainTopic,
+                approvedFocusArea,
+                compressed,
+                ct);
+            var effectiveQuestionCount = Math.Clamp(
+                learningBlueprint.RecommendedQuestionCount > 0 ? learningBlueprint.RecommendedQuestionCount : requestedQuestionCount,
+                15,
+                25);
+            var learningBlueprintJson = JsonSerializer.Serialize(learningBlueprint, JsonOptions);
+            var learningBlueprintHash = LearningBlueprintBuilder.ComputeHash(learningBlueprint);
+            var compressedBlock = _compressor.BuildPromptBlock(compressed) +
+                                  "\n" +
+                                  LearningBlueprintBuilder.BuildPromptBlock(learningBlueprint);
 
             state.Status = PlanDiagnosticStatus.ResearchReady;
             state.CompressedResearchContextJson = JsonSerializer.Serialize(compressed, JsonOptions);
             state.CompressedResearchPromptBlock = compressedBlock;
+            state.LearningBlueprintJson = learningBlueprintJson;
+            state.LearningBlueprintHash = learningBlueprintHash;
+            state.LearningBlueprintDomain = learningBlueprint.Domain;
+            state.LearningBlueprintSourceConfidence = learningBlueprint.SourceConfidence;
             state.GroundingMode = compressed.GroundingMode;
             state.SourceCount = compressed.SourceCount;
             await _stateStore.SaveAsync(state, ct);
@@ -127,7 +149,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             var quizJson = await GenerateDiagnosticQuizFromStoredContextAsync(
                 topicTitle,
                 compressedBlock,
-                requestedQuestionCount,
+                learningBlueprint,
+                effectiveQuestionCount,
                 ct);
             var questionCount = CountQuestions(quizJson);
 
@@ -146,7 +169,11 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                     intentRequestId = request.IntentRequestId,
                     approvedMainTopic,
                     approvedFocusArea,
-                    approvedResearchIntent
+                    approvedResearchIntent,
+                    blueprintDomain = learningBlueprint.Domain,
+                    blueprintConfidence = learningBlueprint.SourceConfidence,
+                    blueprintHash = learningBlueprintHash,
+                    sourceCount = compressed.SourceCount
                 }, JsonOptions),
                 CreatedAt = now
             });
@@ -346,6 +373,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private async Task<string> GenerateDiagnosticQuizFromStoredContextAsync(
         string topicTitle,
         string compressedResearchPromptBlock,
+        LearningBlueprintDto learningBlueprint,
         int requestedQuestionCount,
         CancellationToken ct)
     {
@@ -385,7 +413,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             ct);
         try
         {
-            var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality);
+            var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality, learningBlueprint);
             if (!quality.IsAcceptable)
             {
                 _logger.LogWarning(
@@ -403,7 +431,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. Topic={Topic}",
                 topicTitle);
 
-            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle);
+            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, learningBlueprint);
             var fallbackCount = DiagnosticQuizQualityGate.CountQuestions(fallback);
             if (fallbackCount is < 15 or > 25)
             {
@@ -568,6 +596,57 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         };
     }
 
+    private async Task<LearningBlueprintDto> BuildOrLoadLearningBlueprintAsync(
+        string approvedResearchIntent,
+        string topicTitle,
+        string approvedMainTopic,
+        string approvedFocusArea,
+        CompressedPlanResearchContextDto compressed,
+        CancellationToken ct)
+    {
+        var cacheKey = LearningBlueprintBuilder.CacheKey(approvedResearchIntent);
+        if (_redis != null)
+        {
+            try
+            {
+                var cached = await _redis.GetJsonAsync(cacheKey);
+                if (!string.IsNullOrWhiteSpace(cached))
+                {
+                    var blueprint = JsonSerializer.Deserialize<LearningBlueprintDto>(cached, JsonOptions);
+                    if (blueprint != null && !string.IsNullOrWhiteSpace(blueprint.Domain))
+                    {
+                        return blueprint;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "[LearningBlueprint] Cache read skipped. Key={CacheKey}", cacheKey);
+            }
+        }
+
+        var built = LearningBlueprintBuilder.Build(
+            approvedResearchIntent,
+            topicTitle,
+            approvedMainTopic,
+            approvedFocusArea,
+            compressed);
+
+        if (_redis != null)
+        {
+            try
+            {
+                await _redis.SetJsonAsync(cacheKey, JsonSerializer.Serialize(built, JsonOptions), TimeSpan.FromHours(12));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "[LearningBlueprint] Cache write skipped. Key={CacheKey}", cacheKey);
+            }
+        }
+
+        return built;
+    }
+
     private static string[] BuildLearningResearchQueries(
         string approvedResearchIntent,
         string approvedMainTopic,
@@ -577,12 +656,37 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase));
 
-        return
-        [
+        var queries = new List<string>
+        {
+            $"{baseIntent} curriculum",
+            $"{baseIntent} syllabus",
+            $"{baseIntent} course outline",
             $"{baseIntent} learning path",
+            $"{baseIntent} practice problems",
+            $"{baseIntent} common mistakes",
             $"{baseIntent} prerequisites common mistakes practice exercises",
             $"{baseIntent} tutorial course roadmap"
-        ];
+        };
+
+        if (ContainsTurkishStudySignal(approvedResearchIntent, approvedMainTopic, approvedFocusArea))
+        {
+            queries.Add($"{baseIntent} ders plani");
+            queries.Add($"{baseIntent} konu anlatimi");
+            queries.Add($"{baseIntent} mufredat");
+        }
+
+        return queries.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray();
+    }
+
+    private static bool ContainsTurkishStudySignal(params string[] values)
+    {
+        var text = string.Join(' ', values);
+        return text.Contains('ç') || text.Contains('ğ') || text.Contains('ı') ||
+               text.Contains('ö') || text.Contains('ş') || text.Contains('ü') ||
+               text.Contains("calism", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("ogren", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("tarih", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("mufredat", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> TryProviderCallAsync(

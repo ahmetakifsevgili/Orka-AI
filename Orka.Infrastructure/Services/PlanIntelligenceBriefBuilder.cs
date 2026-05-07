@@ -65,6 +65,11 @@ public static class PlanIntelligenceBriefBuilder
         AppendSection(sb, "MayUseFromResearch.Misconceptions", parsed, "LikelyMisconceptions", 4);
         AppendSection(sb, "MayUseFromResearch.Freshness", parsed, "WebFreshnessFacts", 3);
         AppendSection(sb, "MayUseFromResearch.YouTubePedagogy", parsed, "YouTubeLearningReferences", 3);
+        AppendSection(sb, "MustUseFromBlueprint.Route", parsed, "BlueprintLearningRoute", 8);
+        AppendSection(sb, "MustUseFromBlueprint.AssessmentAxes", parsed, "BlueprintAssessmentAxes", 8);
+        AppendSection(sb, "MustUseFromBlueprint.PlanModules", parsed, "BlueprintPlanModules", 8);
+        AppendSection(sb, "MustUseFromBlueprint.Timeline", parsed, "BlueprintTimeline", 8);
+        AppendSection(sb, "MustUseFromBlueprint.CauseEffect", parsed, "BlueprintCauseEffectPairs", 6);
         AppendKeyFactsOnlyIfUseful(sb, parsed, topic);
 
         sb.AppendLine("MustIgnore:");
@@ -239,6 +244,10 @@ public static class PlanIntelligenceBriefBuilder
             case PlanBriefDomain.Language:
                 yield return "For language learning, sequence vocabulary, grammar in use, listening/reading, speaking/writing prompts, and spaced review.";
                 break;
+            case PlanBriefDomain.History:
+                yield return "For history, sequence by chronology, geography, actors, events, institutions, cause-effect, culture, and legacy.";
+                yield return "Use actor-event matching and cause-effect writing as practice; do not turn history into programming/debugging tasks.";
+                break;
             default:
                 yield return "Use a concept-to-practice-to-review learning arc.";
                 break;
@@ -252,6 +261,7 @@ public static class PlanIntelligenceBriefBuilder
         PlanBriefDomain.Exam => "Exam: kazanım map, soru tipi, deneme, wrong-answer analysis, review pressure.",
         PlanBriefDomain.Math => "Math: theory intuition, worked examples, mixed practice, misconception repair.",
         PlanBriefDomain.Language => "Language: input, output, grammar in use, speaking/writing practice, spaced repetition.",
+        PlanBriefDomain.History => "History: chronology, actors, events, institutions, geography, cause-effect, culture and legacy.",
         _ => "General: concept map, examples, practice, review, project/application."
     };
 
@@ -281,6 +291,11 @@ public static class PlanIntelligenceBriefBuilder
         if (ContainsAny(text, "ielts", "toefl", "yds", "yokdil", "yökdil", "ingilizce", "almanca", "fransizca", "fransızca", "language", "speaking", "konusma", "konuşma"))
         {
             return PlanBriefDomain.Language;
+        }
+
+        if (ContainsAny(text, "tarih", "history", "selcuk", "selÃ§uk", "selcuklu", "selÃ§uklu", "osmanli", "osmanlÄ±", "ottoman", "roma", "medieval"))
+        {
+            return PlanBriefDomain.History;
         }
 
         return PlanBriefDomain.General;
@@ -336,6 +351,7 @@ public static class PlanIntelligenceBriefBuilder
         Algorithm,
         Exam,
         Math,
-        Language
+        Language,
+        History
     }
 }

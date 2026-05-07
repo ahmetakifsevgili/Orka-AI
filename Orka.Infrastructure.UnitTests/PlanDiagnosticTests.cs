@@ -38,9 +38,42 @@ public sealed class PlanDiagnosticTests
         Assert.NotEqual(Guid.Empty, response.PlanRequestId);
         Assert.NotNull(state);
         Assert.False(string.IsNullOrWhiteSpace(state!.CompressedResearchContextJson));
+        Assert.False(string.IsNullOrWhiteSpace(state.LearningBlueprintJson));
+        Assert.False(string.IsNullOrWhiteSpace(state.LearningBlueprintHash));
+        Assert.False(string.IsNullOrWhiteSpace(state.LearningBlueprintDomain));
         Assert.Equal(PlanDiagnosticStatus.QuizPending, state.Status);
         Assert.Equal(GroundingMode.FallbackInternalKnowledge, state.GroundingMode);
         Assert.Equal(0, state.SourceCount);
+    }
+
+    [Fact]
+    public async Task PlanDiagnostic_Start_ForHistoryUsesBlueprintAndNoProgrammingScaffold()
+    {
+        var harness = await CreateHarnessAsync();
+        harness.Factory.ReturnInvalidQuiz = true;
+
+        var response = await harness.Service.StartAsync(
+            harness.UserId,
+            new StartPlanDiagnosticRequest
+            {
+                TopicId = harness.TopicId,
+                TopicTitle = "Selcuklu tarihi: tarih",
+                RawStudyRequest = "Selcuklu tarihi calismak istiyorum",
+                ApprovedMainTopic = "Selcuklu tarihi",
+                ApprovedFocusArea = "tarih",
+                ApprovedStudyGoal = "ogrenme ve analiz",
+                ApprovedResearchIntent = "Seljuk Empire history learning path"
+            });
+        var state = await harness.Store.GetAsync(response.PlanRequestId);
+
+        Assert.Equal("history", state!.LearningBlueprintDomain);
+        Assert.Contains("BlueprintLearningRoute", state.CompressedResearchPromptBlock);
+        Assert.Contains("Dandanakan", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Malazgirt", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nizam", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("debugging", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("api-shape", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Orka IDE", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -382,6 +415,7 @@ public sealed class PlanDiagnosticTests
             store,
             recorder,
             deepPlan,
+            null,
             NullLogger<PlanDiagnosticService>.Instance);
 
         return new Harness(userId, topicId, db, store, korteks, compressor, factory, deepPlan, service);
