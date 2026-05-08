@@ -23,7 +23,19 @@ export interface QuizData {
   cognitiveType?: string;
   sourceHint?: string;
   questionHash?: string;
-  sourceRefs?: string[];
+  assessmentItemId?: string;
+  assessmentItemKey?: string;
+  conceptKey?: string;
+  conceptTag?: string;
+  cognitiveSkill?: string;
+  misconceptionTarget?: string;
+  evidenceExpected?: string;
+  scoringRule?: string;
+  learningOutcomeIds?: string[];
+  knowledgeTracingStateId?: string;
+  masteryProbability?: number;
+  itemQualityStatus?: string;
+  sourceRefs?: unknown;
 }
 
 export interface ChatMessage {
@@ -32,6 +44,7 @@ export interface ChatMessage {
   type: MessageType;
   content: string;
   metadata?: ChatResponseMetadata | null;
+  artifacts?: TeachingArtifact[];
   quiz?: QuizData | QuizData[];
   completedTopicId?: string; // Set when type === "topic_complete"
   timestamp: Date;
@@ -46,6 +59,78 @@ export interface CitationDto {
   label?: string | null;
   url?: string | null;
   confidence?: number | null;
+  chunkId?: string | null;
+}
+
+export interface SourceRetrievalItemDto {
+  id: string;
+  sourceRetrievalRunId: string;
+  sourceId: string;
+  sourceChunkId?: string | null;
+  pageNumber: number;
+  chunkIndex: number;
+  rank: number;
+  embeddingScore: number;
+  lexicalScore: number;
+  fusedScore: number;
+  qualityStatus: string;
+  reason?: string | null;
+  snippet: string;
+}
+
+export interface SourceRetrievalRunDto {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  sourceId?: string | null;
+  query: string;
+  retrievalScope: string;
+  requestedTopK: number;
+  retrievedCount: number;
+  isEmpty: boolean;
+  maxScore: number;
+  averageScore: number;
+  qualityStatus: string;
+  reason?: string | null;
+  createdAt: string;
+  items: SourceRetrievalItemDto[];
+}
+
+export interface SourceCitationCheckDto {
+  id: string;
+  sourceRetrievalRunId?: string | null;
+  sourceId?: string | null;
+  sourceChunkId?: string | null;
+  citationId: string;
+  sourceType: string;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+  checkStatus: string;
+  confidence: number;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export interface SourceQualityReportDto {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  sourceId?: string | null;
+  qualityStatus: string;
+  retrievalHealthStatus: string;
+  citationCoverageStatus: string;
+  citationSupportStatus: string;
+  retrievalRunCount: number;
+  emptyRunCount: number;
+  citationCheckCount: number;
+  unsupportedCitationCount: number;
+  citationMissingCount: number;
+  averageContextRelevance: number;
+  citationCoverage: number;
+  generatedAt: string;
+  recentRetrievalRuns?: SourceRetrievalRunDto[];
+  recentCitationChecks?: SourceCitationCheckDto[];
 }
 
 export interface UsedToolDto {
@@ -66,13 +151,90 @@ export interface UsedToolDto {
   timestamp?: string | null;
 }
 
+export interface ToolStatusDto {
+  id: string;
+  toolId: string;
+  status: string;
+  success: boolean;
+  provider?: string | null;
+  safeMessage?: string | null;
+  errorCode?: string | null;
+  confidence?: number | null;
+  sourceCount?: number | null;
+}
+
+export interface ArtifactSummaryDto {
+  id: string;
+  artifactType: string;
+  title: string;
+  status: string;
+  renderFormat: string;
+  provider?: string | null;
+  externalUrl?: string | null;
+}
+
+export interface EvidenceSummaryDto {
+  readyToolCount: number;
+  sourceCount: number;
+  groundingStatus: string;
+  learnerEvidenceStatus: string;
+}
+
+export interface TeachingArtifact {
+  id: string;
+  userId?: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  tutorActionTraceId?: string | null;
+  artifactType: string;
+  title: string;
+  content: string;
+  renderFormat: string;
+  status: string;
+  provider?: string | null;
+  externalUrl?: string | null;
+  renderError?: string | null;
+  metadataJson?: string | null;
+  renderedAt?: string | null;
+  createdAt?: string;
+}
+
 export interface ChatResponseMetadata {
   citations?: CitationDto[];
   usedTools?: UsedToolDto[];
   groundingMode?: string;
   fallbackReason?: string | null;
   sourceConfidence?: number | null;
+  retrievalRunId?: string | null;
+  sourceQualityStatus?: string | null;
+  unsupportedCitationCount?: number;
+  citationMissingCount?: number;
   providerWarnings?: string[];
+  tutorPolicyTraceId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorWorkingMemorySnapshotId?: string | null;
+  tutorActionTraceId?: string | null;
+  teachingMode?: string | null;
+  styleMode?: string | null;
+  activeConceptKey?: string | null;
+  nextPedagogicalMove?: string | null;
+  groundingStatus?: string | null;
+  masteryProbability?: number | null;
+  confidence?: number | null;
+  toolCallIds?: string[];
+  artifactIds?: string[];
+  toolStatuses?: ToolStatusDto[];
+  artifactSummaries?: ArtifactSummaryDto[];
+  evidenceSummary?: EvidenceSummaryDto | null;
+  policyViolationCount?: number | null;
+  ragQualityStatus?: string | null;
+  nextCheckPrompt?: string | null;
+  cognitiveLoad?: string | null;
+  affectiveState?: string | null;
+  tutorPedagogyEvaluationRunId?: string | null;
+  tutorPedagogyStatus?: string | null;
+  tutorPedagogyScore?: number | null;
+  pedagogyWarnings?: string[];
   planDiagnostic?: PlanDiagnosticMeta;
 }
 
@@ -83,6 +245,9 @@ export interface PlanDiagnosticMeta {
   topicTitle: string;
   status?: string;
   quizQuestionCount?: number;
+  conceptGraphQualityStatus?: string;
+  assessmentQualityStatus?: string;
+  qualityReportId?: string | null;
   intentRequestId?: string | null;
   approvedMainTopic?: string;
   approvedFocusArea?: string;
@@ -130,11 +295,25 @@ export interface QuizAttempt {
   isCorrect: boolean;
   explanation: string;
   skillTag?: string;
+  assessmentItemId?: string;
+  conceptKey?: string;
+  conceptTag?: string;
+  cognitiveSkill?: string;
+  misconceptionTarget?: string;
+  evidenceExpected?: string;
+  scoringRule?: string;
+  learningOutcomeIdsJson?: string;
+  knowledgeTracingStateId?: string;
+  masteryProbability?: number;
+  itemQualityStatus?: string;
   topicPath?: string;
   difficulty?: string;
   cognitiveType?: string;
   questionHash?: string;
   sourceRefsJson?: string;
+  responseTimeMs?: number;
+  wasSkipped?: boolean;
+  confidenceSelfRating?: number;
   timestamp: Date;
 }
 
@@ -306,12 +485,140 @@ export interface ApiQuizHistoryItem {
   isCorrect: boolean;
   explanation: string;
   skillTag?: string;
+  assessmentItemId?: string;
+  conceptKey?: string;
+  conceptTag?: string;
+  cognitiveSkill?: string;
+  misconceptionTarget?: string;
+  evidenceExpected?: string;
+  scoringRule?: string;
+  learningOutcomeIdsJson?: string;
+  knowledgeTracingStateId?: string;
+  masteryProbability?: number;
+  itemQualityStatus?: string;
   topicPath?: string;
   difficulty?: string;
   cognitiveType?: string;
   questionHash?: string;
   sourceRefsJson?: string;
+  responseTimeMs?: number;
+  wasSkipped?: boolean;
+  confidenceSelfRating?: number;
   createdAt: string;
+}
+
+export interface LearningQualityReport {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  planRequestId?: string | null;
+  qualityStatus: string;
+  graphQualityStatus: string;
+  assessmentQualityStatus: string;
+  masteryConfidenceStatus: string;
+  tutorPolicyComplianceStatus: string;
+  eventHealthStatus: string;
+  sourceGroundingStatus: string;
+  toolExecutionHealthStatus?: string;
+  artifactRenderHealthStatus?: string;
+  learnerEvidenceStatus?: string;
+  ragQualityStatus?: string;
+  evidenceCoverageStatus?: string;
+  evidenceProviderHealthStatus?: string;
+  evidenceFreshnessStatus?: string;
+  forumSignalUsageStatus?: string;
+  evidenceCitationCoverageStatus?: string;
+  tutorPedagogyStatus?: string;
+  tutorPedagogyScore?: number | null;
+  criticalPedagogyViolationCount?: number;
+  eventSchemaViolationCount: number;
+  policyViolationCount?: number;
+  recentPedagogyRubricScores?: Array<{
+    rubricKey: string;
+    score: number;
+    severity: string;
+    isCritical: boolean;
+    evidence: string;
+    recommendation: string;
+  }>;
+  generatedAt: string;
+  recentToolCalls?: ToolStatusDto[];
+  recentArtifacts?: TeachingArtifact[];
+  recentEvidenceCards?: Array<{
+    id: string;
+    provider: string;
+    evidenceType: string;
+    title: string;
+    summary: string;
+    citationUrl?: string | null;
+    citationLabel?: string | null;
+    confidence?: number;
+    riskLevel?: string;
+  }>;
+  latestRagEvaluation?: {
+    id: string;
+    qualityStatus: string;
+    faithfulnessScore: number;
+    contextRelevanceScore: number;
+    answerRelevanceScore: number;
+    citationCoverageScore: number;
+    itemCount: number;
+    createdAt: string;
+  } | null;
+  sourceQuality?: SourceQualityReportDto | null;
+  graphQuality?: {
+    id: string;
+    qualityStatus: string;
+    conceptCount: number;
+    duplicateRatio: number;
+    hasPrerequisiteCycle: boolean;
+    orphanConceptCount: number;
+    outcomeCoverage: number;
+    misconceptionCoverage: number;
+    sourceEvidenceRatio: number;
+    relationDensity: number;
+    failures: string[];
+  } | null;
+  assessmentQuality?: {
+    id: string;
+    qualityStatus: string;
+    conceptCoverage: number;
+    learningOutcomeCoverage: number;
+    cognitiveSkillSpread: number;
+    difficultySpread: number;
+    misconceptionTargetingRatio: number;
+    optionQualityRatio: number;
+    scoringRulePresenceRatio: number;
+    failures: string[];
+  } | null;
+  masteryStates: Array<{
+    id: string;
+    conceptKey: string;
+    label: string;
+    evidenceCount: number;
+    masteryProbability: number;
+    confidence: number;
+    remediationNeed: string;
+    practiceReadiness: string;
+  }>;
+  recentTutorPolicyTraces: Array<{
+    id: string;
+    activeConceptKey: string;
+    groundingStatus: string;
+    selectedPedagogicalMove: string;
+    sourceEvidenceCount: number;
+    directAnswerRisk: boolean;
+    policyViolations: string[];
+  }>;
+  resourceAlignments: Array<{
+    id: string;
+    sourceTitle: string;
+    conceptKey: string;
+    outcomeKey: string;
+    alignmentScore: number;
+    alignmentStatus: string;
+  }>;
 }
 
 // ─── Course Types ───────────────────────────────────────────────────────────

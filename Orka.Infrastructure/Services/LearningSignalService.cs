@@ -17,15 +17,18 @@ public class LearningSignalService : ILearningSignalService
 
     private readonly OrkaDbContext _db;
     private readonly IRedisMemoryService _redis;
+    private readonly ILearningEventNormalizer _learningEvents;
     private readonly ILogger<LearningSignalService> _logger;
 
     public LearningSignalService(
         OrkaDbContext db,
         IRedisMemoryService redis,
+        ILearningEventNormalizer learningEvents,
         ILogger<LearningSignalService> logger)
     {
         _db = db;
         _redis = redis;
+        _learningEvents = learningEvents;
         _logger = logger;
     }
 
@@ -111,6 +114,33 @@ public class LearningSignalService : ILearningSignalService
         }
 
         await _db.SaveChangesAsync(ct);
+        await _learningEvents.RecordSignalEventAsync(
+            attempt.UserId,
+            attempt.TopicId,
+            attempt.SessionId,
+            LearningSignalTypes.QuizAnswered,
+            skill,
+            attempt.TopicPath,
+            attempt.IsCorrect ? 100 : 0,
+            attempt.IsCorrect,
+            payload,
+            attempt.Id,
+            ct);
+        if (!attempt.IsCorrect)
+        {
+            await _learningEvents.RecordSignalEventAsync(
+                attempt.UserId,
+                attempt.TopicId,
+                attempt.SessionId,
+                LearningSignalTypes.WeaknessDetected,
+                skill,
+                attempt.TopicPath,
+                0,
+                false,
+                payload,
+                attempt.Id,
+                ct);
+        }
         await InvalidateLearningStateAsync(attempt.UserId, attempt.TopicId, "quiz-answered", ct);
     }
 
@@ -142,6 +172,18 @@ public class LearningSignalService : ILearningSignalService
         });
 
         await _db.SaveChangesAsync(ct);
+        await _learningEvents.RecordSignalEventAsync(
+            userId,
+            topicId,
+            sessionId,
+            LearningSignalTypes.Normalize(signalType),
+            skillTag,
+            topicPath,
+            score,
+            isPositive,
+            payloadJson,
+            quizAttemptId: null,
+            ct);
         await InvalidateLearningStateAsync(userId, topicId, LearningSignalTypes.Normalize(signalType), ct);
     }
 

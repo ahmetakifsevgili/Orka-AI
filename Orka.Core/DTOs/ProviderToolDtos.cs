@@ -48,7 +48,18 @@ public sealed record WeatherContextDto(
     DateTime ObservationTime,
     double? TemperatureC,
     string? Conditions,
-    string? Source);
+    string? Source,
+    double? Latitude = null,
+    double? Longitude = null,
+    string? ClimateSummary = null,
+    string? GeographySummary = null,
+    string? TeachingUse = null);
+
+public sealed record GeocodingResultDto(
+    string Location,
+    double Latitude,
+    double Longitude,
+    string Provider);
 
 public sealed record MarketDataDto(
     string Asset,
@@ -58,6 +69,67 @@ public sealed record MarketDataDto(
     DateTime Timestamp,
     string Source,
     string SafeSummary);
+
+public sealed record VisualArtifactResultDto(
+    string Prompt,
+    string? ExternalUrl,
+    string Provider,
+    string RenderFormat,
+    string FallbackText);
+
+public sealed class TeachingEvidenceRequestDto
+{
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? TutorTurnStateId { get; set; }
+    public Guid? TutorActionTraceId { get; set; }
+    public string EvidenceType { get; set; } = "knowledge_entity";
+    public string Query { get; set; } = string.Empty;
+    public string ConceptKey { get; set; } = string.Empty;
+    public string UserMessage { get; set; } = string.Empty;
+}
+
+public sealed class TeachingEvidenceCardDto
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? TutorTurnStateId { get; set; }
+    public Guid? TutorActionTraceId { get; set; }
+    public Guid? TutorToolCallId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string EvidenceType { get; set; } = "knowledge_entity";
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Query { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string FactualClaim { get; set; } = string.Empty;
+    public string AnalogyCandidate { get; set; } = string.Empty;
+    public string ClassroomUse { get; set; } = string.Empty;
+    public string? CitationUrl { get; set; }
+    public string CitationLabel { get; set; } = string.Empty;
+    public double Confidence { get; set; } = 0.50;
+    public string Freshness { get; set; } = "static";
+    public string RiskLevel { get; set; } = "low";
+    public string RawPayloadHash { get; set; } = string.Empty;
+    public string Status { get; set; } = "ready";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record TeachingEvidenceResultDto(
+    bool Success,
+    string EvidenceType,
+    string Provider,
+    string Status,
+    IReadOnlyList<TeachingEvidenceCardDto> Cards,
+    string SafeMessage,
+    string? ErrorCode,
+    double? Confidence,
+    int SourceCount,
+    long LatencyMs,
+    bool FallbackUsed = false);
 
 public sealed record MistakeClassificationRequest(
     string? Question,

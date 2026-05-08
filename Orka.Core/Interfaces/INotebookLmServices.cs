@@ -30,6 +30,19 @@ public interface ILearningSourceService
         string question,
         CancellationToken ct = default);
 
+    Task<IReadOnlyList<TopicSourceEvidenceDto>> RetrieveTopicEvidenceAsync(
+        Guid userId,
+        Guid topicId,
+        string question,
+        int take = 8,
+        Guid? sourceId = null,
+        CancellationToken ct = default);
+
+    Task<SourceQualityReportDto> GetTopicQualityAsync(
+        Guid userId,
+        Guid topicId,
+        CancellationToken ct = default);
+
     Task<LearningSourceSummaryDto?> UpdateSourceAsync(
         Guid userId,
         Guid sourceId,

@@ -16,6 +16,9 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
     private readonly IReviewSrsService _reviews;
     private readonly IXpEventService _xpEvents;
     private readonly IMistakeClassifierService _mistakeClassifier;
+    private readonly ILearningEventNormalizer _learningEvents;
+    private readonly IAssessmentQualityService? _assessmentQuality;
+    private readonly IKnowledgeTracingService? _knowledgeTracing;
 
     public QuizAttemptRecorder(
         OrkaDbContext db,
@@ -23,7 +26,10 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         ISkillMasteryService skillMastery,
         IReviewSrsService reviews,
         IXpEventService xpEvents,
-        IMistakeClassifierService mistakeClassifier)
+        IMistakeClassifierService mistakeClassifier,
+        ILearningEventNormalizer learningEvents,
+        IAssessmentQualityService? assessmentQuality = null,
+        IKnowledgeTracingService? knowledgeTracing = null)
     {
         _db = db;
         _learningSignals = learningSignals;
@@ -31,6 +37,9 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         _reviews = reviews;
         _xpEvents = xpEvents;
         _mistakeClassifier = mistakeClassifier;
+        _learningEvents = learningEvents;
+        _assessmentQuality = assessmentQuality;
+        _knowledgeTracing = knowledgeTracing;
     }
 
     public async Task<QuizAttemptRecordResult> RecordAsync(
@@ -76,11 +85,17 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             IsCorrect = request.IsCorrect,
             Explanation = Clean(request.Explanation) ?? string.Empty,
             SkillTag = reviewIdentity,
+            AssessmentItemId = request.AssessmentItemId,
             TopicPath = Clean(request.TopicPath) ?? Clean(request.LearningObjective) ?? reviewIdentity,
             Difficulty = Clean(request.Difficulty),
             CognitiveType = Clean(request.QuestionType) ?? Clean(request.CognitiveType),
             QuestionHash = Clean(request.QuestionHash),
             SourceRefsJson = sourceRefsJson,
+            ResponseTimeMs = request.ResponseTimeMs.HasValue ? Math.Max(0, request.ResponseTimeMs.Value) : null,
+            WasSkipped = request.WasSkipped == true || string.Equals(request.SelectedOptionId, "skip", StringComparison.OrdinalIgnoreCase),
+            ConfidenceSelfRating = request.ConfidenceSelfRating.HasValue
+                ? Math.Clamp(request.ConfidenceSelfRating.Value, 0m, 1m)
+                : null,
             CreatedAt = now
         };
 
@@ -93,6 +108,19 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
         await _db.SaveChangesAsync(ct);
 
+        var itemStat = _assessmentQuality == null ? null : await _assessmentQuality.UpdateItemStatsAsync(attempt, ct);
+        var tracingState = _knowledgeTracing == null ? null : await _knowledgeTracing.UpdateFromAttemptAsync(attempt, ct);
+        if (tracingState != null && request.TopicId.HasValue)
+        {
+            await UpsertConceptMasteryFromTracingAsync(userId, request.TopicId.Value, attempt, tracingState, ct);
+        }
+        if (itemStat != null || tracingState != null)
+        {
+            attempt.SourceRefsJson = MergeLearningStateMetadata(attempt.SourceRefsJson, itemStat, tracingState);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        await _learningEvents.RecordQuizAttemptEventAsync(attempt, ct);
         await _learningSignals.RecordQuizAnsweredAsync(attempt, ct);
 
         MistakeClassificationResult? mistake = null;
@@ -186,6 +214,49 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         }
     }
 
+    private async Task UpsertConceptMasteryFromTracingAsync(
+        Guid userId,
+        Guid topicId,
+        QuizAttempt attempt,
+        KnowledgeTracingStateDto tracingState,
+        CancellationToken ct)
+    {
+        var conceptKey = string.IsNullOrWhiteSpace(tracingState.ConceptKey)
+            ? attempt.SkillTag
+            : tracingState.ConceptKey;
+        if (string.IsNullOrWhiteSpace(conceptKey))
+        {
+            return;
+        }
+
+        var mastery = await _db.ConceptMasteries
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.TopicId == topicId && m.ConceptKey == conceptKey, ct);
+        if (mastery == null)
+        {
+            mastery = new ConceptMastery
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = conceptKey,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.ConceptMasteries.Add(mastery);
+        }
+
+        mastery.Label = string.IsNullOrWhiteSpace(tracingState.Label)
+            ? conceptKey
+            : tracingState.Label;
+        mastery.MasteryScore = Math.Round(tracingState.MasteryProbability * 100m, 2);
+        mastery.Confidence = tracingState.Confidence;
+        mastery.RemediationNeed = tracingState.RemediationNeed;
+        mastery.PracticeReadiness = tracingState.PracticeReadiness;
+        mastery.Attempts = tracingState.EvidenceCount;
+        mastery.Correct = tracingState.CorrectCount;
+        mastery.LastEvidenceAt = tracingState.LastEvidenceAt?.UtcDateTime ?? attempt.CreatedAt;
+        mastery.UpdatedAt = DateTime.UtcNow;
+    }
+
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -269,8 +340,15 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
             ["reviewIdentity"] = reviewIdentity,
+            ["assessmentItemId"] = request.AssessmentItemId?.ToString("D"),
+            ["conceptKey"] = Clean(request.ConceptKey),
             ["conceptTag"] = Clean(request.ConceptTag),
             ["skillTag"] = Clean(request.SkillTag),
+            ["cognitiveSkill"] = Clean(request.CognitiveSkill),
+            ["misconceptionTarget"] = Clean(request.MisconceptionTarget),
+            ["evidenceExpected"] = Clean(request.EvidenceExpected),
+            ["scoringRule"] = Clean(request.ScoringRule),
+            ["learningOutcomeIds"] = Clean(request.LearningOutcomeIdsJson),
             ["learningObjective"] = Clean(request.LearningObjective),
             ["questionType"] = Clean(request.QuestionType),
             ["mistakeCategory"] = Clean(request.MistakeCategory)
@@ -301,5 +379,52 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
         return compact.Count == 0 ? null : JsonSerializer.Serialize(compact);
+    }
+
+    private static string? MergeLearningStateMetadata(
+        string? sourceRefsJson,
+        AssessmentItemStatDto? itemStat,
+        KnowledgeTracingStateDto? tracingState)
+    {
+        var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(sourceRefsJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(sourceRefsJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        metadata[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                            ? property.Value.GetString()
+                            : property.Value.ToString();
+                    }
+                }
+            }
+            catch
+            {
+                metadata["rawSourceRefs"] = sourceRefsJson;
+            }
+        }
+
+        if (itemStat != null)
+        {
+            metadata["itemQualityStatus"] = itemStat.QualityStatus;
+            metadata["assessmentItemAttempts"] = itemStat.Attempts;
+            metadata["assessmentItemCorrectRate"] = itemStat.CorrectRate;
+            metadata["assessmentItemDiscriminationProxy"] = itemStat.DiscriminationProxy;
+        }
+
+        if (tracingState != null)
+        {
+            metadata["knowledgeTracingStateId"] = tracingState.Id.ToString("D");
+            metadata["masteryProbability"] = tracingState.MasteryProbability;
+            metadata["masteryConfidence"] = tracingState.Confidence;
+            metadata["remediationNeed"] = tracingState.RemediationNeed;
+            metadata["practiceReadiness"] = tracingState.PracticeReadiness;
+        }
+
+        return metadata.Count == 0 ? null : JsonSerializer.Serialize(metadata);
     }
 }

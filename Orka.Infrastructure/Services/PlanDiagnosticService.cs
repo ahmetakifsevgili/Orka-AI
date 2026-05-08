@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -24,7 +26,10 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private readonly IPlanDiagnosticStateStore _stateStore;
     private readonly IQuizAttemptRecorder _quizRecorder;
     private readonly IDeepPlanAgent _deepPlan;
-    private readonly IRedisMemoryService? _redis;
+    private readonly IConceptGraphBuilder _conceptGraphBuilder;
+    private readonly IAssessmentGrammarEngine _assessmentGrammar;
+    private readonly IDiagnosticProfileBuilder _diagnosticProfileBuilder;
+    private readonly ILearningQualityReportService? _qualityReport;
     private readonly ILogger<PlanDiagnosticService> _logger;
     private readonly TavilySearchPlugin? _webSearch;
     private readonly WikipediaPlugin? _wikipedia;
@@ -38,11 +43,14 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         IPlanDiagnosticStateStore stateStore,
         IQuizAttemptRecorder quizRecorder,
         IDeepPlanAgent deepPlan,
-        IRedisMemoryService? redis,
+        IConceptGraphBuilder conceptGraphBuilder,
+        IAssessmentGrammarEngine assessmentGrammar,
+        IDiagnosticProfileBuilder diagnosticProfileBuilder,
         ILogger<PlanDiagnosticService> logger,
         TavilySearchPlugin? webSearch = null,
         WikipediaPlugin? wikipedia = null,
-        YouTubeTranscriptPlugin? youtube = null)
+        YouTubeTranscriptPlugin? youtube = null,
+        ILearningQualityReportService? qualityReport = null)
     {
         _db = db;
         _korteks = korteks;
@@ -51,7 +59,10 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         _stateStore = stateStore;
         _quizRecorder = quizRecorder;
         _deepPlan = deepPlan;
-        _redis = redis;
+        _conceptGraphBuilder = conceptGraphBuilder;
+        _assessmentGrammar = assessmentGrammar;
+        _diagnosticProfileBuilder = diagnosticProfileBuilder;
+        _qualityReport = qualityReport;
         _logger = logger;
         _webSearch = webSearch;
         _wikipedia = wikipedia;
@@ -118,22 +129,51 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 request.TopicId,
                 ct);
             var compressed = _compressor.Compress(research);
-            var learningBlueprint = await BuildOrLoadLearningBlueprintAsync(
+            var conceptGraph = await _conceptGraphBuilder.BuildOrLoadAsync(
+                userId,
+                request.TopicId,
+                planRequestId,
                 approvedResearchIntent,
                 topicTitle,
                 approvedMainTopic,
                 approvedFocusArea,
                 compressed,
                 ct);
+            var assessmentDraft = await _assessmentGrammar.BuildOrLoadDraftAsync(
+                userId,
+                request.TopicId,
+                planRequestId,
+                quizRunId,
+                conceptGraph.Graph,
+                requestedQuestionCount,
+                ct);
+            var learningBlueprint = BuildLegacyBlueprintFromConceptGraph(
+                conceptGraph.Graph,
+                compressed);
+            if (learningBlueprint.Concepts.Count == 0)
+            {
+                learningBlueprint = BuildLegacyBlueprintFromContext(
+                approvedResearchIntent,
+                topicTitle,
+                approvedMainTopic,
+                approvedFocusArea,
+                compressed);
+            }
             var effectiveQuestionCount = Math.Clamp(
-                learningBlueprint.RecommendedQuestionCount > 0 ? learningBlueprint.RecommendedQuestionCount : requestedQuestionCount,
+                assessmentDraft.Grammar.RequestedQuestionCount > 0 ? assessmentDraft.Grammar.RequestedQuestionCount : learningBlueprint.RecommendedQuestionCount > 0 ? learningBlueprint.RecommendedQuestionCount : requestedQuestionCount,
                 15,
                 25);
             var learningBlueprintJson = JsonSerializer.Serialize(learningBlueprint, JsonOptions);
-            var learningBlueprintHash = LearningBlueprintBuilder.ComputeHash(learningBlueprint);
+            var learningBlueprintHash = ComputeLegacyBlueprintHash(learningBlueprint);
             var compressedBlock = _compressor.BuildPromptBlock(compressed) +
                                   "\n" +
-                                  LearningBlueprintBuilder.BuildPromptBlock(learningBlueprint);
+                                  BuildConceptGraphPromptBlock(conceptGraph.Graph) +
+                                  "\n" +
+                                  _assessmentGrammar.BuildPromptBlock(assessmentDraft.Grammar) +
+                                  "\n" +
+                                  BuildLearningQualityPromptBlock(conceptGraph, assessmentDraft) +
+                                  "\n" +
+                                  BuildLegacyBlueprintPromptBlock(learningBlueprint);
 
             state.Status = PlanDiagnosticStatus.ResearchReady;
             state.CompressedResearchContextJson = JsonSerializer.Serialize(compressed, JsonOptions);
@@ -142,6 +182,19 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             state.LearningBlueprintHash = learningBlueprintHash;
             state.LearningBlueprintDomain = learningBlueprint.Domain;
             state.LearningBlueprintSourceConfidence = learningBlueprint.SourceConfidence;
+            state.ConceptGraphSnapshotId = conceptGraph.SnapshotId;
+            state.ConceptGraphJson = JsonSerializer.Serialize(conceptGraph.Graph, JsonOptions);
+            state.ConceptGraphHash = conceptGraph.Graph.IntentHash;
+            state.ConceptGraphCacheKey = conceptGraph.CacheKey;
+            state.ConceptGraphQualityRunId = conceptGraph.QualityRunId;
+            state.ConceptGraphQualityStatus = conceptGraph.QualityStatus;
+            state.SourceBundleHash = conceptGraph.Graph.SourceBundleHash;
+            state.SourceBundleCacheKey = conceptGraph.SourceBundleCacheKey;
+            state.AssessmentDraftId = assessmentDraft.DraftId;
+            state.AssessmentGrammarJson = JsonSerializer.Serialize(assessmentDraft.Grammar, JsonOptions);
+            state.AssessmentDraftCacheKey = assessmentDraft.CacheKey;
+            state.AssessmentQualityRunId = assessmentDraft.QualityRunId;
+            state.AssessmentQualityStatus = assessmentDraft.QualityStatus;
             state.GroundingMode = compressed.GroundingMode;
             state.SourceCount = compressed.SourceCount;
             await _stateStore.SaveAsync(state, ct);
@@ -150,6 +203,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 topicTitle,
                 compressedBlock,
                 learningBlueprint,
+                assessmentDraft.Grammar,
                 effectiveQuestionCount,
                 ct);
             var questionCount = CountQuestions(quizJson);
@@ -178,9 +232,22 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 CreatedAt = now
             });
             await _db.SaveChangesAsync(ct);
+            var persistedAssessmentItems = await _db.AssessmentItems
+                .Where(item => item.UserId == userId && item.PlanRequestId == planRequestId)
+                .ToListAsync(ct);
+            foreach (var item in persistedAssessmentItems)
+            {
+                item.QuizRunId = quizRunId;
+            }
+            await _db.SaveChangesAsync(ct);
 
             state.Status = PlanDiagnosticStatus.QuizPending;
             state.QuizQuestionCount = questionCount;
+            if (_qualityReport != null)
+            {
+                var report = await _qualityReport.BuildTopicReportAsync(userId, request.TopicId, planRequestId, ct);
+                state.QualityReportId = report.Id;
+            }
             await _stateStore.SaveAsync(state, ct);
 
             return new StartPlanDiagnosticResponse
@@ -193,6 +260,13 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 QuestionsJson = quizJson,
                 GroundingMode = state.GroundingMode,
                 SourceCount = state.SourceCount,
+                ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
+                AssessmentDraftId = state.AssessmentDraftId,
+                ConceptGraphQualityStatus = state.ConceptGraphQualityStatus,
+                AssessmentQualityStatus = state.AssessmentQualityStatus,
+                QualityReportId = state.QualityReportId,
+                SourceBundleHash = state.SourceBundleHash,
+                SourceBundleCacheKey = state.SourceBundleCacheKey,
                 QuizQuestionCount = state.QuizQuestionCount,
                 IntentRequestId = state.IntentRequestId,
                 ApprovedMainTopic = state.ApprovedMainTopic,
@@ -221,6 +295,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         request.QuizRunId = state.QuizRunId;
         request.TopicId = state.TopicId;
         request.SessionId ??= state.SessionId;
+        await EnrichAttemptRequestFromAssessmentAsync(state, request, ct);
 
         await _quizRecorder.RecordAsync(userId, request, ct);
 
@@ -284,7 +359,13 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         state.Status = PlanDiagnosticStatus.PlanGenerating;
         await _stateStore.SaveAsync(state, ct);
 
-        var diagnosticSummary = await BuildCurrentDiagnosticSummaryAsync(userId, state.QuizRunId, ct);
+        var attempts = await LoadDiagnosticAttemptsAsync(userId, state.QuizRunId, ct);
+        var diagnosticProfile = await _diagnosticProfileBuilder.BuildAndSaveAsync(state, attempts, ct);
+        state.DiagnosticProfileId = diagnosticProfile.Id;
+        await _stateStore.SaveAsync(state, ct);
+        var diagnosticSummary = await BuildCurrentDiagnosticSummaryAsync(userId, state.QuizRunId, ct) +
+                                "\n" +
+                                _diagnosticProfileBuilder.BuildPromptBlock(diagnosticProfile);
         var planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
             state.TopicId,
             state.TopicTitle,
@@ -374,6 +455,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         string topicTitle,
         string compressedResearchPromptBlock,
         LearningBlueprintDto learningBlueprint,
+        AssessmentGrammarDto assessmentGrammar,
         int requestedQuestionCount,
         CancellationToken ct)
     {
@@ -389,6 +471,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
             KURALLAR:
             - Soru sayisi tam olarak {{requestedQuestionCount}} olacak; 15'ten az, 25'ten fazla olmayacak.
+            - Her soru [ASSESSMENT GRAMMAR] icindeki item spec'lerden biriyle eslesmeli.
+            - Her soru assessmentItemId, assessmentItemKey, conceptKey, cognitiveSkill, misconceptionTarget, evidenceExpected, scoringRule ve learningOutcomeIds alanlarini tasimali.
             - Ham arastirma raporu varsayma; sadece bu filtrelenmis brief'i ve konu basligini kullan.
             - Kaynak basliklarini veya web/video metinlerini soru kokune kopyalama.
             - Sorular onayli konu ve odak alaninda kalmali; baska teknoloji, sinav veya alan sizdirmamali.
@@ -402,6 +486,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             - En az 5 soru beklenen kavram yanilgisini hedeflesin.
             - Teknik konularda en az bir soru gercek kod parcasi, kod okuma veya hata ayiklama senaryosu icersin.
             - Her soru su alanlari icersin: question, options, correctAnswer, explanation, skillTag, difficulty, conceptTag, learningObjective, questionType, expectedMisconceptionCategory.
+            - Yeni mimari alanlari eksik kalmamali: assessmentItemId, conceptKey, cognitiveSkill, misconceptionTarget, evidenceExpected, scoringRule, learningOutcomeIds.
 
             SADECE JSON array dondur.
             """;
@@ -414,6 +499,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         try
         {
             var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality, learningBlueprint);
+            validatedQuiz = await _assessmentGrammar.AttachQuestionMetadataAsync(validatedQuiz, assessmentGrammar, ct);
+            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(validatedQuiz, requestedQuestionCount);
             if (!quality.IsAcceptable)
             {
                 _logger.LogWarning(
@@ -431,7 +518,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. Topic={Topic}",
                 topicTitle);
 
-            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, learningBlueprint);
+            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar);
+            fallback = await _assessmentGrammar.AttachQuestionMetadataAsync(fallback, assessmentGrammar, ct);
+            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(fallback, DiagnosticQuizQualityGate.CountQuestions(fallback));
             var fallbackCount = DiagnosticQuizQualityGate.CountQuestions(fallback);
             if (fallbackCount is < 15 or > 25)
             {
@@ -596,55 +685,355 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         };
     }
 
-    private async Task<LearningBlueprintDto> BuildOrLoadLearningBlueprintAsync(
+    private static LearningBlueprintDto BuildLegacyBlueprintFromConceptGraph(
+        ConceptGraphDto graph,
+        CompressedPlanResearchContextDto context)
+    {
+        var orderedConcepts = graph.Concepts.OrderBy(c => c.Order).ToList();
+        var labels = orderedConcepts
+            .Select(c => CleanLegacyText(c.Label, 140))
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var blueprint = BuildLegacyBlueprintFromLabels(
+            string.IsNullOrWhiteSpace(graph.Domain) ? "concept-graph-adapter" : graph.Domain,
+            graph.ApprovedResearchIntent,
+            labels,
+            context,
+            Math.Clamp(Math.Max(18, orderedConcepts.Count * 2), 15, 25));
+
+        blueprint.Prerequisites = orderedConcepts
+            .SelectMany(c => c.PrerequisiteKeys)
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+        blueprint.CommonMistakes = orderedConcepts
+            .SelectMany(c => c.Misconceptions)
+            .Concat(context.LikelyMisconceptions)
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+        blueprint.AssessmentAxes = orderedConcepts
+            .Select(c => c.StableKey)
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+        blueprint.Concepts = orderedConcepts
+            .Select(c => c.StableKey)
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .ToList();
+
+        return blueprint;
+    }
+
+    private static LearningBlueprintDto BuildLegacyBlueprintFromContext(
         string approvedResearchIntent,
         string topicTitle,
         string approvedMainTopic,
         string approvedFocusArea,
-        CompressedPlanResearchContextDto compressed,
+        CompressedPlanResearchContextDto context)
+    {
+        IEnumerable<string>[] labelSources =
+        [
+            context.CurriculumMapHints,
+            context.KeyFacts,
+            context.PrerequisiteHints,
+            new[] { approvedFocusArea, approvedMainTopic, topicTitle }
+        ];
+
+        var labels = labelSources
+            .SelectMany(v => v)
+            .Select(v => CleanLegacyText(v, 140))
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .ToList();
+
+        if (labels.Count < 8)
+        {
+            labels = labels
+                .Concat(Enumerable.Range(1, 8).Select(i => $"{CleanLegacyText(topicTitle, 100)} concept {i}"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(12)
+                .ToList();
+        }
+
+        return BuildLegacyBlueprintFromLabels(
+            "legacy-adapter",
+            approvedResearchIntent,
+            labels,
+            context,
+            Math.Clamp(Math.Max(18, labels.Count * 2), 15, 25));
+    }
+
+    private static LearningBlueprintDto BuildLegacyBlueprintFromLabels(
+        string domain,
+        string approvedResearchIntent,
+        IReadOnlyList<string> labels,
+        CompressedPlanResearchContextDto context,
+        int recommendedQuestionCount)
+    {
+        var modules = labels
+            .Chunk(4)
+            .Select((chunk, index) => new LearningBlueprintModuleDto
+            {
+                Title = $"Concept Graph Module {index + 1}",
+                Lessons = chunk.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList()
+            })
+            .ToList();
+
+        return new LearningBlueprintDto
+        {
+            Domain = string.IsNullOrWhiteSpace(domain) ? "legacy-adapter" : domain,
+            ApprovedResearchIntent = CleanLegacyText(approvedResearchIntent, 180),
+            SourceConfidence = LegacySourceConfidence(context),
+            SourceSignals = LegacySourceSignals(context),
+            LearningRoute = labels.Take(10).ToList(),
+            Prerequisites = context.PrerequisiteHints.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList(),
+            SubConcepts = labels.Take(12).ToList(),
+            CommonMistakes = context.LikelyMisconceptions.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList(),
+            PracticeOrder = labels.Select(label => $"practice: {label}").Take(8).ToList(),
+            AssessmentAxes = labels.Select(StableLegacyKey).Take(10).ToList(),
+            Concepts = labels.Select(StableLegacyKey).Take(16).ToList(),
+            PlanModules = modules.Count > 0
+                ? modules
+                : [new LearningBlueprintModuleDto { Title = "Concept Graph Module 1", Lessons = ["core concept"] }],
+            RecommendedQuestionCount = Math.Clamp(recommendedQuestionCount, 15, 25)
+        };
+    }
+
+    private static string BuildLegacyBlueprintPromptBlock(LearningBlueprintDto blueprint)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[LEGACY BLUEPRINT ADAPTER]");
+        sb.AppendLine($"BlueprintDomain: {blueprint.Domain}");
+        sb.AppendLine($"BlueprintSourceConfidence: {blueprint.SourceConfidence}");
+        AppendLegacyPromptLine(sb, "AdapterLearningRoute", blueprint.LearningRoute);
+        AppendLegacyPromptLine(sb, "AdapterPrerequisites", blueprint.Prerequisites);
+        AppendLegacyPromptLine(sb, "AdapterSubConcepts", blueprint.SubConcepts);
+        AppendLegacyPromptLine(sb, "AdapterCommonMistakes", blueprint.CommonMistakes);
+        AppendLegacyPromptLine(sb, "AdapterAssessmentAxes", blueprint.AssessmentAxes);
+        AppendLegacyPromptLine(sb, "AdapterPlanModules", blueprint.PlanModules.Select(m => $"{m.Title}: {string.Join(" | ", m.Lessons.Take(5))}"));
+        AppendLegacyPromptLine(sb, "AdapterSourceSignals", blueprint.SourceSignals);
+        sb.AppendLine($"AdapterRecommendedQuestionCount: {blueprint.RecommendedQuestionCount}");
+        sb.AppendLine("Instruction: This block is backward-compatible summary only. Concept graph, assessment grammar and diagnostic profile are canonical.");
+        return sb.ToString();
+    }
+
+    private static string ComputeLegacyBlueprintHash(LearningBlueprintDto blueprint)
+    {
+        var json = JsonSerializer.Serialize(blueprint, JsonOptions);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
+
+    private static string LegacySourceConfidence(CompressedPlanResearchContextDto context)
+    {
+        if (context.GroundingMode == GroundingMode.SourceGrounded && context.SourceCount >= 3)
+        {
+            return "high";
+        }
+
+        if (context.GroundingMode is GroundingMode.SourceGrounded or GroundingMode.PartialSourceGrounded && context.SourceCount > 0)
+        {
+            return "medium";
+        }
+
+        return "low";
+    }
+
+    private static List<string> LegacySourceSignals(CompressedPlanResearchContextDto context) =>
+        context.TopSources
+            .Select(s => $"{CleanLegacyText(s.Provider, 40)}: {CleanLegacyText(s.Title, 120)}")
+            .Concat(context.CurriculumMapHints.Take(3))
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
+
+    private static void AppendLegacyPromptLine(StringBuilder sb, string label, IEnumerable<string> values)
+    {
+        var list = values.Where(IsUsefulLegacyText).Take(12).ToList();
+        if (list.Count > 0)
+        {
+            sb.AppendLine($"{label}: {string.Join(" | ", list)}");
+        }
+    }
+
+    private static string StableLegacyKey(string value)
+    {
+        var normalized = NormalizeLegacyKey(value);
+        var chars = normalized
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+            .ToArray();
+        var key = string.Join("-", new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(key) ? "concept" : key[..Math.Min(48, key.Length)].Trim('-');
+    }
+
+    private static bool IsUsefulLegacyText(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private static string CleanLegacyText(string? value, int max)
+    {
+        var cleaned = string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return cleaned.Length <= max ? cleaned : cleaned[..max];
+    }
+
+    private static string NormalizeLegacyKey(string? value) =>
+        (value ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant()
+            .Replace('ç', 'c')
+            .Replace('ğ', 'g')
+            .Replace('ı', 'i')
+            .Replace('ö', 'o')
+            .Replace('ş', 's')
+            .Replace('ü', 'u');
+
+    private async Task EnrichAttemptRequestFromAssessmentAsync(
+        PlanDiagnosticStateDto state,
+        RecordQuizAttemptRequest request,
         CancellationToken ct)
     {
-        var cacheKey = LearningBlueprintBuilder.CacheKey(approvedResearchIntent);
-        if (_redis != null)
+        request.AssessmentItemId ??= TryReadGuidMetadata(request.SourceRefsJson, "assessmentItemId");
+        request.ConceptKey ??= TryReadStringMetadata(request.SourceRefsJson, "conceptKey");
+        request.ConceptTag ??= TryReadStringMetadata(request.SourceRefsJson, "conceptTag");
+        request.CognitiveSkill ??= TryReadStringMetadata(request.SourceRefsJson, "cognitiveSkill");
+        request.MisconceptionTarget ??= TryReadStringMetadata(request.SourceRefsJson, "misconceptionTarget");
+        request.EvidenceExpected ??= TryReadStringMetadata(request.SourceRefsJson, "evidenceExpected");
+        request.ScoringRule ??= TryReadStringMetadata(request.SourceRefsJson, "scoringRule");
+        request.LearningOutcomeIdsJson ??= TryReadArrayMetadata(request.SourceRefsJson, "learningOutcomeIds");
+
+        if (!request.AssessmentItemId.HasValue)
         {
-            try
-            {
-                var cached = await _redis.GetJsonAsync(cacheKey);
-                if (!string.IsNullOrWhiteSpace(cached))
-                {
-                    var blueprint = JsonSerializer.Deserialize<LearningBlueprintDto>(cached, JsonOptions);
-                    if (blueprint != null && !string.IsNullOrWhiteSpace(blueprint.Domain))
-                    {
-                        return blueprint;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "[LearningBlueprint] Cache read skipped. Key={CacheKey}", cacheKey);
-            }
+            return;
         }
 
-        var built = LearningBlueprintBuilder.Build(
-            approvedResearchIntent,
-            topicTitle,
-            approvedMainTopic,
-            approvedFocusArea,
-            compressed);
-
-        if (_redis != null)
+        var item = await _db.AssessmentItems.AsNoTracking()
+            .FirstOrDefaultAsync(i =>
+                i.Id == request.AssessmentItemId.Value &&
+                i.UserId == state.UserId &&
+                i.PlanRequestId == state.PlanRequestId,
+                ct);
+        if (item == null)
         {
-            try
-            {
-                await _redis.SetJsonAsync(cacheKey, JsonSerializer.Serialize(built, JsonOptions), TimeSpan.FromHours(12));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "[LearningBlueprint] Cache write skipped. Key={CacheKey}", cacheKey);
-            }
+            return;
         }
 
-        return built;
+        request.ConceptKey = CleanOrDefault(request.ConceptKey, item.ConceptKey);
+        request.ConceptTag = CleanOrDefault(request.ConceptTag, item.ConceptKey);
+        request.SkillTag = CleanOrDefault(request.SkillTag, item.ConceptKey);
+        request.CognitiveSkill = CleanOrDefault(request.CognitiveSkill, item.CognitiveSkill);
+        request.QuestionType = CleanOrDefault(request.QuestionType, item.QuestionType);
+        request.Difficulty = CleanOrDefault(request.Difficulty, item.Difficulty);
+        request.MisconceptionTarget = CleanOrDefault(request.MisconceptionTarget, item.MisconceptionTarget);
+        request.EvidenceExpected = CleanOrDefault(request.EvidenceExpected, item.EvidenceExpected);
+        request.ScoringRule = CleanOrDefault(request.ScoringRule, item.ScoringRuleJson);
+        request.LearningOutcomeIdsJson = CleanOrDefault(request.LearningOutcomeIdsJson, item.LearningOutcomeKeysJson);
+        request.LearningObjective = CleanOrDefault(request.LearningObjective, item.EvidenceExpected);
+    }
+
+    private async Task<List<QuizAttempt>> LoadDiagnosticAttemptsAsync(Guid userId, Guid quizRunId, CancellationToken ct) =>
+        await _db.QuizAttempts.AsNoTracking()
+            .Where(a => a.UserId == userId && a.QuizRunId == quizRunId)
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync(ct);
+
+    private static string BuildConceptGraphPromptBlock(ConceptGraphDto graph)
+    {
+        var lines = new List<string>
+        {
+            "[CONCEPT GRAPH]",
+            $"ConceptGraphSnapshotId: {graph.SnapshotId?.ToString() ?? "pending"}",
+            $"IntentHash: {graph.IntentHash}",
+            $"Domain: {graph.Domain}",
+            $"SourceConfidence: {graph.SourceConfidence}",
+            $"SourceBundleHash: {graph.SourceBundleHash}",
+            "Concepts:"
+        };
+        lines.AddRange(graph.Concepts.OrderBy(c => c.Order).Take(16).Select(c =>
+            $"- {c.StableKey}: {c.Label}; difficulty={c.DifficultyBand}; prerequisites={string.Join(",", c.PrerequisiteKeys)}; misconceptions={string.Join(" | ", c.Misconceptions.Take(2))}; outcomes={string.Join(",", c.LearningOutcomeKeys)}"));
+        lines.Add("Instruction: Use concept keys as the stable learning spine. Do not invent topic-specific templates outside this graph.");
+        return string.Join("\n", lines);
+    }
+
+    private static string BuildLearningQualityPromptBlock(
+        ConceptGraphBuildResultDto graphResult,
+        AssessmentGrammarDraftDto assessmentDraft)
+    {
+        var graphStatus = string.IsNullOrWhiteSpace(graphResult.QualityStatus) ? "unknown" : graphResult.QualityStatus;
+        var assessmentStatus = string.IsNullOrWhiteSpace(assessmentDraft.QualityStatus) ? "unknown" : assessmentDraft.QualityStatus;
+        return string.Join("\n", new[]
+        {
+            "[LEARNING QUALITY]",
+            $"ConceptGraphQualityStatus: {graphStatus}",
+            $"ConceptGraphQualityRunId: {graphResult.QualityRunId?.ToString() ?? "none"}",
+            $"AssessmentQualityStatus: {assessmentStatus}",
+            $"AssessmentQualityRunId: {assessmentDraft.QualityRunId?.ToString() ?? "none"}",
+            graphStatus == "degraded" || assessmentStatus == "degraded"
+                ? "PlanningPolicy: Quality is degraded; produce a conservative plan, avoid over-confident mastery claims, and add extra check/remediation nodes."
+                : "PlanningPolicy: Quality signals are acceptable; keep the plan adaptive and evidence-aware."
+        });
+    }
+
+    private static Guid? TryReadGuidMetadata(string? json, string key)
+    {
+        var value = TryReadStringMetadata(json, key);
+        return Guid.TryParse(value, out var id) ? id : null;
+    }
+
+    private static string? TryReadStringMetadata(string? json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty(key, out var value))
+            {
+                return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string? TryReadArrayMetadata(string? json, string key)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty(key, out var value) &&
+                value.ValueKind == JsonValueKind.Array)
+            {
+                return value.GetRawText();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static string[] BuildLearningResearchQueries(

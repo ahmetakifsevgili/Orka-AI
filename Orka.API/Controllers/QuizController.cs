@@ -92,6 +92,9 @@ public class QuizController : ControllerBase
                 attempt.TopicId,
                 attempt.SkillTag,
                 attempt.QuestionHash,
+                knowledgeTracingStateId = TryGuid(ExtractMetadata(attempt.SourceRefsJson, "knowledgeTracingStateId")),
+                masteryProbability = TryDecimal(ExtractMetadata(attempt.SourceRefsJson, "masteryProbability")),
+                itemQualityStatus = ExtractMetadata(attempt.SourceRefsJson, "itemQualityStatus"),
                 xp = xpResult is null
                     ? null
                     : new
@@ -235,7 +238,17 @@ public class QuizController : ControllerBase
                 IsCorrect = a.IsCorrect,
                 Explanation = a.Explanation,
                 SkillTag = a.SkillTag,
+                AssessmentItemId = a.AssessmentItemId,
+                ConceptKey = ExtractMetadata(a.SourceRefsJson, "conceptKey"),
                 ConceptTag = ExtractMetadata(a.SourceRefsJson, "conceptTag"),
+                CognitiveSkill = ExtractMetadata(a.SourceRefsJson, "cognitiveSkill"),
+                MisconceptionTarget = ExtractMetadata(a.SourceRefsJson, "misconceptionTarget"),
+                EvidenceExpected = ExtractMetadata(a.SourceRefsJson, "evidenceExpected"),
+                ScoringRule = ExtractMetadata(a.SourceRefsJson, "scoringRule"),
+                LearningOutcomeIdsJson = ExtractMetadata(a.SourceRefsJson, "learningOutcomeIds"),
+                KnowledgeTracingStateId = TryGuid(ExtractMetadata(a.SourceRefsJson, "knowledgeTracingStateId")),
+                MasteryProbability = TryDecimal(ExtractMetadata(a.SourceRefsJson, "masteryProbability")),
+                ItemQualityStatus = ExtractMetadata(a.SourceRefsJson, "itemQualityStatus"),
                 LearningObjective = ExtractMetadata(a.SourceRefsJson, "learningObjective"),
                 QuestionType = ExtractMetadata(a.SourceRefsJson, "questionType"),
                 MistakeCategory = ExtractMetadata(a.SourceRefsJson, "mistakeCategory"),
@@ -244,6 +257,9 @@ public class QuizController : ControllerBase
                 CognitiveType = a.CognitiveType,
                 QuestionHash = a.QuestionHash,
                 SourceRefsJson = a.SourceRefsJson,
+                ResponseTimeMs = a.ResponseTimeMs,
+                WasSkipped = a.WasSkipped,
+                ConfidenceSelfRating = a.ConfidenceSelfRating,
                 CreatedAt = a.CreatedAt
             })
             .ToListAsync();
@@ -262,7 +278,7 @@ public class QuizController : ControllerBase
 
         var accuracy = totalAttempts > 0 ? (double)correctAttempts / totalAttempts : 0;
 
-        // Son 7 gÃ¼nÃ¼n gÃ¼nlÃ¼k baÅŸarÄ±sÄ±
+        // Son 7 günün günlük başarısı
         var last7Days = Enumerable.Range(0, 7)
             .Select(i => DateTime.UtcNow.Date.AddDays(-i))
             .Reverse()
@@ -313,17 +329,29 @@ public class QuizController : ControllerBase
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(json);
-            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
-                   doc.RootElement.TryGetProperty(key, out var value) &&
-                   value.ValueKind == System.Text.Json.JsonValueKind.String
-                ? value.GetString()
-                : null;
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty(key, out var value))
+            {
+                return value.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? value.GetString()
+                    : value.GetRawText();
+            }
+
+            return null;
         }
         catch (System.Text.Json.JsonException)
         {
             return null;
         }
     }
+
+    private static Guid? TryGuid(string? value) =>
+        Guid.TryParse(value?.Trim('"'), out var id) ? id : null;
+
+    private static decimal? TryDecimal(string? value) =>
+        decimal.TryParse(value?.Trim('"'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var result)
+            ? result
+            : null;
 
     private static StartPlanDiagnosticRequest ParseStartPlanDiagnosticRequest(JsonElement body)
     {

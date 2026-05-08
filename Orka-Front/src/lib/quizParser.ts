@@ -142,9 +142,30 @@ function normalizeQuestion(q: any, qi: number): QuizData | null {
     cognitiveType: q?.cognitiveType ?? q?.cognitive_type,
     sourceHint: q?.sourceHint ?? q?.source,
     questionHash: q?.questionHash ?? q?.question_hash,
+    assessmentItemId: q?.assessmentItemId ?? q?.assessment_item_id,
+    assessmentItemKey: q?.assessmentItemKey ?? q?.assessment_item_key,
+    conceptKey: q?.conceptKey ?? q?.concept_key,
+    conceptTag: q?.conceptTag ?? q?.concept_tag,
+    cognitiveSkill: q?.cognitiveSkill ?? q?.cognitive_skill,
+    misconceptionTarget: q?.misconceptionTarget ?? q?.misconception_target,
+    evidenceExpected: q?.evidenceExpected ?? q?.evidence_expected,
+    scoringRule: q?.scoringRule ?? q?.scoring_rule,
+    learningOutcomeIds: q?.learningOutcomeIds ?? q?.learning_outcome_ids,
+    knowledgeTracingStateId: q?.knowledgeTracingStateId ?? q?.knowledge_tracing_state_id,
+    masteryProbability: toNumber(q?.masteryProbability ?? q?.mastery_probability),
+    itemQualityStatus: q?.itemQualityStatus ?? q?.item_quality_status,
     sourceRefs: q?.sourceRefs ?? q?.source_refs,
     type: isCoding ? "coding" : "multiple_choice",
   };
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function normalizeOption(option: any, i: number, qi: number, correctHint: string) {

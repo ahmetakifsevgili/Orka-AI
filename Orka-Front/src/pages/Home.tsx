@@ -28,7 +28,7 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning"]);
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress"]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -263,6 +263,23 @@ export default function Home() {
       }
     }
     
+    if (view === "sources") {
+      if (activeTopic) {
+        setWikiTopicId(activeTopic.id);
+        setActiveView("sources");
+      } else {
+        toast.error("Kaynakları görmek için önce bir konu seçmelisin.");
+      }
+      return;
+    }
+    if (view === "practice") {
+      setActiveView("practice");
+      return;
+    }
+    if (view === "progress") {
+      setActiveView("progress");
+      return;
+    }
     if (view === "wiki") {
       if (activeTopic) {
         setWikiTopicId(activeTopic.id);
@@ -277,7 +294,7 @@ export default function Home() {
         setWikiTopicId(activeTopic.id);
         setActiveView("orkalm");
       } else {
-        toast.error("OrkaLM icin once bir konu secmelisiniz.");
+        toast.error("OrkaLM için önce bir konu seçmelisin.");
       }
       return;
     }
@@ -315,6 +332,8 @@ export default function Home() {
     switch (activeView) {
       case "dashboard":
         return <DashboardPanel topics={topics} onViewChange={handleViewChange} />;
+      case "progress":
+        return <DashboardPanel topics={topics} onViewChange={handleViewChange} mode="progress" />;
       case "settings":
         return <SettingsPanel />;
       case "learning":
@@ -328,14 +347,16 @@ export default function Home() {
           </div>
         );
       case "orkalm":
+      case "sources":
         return wikiTopicId ? (
           <WikiMainPanel topicId={wikiTopicId} mode="orkalm" onClose={() => handleViewChange("chat")} />
         ) : (
           <div className="flex-1 flex items-center justify-center text-zinc-500">
-            OrkaLM icin once bir konu sec.
+            Kaynaklar için önce bir konu seç.
           </div>
         );
-      case "ide": {
+      case "ide":
+      case "practice": {
         return (
           <SplitPane
             left={

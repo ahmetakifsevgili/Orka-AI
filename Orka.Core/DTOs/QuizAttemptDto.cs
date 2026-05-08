@@ -12,7 +12,17 @@ public class QuizAttemptDto
     public bool IsCorrect { get; set; }
     public string Explanation { get; set; } = string.Empty;
     public string? SkillTag { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public string? ConceptKey { get; set; }
     public string? ConceptTag { get; set; }
+    public string? CognitiveSkill { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRule { get; set; }
+    public string? LearningOutcomeIdsJson { get; set; }
+    public Guid? KnowledgeTracingStateId { get; set; }
+    public decimal? MasteryProbability { get; set; }
+    public string? ItemQualityStatus { get; set; }
     public string? LearningObjective { get; set; }
     public string? QuestionType { get; set; }
     public string? MistakeCategory { get; set; }
@@ -21,5 +31,8 @@ public class QuizAttemptDto
     public string? CognitiveType { get; set; }
     public string? QuestionHash { get; set; }
     public string? SourceRefsJson { get; set; }
+    public int? ResponseTimeMs { get; set; }
+    public bool WasSkipped { get; set; }
+    public decimal? ConfidenceSelfRating { get; set; }
     public DateTime CreatedAt { get; set; }
 }

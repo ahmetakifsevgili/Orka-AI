@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -133,6 +134,60 @@ public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
         {
             Assert.Contains(path, swagger);
         }
+    }
+
+    [Fact]
+    public async Task WikiV2Chat_ReturnsSafeGroundedSseAndWorkspaceState()
+    {
+        var token = await RegisterAndLoginAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var topicId = await CreateTopicAsync();
+
+        using var upload = new MultipartFormDataContent();
+        upload.Add(new StringContent(topicId.ToString()), "TopicId");
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes("Payda eşitleme, kesir toplarken ortak payda bulma işlemidir."));
+        file.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        upload.Add(file, "File", "kesirler.txt");
+
+        var uploaded = await _client.PostAsync("/api/sources/upload", upload);
+        uploaded.EnsureSuccessStatusCode();
+
+        var workspace = await _client.GetStringAsync($"/api/wiki/{topicId}/workspace-state");
+        Assert.Contains("readySourceCount", workspace);
+        Assert.Contains("activeConcepts", workspace);
+
+        var response = await _client.PostAsJsonAsync($"/api/wiki/{topicId}/chat", new
+        {
+            question = "Payda eşitleme nedir?"
+        });
+        response.EnsureSuccessStatusCode();
+        var sse = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("\"type\":\"token\"", sse);
+        Assert.Contains("[doc:", sse);
+        Assert.Contains("\"type\":\"citation\"", sse);
+        Assert.Contains("\"type\":\"metadata\"", sse);
+        Assert.Contains("\"groundingStatus\":\"source_grounded\"", sse);
+    }
+
+    [Fact]
+    public async Task WikiV2Chat_SourceMissingDoesNotInventAnswer()
+    {
+        var token = await RegisterAndLoginAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var topicId = await CreateTopicAsync();
+
+        var response = await _client.PostAsJsonAsync($"/api/wiki/{topicId}/chat", new
+        {
+            question = "Bu kaynakta olmayan özel detayı açıkla."
+        });
+        response.EnsureSuccessStatusCode();
+        var sse = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("mevcut kaynaklarda", sse);
+        Assert.Contains("source_retrieval_empty", sse);
+        Assert.Contains("\"groundingStatus\":\"no_source\"", sse);
+        Assert.DoesNotContain("IWikiAgent", sse);
     }
 
     private async Task<string> RegisterAndLoginAsync()

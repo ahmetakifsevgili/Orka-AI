@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { StudyIntentPreview, ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
+import type { LearningQualityReport, SourceQualityReportDto, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -279,15 +279,74 @@ export const ChatAPI = {
 };
 
 export const DashboardAPI = {
+  getToday: () => api.get<DashboardTodayDto>("/dashboard/today"),
   getStats: () => api.get("/dashboard/stats"),
   getRecentActivity: () => api.get("/dashboard/recent-activity"),
   getSystemHealth: () => api.get("/dashboard/system-health"),
   getDevDiagnostics: () => api.get("/dev/diagnostics/config"),
 };
 
+export interface DashboardTodayDto {
+  dailyFocusTitle: string;
+  dailyFocusReason: string;
+  nextAction: {
+    label: string;
+    reason: string;
+    view: string;
+    topicId?: string | null;
+    userSafeStatus: string;
+  };
+  weakConcepts: Array<{
+    conceptKey: string;
+    label: string;
+    masteryProbability?: number | null;
+    confidence?: number | null;
+    topicId?: string | null;
+    userSafeStatus: string;
+  }>;
+  sourceHealth: {
+    status: string;
+    userSafeLabel: string;
+    userSafeDetail: string;
+    citationCoverage: number;
+    unsupportedCitationCount: number;
+  };
+  dueReviewCount: number;
+  activePlan?: {
+    topicId: string;
+    title: string;
+    progressPercentage: number;
+  } | null;
+  recommendedEntryPoint: {
+    view: string;
+    label: string;
+    reason: string;
+  };
+  hasRealLearningData: boolean;
+  generatedAt: string;
+}
+
 export const WikiAPI = {
   getTopicPages: (topicId: string) => api.get(`/wiki/${topicId}`),
   getPage: (pageId: string) => api.get(`/wiki/page/${pageId}`),
+  getWorkspaceState: (topicId: string) =>
+    api.get<{
+      topicId: string;
+      topicTitle: string;
+      wikiPageCount: number;
+      wikiBlockCount: number;
+      sourceCount: number;
+      readySourceCount: number;
+      citationHealth: string;
+      ragQualityStatus: string;
+      retrievalHealth: string;
+      citationCoverage: number;
+      unsupportedCitationCount: number;
+      activeConcepts: string[];
+      weakConcepts: string[];
+      recommendedActions: string[];
+      generatedAt: string;
+    }>(`/wiki/${topicId}/workspace-state`).then((r) => r.data),
   addNote: (pageId: string, data: { content: string }) =>
     api.post(`/wiki/page/${pageId}/note`, data),
   updateBlock: (blockId: string, data: { content: string }) =>
@@ -383,6 +442,8 @@ export const SourcesAPI = {
       status: string;
       createdAt: string;
     }>>(`/sources/topic/${topicId}`).then((r) => r.data),
+  getTopicQuality: (topicId: string) =>
+    api.get<SourceQualityReportDto>(`/sources/topic/${topicId}/quality`).then((r) => r.data),
   ask: (sourceId: string, question: string) =>
     api.post<{
       answer: string;
@@ -393,6 +454,7 @@ export const SourcesAPI = {
         text: string;
         highlightHint?: string;
       }>;
+      metadata?: import("@/lib/types").ChatResponseMetadata | null;
     }>(`/sources/${sourceId}/ask`, { question }).then((r) => r.data),
   getPage: (sourceId: string, page: number) =>
     api.get<{
@@ -460,6 +522,36 @@ export const LearningAPI = {
         version?: number | null;
       } | null;
     }>(`/learning/topic/${topicId}/summary`).then((r) => r.data),
+  getTopicQuality: (topicId: string) =>
+    api.get<LearningQualityReport>(`/learning-quality/topic/${topicId}`).then((r) => r.data),
+  runRagEvaluation: (topicId: string) =>
+    api.post(`/learning-quality/topic/${topicId}/rag-evaluation/run`).then((r) => r.data),
+};
+
+export const TutorAPI = {
+  getTopicState: (topicId: string) =>
+    api.get(`/tutor/state/topic/${topicId}`).then((r) => r.data),
+  getTrace: (traceId: string) =>
+    api.get(`/tutor/trace/${traceId}`).then((r) => r.data),
+  getPedagogyTopic: (topicId: string) =>
+    api.get(`/tutor/pedagogy/topic/${topicId}`).then((r) => r.data),
+  getPedagogyRun: (runId: string) =>
+    api.get(`/tutor/pedagogy/run/${runId}`).then((r) => r.data),
+  evaluateRecentPedagogy: (data: { topicId?: string; sessionId?: string }) => {
+    const params = new URLSearchParams();
+    if (data.topicId) params.set("topicId", data.topicId);
+    if (data.sessionId) params.set("sessionId", data.sessionId);
+    const query = params.toString();
+    return api.post(`/tutor/pedagogy/evaluate/recent${query ? `?${query}` : ""}`).then((r) => r.data);
+  },
+  getArtifact: (artifactId: string) =>
+    api.get<TeachingArtifact>(`/tutor/artifacts/${artifactId}`).then((r) => r.data),
+  markArtifactRendered: (artifactId: string, renderError?: string | null) =>
+    api.post(`/tutor/artifacts/${artifactId}/rendered`, { renderError: renderError ?? null }, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getSessionEvents: (sessionId: string, after = "0-0", take = 50) =>
+    api.get(`/tutor/events/session/${sessionId}?after=${encodeURIComponent(after)}&take=${take}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  recordStyleSignal: (data: { topicId?: string; sessionId?: string; message: string }) =>
+    api.post("/tutor/style-signal", data).then((r) => r.data),
 };
 
 export const ClassroomAPI = {
@@ -503,11 +595,22 @@ type QuizAttemptPayload = {
   isCorrect: boolean;
   explanation: string;
   skillTag?: string;
+  assessmentItemId?: string;
+  conceptKey?: string;
+  conceptTag?: string;
+  cognitiveSkill?: string;
+  misconceptionTarget?: string;
+  evidenceExpected?: string;
+  scoringRule?: string;
+  learningOutcomeIdsJson?: string;
   topicPath?: string;
   difficulty?: string;
   cognitiveType?: string;
   questionHash?: string;
   sourceRefsJson?: string;
+  responseTimeMs?: number;
+  wasSkipped?: boolean;
+  confidenceSelfRating?: number;
 };
 
 export const QuizAPI = {
@@ -540,6 +643,9 @@ export const QuizAPI = {
       groundingMode: string;
       sourceCount: number;
       quizQuestionCount: number;
+      conceptGraphQualityStatus?: string;
+      assessmentQualityStatus?: string;
+      qualityReportId?: string | null;
       intentRequestId?: string | null;
       approvedMainTopic: string;
       approvedFocusArea: string;

@@ -15,6 +15,7 @@ namespace Orka.Infrastructure.Services;
 
 public class LearningSourceService : ILearningSourceService
 {
+    private static readonly Regex DocCitationRegex = new(@"\[doc:(?<sourceId>[^:\]]+):p(?<page>\d+)(?::c(?<chunk>\d+))?\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private readonly OrkaDbContext _db;
     private readonly FileExtractionService _extractor;
     private readonly IEmbeddingService _embedding;
@@ -26,6 +27,14 @@ public class LearningSourceService : ILearningSourceService
     private readonly ILogger<LearningSourceService> _logger;
 
     private const int ApproxChunkChars = 2200;
+    private sealed record RankedSourceChunk(
+        SourceChunk Chunk,
+        decimal EmbeddingScore,
+        decimal LexicalScore,
+        decimal FusedScore,
+        int Rank,
+        string QualityStatus,
+        string Reason);
     public LearningSourceService(
         OrkaDbContext db,
         FileExtractionService extractor,
@@ -268,14 +277,29 @@ public class LearningSourceService : ILearningSourceService
             .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
         if (source == null) throw new InvalidOperationException("Kaynak bulunamadı.");
 
-        var chunks = await FindRelevantChunksAsync(userId, source.TopicId, sourceId, question, 8, ct);
+        var ranked = await FindRelevantChunksAsync(userId, source.TopicId, sourceId, question, 8, ct);
+        var retrievalRun = await RecordRetrievalRunAsync(
+            userId,
+            source.TopicId,
+            source.SessionId,
+            sourceId,
+            question,
+            "source_ask",
+            8,
+            ranked,
+            ct);
+        var chunks = ranked.Select(r => r.Chunk).ToList();
         var citations = chunks
             .Select(c => new SourceChunkDto(c.Id, c.PageNumber, c.ChunkIndex, c.Text, c.HighlightHint))
             .ToList();
         if (chunks.Count == 0)
         {
             await RecordSourceAskedAsync(userId, source, question, citationCount: 0, ct);
-            return new SourceAskResultDto(NotebookSourceContextFormatter.SourceMissingAnswer(), citations);
+            await RecordCitationChecksAsync(userId, source.TopicId, source.SessionId, retrievalRun.Id, sourceId, NotebookSourceContextFormatter.SourceMissingAnswer(), ranked, ct);
+            return new SourceAskResultDto(
+                NotebookSourceContextFormatter.SourceMissingAnswer(),
+                citations,
+                new SourceMetadataDto([], "source_retrieval_empty", "source_retrieval_empty", null, retrievalRun.Id, "empty", 0, 1));
         }
 
         var wiki = source.TopicId.HasValue
@@ -311,7 +335,8 @@ public class LearningSourceService : ILearningSourceService
             """;
 
         var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userPrompt, ct);
-        if (!Regex.IsMatch(answer, $@"\[doc:{sourceId}:p\d+\]", RegexOptions.IgnoreCase))
+        var citationChecks = await RecordCitationChecksAsync(userId, source.TopicId, source.SessionId, retrievalRun.Id, sourceId, answer, ranked, ct);
+        if (citationChecks.Any(c => c.CheckStatus == "citation_missing"))
         {
             await _signals.RecordSignalAsync(
                 userId,
@@ -329,11 +354,63 @@ public class LearningSourceService : ILearningSourceService
 
         await RecordSourceAskedAsync(userId, source, question, citations.Count, ct);
 
+        var unsupportedCount = citationChecks.Count(c => c.CheckStatus == "citation_unsupported");
+        var missingCount = citationChecks.Count(c => c.CheckStatus == "citation_missing");
+        var supportedCount = citationChecks.Count(c => c.CheckStatus == "supported");
+        var sourceQuality = missingCount > 0 ? "citation_missing" :
+            unsupportedCount > 0 ? "citation_unsupported" :
+            retrievalRun.QualityStatus;
+
         return new SourceAskResultDto(answer, citations, new SourceMetadataDto(
-            citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto($"[doc:{sourceId}:p{c.PageNumber}]", "document", sourceId, c.PageNumber, source.Title, null, 1.0)).ToList(),
+            citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto($"[doc:{sourceId}:p{c.PageNumber}]", "document", sourceId, c.PageNumber, source.Title, null, supportedCount > 0 ? 1.0 : 0.65, c.Id)).ToList(),
             citations.Count > 0 ? "source_grounded" : "model_fallback",
-            citations.Count > 0 ? null : "source_retrieval_empty",
-            citations.Count > 0 ? 1.0 : null));
+            missingCount > 0 ? "citation_missing" : unsupportedCount > 0 ? "citation_unsupported" : null,
+            citations.Count > 0 ? 1.0 : null,
+            retrievalRun.Id,
+            sourceQuality,
+            unsupportedCount,
+            missingCount));
+    }
+
+    public async Task<IReadOnlyList<TopicSourceEvidenceDto>> RetrieveTopicEvidenceAsync(
+        Guid userId,
+        Guid topicId,
+        string question,
+        int take = 8,
+        Guid? sourceId = null,
+        CancellationToken ct = default)
+    {
+        var requestedTopK = Math.Clamp(take, 1, 20);
+        var ranked = await FindRelevantChunksAsync(userId, topicId, sourceId, question, requestedTopK, ct);
+        var run = await RecordRetrievalRunAsync(
+            userId,
+            topicId,
+            null,
+            sourceId,
+            question,
+            "wiki_topic_retrieval",
+            requestedTopK,
+            ranked,
+            ct);
+
+        return ranked.Select(r => new TopicSourceEvidenceDto
+        {
+            RetrievalRunId = run.Id,
+            ChunkId = r.Chunk.Id,
+            SourceId = r.Chunk.LearningSourceId,
+            SourceTitle = r.Chunk.LearningSource.Title,
+            FileName = r.Chunk.LearningSource.FileName,
+            PageNumber = r.Chunk.PageNumber,
+            ChunkIndex = r.Chunk.ChunkIndex,
+            Text = r.Chunk.Text,
+            HighlightHint = r.Chunk.HighlightHint,
+            Score = (double)Math.Round(r.FusedScore, 4),
+            EmbeddingScore = r.EmbeddingScore,
+            LexicalScore = r.LexicalScore,
+            FusedScore = r.FusedScore,
+            Rank = r.Rank,
+            QualityStatus = r.QualityStatus
+        }).ToList();
     }
 
     public async Task<string> BuildTopicGroundingContextAsync(
@@ -344,8 +421,20 @@ public class LearningSourceService : ILearningSourceService
     {
         if (!topicId.HasValue) return string.Empty;
 
-        var chunks = await FindRelevantChunksAsync(userId, topicId.Value, null, question, 5, ct);
-        if (chunks.Count == 0) return string.Empty;
+        var ranked = await FindRelevantChunksAsync(userId, topicId.Value, null, question, 5, ct);
+        await RecordRetrievalRunAsync(
+            userId,
+            topicId.Value,
+            null,
+            null,
+            question,
+            "topic_grounding_context",
+            5,
+            ranked,
+            ct);
+        if (ranked.Count == 0) return string.Empty;
+
+        var chunks = ranked.Select(r => r.Chunk).ToList();
 
         return $$"""
 
@@ -356,7 +445,113 @@ public class LearningSourceService : ILearningSourceService
             """;
     }
 
-    private async Task<List<SourceChunk>> FindRelevantChunksAsync(
+    public async Task<SourceQualityReportDto> GetTopicQualityAsync(
+        Guid userId,
+        Guid topicId,
+        CancellationToken ct = default)
+    {
+        var recentRuns = await _db.SourceRetrievalRuns
+            .AsNoTracking()
+            .Include(r => r.Items)
+            .Where(r => r.UserId == userId && r.TopicId == topicId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(30)
+            .ToListAsync(ct);
+
+        var recentChecks = await _db.SourceCitationChecks
+            .AsNoTracking()
+            .Where(c => c.UserId == userId && c.TopicId == topicId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
+
+        var latestReport = await _db.SourceQualityReports
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && r.TopicId == topicId)
+            .OrderByDescending(r => r.GeneratedAt)
+            .FirstOrDefaultAsync(ct);
+        var latestEvidenceAt = recentRuns.Select(r => r.CreatedAt)
+            .Concat(recentChecks.Select(c => c.CreatedAt))
+            .DefaultIfEmpty(DateTime.MinValue)
+            .Max();
+        if (latestReport != null &&
+            latestReport.GeneratedAt >= latestEvidenceAt &&
+            TryDeserializeQualityReport(latestReport.ReportJson, out var cached))
+        {
+            return cached;
+        }
+
+        var runCount = recentRuns.Count;
+        var emptyCount = recentRuns.Count(r => r.IsEmpty || r.QualityStatus == "source_retrieval_empty" || r.QualityStatus == "empty");
+        var avgContext = runCount == 0 ? 0m : Math.Round(recentRuns.Average(r => r.AverageScore), 4);
+        var unsupported = recentChecks.Count(c => c.CheckStatus == "citation_unsupported");
+        var missing = recentChecks.Count(c => c.CheckStatus == "citation_missing");
+        var supported = recentChecks.Count(c => c.CheckStatus == "supported");
+        var checkCount = recentChecks.Count;
+        var citationCoverage = checkCount == 0 ? 0m : Math.Round(supported / (decimal)checkCount, 4);
+        var retrievalHealth = runCount == 0 ? "unverified" :
+            emptyCount == runCount ? "source_retrieval_empty" :
+            recentRuns.Any(r => r.QualityStatus == "low_confidence") ? "low_confidence" :
+            "healthy";
+        var citationStatus = checkCount == 0 ? "unverified" :
+            missing > 0 ? "citation_missing" :
+            unsupported > 0 ? "citation_unsupported" :
+            "healthy";
+        var supportStatus = checkCount == 0 ? "unverified" :
+            unsupported > 0 ? "citation_unsupported" :
+            supported > 0 ? "supported" :
+            "unverified";
+        var quality = retrievalHealth == "healthy" && citationStatus == "healthy"
+            ? "healthy"
+            : runCount == 0 ? "unverified" : "degraded";
+
+        var dto = new SourceQualityReportDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            QualityStatus = quality,
+            RetrievalHealthStatus = retrievalHealth,
+            CitationCoverageStatus = citationStatus,
+            CitationSupportStatus = supportStatus,
+            RetrievalRunCount = runCount,
+            EmptyRunCount = emptyCount,
+            CitationCheckCount = checkCount,
+            UnsupportedCitationCount = unsupported,
+            CitationMissingCount = missing,
+            AverageContextRelevance = avgContext,
+            CitationCoverage = citationCoverage,
+            GeneratedAt = DateTimeOffset.UtcNow,
+            RecentRetrievalRuns = recentRuns.Take(8).Select(ToRetrievalRunDto).ToArray(),
+            RecentCitationChecks = recentChecks.Take(12).Select(ToCitationCheckDto).ToArray()
+        };
+
+        _db.SourceQualityReports.Add(new SourceQualityReport
+        {
+            Id = dto.Id,
+            UserId = userId,
+            TopicId = topicId,
+            QualityStatus = dto.QualityStatus,
+            RetrievalHealthStatus = dto.RetrievalHealthStatus,
+            CitationCoverageStatus = dto.CitationCoverageStatus,
+            CitationSupportStatus = dto.CitationSupportStatus,
+            RetrievalRunCount = dto.RetrievalRunCount,
+            EmptyRunCount = dto.EmptyRunCount,
+            CitationCheckCount = dto.CitationCheckCount,
+            UnsupportedCitationCount = dto.UnsupportedCitationCount,
+            CitationMissingCount = dto.CitationMissingCount,
+            AverageContextRelevance = dto.AverageContextRelevance,
+            CitationCoverage = dto.CitationCoverage,
+            ReportJson = JsonSerializer.Serialize(dto),
+            GeneratedAt = dto.GeneratedAt.UtcDateTime,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+
+        return dto;
+    }
+
+    private async Task<List<RankedSourceChunk>> FindRelevantChunksAsync(
         Guid userId,
         Guid? topicId,
         Guid? sourceId,
@@ -388,23 +583,25 @@ public class LearningSourceService : ILearningSourceService
         }
 
         return chunks
-            .Select(c => new { Chunk = c, Score = ScoreChunk(c, question, qEmbedding) })
-            .OrderByDescending(x => x.Score)
+            .Select(c => ScoreChunk(c, question, qEmbedding))
+            .OrderByDescending(x => x.FusedScore)
             .ThenBy(x => x.Chunk.PageNumber)
             .Take(take)
-            .Select(x => x.Chunk)
+            .Select((x, i) => x with { Rank = i + 1 })
             .ToList();
     }
 
-    private float ScoreChunk(SourceChunk chunk, string question, float[]? qEmbedding)
+    private RankedSourceChunk ScoreChunk(SourceChunk chunk, string question, float[]? qEmbedding)
     {
+        var lexical = (decimal)Math.Round(NotebookSourceContextFormatter.ScoreLexical(chunk, question), 4);
+        var embedding = 0m;
         if (qEmbedding != null && !string.IsNullOrWhiteSpace(chunk.EmbeddingJson))
         {
             try
             {
                 var emb = JsonSerializer.Deserialize<float[]>(chunk.EmbeddingJson);
                 if (emb is { Length: > 0 } && emb.Length == qEmbedding.Length)
-                    return _embedding.CosineSimilarity(qEmbedding, emb);
+                    embedding = (decimal)Math.Round(_embedding.CosineSimilarity(qEmbedding, emb), 4);
             }
             catch (JsonException ex)
             {
@@ -412,7 +609,255 @@ public class LearningSourceService : ILearningSourceService
             }
         }
 
-        return NotebookSourceContextFormatter.ScoreLexical(chunk, question);
+        var fused = embedding > 0m
+            ? Math.Round((embedding * 0.75m) + (lexical * 0.25m), 4)
+            : lexical;
+        var quality = fused >= 0.65m ? "healthy" :
+            fused >= 0.35m ? "degraded" :
+            "low_confidence";
+        var reason = embedding > 0m ? "embedding_lexical_fusion" : "lexical_fallback";
+        return new RankedSourceChunk(chunk, embedding, lexical, fused, 0, quality, reason);
+    }
+
+    private async Task<SourceRetrievalRun> RecordRetrievalRunAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        Guid? sourceId,
+        string query,
+        string scope,
+        int requestedTopK,
+        IReadOnlyList<RankedSourceChunk> ranked,
+        CancellationToken ct)
+    {
+        var maxScore = ranked.Count == 0 ? 0m : ranked.Max(r => r.FusedScore);
+        var averageScore = ranked.Count == 0 ? 0m : Math.Round(ranked.Average(r => r.FusedScore), 4);
+        var qualityStatus = ranked.Count == 0 ? "source_retrieval_empty" :
+            ranked.All(r => r.QualityStatus == "low_confidence") ? "low_confidence" :
+            ranked.Any(r => r.QualityStatus == "healthy") ? "healthy" :
+            "degraded";
+
+        var run = new SourceRetrievalRun
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = sessionId,
+            SourceId = sourceId,
+            Query = TrimForStorage(query, 2000),
+            RetrievalScope = scope,
+            Provider = "orka-source",
+            RequestedTopK = requestedTopK,
+            RetrievedCount = ranked.Count,
+            IsEmpty = ranked.Count == 0,
+            MaxScore = maxScore,
+            AverageScore = averageScore,
+            QualityStatus = qualityStatus,
+            Reason = ranked.Count == 0 ? "no_matching_source_chunks" : string.Join(",", ranked.Select(r => r.Reason).Distinct().Take(3)),
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                schemaVersion = "orka.source-retrieval.v1",
+                requestedTopK,
+                scoreModel = "embedding_lexical_fusion",
+                lowConfidenceThreshold = 0.35m,
+                healthyThreshold = 0.65m
+            }),
+            CreatedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
+        };
+
+        _db.SourceRetrievalRuns.Add(run);
+        foreach (var item in ranked)
+        {
+            _db.SourceRetrievalItems.Add(new SourceRetrievalItem
+            {
+                Id = Guid.NewGuid(),
+                SourceRetrievalRunId = run.Id,
+                UserId = userId,
+                TopicId = topicId,
+                SourceId = item.Chunk.LearningSourceId,
+                SourceChunkId = item.Chunk.Id,
+                PageNumber = item.Chunk.PageNumber,
+                ChunkIndex = item.Chunk.ChunkIndex,
+                Rank = item.Rank,
+                EmbeddingScore = item.EmbeddingScore,
+                LexicalScore = item.LexicalScore,
+                FusedScore = item.FusedScore,
+                QualityStatus = item.QualityStatus,
+                Reason = item.Reason,
+                Snippet = TrimForStorage(item.Chunk.HighlightHint ?? item.Chunk.Text, 600),
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return run;
+    }
+
+    private async Task<IReadOnlyList<SourceCitationCheck>> RecordCitationChecksAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        Guid? retrievalRunId,
+        Guid? expectedSourceId,
+        string answer,
+        IReadOnlyList<RankedSourceChunk> ranked,
+        CancellationToken ct)
+    {
+        var checks = new List<SourceCitationCheck>();
+        var matches = DocCitationRegex.Matches(answer ?? string.Empty);
+        if (matches.Count == 0)
+        {
+            checks.Add(new SourceCitationCheck
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                SessionId = sessionId,
+                SourceRetrievalRunId = retrievalRunId,
+                SourceId = expectedSourceId,
+                CitationId = string.Empty,
+                SourceType = "document",
+                Answer = TrimForStorage(answer, 4000),
+                ClaimText = string.Empty,
+                CheckStatus = "citation_missing",
+                Confidence = 0m,
+                Reason = "answer_contains_no_document_citation",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            foreach (Match match in matches)
+            {
+                var citationId = match.Value;
+                var sourceText = match.Groups["sourceId"].Value;
+                var page = int.TryParse(match.Groups["page"].Value, out var pageNumber) ? pageNumber : (int?)null;
+                var chunk = int.TryParse(match.Groups["chunk"].Value, out var chunkIndex) ? chunkIndex : (int?)null;
+                var sourceGuid = Guid.TryParse(sourceText, out var parsedSourceId) ? parsedSourceId : (Guid?)null;
+                var supported = sourceGuid.HasValue && page.HasValue && ranked.Any(r =>
+                    r.Chunk.LearningSourceId == sourceGuid.Value &&
+                    r.Chunk.PageNumber == page.Value &&
+                    (!chunk.HasValue || r.Chunk.ChunkIndex == chunk.Value));
+                var matched = supported
+                    ? ranked.First(r => r.Chunk.LearningSourceId == sourceGuid!.Value &&
+                                        r.Chunk.PageNumber == page!.Value &&
+                                        (!chunk.HasValue || r.Chunk.ChunkIndex == chunk.Value))
+                    : null;
+
+                checks.Add(new SourceCitationCheck
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    TopicId = topicId,
+                    SessionId = sessionId,
+                    SourceRetrievalRunId = retrievalRunId,
+                    SourceId = sourceGuid ?? expectedSourceId,
+                    SourceChunkId = matched?.Chunk.Id,
+                    CitationId = citationId,
+                    SourceType = "document",
+                    PageNumber = page,
+                    ChunkIndex = chunk,
+                    Answer = TrimForStorage(answer, 4000),
+                    ClaimText = ExtractClaimNearCitation(answer ?? string.Empty, match.Index),
+                    CheckStatus = supported ? "supported" : "citation_unsupported",
+                    Confidence = supported ? matched!.FusedScore : 0m,
+                    Reason = supported ? "citation_matches_retrieved_chunk" : "citation_not_in_retrieved_evidence",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        _db.SourceCitationChecks.AddRange(checks);
+        await _db.SaveChangesAsync(ct);
+        return checks;
+    }
+
+    private static SourceRetrievalRunDto ToRetrievalRunDto(SourceRetrievalRun run) => new()
+    {
+        Id = run.Id,
+        UserId = run.UserId,
+        TopicId = run.TopicId,
+        SessionId = run.SessionId,
+        SourceId = run.SourceId,
+        Query = run.Query,
+        RetrievalScope = run.RetrievalScope,
+        RequestedTopK = run.RequestedTopK,
+        RetrievedCount = run.RetrievedCount,
+        IsEmpty = run.IsEmpty,
+        MaxScore = run.MaxScore,
+        AverageScore = run.AverageScore,
+        QualityStatus = run.QualityStatus,
+        Reason = run.Reason,
+        CreatedAt = run.CreatedAt,
+        Items = run.Items
+            .OrderBy(i => i.Rank)
+            .Select(ToRetrievalItemDto)
+            .ToArray()
+    };
+
+    private static bool TryDeserializeQualityReport(string? json, out SourceQualityReportDto dto)
+    {
+        try
+        {
+            dto = string.IsNullOrWhiteSpace(json)
+                ? new SourceQualityReportDto()
+                : JsonSerializer.Deserialize<SourceQualityReportDto>(json) ?? new SourceQualityReportDto();
+            return !string.IsNullOrWhiteSpace(dto.QualityStatus);
+        }
+        catch
+        {
+            dto = new SourceQualityReportDto();
+            return false;
+        }
+    }
+
+    private static SourceRetrievalItemDto ToRetrievalItemDto(SourceRetrievalItem item) => new()
+    {
+        Id = item.Id,
+        SourceRetrievalRunId = item.SourceRetrievalRunId,
+        SourceId = item.SourceId,
+        SourceChunkId = item.SourceChunkId,
+        PageNumber = item.PageNumber,
+        ChunkIndex = item.ChunkIndex,
+        Rank = item.Rank,
+        EmbeddingScore = item.EmbeddingScore,
+        LexicalScore = item.LexicalScore,
+        FusedScore = item.FusedScore,
+        QualityStatus = item.QualityStatus,
+        Reason = item.Reason,
+        Snippet = item.Snippet
+    };
+
+    private static SourceCitationCheckDto ToCitationCheckDto(SourceCitationCheck check) => new()
+    {
+        Id = check.Id,
+        SourceRetrievalRunId = check.SourceRetrievalRunId,
+        SourceId = check.SourceId,
+        SourceChunkId = check.SourceChunkId,
+        CitationId = check.CitationId,
+        SourceType = check.SourceType,
+        PageNumber = check.PageNumber,
+        ChunkIndex = check.ChunkIndex,
+        CheckStatus = check.CheckStatus,
+        Confidence = check.Confidence,
+        Reason = check.Reason,
+        CreatedAt = check.CreatedAt
+    };
+
+    private static string ExtractClaimNearCitation(string answer, int citationIndex)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return string.Empty;
+        var start = Math.Max(0, citationIndex - 240);
+        var length = Math.Min(answer.Length - start, 320);
+        return TrimForStorage(answer.Substring(start, length), 320);
+    }
+
+    private static string TrimForStorage(string? value, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var clean = value.Trim();
+        return clean.Length <= maxChars ? clean : clean[..maxChars];
     }
 
     private static IEnumerable<SourceChunk> BuildChunks(Guid sourceId, IReadOnlyList<ExtractedPage> pages)

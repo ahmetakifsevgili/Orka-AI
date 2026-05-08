@@ -32,8 +32,9 @@ import {
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AudioOverviewAPI, LearningAPI, SourcesAPI, WikiAPI, storage } from "@/services/api";
+import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
+import type { ChatResponseMetadata, CitationDto, SourceQualityReportDto, TeachingArtifact } from "@/lib/types";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
 
@@ -57,6 +58,10 @@ interface WikiMainPanelProps {
 interface CopilotMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  citations?: CitationDto[];
+  artifacts?: TeachingArtifact[];
+  metadata?: ChatResponseMetadata | null;
+  groundingStatus?: string | null;
 }
 
 interface LearningSource {
@@ -99,6 +104,26 @@ interface MindMapNode {
 
 const MAX_POLL_ATTEMPTS = 20; // 20 × 3s = 60 saniye maksimum bekleme
 
+const sourceQualityLabel = (status?: string | null) => {
+  switch ((status ?? "").toLowerCase()) {
+    case "healthy":
+    case "grounded":
+      return "güçlü";
+    case "source_retrieval_empty":
+    case "empty":
+      return "kaynakta cevap yok";
+    case "citation_missing":
+      return "citation eksik";
+    case "citation_unsupported":
+      return "citation desteklenmiyor";
+    case "low_confidence":
+    case "degraded":
+      return "zayıf";
+    default:
+      return "ölçülmedi";
+  }
+};
+
 export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiMainPanelProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
@@ -130,6 +155,8 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [activeSource, setActiveSource] = useState<LearningSource | null>(null);
   const [sourceQuestion, setSourceQuestion] = useState("");
   const [sourceAnswer, setSourceAnswer] = useState("");
+  const [sourceAnswerMetadata, setSourceAnswerMetadata] = useState<ChatResponseMetadata | null>(null);
+  const [sourceQuality, setSourceQuality] = useState<SourceQualityReportDto | null>(null);
   const [sourceAsking, setSourceAsking] = useState(false);
   const [sourceCitations, setSourceCitations] = useState<SourceCitation[]>([]);
   const [sourcePage, setSourcePage] = useState<SourcePage | null>(null);
@@ -172,6 +199,35 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     errorMessage?: string;
   } | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
+
+  const patchLastAssistantMessage = (patch: Partial<CopilotMessage>) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      for (let i = updated.length - 1; i >= 0; i -= 1) {
+        if (updated[i].role === "assistant") {
+          updated[i] = { ...updated[i], ...patch };
+          break;
+        }
+      }
+      return updated;
+    });
+  };
+
+  const addArtifactToLastAssistant = (artifact: TeachingArtifact) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      for (let i = updated.length - 1; i >= 0; i -= 1) {
+        if (updated[i].role === "assistant") {
+          const existing = updated[i].artifacts ?? [];
+          if (!existing.some((item) => item.id === artifact.id)) {
+            updated[i] = { ...updated[i], artifacts: [...existing, artifact] };
+          }
+          break;
+        }
+      }
+      return updated;
+    });
+  };
 
   const toggleBlock = (blockId: string | number) => {
     setExpandedBlocks((prev) => ({ ...prev, [blockId]: !prev[blockId] }));
@@ -279,11 +335,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const refreshSources = async () => {
     setSourcesLoading(true);
     try {
-      const data = await SourcesAPI.getTopicSources(topicId);
+      const [data, quality] = await Promise.all([
+        SourcesAPI.getTopicSources(topicId),
+        SourcesAPI.getTopicQuality(topicId).catch(() => null),
+      ]);
       setSources(data);
+      setSourceQuality(quality);
       if (!activeSource && data.length > 0) setActiveSource(data[0]);
     } catch {
       setSources([]);
+      setSourceQuality(null);
     } finally {
       setSourcesLoading(false);
     }
@@ -349,10 +410,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     setSourceAsking(true);
     setSourceAnswer("");
     setSourceCitations([]);
+    setSourceAnswerMetadata(null);
     try {
       const result = await SourcesAPI.ask(activeSource.id, sourceQuestion.trim());
       setSourceAnswer(result.answer);
       setSourceCitations(result.citations ?? []);
+      setSourceAnswerMetadata(result.metadata ?? null);
       const firstCitation = result.citations?.[0];
       if (firstCitation) {
         await openSourcePage(activeSource.id, firstCitation.pageNumber, {
@@ -360,6 +423,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
           action: "source-answer-first-citation",
         });
       }
+      SourcesAPI.getTopicQuality(topicId).then(setSourceQuality).catch(() => undefined);
       setNotebookRefreshTick((tick) => tick + 1);
     } catch {
       toast.error("Kaynaklı cevap üretilemedi.");
@@ -389,7 +453,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         sourceViewerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }, 0);
     } catch {
-      toast.error("Kaynak sayfası açılamadı.");
+      toast.error(options?.action?.includes("citation")
+        ? "Bu citation kaynak sayfasına bağlanamadı."
+        : "Kaynak sayfası açılamadı.");
     } finally {
       setSourcePageLoading(false);
     }
@@ -473,6 +539,20 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     recordWikiAction("citation-clicked", `${kind}:${ref}`, { citationKind: kind, ref });
   };
 
+  const handleCitationChipClick = async (citation: CitationDto) => {
+    const citationId = citation.citationId ?? citation.label ?? "citation";
+    if (citation.sourceType === "document" && citation.sourceId && citation.pageNumber) {
+      await openSourcePage(citation.sourceId, citation.pageNumber, { action: "wiki-v2-citation-clicked" });
+      return;
+    }
+
+    recordWikiAction("citation-clicked", citationId, {
+      sourceType: citation.sourceType,
+      sourceId: citation.sourceId,
+      pageNumber: citation.pageNumber,
+    });
+  };
+
   // Önerilen soruyu Copilot'a doldur
   const handleSuggestedQuestion = (question: string) => {
     recordWikiAction("recommendation-to-copilot", question);
@@ -524,7 +604,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
           "Content-Type": "application/json",
           Authorization: `Bearer ${storage.getToken()}`,
         },
-        body: JSON.stringify({ question: userQ }),
+        body: JSON.stringify({
+          question: userQ,
+          mode,
+          sourceId: activeSource?.id,
+          activePageId: activePage?.id,
+        }),
       });
 
       if (!response.ok) throw new Error("Ajan yanıt veremedi.");
@@ -545,8 +630,27 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
             if (!str || str === "[DONE]") continue;
             try {
               const json = JSON.parse(str);
-              if (json.content) {
+              if (json.type === "token" && json.content) {
                 aiContent += json.content;
+              } else if (!json.type && json.content) {
+                aiContent += json.content;
+              } else if (json.type === "citation" && Array.isArray(json.citations)) {
+                patchLastAssistantMessage({ citations: json.citations });
+                continue;
+              } else if (json.type === "artifact_ready" && json.artifactId) {
+                void TutorAPI.getArtifact(json.artifactId)
+                  .then((artifact) => {
+                    addArtifactToLastAssistant(artifact);
+                    return TutorAPI.markArtifactRendered(artifact.id);
+                  })
+                  .catch(() => {});
+                continue;
+              } else if (json.type === "metadata" && json.metadata) {
+                patchLastAssistantMessage({ metadata: json.metadata });
+                continue;
+              } else if (json.type === "final") {
+                patchLastAssistantMessage({ groundingStatus: json.groundingStatus ?? null });
+                continue;
               } else {
                 aiContent += str;
               }
@@ -889,6 +993,32 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         </div>
                       </div>
                     )}
+                    {sourceQuality && (
+                      <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Kaynak Sağlığı</div>
+                            <p className="mt-1 text-[11px] text-[#344054]">
+                              Retrieval {sourceQualityLabel(sourceQuality.retrievalHealthStatus)} · citation {sourceQualityLabel(sourceQuality.citationCoverageStatus)}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#344054]">
+                            %{Math.round((sourceQuality.citationCoverage ?? 0) * 100)} destek
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-lg bg-white/56 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                            {sourceQuality.retrievalRunCount} arama izi
+                          </div>
+                          <div className="rounded-lg bg-white/56 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                            {sourceQuality.emptyRunCount} boş sonuç
+                          </div>
+                          <div className="rounded-lg bg-white/56 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                            {sourceQuality.unsupportedCitationCount + sourceQuality.citationMissingCount} citation sorunu
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {activeSource && (
                       <div className="pt-3 border-t border-[#526d82]/15 space-y-3">
                         <div className="flex items-center justify-between gap-2 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/58 px-3 py-2">
@@ -931,6 +1061,21 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                               onCitationClick={handleCitationClick}
                               className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-p:text-[#344054]"
                             />
+                            {sourceAnswerMetadata && (
+                              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#526d82]/12 bg-white/60 px-3 py-2 text-[11px] text-[#667085]">
+                                <span className="font-bold text-[#344054]">Kaynak durumu:</span>
+                                <span>{sourceQualityLabel(sourceAnswerMetadata.sourceQualityStatus ?? sourceAnswerMetadata.groundingStatus ?? sourceAnswerMetadata.groundingMode)}</span>
+                                {sourceAnswerMetadata.ragQualityStatus && (
+                                  <span>RAG {sourceQualityLabel(sourceAnswerMetadata.ragQualityStatus)}</span>
+                                )}
+                                {(sourceAnswerMetadata.unsupportedCitationCount || sourceAnswerMetadata.citationMissingCount) ? (
+                                  <span>{(sourceAnswerMetadata.unsupportedCitationCount ?? 0) + (sourceAnswerMetadata.citationMissingCount ?? 0)} citation sorunu</span>
+                                ) : null}
+                                {sourceAnswerMetadata.providerWarnings?.length ? (
+                                  <span>{sourceAnswerMetadata.providerWarnings.map(sourceQualityLabel).join(", ")}</span>
+                                ) : null}
+                              </div>
+                            )}
                             {sourceCitations.length > 0 && (
                               <div className="rounded-xl border border-amber-500/18 bg-[#fff8ee]/70 p-3">
                                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -1482,6 +1627,48 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       onCitationClick={handleCitationClick}
                       className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-p:leading-relaxed prose-headings:text-sm prose-headings:mb-1.5 prose-headings:mt-3 prose-li:my-1 prose-code:text-[#47725d] prose-code:text-[13px] prose-a:text-[#47725d]"
                     />
+                    {msg.role === "assistant" && (msg.citations?.length ?? 0) > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#526d82]/10 pt-2">
+                        {msg.citations?.slice(0, 8).map((citation, idx) => (
+                          <button
+                            key={`${citation.citationId ?? citation.label ?? idx}-${idx}`}
+                            type="button"
+                            onClick={() => void handleCitationChipClick(citation)}
+                            className="rounded-full border border-[#526d82]/16 bg-white/70 px-2 py-1 text-[10px] font-semibold text-[#526d82] hover:border-[#2d5870]/30 hover:text-[#2d5870]"
+                            title={citation.label ?? citation.citationId ?? undefined}
+                          >
+                            {citation.label ?? citation.citationId ?? "Kaynak"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {msg.role === "assistant" && (msg.artifacts?.length ?? 0) > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {msg.artifacts?.map((artifact) => (
+                          <div key={artifact.id} className="rounded-xl border border-[#526d82]/14 bg-white/65 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-[#172033]">{artifact.title || "Kaynak kartı"}</span>
+                              <span className="rounded-full bg-[#eef1f3] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                                {artifact.artifactType}
+                              </span>
+                            </div>
+                            <RichMarkdown
+                              content={artifact.content}
+                              onSourceClick={handleSourceClick}
+                              onCitationClick={handleCitationClick}
+                              className="prose prose-sm max-w-none prose-p:my-1 prose-li:my-1 prose-code:text-[#47725d]"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {msg.role === "assistant" && msg.metadata?.fallbackReason && (
+                      <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                        {msg.metadata.fallbackReason === "source_retrieval_empty"
+                          ? "Bu cevap için kaynaklarda net dayanak bulunamadı."
+                          : "Cevap güvenli kaynak modunda sınırlandı."}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

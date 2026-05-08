@@ -199,13 +199,12 @@ public sealed class OrkaV29QualityRealityGateTests
     }
 
     [Theory]
-    [InlineData("Java programming algorithms and data structures", "Java", "C#", "Visual Studio")]
-    [InlineData("SQL index and query optimization", "SQL", "C#", "Visual Studio")]
-    [InlineData("KPSS paragraf sorularinda hizlanma", "KPSS", "Visual Studio", "C#")]
-    [InlineData("C# async await hata ayiklama", "C#", "Java programming", "KPSS")]
-    public void DiagnosticQuizFallback_IsDomainSpecificAndDoesNotLeakObviousAnswers(
+    [InlineData("Java programming algorithms and data structures", "C#", "Visual Studio")]
+    [InlineData("SQL index and query optimization", "C#", "Visual Studio")]
+    [InlineData("KPSS paragraf sorularinda hizlanma", "Visual Studio", "C#")]
+    [InlineData("C# async await hata ayiklama", "Java programming", "KPSS")]
+    public void DiagnosticQuizFallback_UsesGenericAssessmentMetadataAndDoesNotLeakObviousAnswers(
         string topic,
-        string required,
         string forbiddenA,
         string forbiddenB)
     {
@@ -214,7 +213,10 @@ public sealed class OrkaV29QualityRealityGateTests
 
         Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
         Assert.InRange(report.QuestionCount, 15, 25);
-        Assert.Contains(required, quiz, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", quiz, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("conceptKey", quiz, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("learningOutcomeIds", quiz, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("scoringRule", quiz, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(forbiddenA, quiz, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(forbiddenB, quiz, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Dogru yaklasim", quiz, StringComparison.OrdinalIgnoreCase);
@@ -284,8 +286,12 @@ public sealed class OrkaV29QualityRealityGateTests
 
         Assert.Contains("MinimumProgrammingTotalLessons = 24", source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("MinimumProgrammingModules = 6", source, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Orka IDE/sandbox uygun pratiklerde destekleyici", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orka IDE/sandbox yalnizca uygun pratik", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("BuildConceptGraphFallbackModules", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("onkosul -> ana kavram", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("programming_plan_missing_orka_ide", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("BuildDomainFallbackModules", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PlanDomain.", source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ApplyDiagnosticTraceability", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Take(3).Select(module", source, StringComparison.OrdinalIgnoreCase);
     }

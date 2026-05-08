@@ -8,17 +8,17 @@ using Orka.Core.Interfaces;
 namespace Orka.Infrastructure.Services;
 
 /// <summary>
-/// AIAgentFactory â€” Orka'nÄ±n ajan yÃ¶nlendirme ve hata toleransÄ± merkezi.
+/// AIAgentFactory — Orka'nın ajan yönlendirme ve hata toleransı merkezi.
 ///
-/// KonfigÃ¼rasyon:
-///   AI:AgentRouting:{Role}:Provider  â†’ "GitHubModels" | "Groq" | "Gemini" | "OpenRouter" | "Cerebras" | "Mistral"
-///   AI:AgentRouting:{Role}:Model     â†’ role-spesifik model adÄ±
+/// Konfigürasyon:
+///   AI:AgentRouting:{Role}:Provider  → "GitHubModels" | "Groq" | "Gemini" | "OpenRouter" | "Cerebras" | "Mistral"
+///   AI:AgentRouting:{Role}:Model     → role-spesifik model adı
 ///
-/// Geriye uyumluluk: AgentRouting tanÄ±mÄ± yoksa eski "AI:GitHubModels:Agents:{Role}:Model" yolu kullanÄ±lÄ±r.
+/// Geriye uyumluluk: AgentRouting tanımı yoksa eski "AI:GitHubModels:Agents:{Role}:Model" yolu kullanılır.
 ///
-/// Failover Zinciri (sÄ±ralÄ±, provider'a gÃ¶re dinamik):
-///   Non-stream: Primary â†’ Groq â†’ Mistral
-///   Stream:     Primary â†’ Gemini â†’ Mistral
+/// Failover Zinciri (sıralı, provider'a göre dinamik):
+///   Non-stream: Primary → Groq → Mistral
+///   Stream:     Primary → Gemini → Mistral
 /// </summary>
 public class AIAgentFactory : IAIAgentFactory
 {
@@ -94,13 +94,13 @@ public class AIAgentFactory : IAIAgentFactory
         var roleName = role.ToString();
         var sw       = Stopwatch.StartNew();
 
-        // â”€â”€ 1. PRIMARY (rol iÃ§in belirlenmiÅŸ provider) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 1. PRIMARY (rol için belirlenmiş provider) ──────────────────────
         using (var cts1 = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
             cts1.CancelAfter(AgentTimeout);
             try
             {
-                _logger.LogDebug("[AIAgentFactory] {Role} â†’ {Provider} ({Model})", role, route.Provider, route.Model);
+                _logger.LogDebug("[AIAgentFactory] {Role} → {Provider} ({Model})", role, route.Provider, route.Model);
                 EnsureProviderConfigured(route.Provider);
                 var result = await CallPrimaryProviderAsync(route, systemPrompt, userMessage, cts1.Token);
                 sw.Stop();
@@ -115,13 +115,13 @@ public class AIAgentFactory : IAIAgentFactory
             }
             catch (Exception ex) when (IsTransient(ex) || cts1.IsCancellationRequested)
             {
-                _logger.LogWarning("[AIAgentFactory] {Role} {Provider} baÅŸarÄ±sÄ±z ({Msg}), Groq fallback.", role, route.Provider, ex.Message);
+                _logger.LogWarning("[AIAgentFactory] {Role} {Provider} başarısız ({Msg}), Groq fallback.", role, route.Provider, ex.Message);
                 RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, route.Provider);
                 sw.Restart();
             }
         }
 
-        // â”€â”€ 2. GROQ FALLBACK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 2. GROQ FALLBACK ────────────────────────────────────────────────
         if (!string.Equals(route.Provider, "Groq", StringComparison.OrdinalIgnoreCase))
         {
             using var cts2 = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -136,13 +136,13 @@ public class AIAgentFactory : IAIAgentFactory
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("[AIAgentFactory] {Role} Groq baÅŸarÄ±sÄ±z ({Msg}), Mistral fallback.", role, ex.Message);
+                _logger.LogWarning("[AIAgentFactory] {Role} Groq başarısız ({Msg}), Mistral fallback.", role, ex.Message);
                 RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Groq");
                 sw.Restart();
             }
         }
 
-        // â”€â”€ 3. MISTRAL FALLBACK (son seviye) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 3. MISTRAL FALLBACK (son seviye) ────────────────────────────────
         using var cts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts3.CancelAfter(AgentTimeout);
         try
@@ -156,18 +156,18 @@ public class AIAgentFactory : IAIAgentFactory
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogError(ex, "[AIAgentFactory] {Role} Mistral de baÅŸarÄ±sÄ±z. TÃ¼m provider'lar tÃ¼kendi.", role);
+            _logger.LogError(ex, "[AIAgentFactory] {Role} Mistral de başarısız. Tüm provider'lar tükendi.", role);
             RecordMetricSafe(roleName, sw.ElapsedMilliseconds, false, "Mistral");
             throw;
         }
     }
 
     /// <inheritdoc/>
-    /// C# kÄ±sÄ±tÄ±: yield return, catch yan tÃ¼mcesi iÃ§eren try bloÄŸunda kullanamaz.
-    /// Bu nedenle "ilk token probe" pattern kullanÄ±lÄ±r:
-    ///   - Ä°lk token TRY/CATCH iÃ§inde alÄ±nÄ±r (yield yok) ve TTFT Ã¶lÃ§Ã¼lÃ¼r
-    ///   - BaÅŸarÄ±lÄ±ysa, geri kalan stream TRY dÄ±ÅŸÄ±nda yield edilir
-    ///   - BaÅŸarÄ±sÄ±zsa fallback provider'a geÃ§ilir
+    /// C# kısıtı: yield return, catch yan tümcesi içeren try bloğunda kullanamaz.
+    /// Bu nedenle "ilk token probe" pattern kullanılır:
+    ///   - İlk token TRY/CATCH içinde alınır (yield yok) ve TTFT ölçülür
+    ///   - Başarılıysa, geri kalan stream TRY dışında yield edilir
+    ///   - Başarısızsa fallback provider'a geçilir
     public async IAsyncEnumerable<string> StreamChatAsync(
         AgentRole role,
         string systemPrompt,
@@ -177,7 +177,7 @@ public class AIAgentFactory : IAIAgentFactory
         var route    = _routes[role];
         var roleName = role.ToString();
 
-        // â”€â”€ 1. PRIMARY stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 1. PRIMARY stream ────────────────────────────────────────────────
         IAsyncEnumerator<string>? primaryEnum = null;
         string? firstChunk = null;
         bool primaryOk = false;
@@ -198,7 +198,7 @@ public class AIAgentFactory : IAIAgentFactory
             catch (Exception ex)
             {
                 swPrimary.Stop();
-                _logger.LogWarning("[AIAgentFactory] {Role} {Provider} stream baÅŸarÄ±sÄ±z: {Msg}", role, route.Provider, ex.Message);
+                _logger.LogWarning("[AIAgentFactory] {Role} {Provider} stream başarısız: {Msg}", role, route.Provider, ex.Message);
                 RecordMetricSafe(roleName, swPrimary.ElapsedMilliseconds, false, route.Provider);
                 primaryOk = false;
             }
@@ -217,7 +217,7 @@ public class AIAgentFactory : IAIAgentFactory
 
         _logger.LogInformation("[AIAgentFactory] {Role} Gemini stream fallback.", role);
 
-        // â”€â”€ 2. GEMINI FALLBACK stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 2. GEMINI FALLBACK stream ────────────────────────────────────────
         IAsyncEnumerator<string>? geminiEnum = null;
         string? geminiFirst = null;
         bool geminiOk = false;
@@ -238,7 +238,7 @@ public class AIAgentFactory : IAIAgentFactory
             catch (Exception ex)
             {
                 swGemini.Stop();
-                _logger.LogWarning("[AIAgentFactory] {Role} Gemini stream baÅŸarÄ±sÄ±z: {Msg}", role, ex.Message);
+                _logger.LogWarning("[AIAgentFactory] {Role} Gemini stream başarısız: {Msg}", role, ex.Message);
                 RecordMetricSafe(roleName, swGemini.ElapsedMilliseconds, false, "Gemini");
                 geminiOk = false;
             }
@@ -257,7 +257,7 @@ public class AIAgentFactory : IAIAgentFactory
 
         _logger.LogInformation("[AIAgentFactory] {Role} Mistral stream fallback (son seviye).", role);
 
-        // â”€â”€ 3. MISTRAL FALLBACK stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 3. MISTRAL FALLBACK stream ───────────────────────────────────────
         var swMistral = Stopwatch.StartNew();
         bool mistralGotFirst = false;
         using var probeCts3 = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -283,11 +283,11 @@ public class AIAgentFactory : IAIAgentFactory
         CancellationToken ct = default)
     {
         var history     = string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}"));
-        var userMessage = $"[Sohbet GeÃ§miÅŸi]\n{history}";
+        var userMessage = $"[Sohbet Geçmişi]\n{history}";
         return await CompleteChatAsync(role, systemPrompt, userMessage, ct);
     }
 
-    // â”€â”€ Provider Ã§aÄŸrÄ± dispatch'i â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Provider çağrı dispatch'i ────────────────────────────────────────────
 
     private Task<string> CallPrimaryProviderAsync(
         RouteConfig route, string systemPrompt, string userMessage, CancellationToken ct)
@@ -346,11 +346,11 @@ public class AIAgentFactory : IAIAgentFactory
         }
     }
 
-    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Redis metric kaydÄ±nÄ± gÃ¼venli ÅŸekilde fire-and-forget yapar.
-    /// Hata durumunda log'lar, stream performansÄ±nÄ± etkilemez.
+    /// Redis metric kaydını güvenli şekilde fire-and-forget yapar.
+    /// Hata durumunda log'lar, stream performansını etkilemez.
     /// </summary>
     private void RecordMetricSafe(string roleName, long latencyMs, bool isSuccess, string provider)
     {

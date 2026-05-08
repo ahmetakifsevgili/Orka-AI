@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Orka.Core.Constants;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using System.Security.Claims;
@@ -27,6 +28,145 @@ public class DashboardController : ControllerBase
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    private static DashboardSourceHealthDto BuildSourceHealth(Orka.Core.Entities.SourceQualityReport? report)
+    {
+        if (report is null)
+        {
+            return new DashboardSourceHealthDto
+            {
+                Status = "unknown",
+                UserSafeLabel = "Kaynak yok",
+                UserSafeDetail = "Kaynak eklenirse Wiki ve Tutor cevapları daha güvenli olur."
+            };
+        }
+
+        var status = report.QualityStatus;
+        var label = status switch
+        {
+            "healthy" => "Kaynaklar destekli",
+            "degraded" => "Kaynaklar zayıf",
+            "source_retrieval_empty" => "Kaynakta cevap yok",
+            "citation_missing" => "Citation eksik",
+            "citation_unsupported" => "Citation desteklenmiyor",
+            _ when report.UnsupportedCitationCount > 0 => "Citation desteklenmiyor",
+            _ when report.CitationMissingCount > 0 => "Citation eksik",
+            _ => "Kaynak durumu izleniyor"
+        };
+
+        var detail = status switch
+        {
+            "healthy" => "Cevaplar kaynak parçalarıyla eşleşiyor.",
+            "degraded" => "Bazı cevaplar için kaynak kanıtı zayıf; dikkatli ilerle.",
+            "source_retrieval_empty" => "Soru için kaynaklarda net parça bulunamadı.",
+            "citation_missing" => "Bazı kaynaklı iddialarda citation yok.",
+            "citation_unsupported" => "Bazı citation etiketleri bulunan kaynak parçasıyla eşleşmiyor.",
+            _ when report.UnsupportedCitationCount > 0 => "Bazı citation etiketleri bulunan kaynak parçasıyla eşleşmiyor.",
+            _ when report.CitationMissingCount > 0 => "Bazı kaynaklı iddialarda citation yok.",
+            _ => "Kaynak kalitesi ölçülüyor."
+        };
+
+        return new DashboardSourceHealthDto
+        {
+            Status = status,
+            UserSafeLabel = label,
+            UserSafeDetail = detail,
+            CitationCoverage = report.CitationCoverage,
+            UnsupportedCitationCount = report.UnsupportedCitationCount
+        };
+    }
+
+    [HttpGet("today")]
+    public async Task<ActionResult<DashboardTodayDto>> GetToday(CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var now = DateTime.UtcNow;
+
+        var activeTopic = await _dbContext.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId && !t.IsArchived && t.ParentTopicId == null)
+            .OrderByDescending(t => t.LastAccessedAt)
+            .ThenByDescending(t => t.CreatedAt)
+            .Select(t => new DashboardActivePlanDto
+            {
+                TopicId = t.Id,
+                Title = t.Title,
+                ProgressPercentage = t.ProgressPercentage
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var activeTopicId = activeTopic?.TopicId;
+
+        var weakConcepts = await _dbContext.KnowledgeTracingStates
+            .AsNoTracking()
+            .Where(k => k.UserId == userId && (!activeTopicId.HasValue || k.TopicId == activeTopicId.Value))
+            .OrderBy(k => k.MasteryProbability)
+            .ThenBy(k => k.Confidence)
+            .Take(5)
+            .Select(k => new DashboardWeakConceptDto
+            {
+                ConceptKey = k.ConceptKey,
+                Label = string.IsNullOrWhiteSpace(k.Label) ? k.ConceptKey : k.Label,
+                MasteryProbability = k.MasteryProbability,
+                Confidence = k.Confidence,
+                TopicId = k.TopicId,
+                UserSafeStatus = k.Confidence < 0.60m ? "Kanıt düşük" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "İzleniyor"
+            })
+            .ToListAsync(ct);
+
+        var dueReviews = await _dbContext.ReviewItems
+            .AsNoTracking()
+            .CountAsync(r => r.UserId == userId && r.Status == "active" && r.DueAt <= now, ct);
+
+        var latestSourceQuality = await _dbContext.SourceQualityReports
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && (!activeTopicId.HasValue || r.TopicId == activeTopicId.Value))
+            .OrderByDescending(r => r.GeneratedAt)
+            .FirstOrDefaultAsync(ct);
+
+        var sourceHealth = BuildSourceHealth(latestSourceQuality);
+        var hasRealData = activeTopic is not null || weakConcepts.Count > 0 || dueReviews > 0 || latestSourceQuality is not null;
+        var entry = dueReviews > 0
+            ? new DashboardEntryPointDto { View = "learning", Label = "Tekrar", Reason = "Bugün zamanı gelen tekrarların var." }
+            : weakConcepts.Count > 0
+                ? new DashboardEntryPointDto { View = "chat", Label = "Öğren", Reason = "Zayıf kavramı Tutor ile toparla." }
+                : sourceHealth.Status is "source_retrieval_empty" or "unknown"
+                    ? new DashboardEntryPointDto { View = "sources", Label = "Kaynaklar", Reason = "Kaynak eklemek cevap kalitesini artırır." }
+                    : new DashboardEntryPointDto { View = "chat", Label = "Öğren", Reason = "Tutor ile sıradaki adıma geç." };
+
+        var focusTitle = weakConcepts.FirstOrDefault()?.Label
+            ?? activeTopic?.Title
+            ?? "Bugün";
+
+        var focusReason = weakConcepts.Count > 0
+            ? "Bu kavramda öğrenme kanıtı düşük; kısa bir açıklama ve mikro pratik iyi olur."
+            : dueReviews > 0
+                ? "Tekrar zamanı gelen kartlar var; önce onları kapatmak hafızayı güçlendirir."
+                : activeTopic is not null
+                    ? $"{activeTopic.Title} üzerinde kaldığın yerden devam edebilirsin."
+                    : "Henüz yeterli öğrenme izi yok; bir konu açıp Tutor ile başlayabilirsin.";
+
+        return Ok(new DashboardTodayDto
+        {
+            DailyFocusTitle = focusTitle,
+            DailyFocusReason = focusReason,
+            DueReviewCount = dueReviews,
+            WeakConcepts = weakConcepts,
+            SourceHealth = sourceHealth,
+            ActivePlan = activeTopic,
+            RecommendedEntryPoint = entry,
+            HasRealLearningData = hasRealData,
+            NextAction = new DashboardNextActionDto
+            {
+                Label = entry.Label,
+                Reason = entry.Reason,
+                View = entry.View,
+                TopicId = activeTopic?.TopicId,
+                UserSafeStatus = hasRealData ? "Hazır" : "Veri bekleniyor"
+            },
+            GeneratedAt = DateTimeOffset.UtcNow
+        });
+    }
 
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()

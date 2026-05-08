@@ -16,16 +16,21 @@ public class QuizAttempt
     public bool IsCorrect { get; set; }
     public string Explanation { get; set; } = string.Empty;
     public string? SkillTag { get; set; }
+    public Guid? AssessmentItemId { get; set; }
     public string? TopicPath { get; set; }
     public string? Difficulty { get; set; }
     public string? CognitiveType { get; set; }
     public string? QuestionHash { get; set; }
     public string? SourceRefsJson { get; set; }
+    public int? ResponseTimeMs { get; set; }
+    public bool WasSkipped { get; set; }
+    public decimal? ConfidenceSelfRating { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties
     public QuizRun? QuizRun { get; set; }
+    public AssessmentItem? AssessmentItem { get; set; }
     public Session? Session { get; set; }
     public Topic? Topic { get; set; }
     public User User { get; set; } = null!;

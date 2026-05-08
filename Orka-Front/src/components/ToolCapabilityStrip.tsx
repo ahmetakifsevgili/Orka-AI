@@ -10,6 +10,10 @@ const DISPLAY_TOOLS = [
   "crypto",
   "wolfram_alpha",
   "youtube_pedagogy",
+  "knowledge_entity",
+  "geo_context",
+  "science_context",
+  "forum_signal",
   "mermaid",
   "visual_generation",
 ];
@@ -21,6 +25,10 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
   crypto: BarChart3,
   wolfram_alpha: Calculator,
   youtube_pedagogy: Film,
+  knowledge_entity: Globe2,
+  geo_context: Globe2,
+  science_context: Sparkles,
+  forum_signal: Globe2,
   mermaid: Sparkles,
   visual_generation: Sparkles,
 };
@@ -28,10 +36,14 @@ const ICONS: Record<string, ComponentType<{ className?: string }>> = {
 const LABELS: Record<string, string> = {
   ide_execution: "IDE",
   news: "News",
-  weather: "Weather",
+  weather: "Geo",
   crypto: "Crypto",
   wolfram_alpha: "Wolfram",
   youtube_pedagogy: "YouTube",
+  knowledge_entity: "Entity",
+  geo_context: "Geo data",
+  science_context: "Science",
+  forum_signal: "Forum",
   mermaid: "Mermaid",
   visual_generation: "Visual",
 };
@@ -41,6 +53,10 @@ function providerLabel(tool: ToolCapability) {
   if (tool.toolId === "news") return notes.includes("GDELT") ? "GDELT" : tool.requiresExternalProvider ? "provider" : "kaynak";
   if (tool.toolId === "weather") return notes.includes("Open-Meteo") ? "Open-Meteo" : "provider";
   if (tool.toolId === "crypto") return notes.includes("CoinGecko") ? "CoinGecko" : "market";
+  if (tool.toolId === "knowledge_entity") return "Wiki";
+  if (tool.toolId === "geo_context") return "Open-Meteo";
+  if (tool.toolId === "science_context") return "Public API";
+  if (tool.toolId === "forum_signal") return "Signal";
   if (tool.toolId === "wolfram_alpha") return "AppId";
   return tool.status;
 }

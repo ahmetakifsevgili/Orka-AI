@@ -1,9 +1,9 @@
 ﻿/*
- * ChatPanel â€” uygulamanÄ±n kalbi.
- * - POST /Chat/message ile mesaj gÃ¶nderir.
- * - activeTopic NULL olabilir: backend yeni topic otomatik oluÅŸturur.
- * - messageType "quiz" â†’ tryParseQuiz ile QuizData extract edilir.
- * - Her AI yanÄ±tÄ±ndan sonra onTopicsRefresh Ã§aÄŸrÄ±lÄ±r (sidebar senkronizasyonu).
+ * ChatPanel — uygulamanın kalbi.
+ * - POST /Chat/message ile mesaj gönderir.
+ * - activeTopic NULL olabilir: backend yeni topic otomatik oluşturur.
+ * - messageType "quiz" → tryParseQuiz ile QuizData extract edilir.
+ * - Her AI yanıtından sonra onTopicsRefresh çağrılır (sidebar senkronizasyonu).
  */
 
 import {
@@ -18,8 +18,8 @@ import { Send, Sparkles, BookOpen, Bell, Globe, CheckCircle2, Edit3, RotateCcw }
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
-import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview } from "@/lib/types";
-import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI } from "@/services/api";
+import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview, ChatResponseMetadata, TeachingArtifact } from "@/lib/types";
+import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI, TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
 import ChatMessageComponent from "./ChatMessage";
@@ -29,6 +29,31 @@ import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
+
+type TutorStreamEvent = {
+  type?: string;
+  data?: Record<string, unknown>;
+  message?: string;
+  content?: string;
+  metadata?: ChatResponseMetadata;
+};
+
+function parseTutorStreamEvent(raw: string): TutorStreamEvent | null {
+  const decoded = raw.replaceAll("[NEWLINE]", "\n").trim();
+  if (!decoded.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(decoded) as TutorStreamEvent;
+    return typeof parsed?.type === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function eventValue<T = unknown>(event: TutorStreamEvent, key: string): T | undefined {
+  const direct = (event as Record<string, unknown>)[key];
+  if (direct !== undefined) return direct as T;
+  return event.data?.[key] as T | undefined;
+}
 
 type PlanCompletion = {
   planGenerated: boolean;
@@ -48,17 +73,17 @@ interface ChatPanelProps {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   sessionLoading: boolean;
   onOpenWiki: (topicId: string) => void;
-  /** AI yanÄ±tÄ± geldikten sonra sidebar topic listesini yeniler. */
+  /** AI yanıtı geldikten sonra sidebar topic listesini yeniler. */
   onTopicsRefresh: () => void;
-  /** Backend yanÄ±tÄ± yeni bir topic oluÅŸturduysa (null topic modunda) Ã§aÄŸrÄ±lÄ±r. */
+  /** Backend yanıtı yeni bir topic oluşturduysa (null topic modunda) çağrılır. */
   onTopicAutoCreated?: (topicId: string) => void;
   currentSubtopic?: { title: string; index: number; total: number; progress: number } | null;
   defaultMode?: "plan" | "chat";
-  /** IDE'den gelen mesaj â€” mount sonrasÄ± otomatik gÃ¶nderilir ve sÄ±fÄ±rlanÄ±r. */
+  /** IDE'den gelen mesaj — mount sonrası otomatik gönderilir ve sıfırlanır. */
   pendingMessage?: string | null;
-  /** pendingMessage tÃ¼ketildikten sonra parent'i bilgilendirir */
+  /** pendingMessage tüketildikten sonra parent'i bilgilendirir */
   onPendingMessageConsumed?: () => void;
-  /** IDE sayfasÄ±nÄ±n otomatik veya manuel split view modunda aÃ§Ä±lmasÄ±nÄ± saÄŸlar; quiz sorusu opsiyonel iletilir */
+  /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar; quiz sorusu opsiyonel iletilir */
   onOpenIDE?: (question?: string) => void;
 }
 
@@ -89,7 +114,7 @@ export default function ChatPanel({
   const [pendingPlanIntent, setPendingPlanIntent] = useState<StudyIntentPreview | null>(null);
   const [pendingPlanRawRequest, setPendingPlanRawRequest] = useState("");
 
-  // Yeni topic modu aktifleÅŸtirildiÄŸinde reset at
+  // Yeni topic modu aktifleştirildiğinde reset at
   useEffect(() => {
     if (!activeTopic && messages.length === 0) {
       setIsPlanMode(defaultMode === "plan");
@@ -99,7 +124,7 @@ export default function ChatPanel({
   const [userInitial, setUserInitial] = useState<string>("U");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // IDE â†’ Chat mesaj tetikleyici iÃ§in sendMessage ref'i
+  // IDE → Chat mesaj tetikleyici için sendMessage ref'i
   const sendMessageRef = useRef<((content: string) => void) | null>(null);
 
   // Fetch user info
@@ -115,7 +140,7 @@ export default function ChatPanel({
     }).catch(() => {});
   }, []);
 
-  // â”€â”€ Thinking state rotator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Thinking state rotator ─────────────────────────────────────────────
   useEffect(() => {
     if (!isThinking) return;
     if (planFlowStage !== "idle") return;
@@ -131,7 +156,7 @@ export default function ChatPanel({
     return () => clearInterval(id);
   }, [isThinking, isPlanMode, planFlowStage]);
 
-  // â”€â”€ Auto-scroll (only if user is near bottom) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Auto-scroll (only if user is near bottom) ───────────────────────────
   const isNearBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
 
@@ -149,7 +174,7 @@ export default function ChatPanel({
   // Force scroll to bottom when messages first load (history) or new message added
   useEffect(() => {
     if (messages.length > 0 && isInitialLoadRef.current) {
-      // Initial load â€” force to bottom with a slight delay for DOM to render
+      // Initial load — force to bottom with a slight delay for DOM to render
       isInitialLoadRef.current = false;
       requestAnimationFrame(() => scrollToBottom(true));
       return;
@@ -290,6 +315,9 @@ export default function ChatPanel({
                 topicTitle: start.topicTitle,
                 status: start.status,
                 quizQuestionCount: start.quizQuestionCount,
+                conceptGraphQualityStatus: start.conceptGraphQualityStatus,
+                assessmentQualityStatus: start.assessmentQualityStatus,
+                qualityReportId: start.qualityReportId,
                 intentRequestId: start.intentRequestId,
                 approvedMainTopic: start.approvedMainTopic,
                 approvedFocusArea: start.approvedFocusArea,
@@ -390,6 +418,8 @@ export default function ChatPanel({
       setThinkingState(initStates[0]);
 
       let completedTopicId: string | null = null;
+      let streamMetadata: ChatResponseMetadata | null = null;
+      let streamArtifacts: TeachingArtifact[] = [];
 
       try {
         const response = await ChatAPI.streamMessage({
@@ -440,7 +470,7 @@ export default function ChatPanel({
                   return;
                 }
 
-                // [THINKING:... ] chunk'larÄ± â€” chat'e yazma, sadece thinking state gÃ¼ncelle
+                // [THINKING:... ] chunk'ları — chat'e yazma, sadece thinking state güncelle
                 if (data.startsWith("[THINKING:")) {
                   const thinkingText = data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, "");
                   setThinkingState(thinkingText);
@@ -448,10 +478,121 @@ export default function ChatPanel({
                   continue;
                 }
 
+                const tutorEvent = parseTutorStreamEvent(data);
+                if (tutorEvent) {
+                  const type = tutorEvent.type;
+                  if (type === "thinking") {
+                    const message = eventValue<string>(tutorEvent, "message") ?? "Tutor state hazirlaniyor";
+                    setThinkingState(message);
+                    setIsThinking(true);
+                    continue;
+                  }
+
+                  if (type === "tool_started" || type === "tool_finished") {
+                    const toolId = eventValue<string>(tutorEvent, "toolId") ?? "tool";
+                    const status = eventValue<string>(tutorEvent, "status") ?? (type === "tool_started" ? "basladi" : "hazir");
+                    const toolCallId = eventValue<string>(tutorEvent, "toolCallId");
+                    const success = eventValue<boolean>(tutorEvent, "success") ?? status === "ready";
+                    const provider = eventValue<string>(tutorEvent, "provider");
+                    const safeMessage = eventValue<string>(tutorEvent, "safeMessage");
+                    const previousMetadata: ChatResponseMetadata = streamMetadata ?? {};
+                    const previousStatuses = previousMetadata.toolStatuses ?? [];
+                    const statusId = toolCallId ?? `planned-${toolId}`;
+                    streamMetadata = {
+                      ...previousMetadata,
+                      toolStatuses: statusId
+                        ? [
+                            ...previousStatuses.filter(t => t.id !== statusId && !(toolCallId && t.id === `planned-${toolId}`)),
+                            { id: statusId, toolId, status, success, provider, safeMessage },
+                          ]
+                        : previousStatuses,
+                    };
+                    setThinkingState(`${toolId}: ${status}`);
+                    setMessages((prev) =>
+                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
+                    );
+                    continue;
+                  }
+
+                  if (type === "artifact_ready") {
+                    const artifactId = eventValue<string>(tutorEvent, "artifactId");
+                    const artifactType = eventValue<string>(tutorEvent, "artifactType") ?? "artifact";
+                    const previousMetadata: ChatResponseMetadata = streamMetadata ?? {};
+                    const previousArtifactIds = previousMetadata.artifactIds ?? [];
+                    streamMetadata = {
+                      ...previousMetadata,
+                      artifactIds: artifactId
+                        ? Array.from(new Set([...previousArtifactIds, artifactId]))
+                        : previousArtifactIds,
+                    };
+                    if (artifactId) {
+                      try {
+                        const artifact = await TutorAPI.getArtifact(artifactId);
+                        streamArtifacts = [
+                          ...streamArtifacts.filter(a => a.id !== artifact.id),
+                          artifact,
+                        ];
+                      } catch {
+                        streamMetadata = {
+                          ...streamMetadata,
+                          providerWarnings: Array.from(new Set([...(streamMetadata.providerWarnings ?? []), "artifact_fetch_failed"])),
+                        };
+                      }
+                    }
+                    setThinkingState(`${artifactType} hazirlandi`);
+                    setMessages((prev) =>
+                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
+                    );
+                    continue;
+                  }
+
+                  if (type === "metadata") {
+                    streamMetadata = (eventValue<ChatResponseMetadata>(tutorEvent, "metadata") ?? tutorEvent.metadata ?? streamMetadata) || null;
+                    setMessages((prev) =>
+                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
+                    );
+                    continue;
+                  }
+
+                  if (type === "final") {
+                    const tutorTurnStateId = eventValue<string>(tutorEvent, "tutorTurnStateId");
+                    const tutorActionTraceId = eventValue<string>(tutorEvent, "tutorActionTraceId");
+                    const artifactIds = eventValue<string[]>(tutorEvent, "artifactIds");
+                    streamMetadata = {
+                      ...(streamMetadata ?? {}),
+                      tutorTurnStateId: tutorTurnStateId ?? streamMetadata?.tutorTurnStateId,
+                      tutorActionTraceId: tutorActionTraceId ?? streamMetadata?.tutorActionTraceId,
+                      artifactIds: artifactIds ?? streamMetadata?.artifactIds,
+                    };
+                    if (artifactIds?.length) {
+                      const missing = artifactIds.filter(id => !streamArtifacts.some(a => a.id === id));
+                      for (const artifactId of missing) {
+                        try {
+                          const artifact = await TutorAPI.getArtifact(artifactId);
+                          streamArtifacts = [...streamArtifacts, artifact];
+                        } catch {
+                          // Artifact fetch is best-effort; metadata still keeps the id.
+                        }
+                      }
+                    }
+                    setMessages((prev) =>
+                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
+                    );
+                    continue;
+                  }
+
+                  if (type === "token") {
+                    const token = eventValue<string>(tutorEvent, "content") ?? tutorEvent.content ?? "";
+                    currentContent += token;
+                  } else {
+                    continue;
+                  }
+                } else {
                 // First append the decoded chunk to our content buffer
                 currentContent += data.replaceAll("[NEWLINE]", "\n");
+                }
 
-                // Konu tamamlanma sinyali â€” frontend'e wiki kÄ±sayol butonu gÃ¶stermek iÃ§in
+                // Konu tamamlanma sinyali — frontend'e wiki kısayol butonu göstermek için
                 const topicMatch = currentContent.match(/\[TOPIC_COMPLETE:([^\]]+)\]/i);
                 if (topicMatch) {
                   completedTopicId = topicMatch[1];
@@ -496,7 +637,7 @@ export default function ChatPanel({
         // Finalize: Check for Quiz/Rich content or Topic Completion
         const quizData = tryParseQuiz(currentContent);
         if (completedTopicId) {
-          // Konu tamamlandÄ±: AI mesajÄ±nÄ± bitir, ardÄ±ndan tamamlama kartÄ± ekle
+          // Konu tamamlandı: AI mesajını bitir, ardından tamamlama kartı ekle
           setMessages((prev) =>
             prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
           );
@@ -555,12 +696,12 @@ export default function ChatPanel({
     ]
   );
 
-  // sendMessage ref'i gÃ¼ncel tut â€” IDEâ†’Chat tetikleyici iÃ§in
+  // sendMessage ref'i güncel tut — IDE→Chat tetikleyici için
   useEffect(() => {
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // IDE'den gelen pending mesajÄ± otomatik gÃ¶nder
+  // IDE'den gelen pending mesajı otomatik gönder
   useEffect(() => {
     if (!pendingMessage || isThinking) return;
     const fn = sendMessageRef.current;
@@ -569,7 +710,7 @@ export default function ChatPanel({
     onPendingMessageConsumed?.();
   }, [pendingMessage]);
 
-  // â”€â”€ Korteks stream send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Korteks stream send ────────────────────────────────────────────────
   const sendKorteksMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -644,7 +785,7 @@ export default function ChatPanel({
     [isThinking, activeTopic, setMessages, onTopicsRefresh]
   );
 
-  // â”€â”€ Textarea send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Textarea send ──────────────────────────────────────────────────────
   const handleSend = useCallback(
     (text?: string) => {
       const content = (text ?? input).trim();
@@ -662,7 +803,7 @@ export default function ChatPanel({
     [input, isKorteksMode, isPlanMode, sendMessage, sendKorteksMessage, startStructuredPlanDiagnostic]
   );
 
-  // â”€â”€ Quiz answer callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Quiz answer callback ───────────────────────────────────────────────
   const handleQuizFlowComplete = useCallback(
     (completion: PlanCompletion) => {
       if (!completion.planGenerated) return;
@@ -706,7 +847,7 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
-  // â”€â”€ Session loading spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Session loading spinner ────────────────────────────────────────────
   if (sessionLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#f7f9fa] h-full">
@@ -725,7 +866,7 @@ export default function ChatPanel({
 
   return (
     <div className="flex-1 flex flex-col bg-[#f7f9fa] h-full overflow-hidden">
-      {/* Topic Header â€” topic varsa adÄ±nÄ±, yoksa AI assistant markasÄ±nÄ± gÃ¶ster */}
+      {/* Topic Header — topic varsa adını, yoksa AI assistant markasını göster */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#526d82]/10/50">
         <div className="flex items-center gap-2.5">
           {activeTopic ? (
@@ -773,7 +914,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* Aktif Konu GÃ¶stergesi (U1) */}
+      {/* Aktif Konu Göstergesi (U1) */}
       <AnimatePresence>
         {currentSubtopic && (
           <motion.div
@@ -786,7 +927,7 @@ export default function ChatPanel({
               <BookOpen className="w-4 h-4 text-emerald-500" />
               <div className="flex items-center gap-2 text-xs font-medium">
                 <span className="text-[#344054]">{activeTopic?.title}</span>
-                <span className="text-[#8ba8b5]">â¯</span>
+                <span className="text-[#8ba8b5]">❯</span>
                 <span className="text-[#172033]">{currentSubtopic.title}</span>
               </div>
 
@@ -860,7 +1001,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* Floating Input Frame â€” Claude/Gemini Style */}
+      {/* Floating Input Frame — Claude/Gemini Style */}
       <div className="flex-shrink-0 relative pointer-events-none">
         <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
           <motion.div
@@ -882,10 +1023,10 @@ export default function ChatPanel({
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isKorteksMode
-                    ? "Arastirmami istedigin konuyu yaz, web'de derinlemesine arastirayim..."
+                    ? "Araştırmamı istediğin konuyu yaz; web'de derinlemesine araştırayım..."
                     : isPlanMode
-                    ? "Bana bir konu ver; once niyeti netlestireyim, sonra Korteks arastirsin..."
-                    : "Bir sey sor veya mufredat olusturmak icin Plan Modu'nu ac..."
+                    ? "Bana bir konu ver; önce niyeti netleştireyim, sonra Korteks araştırsın..."
+                    : "Bir şey sor veya müfredat oluşturmak için Plan Modu'nu aç..."
                 }
                 rows={1}
                 disabled={isThinking}
@@ -902,7 +1043,7 @@ export default function ChatPanel({
                         ? "bg-[#dcecf3] border-[#9ec7d9]/60 text-[#172033] shadow-sm"
                         : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
                     `}
-                    title="Plan Modu - once niyet analizi, sonra Korteks arastirmasi"
+                    title="Plan Modu - önce niyet analizi, sonra Korteks araştırması"
                   >
                     <Sparkles className={`w-3.5 h-3.5 ${isPlanMode ? "text-emerald-400" : ""}`} />
                     <span>Plan Modu</span>
@@ -916,7 +1057,7 @@ export default function ChatPanel({
                         ? "bg-emerald-900/30 border-emerald-700/50 text-emerald-400 shadow-sm"
                         : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
                     `}
-                    title="Korteks - web'de derin arastirma yapar ve wiki'ye kaydeder"
+                    title="Korteks - web'de derin araştırma yapar ve wiki'ye kaydeder"
                   >
                     <Globe className={`w-3.5 h-3.5 ${isKorteksMode ? "text-emerald-400" : ""}`} />
                     <span>Korteks</span>
@@ -928,14 +1069,14 @@ export default function ChatPanel({
                       animate={{ opacity: 1, x: 0 }}
                       className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode ? "text-emerald-600" : "text-[#344054]"}`}
                     >
-	                      {isKorteksMode ? "Korteks aktif" : "Plan modu aktif - quiz chat'e karismaz"}
+	                      {isKorteksMode ? "Korteks aktif" : "Plan modu aktif - quiz chat'e karışmaz"}
                     </motion.span>
                   )}
                 </div>
 
                 <div className="flex items-center gap-3">
                    <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block">
-                     {input.length > 0 ? "Shift+Enter yeni satir" : ""}
+                     {input.length > 0 ? "Shift+Enter yeni satır" : ""}
                    </span>
                    <button
                     onClick={() => handleSend()}
@@ -954,7 +1095,7 @@ export default function ChatPanel({
             </div>
           </motion.div>
           <p className="text-[9px] text-[#8ba8b5] mt-3 text-center tracking-wide uppercase opacity-50 font-medium">
-            Orka AI Â· SOLID Planning Engine v4.2 Â· Streaming Enabled
+            Orka AI · SOLID Planning Engine v4.2 · Streaming Enabled
           </p>
         </div>
       </div>
@@ -962,7 +1103,7 @@ export default function ChatPanel({
   );
 }
 
-// â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Sub-components ─────────────────────────────────────────────────────────
 
 function PlanIntentConfirmationCard({
   intent,
@@ -1120,7 +1261,7 @@ function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: s
                     : "border-[#526d82]/10 bg-[#f7f9fa]/72 text-[#667085]"
               }`}
             >
-              <div className="font-black">{done ? "âœ“ " : active ? "â€¢ " : ""}{step.label}</div>
+              <div className="font-black">{done ? "✓ " : active ? "• " : ""}{step.label}</div>
               <div className="mt-0.5 leading-4 opacity-80">{step.body}</div>
             </div>
           );
@@ -1196,5 +1337,4 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
     </div>
   );
 }
-
 

@@ -38,8 +38,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IAIAgentFactory _agentFactory;
     private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IChatMetadataService _chatMetadata;
-    private readonly ITutorToolRuntime _tutorToolRuntime;
     private readonly IRuntimeTelemetryService _runtimeTelemetry;
+    private readonly ITutorPolicyTraceService? _policyTrace;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -58,9 +58,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IAIAgentFactory agentFactory,
         IBackgroundTaskQueue backgroundQueue,
         IChatMetadataService chatMetadata,
-        ITutorToolRuntime tutorToolRuntime,
         IRuntimeTelemetryService runtimeTelemetry,
-        ILogger<AgentOrchestratorService> logger)
+        ILogger<AgentOrchestratorService> logger,
+        ITutorPolicyTraceService? policyTrace = null)
     {
         _db = db;
         _tutorAgent = tutorAgent;
@@ -77,8 +77,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _agentFactory = agentFactory;
         _backgroundQueue = backgroundQueue;
         _chatMetadata = chatMetadata;
-        _tutorToolRuntime = tutorToolRuntime;
         _runtimeTelemetry = runtimeTelemetry;
+        _policyTrace = policyTrace;
         _logger = logger;
     }
 
@@ -801,13 +801,6 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 MaxAttempts: 1,
                 Timeout: TimeSpan.FromSeconds(90)));
         }
-        var usedTools = await _tutorToolRuntime.DetectToolUsageAsync(
-            userId,
-            content,
-            session,
-            aiResponse,
-            CancellationToken.None);
-
         return new ChatMessageResponse
         {
             MessageId   = aiMsg.Id,
@@ -823,8 +816,150 @@ public class AgentOrchestratorService : IAgentOrchestrator
             WikiPageId  = activeWikiPageId,
             IsNewTopic  = isNewTopic,
             TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null,
-            Metadata    = _chatMetadata.Build(aiResponse, usedTools: usedTools)
+            Metadata    = await BuildTutorMetadataAsync(userId, session, aiResponse)
         };
+    }
+
+    private async Task<ChatResponseMetadata> BuildTutorMetadataAsync(
+        Guid userId,
+        Session session,
+        string aiResponse)
+    {
+        var metadata = _chatMetadata.Build(aiResponse);
+        if (_policyTrace != null)
+        {
+            var traces = await _policyTrace.GetRecentAsync(userId, session.TopicId, session.Id, 1);
+            var trace = traces.FirstOrDefault();
+            if (trace != null)
+            {
+                metadata.TutorPolicyTraceId = trace.Id;
+                metadata.ActiveConceptKey = trace.ActiveConceptKey;
+                metadata.NextPedagogicalMove = trace.SelectedPedagogicalMove;
+                metadata.GroundingStatus = trace.GroundingStatus;
+            }
+        }
+
+        var actionTrace = await _db.TutorActionTraces
+            .AsNoTracking()
+            .Where(t => t.UserId == userId && t.SessionId == session.Id)
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (actionTrace != null)
+        {
+            metadata.TutorActionTraceId = actionTrace.Id;
+            metadata.TeachingMode = actionTrace.TeachingMode;
+            metadata.StyleMode = actionTrace.StyleMode;
+            metadata.ActiveConceptKey = string.IsNullOrWhiteSpace(metadata.ActiveConceptKey)
+                ? actionTrace.ActiveConceptKey
+                : metadata.ActiveConceptKey;
+            metadata.NextCheckPrompt = actionTrace.NextCheckPrompt;
+        }
+
+        var turnState = await _db.TutorTurnStates
+            .AsNoTracking()
+            .Where(t => t.UserId == userId && t.SessionId == session.Id)
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (turnState != null)
+        {
+            metadata.TutorTurnStateId = turnState.Id;
+            metadata.TutorWorkingMemorySnapshotId = turnState.WorkingMemorySnapshotId;
+            metadata.StyleMode ??= turnState.StyleMode;
+            metadata.AffectiveState = turnState.AffectiveState;
+            metadata.CognitiveLoad = turnState.CognitiveLoad;
+            metadata.GroundingStatus ??= turnState.GroundingStatus;
+
+            try
+            {
+                var dto = System.Text.Json.JsonSerializer.Deserialize<TutorTurnStateDto>(turnState.StateJson);
+                metadata.MasteryProbability = dto?.MasteryProbability;
+                metadata.Confidence = dto?.Confidence;
+            }
+            catch
+            {
+                // Metadata enrichment must never block chat response.
+            }
+        }
+
+        if (actionTrace != null)
+        {
+            var toolCalls = await _db.TutorToolCalls
+                .AsNoTracking()
+                .Where(t => t.TutorActionTraceId == actionTrace.Id)
+                .OrderBy(t => t.CreatedAt)
+                .ToListAsync();
+            metadata.ToolCallIds = toolCalls.Select(t => t.Id).ToArray();
+            metadata.ToolStatuses = toolCalls
+                .Select(t => new Orka.Core.DTOs.Chat.ToolStatusDto(
+                    t.Id,
+                    t.ToolId,
+                    t.Status,
+                    t.Success,
+                    t.Provider,
+                    t.SafeMessage,
+                    t.ErrorCode,
+                    t.Confidence,
+                    t.SourceCount))
+                .ToArray();
+            metadata.UsedTools = toolCalls
+                .Where(t => t.Success && string.Equals(t.Status, "ready", StringComparison.OrdinalIgnoreCase))
+                .Select(t => new UsedToolDto(
+                    Name: t.ToolId,
+                    Status: t.Status,
+                    Evidence: t.Evidence,
+                    FallbackReason: t.FallbackReason,
+                    ToolId: t.ToolId,
+                    Success: t.Success,
+                    FallbackUsed: !string.IsNullOrWhiteSpace(t.FallbackReason),
+                    Provider: t.Provider,
+                    LatencyMs: t.LatencyMs,
+                    SourceConfidence: t.Confidence,
+                    ErrorCode: t.ErrorCode,
+                    SafeMessage: t.SafeMessage,
+                    Timestamp: t.CreatedAt))
+                .ToArray();
+
+            var artifacts = await _db.TeachingArtifacts
+                .AsNoTracking()
+                .Where(a => a.TutorActionTraceId == actionTrace.Id)
+                .OrderBy(a => a.CreatedAt)
+                .ToListAsync();
+            metadata.ArtifactIds = artifacts.Select(a => a.Id).ToList();
+            metadata.ArtifactSummaries = artifacts
+                .Select(a => new Orka.Core.DTOs.Chat.ArtifactSummaryDto(a.Id, a.ArtifactType, a.Title, a.Status, a.RenderFormat, a.Provider, a.ExternalUrl))
+                .ToArray();
+            metadata.EvidenceSummary = new Orka.Core.DTOs.Chat.EvidenceSummaryDto(
+                ReadyToolCount: toolCalls.Count(t => t.Success && t.Status == "ready"),
+                SourceCount: toolCalls.Where(t => t.Success).Sum(t => t.SourceCount ?? 0),
+                GroundingStatus: metadata.GroundingStatus ?? metadata.GroundingMode,
+                LearnerEvidenceStatus: metadata.Confidence.HasValue && metadata.Confidence.Value >= 0.60m ? "sufficient" : "evidence_insufficient");
+
+            metadata.PolicyViolationCount = await _db.TutorPolicyViolationsV2
+                .AsNoTracking()
+                .CountAsync(v => v.TutorActionTraceId == actionTrace.Id);
+
+            var pedagogy = await _db.TutorPedagogyEvaluationRuns
+                .AsNoTracking()
+                .Where(e => e.TutorActionTraceId == actionTrace.Id)
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (pedagogy != null)
+            {
+                metadata.TutorPedagogyEvaluationRunId = pedagogy.Id;
+                metadata.TutorPedagogyStatus = pedagogy.Status;
+                metadata.TutorPedagogyScore = pedagogy.OverallScore;
+                metadata.PedagogyWarnings = await _db.TutorPedagogyRubricScores
+                    .AsNoTracking()
+                    .Where(s => s.EvaluationRunId == pedagogy.Id && (s.IsCritical || s.Score < 0.60m))
+                    .OrderBy(s => s.RubricKey)
+                    .Select(s => s.Recommendation)
+                    .ToArrayAsync();
+            }
+        }
+
+        return metadata;
     }
 
     private async Task<(string Response, bool WikiUpdated)> HandleAwaitingChoiceStateAsync(Guid userId, string content, Session session)

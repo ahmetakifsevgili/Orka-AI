@@ -13,8 +13,9 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
-import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Link2 } from "lucide-react";
-import type { ChatMessage as ChatMessageType } from "@/lib/types";
+import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Link2, Image as ImageIcon } from "lucide-react";
+import type { ChatMessage as ChatMessageType, TeachingArtifact } from "@/lib/types";
+import { TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
 import OrcaLogo from "./OrcaLogo";
@@ -289,15 +290,119 @@ function sanitizeVisibleChatContent(content: string) {
     .replace(/\[PLAN_READY\]/gi, "")
     .replace(/\[IDE_OPEN\]/gi, "")
     .replace(/\[TOPIC_COMPLETE:[^\]]+\]/gi, "")
-    .replace(/\*\*Quiz Cevab(?:ı|Ä±)m:\*\*[\s\S]*$/i, "")
+    .replace(/\*\*Quiz Cevab(?:ı|\u00c4\u00b1)m:\*\*[\s\S]*$/i, "")
     .trim();
+}
+
+const TECHNICAL_LABELS: Record<string, string> = {
+  fallback: "güvenli mod",
+  degraded: "sınırlı veri",
+  degraded_fallback: "güvenli mod",
+  provider_missing: "araç hazır değil",
+  provider_disabled: "araç kapalı",
+  planned_optional: "gerektiğinde kullanılacak",
+  planned_user_visible: "önerildi",
+  needs_input: "bilgi gerekiyor",
+  blocked: "engellendi",
+  timeout: "zaman aşımı",
+  skipped: "atlanmış",
+  ready: "hazır",
+  success: "hazır",
+  source_grounded: "kaynaklı",
+  document_grounded: "belge kaynaklı",
+  source_grounded_answer: "kaynaklı cevap",
+  model_fallback: "genel açıklama",
+  real_world_evidence: "gerçek hayat kanıtı",
+  explain: "anlatım",
+  remediate: "eksik kapatma",
+  guided_practice: "rehberli pratik",
+  challenge: "zorlayıcı pratik",
+  review: "tekrar",
+  code_lab: "kod pratiği",
+  visualize: "görselleştirme",
+  summarize: "özet",
+  step_by_step: "adım adım",
+  example_first: "örnekle başla",
+  visual: "görsel",
+  verbal: "sözel",
+  socratic: "sokratik",
+};
+
+function formatTechnicalLabel(value?: string | null) {
+  if (!value) return "";
+  const normalized = value.toLowerCase().trim();
+  if (TECHNICAL_LABELS[normalized]) return TECHNICAL_LABELS[normalized];
+
+  const matched = Object.entries(TECHNICAL_LABELS).find(([key]) => normalized.includes(key));
+  if (matched) return matched[1];
+
+  return value.replace(/[_-]+/g, " ");
+}
+
+function TeachingArtifactRenderer({ artifacts }: { artifacts?: TeachingArtifact[] }) {
+  useEffect(() => {
+    if (!artifacts?.length) return;
+    artifacts.forEach((artifact) => {
+      if (artifact.renderedAt) return;
+      TutorAPI.markArtifactRendered(artifact.id).catch(() => {
+        // Best-effort telemetry only.
+      });
+    });
+  }, [artifacts]);
+
+  if (!artifacts?.length) return null;
+
+  return (
+    <div className="mt-3 space-y-2">
+      {artifacts.map((artifact) => (
+        <div
+          key={artifact.id}
+          className="overflow-hidden rounded-xl border border-[#9ec7d9]/35 bg-white/72 text-[#172033]"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#526d82]/10 px-3 py-2">
+            <div className="flex items-center gap-2 text-xs font-black">
+              <ImageIcon className="h-3.5 w-3.5 text-[#2d5870]" />
+              <span>{artifact.title || artifact.artifactType}</span>
+            </div>
+            <span className="rounded-full bg-[#eef1f3] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+              {artifact.artifactType}
+            </span>
+          </div>
+          <div className="px-3 py-3 text-sm leading-6">
+            {artifact.renderFormat === "mermaid" ? (
+              <MermaidBlock code={artifact.content.replace(/```mermaid|```/g, "").trim()} />
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  code({ className, children }) {
+                    const lang = /language-(\w+)/.exec(className || "")?.[1];
+                    if (lang === "mermaid") return <MermaidBlock code={String(children)} />;
+                    return <CodeBlock className={className}>{children}</CodeBlock>;
+                  },
+                }}
+              >
+                {artifact.content}
+              </ReactMarkdown>
+            )}
+            {artifact.renderError && (
+              <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                Gösterim güvenli moda geçti: {formatTechnicalLabel(artifact.renderError)}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"] }) {
   const tools = metadata?.usedTools ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode;
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
   if (!hasMeta) return null;
 
   return (
@@ -305,7 +410,44 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
       {metadata?.groundingMode && (
         <span className="inline-flex items-center gap-1 rounded-full border border-[#526d82]/12 bg-[#eef1f3]/78 px-2 py-1 text-[10px] font-bold text-[#667085]">
           <Link2 className="h-3 w-3" />
-          {metadata.groundingMode}
+          {formatTechnicalLabel(metadata.groundingMode)}
+        </span>
+      )}
+      {metadata?.teachingMode && (
+        <span
+          title={metadata.nextCheckPrompt ?? undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"
+        >
+          <BookOpen className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.teachingMode)}
+        </span>
+      )}
+      {metadata?.styleMode && (
+        <span
+          title={[metadata.affectiveState, metadata.cognitiveLoad].filter(Boolean).join(" · ") || undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-[#9ec7d9]/45 bg-[#dcecf3]/72 px-2 py-1 text-[10px] font-bold text-[#2d5870]"
+        >
+          <CheckCircle className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.styleMode)}
+        </span>
+      )}
+      {typeof metadata?.masteryProbability === "number" && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-[#526d82]/12 bg-white/75 px-2 py-1 text-[10px] font-bold text-[#667085]">
+          mastery %{Math.round(metadata.masteryProbability * 100)}
+        </span>
+      )}
+      {metadata?.tutorPedagogyStatus && (
+        <span
+          title={(metadata.pedagogyWarnings ?? []).map(formatTechnicalLabel).join(" · ") || undefined}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
+            metadata.tutorPedagogyStatus === "healthy"
+              ? "border-emerald-500/20 bg-emerald-50 text-emerald-700"
+              : "border-amber-500/25 bg-amber-50 text-amber-700"
+          }`}
+        >
+          <CheckCircle className="h-3 w-3" />
+          öğretim {formatTechnicalLabel(metadata.tutorPedagogyStatus)}
+          {typeof metadata.tutorPedagogyScore === "number" && <span>%{Math.round(metadata.tutorPedagogyScore * 100)}</span>}
         </span>
       )}
       {tools.slice(0, 6).map((tool, index) => (
@@ -331,11 +473,11 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
       )}
       {(metadata?.fallbackReason || warnings.length > 0) && (
         <span
-          title={[metadata?.fallbackReason, ...warnings].filter(Boolean).join(" · ")}
+          title={[metadata?.fallbackReason, ...warnings].filter(Boolean).map(formatTechnicalLabel).join(" · ")}
           className="inline-flex items-center gap-1 rounded-full border border-amber-500/25 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700"
         >
           <AlertTriangle className="h-3 w-3" />
-          fallback
+          {formatTechnicalLabel(metadata?.fallbackReason ?? warnings[0] ?? "fallback")}
         </span>
       )}
     </div>
@@ -346,9 +488,10 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
 
 function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"] }) {
   const tools = metadata?.usedTools ?? [];
+  const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode;
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus;
   if (!hasMeta) return null;
 
   const toolLabel = (toolId?: string | null, name?: string | null) => {
@@ -356,8 +499,14 @@ function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"]
     if (id.includes("ide") || id.includes("code")) return "IDE";
     if (id.includes("source")) return "Source/RAG";
     if (id.includes("wiki")) return "Wiki";
+    if (id.includes("knowledge_entity")) return "Knowledge";
+    if (id.includes("geo_context")) return "Geo evidence";
+    if (id.includes("socioeconomic")) return "World data";
+    if (id.includes("science_context")) return "Science";
+    if (id.includes("research_context")) return "Research";
+    if (id.includes("forum_signal")) return "Forum signal";
     if (id.includes("news")) return "News";
-    if (id.includes("weather")) return "Weather";
+  if (id.includes("weather")) return "Geography";
     if (id.includes("crypto") || id.includes("market")) return "Crypto";
     if (id.includes("wolfram")) return "Wolfram";
     if (id.includes("youtube")) return "YouTube pedagogy";
@@ -365,39 +514,63 @@ function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"]
     return toolId ?? name ?? "tool";
   };
 
-  const firstTool = tools[0];
+  const firstTool = tools[0] ?? toolStatuses.find(t => t.success) ?? toolStatuses[0];
   const mode = metadata?.groundingMode?.toLowerCase() ?? "";
   const groundingLabel = mode.includes("document") || mode.includes("source")
-    ? "Kaynaklarina dayandi"
+    ? "Kaynaklarına dayandı"
+    : toolStatuses.some((tool) => ["knowledge_entity", "geo_context", "socioeconomic_context", "science_context", "research_context", "forum_signal"].includes((tool.toolId ?? "").toLowerCase()))
+      ? "Gerçek hayat kanıt kartıyla desteklendi"
     : mode.includes("wiki")
-      ? "Wiki hafizasini kullandi"
+      ? "Wiki hafızasını kullandı"
       : mode.includes("youtube")
-        ? "YouTube'u pedagojik referans olarak kullandi"
+        ? "YouTube'u pedagojik referans olarak kullandı"
         : mode.includes("web") || mode.includes("news") || mode.includes("provider")
-          ? "Saglayici verisiyle desteklendi"
+          ? "Sağlayıcı verisiyle desteklendi"
           : mode.includes("code") || mode.includes("ide")
-            ? "Kod ciktisini baglam olarak kullandi"
-            : metadata?.groundingMode ?? "Genel aciklama";
+            ? "Kod çıktısını bağlam olarak kullandı"
+            : formatTechnicalLabel(metadata?.groundingMode) || "Genel açıklama";
 
-  const learningHint = tools.some((tool) => (tool.toolId ?? tool.name ?? "").toLowerCase().includes("ide"))
-    ? "Kod ciktisi cevap baglamina girdi. Kalici tekrar gerekiyorsa bunu review'a donusturebilirsin."
+  const learningHint = [...tools, ...toolStatuses].some((tool) => (tool.toolId ?? ("name" in tool ? tool.name : "") ?? "").toLowerCase().includes("ide"))
+    ? "Kod çıktısı cevap bağlamına girdi. Kalıcı tekrar gerekiyorsa bunu review'a dönüştürebilirsin."
+    : metadata?.teachingMode
+      ? `Tutor bu turda ${formatTechnicalLabel(metadata.teachingMode)} modunu seçti; stil ${formatTechnicalLabel(metadata.styleMode ?? "step_by_step")}, yük ${formatTechnicalLabel(metadata.cognitiveLoad ?? "normal")}.`
     : citations.length > 0
-      ? "Bu cevap kaynak isaretleriyle ayrildi; neye dayandigini sonradan kontrol edebilirsin."
+      ? "Bu cevap kaynak işaretleriyle ayrıldı; neye dayandığını sonradan kontrol edebilirsin."
       : metadata?.fallbackReason || warnings.length > 0
-        ? "Orka sonucu uydurmak yerine siniri/fallback durumunu ayrica gostermeyi tercih etti."
-        : "Bu arac ve baglam bilgisi, sonraki calisma adimini daha net secmene yardim eder.";
+        ? "Orka sonucu uydurmak yerine sınırı ve güvenli mod durumunu ayrıca göstermeyi tercih etti."
+        : "Bu araç ve bağlam bilgisi, sonraki çalışma adımını daha net seçmene yardım eder.";
 
   return (
     <div className="mt-2 rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/72 px-4 py-3 text-[#344054] shadow-sm">
       <div className="grid gap-2 text-xs leading-5 md:grid-cols-[1fr_1.1fr]">
         <p className="rounded-xl bg-white/48 px-3 py-2">
-          <span className="font-black text-[#172033]">Neye dayandi: </span>
-          {firstTool ? `${toolLabel(firstTool.toolId, firstTool.name)} baglami` : groundingLabel}.
+          <span className="font-black text-[#172033]">Neye dayandı: </span>
+          {firstTool ? `${toolLabel(firstTool.toolId, "name" in firstTool ? firstTool.name : firstTool.toolId)} bağlamı` : groundingLabel}.
         </p>
         <p className="rounded-xl bg-white/48 px-3 py-2">
-          <span className="font-black text-[#172033]">Ogrenme etkisi: </span>
+          <span className="font-black text-[#172033]">Öğrenme etkisi: </span>
           {learningHint}
         </p>
+        {metadata?.nextCheckPrompt && (
+          <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
+            <span className="font-black text-[#172033]">Sonraki kontrol: </span>
+            {metadata.nextCheckPrompt}
+          </p>
+        )}
+        {metadata?.tutorPedagogyStatus && (
+          <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
+            <span className="font-black text-[#172033]">Öğretim kalitesi: </span>
+            {metadata.tutorPedagogyStatus === "healthy"
+              ? "Tutor bu turda planlanan öğretim davranışına uydu."
+              : "Tutor cevabı izlemeye alındı; sonraki turda daha iyi ipucu, kaynak disiplini veya kontrol sorusu kullanacak."}
+          </p>
+        )}
+        {toolStatuses.length > 0 && (
+          <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
+            <span className="font-black text-[#172033]">Araç durumu: </span>
+            {toolStatuses.slice(0, 5).map((tool) => `${toolLabel(tool.toolId, tool.toolId)} ${formatTechnicalLabel(tool.status)}`).join(" · ")}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -590,6 +763,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                     </ReactMarkdown>
                   </div>
                 </div>
+                  <TeachingArtifactRenderer artifacts={message.artifacts} />
                   <ChatMetadataChips metadata={message.metadata} />
                   <ChatLearningTrace metadata={message.metadata} />
                 </>
@@ -650,6 +824,7 @@ export default memo(ChatMessageInner, (prev, next) => {
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
     prev.message.metadata === next.message.metadata &&
+    prev.message.artifacts === next.message.artifacts &&
     prev.message.isStreaming === next.message.isStreaming &&
     prev.message.type === next.message.type &&
     prev.topicId === next.topicId &&

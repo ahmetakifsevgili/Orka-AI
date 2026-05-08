@@ -54,6 +54,17 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IAIAgentFactory, SmokeAgentFactory>();
 
+            var embeddingDescriptors = services
+                .Where(d => d.ServiceType == typeof(IEmbeddingService))
+                .ToList();
+
+            foreach (var descriptor in embeddingDescriptors)
+            {
+                services.Remove(descriptor);
+            }
+
+            services.AddSingleton<IEmbeddingService, SmokeEmbeddingService>();
+
             var pistonDescriptors = services
                 .Where(d => d.ServiceType == typeof(IPistonService))
                 .ToList();
@@ -144,6 +155,44 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             ]);
     }
 
+    private sealed class SmokeEmbeddingService : IEmbeddingService
+    {
+        public Task<float[]> EmbedAsync(string text, string inputType = "search_query", CancellationToken ct = default) =>
+            Task.FromResult(VectorFor(text));
+
+        public Task<float[][]> EmbedBatchAsync(IEnumerable<string> texts, string inputType = "search_document", CancellationToken ct = default) =>
+            Task.FromResult(texts.Select(VectorFor).ToArray());
+
+        public float CosineSimilarity(float[] a, float[] b)
+        {
+            var length = Math.Min(a.Length, b.Length);
+            if (length == 0) return 0;
+            var dot = 0f;
+            var normA = 0f;
+            var normB = 0f;
+            for (var i = 0; i < length; i++)
+            {
+                dot += a[i] * b[i];
+                normA += a[i] * a[i];
+                normB += b[i] * b[i];
+            }
+
+            return normA <= 0 || normB <= 0 ? 0 : dot / (float)(Math.Sqrt(normA) * Math.Sqrt(normB));
+        }
+
+        private static float[] VectorFor(string text)
+        {
+            var value = Math.Abs((text ?? string.Empty).GetHashCode());
+            return
+            [
+                1f,
+                (value % 17) / 17f,
+                (value % 31) / 31f,
+                (value % 47) / 47f
+            ];
+        }
+    }
+
     private sealed class SmokeEdgeTtsService : IEdgeTtsService
     {
         public Task<byte[]> SynthesizeDialogueAsync(string script, CancellationToken ct = default) =>
@@ -197,6 +246,13 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             _json[key] = payload;
             return Task.CompletedTask;
         }
+
+        public Task AddStreamEventAsync(string key, IReadOnlyDictionary<string, string> values, TimeSpan? ttl = null) => Task.CompletedTask;
+        public Task<IReadOnlyList<RedisStreamEventDto>> ReadStreamEventsAsync(string key, string afterId = "0-0", int count = 50) => Task.FromResult<IReadOnlyList<RedisStreamEventDto>>([]);
+        public Task<bool> EnsureConsumerGroupAsync(string key, string group, string startId = "0-0") => Task.FromResult(true);
+        public Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">") => Task.FromResult<IReadOnlyList<RedisStreamEventDto>>([]);
+        public Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds) => Task.CompletedTask;
+        public Task<bool> SupportsVectorSearchAsync() => Task.FromResult(false);
 
         public Task DeleteKeyAsync(string key)
         {

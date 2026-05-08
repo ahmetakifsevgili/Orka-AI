@@ -7,11 +7,11 @@ using Microsoft.SemanticKernel;
 namespace Orka.Infrastructure.SemanticKernel.Plugins;
 
 /// <summary>
-/// AcademicSearchPlugin â€” Semantic Scholar + ArXiv akademik kaynak motoru.
+/// AcademicSearchPlugin — Semantic Scholar + ArXiv akademik kaynak motoru.
 ///
-/// Korteks'in derin araÅŸtÄ±rma akÄ±ÅŸÄ±nda Wikipedia + Tavily'nin tamamlayÄ±cÄ±sÄ±:
-///   - Wikipedia: ansiklopedik tanÄ±m
-///   - Tavily:    gÃ¼ncel web iÃ§eriÄŸi
+/// Korteks'in derin araştırma akışında Wikipedia + Tavily'nin tamamlayıcısı:
+///   - Wikipedia: ansiklopedik tanım
+///   - Tavily:    güncel web içeriği
 ///   - Bu plugin: peer-reviewed akademik makaleler (citation veren)
 ///
 /// API: https://api.semanticscholar.org/graph/v1/paper/search (public, key opsiyonel)
@@ -28,17 +28,17 @@ public class AcademicSearchPlugin
 
     public AcademicSearchPlugin(IHttpClientFactory httpClientFactory)
     {
-        // Wikipedia ile aynÄ± User-Agent havuzunu kullan (rate-friendly)
+        // Wikipedia ile aynı User-Agent havuzunu kullan (rate-friendly)
         _httpClient = httpClientFactory.CreateClient("Wikipedia");
     }
 
     [KernelFunction, Description(
-        "Semantic Scholar Ã¼zerinden 200M+ peer-reviewed makaleden konuyla ilgili olanlarÄ± arar. " +
-        "Bilimsel iddialarÄ± doÄŸrulamak veya akademik kaynak gÃ¶stermek iÃ§in kullan. " +
-        "Her sonuÃ§ta baÅŸlÄ±k, yazar, yÄ±l, atÄ±f sayÄ±sÄ± ve TLDR Ã¶zet dÃ¶ner.")]
+        "Semantic Scholar üzerinden 200M+ peer-reviewed makaleden konuyla ilgili olanları arar. " +
+        "Bilimsel iddiaları doğrulamak veya akademik kaynak göstermek için kullan. " +
+        "Her sonuçta başlık, yazar, yıl, atıf sayısı ve TLDR özet döner.")]
     public async Task<string> SearchSemanticScholar(
-        [Description("Aranacak akademik konu (Ä°ngilizce daha iyi sonuÃ§ verir)")] string query,
-        [Description("Maksimum sonuÃ§ sayÄ±sÄ± (1-10)")] int limit = 5)
+        [Description("Aranacak akademik konu (İngilizce daha iyi sonuç verir)")] string query,
+        [Description("Maksimum sonuç sayısı (1-10)")] int limit = 5)
     {
         try
         {
@@ -49,7 +49,7 @@ public class AcademicSearchPlugin
 
             using var resp = await _httpClient.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
-                return $"[Semantic Scholar] AÄŸ hatasÄ±: {resp.StatusCode}";
+                return $"[Semantic Scholar] Ağ hatası: {resp.StatusCode}";
 
             var raw = await resp.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(raw);
@@ -57,16 +57,16 @@ public class AcademicSearchPlugin
             if (!doc.RootElement.TryGetProperty("data", out var data) ||
                 data.GetArrayLength() == 0)
             {
-                return $"[Semantic Scholar] '{query}' iÃ§in sonuÃ§ bulunamadÄ±.";
+                return $"[Semantic Scholar] '{query}' için sonuç bulunamadı.";
             }
 
             var sb = new StringBuilder();
-            sb.AppendLine($"**Semantic Scholar â€” {data.GetArrayLength()} akademik kaynak:**\n");
+            sb.AppendLine($"**Semantic Scholar — {data.GetArrayLength()} akademik kaynak:**\n");
 
             int idx = 1;
             foreach (var paper in data.EnumerateArray())
             {
-                var title = paper.TryGetProperty("title", out var t) ? t.GetString() ?? "BaÅŸlÄ±ksÄ±z" : "BaÅŸlÄ±ksÄ±z";
+                var title = paper.TryGetProperty("title", out var t) ? t.GetString() ?? "Başlıksız" : "Başlıksız";
                 var year  = paper.TryGetProperty("year", out var y) && y.ValueKind == JsonValueKind.Number ? y.GetInt32() : 0;
                 var citations = paper.TryGetProperty("citationCount", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
 
@@ -98,8 +98,8 @@ public class AcademicSearchPlugin
                     url2 = $"https://doi.org/{doi.GetString()}";
                 }
 
-                sb.AppendLine($"{idx}. **{title}** ({year}) â€” {authorsStr}");
-                if (citations > 0) sb.AppendLine($"   AtÄ±f: {citations}");
+                sb.AppendLine($"{idx}. **{title}** ({year}) — {authorsStr}");
+                if (citations > 0) sb.AppendLine($"   Atıf: {citations}");
                 if (!string.IsNullOrWhiteSpace(tldr)) sb.AppendLine($"   TLDR: {tldr}");
                 if (!string.IsNullOrWhiteSpace(url2)) sb.AppendLine($"   Kaynak: {url2}");
                 sb.AppendLine();
@@ -115,12 +115,12 @@ public class AcademicSearchPlugin
     }
 
     [KernelFunction, Description(
-        "ArXiv preprint sunucusundan en gÃ¼ncel araÅŸtÄ±rma makalelerini arar. " +
-        "Yeni teknolojiler, henÃ¼z peer-review edilmemiÅŸ ama Ã¶nemli makaleler iÃ§in kullan. " +
-        "AI, fizik, matematik, CS alanlarÄ±nda Ã¶zellikle gÃ¼Ã§lÃ¼.")]
+        "ArXiv preprint sunucusundan en güncel araştırma makalelerini arar. " +
+        "Yeni teknolojiler, henüz peer-review edilmemiş ama önemli makaleler için kullan. " +
+        "AI, fizik, matematik, CS alanlarında özellikle güçlü.")]
     public async Task<string> SearchArXiv(
-        [Description("Aranacak konu (Ä°ngilizce daha iyi)")] string query,
-        [Description("Maksimum sonuÃ§ (1-10)")] int limit = 5)
+        [Description("Aranacak konu (İngilizce daha iyi)")] string query,
+        [Description("Maksimum sonuç (1-10)")] int limit = 5)
     {
         try
         {
@@ -131,16 +131,16 @@ public class AcademicSearchPlugin
 
             using var resp = await _httpClient.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
-                return $"[ArXiv] AÄŸ hatasÄ±: {resp.StatusCode}";
+                return $"[ArXiv] Ağ hatası: {resp.StatusCode}";
 
             var xml = await resp.Content.ReadAsStringAsync();
-            // Hafif XML parse â€” bÃ¼yÃ¼k dependency Ã§ekmemek iÃ§in manuel
+            // Hafif XML parse — büyük dependency çekmemek için manuel
             var entries = ExtractArxivEntries(xml).Take(limit).ToList();
             if (entries.Count == 0)
-                return $"[ArXiv] '{query}' iÃ§in sonuÃ§ bulunamadÄ±.";
+                return $"[ArXiv] '{query}' için sonuç bulunamadı.";
 
             var sb = new StringBuilder();
-            sb.AppendLine($"**ArXiv â€” {entries.Count} preprint:**\n");
+            sb.AppendLine($"**ArXiv — {entries.Count} preprint:**\n");
             int idx = 1;
             foreach (var e in entries)
             {
@@ -149,7 +149,7 @@ public class AcademicSearchPlugin
                 if (!string.IsNullOrWhiteSpace(e.Summary))
                 {
                     var summary = e.Summary.Length > 300 ? e.Summary[..300] + "..." : e.Summary;
-                    sb.AppendLine($"   Ã–zet: {summary}");
+                    sb.AppendLine($"   Özet: {summary}");
                 }
                 if (!string.IsNullOrWhiteSpace(e.Link)) sb.AppendLine($"   Kaynak: {e.Link}");
                 sb.AppendLine();
@@ -193,7 +193,7 @@ public class AcademicSearchPlugin
         }
         catch
         {
-            // Parse fail â†’ boÅŸ liste dÃ¶ner; Ã¼stteki try-catch sonucu yakalar
+            // Parse fail → boş liste döner; üstteki try-catch sonucu yakalar
         }
         return list;
     }

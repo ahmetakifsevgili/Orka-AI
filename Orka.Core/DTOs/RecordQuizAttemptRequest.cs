@@ -14,7 +14,14 @@ public class RecordQuizAttemptRequest
     public bool IsCorrect { get; set; }
     public string? Explanation { get; set; }
     public string? SkillTag { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public string? ConceptKey { get; set; }
     public string? ConceptTag { get; set; }
+    public string? CognitiveSkill { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRule { get; set; }
+    public string? LearningOutcomeIdsJson { get; set; }
     public string? LearningObjective { get; set; }
     public string? QuestionType { get; set; }
     public string? MistakeCategory { get; set; }
@@ -23,4 +30,7 @@ public class RecordQuizAttemptRequest
     public string? CognitiveType { get; set; }
     public string? QuestionHash { get; set; }
     public string? SourceRefsJson { get; set; }
+    public int? ResponseTimeMs { get; set; }
+    public bool? WasSkipped { get; set; }
+    public decimal? ConfidenceSelfRating { get; set; }
 }

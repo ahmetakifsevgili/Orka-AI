@@ -1,4 +1,4 @@
-/*
+﻿/*
  * LeftSidebar — ChatGPT tarzı, topic-centric.
  * Her topic = bir müfredat oturumu. Seçince ChatPanel o topic'i yükler.
  *
@@ -55,11 +55,11 @@ interface LeftSidebarProps {
 // NAV_ITEMS: label artık t() ile çevriliyor, statik label kaldırıldı
 const NAV_ITEMS = [
   { id: "dashboard", icon: Home, labelKey: "today", route: null },
-  { id: "chat", icon: MessageSquare, labelKey: "tutor", route: null },
-  { id: "learning", icon: ClipboardCheck, labelKey: "learning", route: null },
-  { id: "wiki",    icon: BookMarked,    labelKey: "wiki",    route: null },
-  { id: "orkalm",  icon: Network,       labelKey: "orkalm",  route: null },
-  { id: "ide",     icon: Code2,         labelKey: "ide",     route: null },
+  { id: "chat", icon: MessageSquare, labelKey: "learn", route: null },
+  { id: "sources", icon: Network, labelKey: "sources", route: null },
+  { id: "practice", icon: Code2, labelKey: "practice", route: null },
+  { id: "learning", icon: ClipboardCheck, labelKey: "review", route: null },
+  { id: "progress", icon: BookMarked, labelKey: "progress", route: null },
 ];
 
 const EMOJI_SUGGESTIONS = ["📚", "🧠", "💻", "🔬", "🎨", "🗣️", "🏛️", "⚡", "🌍", "🎯"];

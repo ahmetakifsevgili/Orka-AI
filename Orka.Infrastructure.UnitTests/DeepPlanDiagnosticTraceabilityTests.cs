@@ -68,7 +68,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
     }
 
     [Fact]
-    public async Task DeepPlan_RejectsThinGeneratedPlanAndUsesProgrammingQualityFallback()
+    public async Task DeepPlan_RejectsThinGeneratedPlanAndUsesConceptGraphQualityFallback()
     {
         var harness = await CreateHarnessAsync();
 
@@ -81,7 +81,8 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("C#", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Baslangic kavramlari", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Kavram bazli final kontrol", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Tanisal Iyilestirme", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
@@ -123,7 +124,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
     }
 
     [Fact]
-    public async Task DeepPlan_ProgrammingFallbackDoesNotForceCSharpForPythonTopic()
+    public async Task DeepPlan_GenericFallbackDoesNotForceCSharpForPythonTopic()
     {
         var harness = await CreateHarnessAsync();
 
@@ -136,13 +137,14 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Python", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Baslangic kavramlari", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Kavram bazli final kontrol", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("C# programi", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("LINQ", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task DeepPlan_AlgorithmFallbackKeepsDomainAndMeetsQualityFloor()
+    public async Task DeepPlan_GenericFallbackMeetsQualityFloorForAlgorithmTopic()
     {
         var harness = await CreateHarnessAsync();
 
@@ -155,15 +157,14 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Two Pointers", StringComparison.OrdinalIgnoreCase) ||
-                                            t.Title.Contains("Sliding Window", StringComparison.OrdinalIgnoreCase) ||
-                                            t.Title.Contains("Dynamic Programming", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Adim adim uygulama", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Sik karistirilan nokta", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task DeepPlan_HistoryFallbackUsesChronologyAndRealTopicAxis()
+    public async Task DeepPlan_GenericFallbackDoesNotUseHistoryHardCodedAxis()
     {
         var harness = await CreateHarnessAsync();
 
@@ -176,9 +177,10 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
             "beginner");
 
         Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Dandanakan", StringComparison.OrdinalIgnoreCase) ||
-                                            t.Title.Contains("Malazgirt", StringComparison.OrdinalIgnoreCase) ||
-                                            t.Title.Contains("Nizam", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Topics, t => t.Title.Contains("Ana kavrami sade tanimlama", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Dandanakan", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Malazgirt", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Nizam", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Proje / Uygulama Kapanisi", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));

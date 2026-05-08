@@ -1,0 +1,57 @@
+namespace Orka.Core.DTOs;
+
+public sealed class DashboardTodayDto
+{
+    public string DailyFocusTitle { get; set; } = "Bugün";
+    public string DailyFocusReason { get; set; } = "Başlamak için bir konu seç.";
+    public DashboardNextActionDto NextAction { get; set; } = new();
+    public IReadOnlyList<DashboardWeakConceptDto> WeakConcepts { get; set; } = Array.Empty<DashboardWeakConceptDto>();
+    public DashboardSourceHealthDto SourceHealth { get; set; } = new();
+    public int DueReviewCount { get; set; }
+    public DashboardActivePlanDto? ActivePlan { get; set; }
+    public DashboardEntryPointDto RecommendedEntryPoint { get; set; } = new();
+    public bool HasRealLearningData { get; set; }
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DashboardNextActionDto
+{
+    public string Label { get; set; } = "Öğrenmeye başla";
+    public string Reason { get; set; } = "Henüz yeterli öğrenme izi yok.";
+    public string View { get; set; } = "chat";
+    public Guid? TopicId { get; set; }
+    public string UserSafeStatus { get; set; } = "Hazır";
+}
+
+public sealed class DashboardWeakConceptDto
+{
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public decimal? MasteryProbability { get; set; }
+    public decimal? Confidence { get; set; }
+    public Guid? TopicId { get; set; }
+    public string UserSafeStatus { get; set; } = "Kanıt düşük";
+}
+
+public sealed class DashboardSourceHealthDto
+{
+    public string Status { get; set; } = "unknown";
+    public string UserSafeLabel { get; set; } = "Kaynak durumu bilinmiyor";
+    public string UserSafeDetail { get; set; } = "Kaynak eklenince cevaplar daha güvenli hale gelir.";
+    public decimal CitationCoverage { get; set; }
+    public int UnsupportedCitationCount { get; set; }
+}
+
+public sealed class DashboardActivePlanDto
+{
+    public Guid TopicId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public double ProgressPercentage { get; set; }
+}
+
+public sealed class DashboardEntryPointDto
+{
+    public string View { get; set; } = "chat";
+    public string Label { get; set; } = "Öğren";
+    public string Reason { get; set; } = "Tutor ile devam et.";
+}

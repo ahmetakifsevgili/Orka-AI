@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -26,6 +28,14 @@ public class TutorAgent : ITutorAgent
     private readonly ILearningSourceService _learningSourceService;
     private readonly ILearningSignalService _learningSignals;
     private readonly IEducatorCoreService _educatorCore;
+    private readonly ITutorPolicyEngine _tutorPolicy;
+    private readonly ITutorTurnStateAssembler _turnStateAssembler;
+    private readonly ITutorActionPlanner _actionPlanner;
+    private readonly ITutorToolOrchestrator _toolOrchestrator;
+    private readonly ITeachingArtifactService _teachingArtifacts;
+    private readonly ITutorReflectionService _tutorReflection;
+    private readonly ITutorPedagogyEvaluationService _tutorPedagogyEvaluation;
+    private readonly ITutorPedagogyQualityGate _tutorPedagogyQualityGate;
 
     // Wiki context için maksimum karakter sınırı (yaklaşık 1000 token)
     private const int WikiContextMaxChars = 4000;
@@ -34,8 +44,8 @@ public class TutorAgent : ITutorAgent
     // LaTeX/JSON-style süslü parantez kaçışı bu blokta gerekmiyor.
     private const string V4VisualizationAndVoiceBlock = """
 
-            [V4 ZENGİN GÖRSELLEŞTİRME — ZORUNLU]:
-            Anlatımını metinle sınırlama. Konunun türüne göre şu öğeleri DOĞAL OLARAK serpiştir:
+            [V4 ZENGİN GÖRSELLEŞTİRME — ACTION PLAN'A BAĞLI]:
+            Anlatımını metinle sınırlama; ancak görsel, tablo, Mermaid veya resim kararını öncelikle [TUTOR ACTION PLAN v3] ve [TEACHING ARTIFACT v3] belirler.
 
             1. MATEMATİK / FORMÜL → LaTeX kullan (frontend KaTeX ile render eder):
                - Inline:  $E = mc^2$
@@ -49,22 +59,22 @@ public class TutorAgent : ITutorAgent
                ```
                State machine, sınıf diyagramı, sıra diyagramı için de aynı. Node etiketlerinde parantez, nokta veya iki nokta kullanırsan mutlaka çift tırnakla yaz; emin değilsen tablo kullan.
 
-            3. SOYUT KAVRAM → Pollinations.ai görseli embed et (öğrenci görmesi gerekirse):
+            3. SOYUT KAVRAM → Eğer action plan visual_generation/image_prompt isterse görsel prompt veya güvenli fallback diyagramı ver:
                Format: ![kısa açıklama](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT>?width=512&height=512&nologo=true)
                Örnek: "Mitokondri hücrenin enerji santralidir. ![mitokondri kesit](https://image.pollinations.ai/prompt/cross-section%20of%20mitochondrion%20educational%20diagram?width=512&height=512&nologo=true)"
-               Karmaşık konuları açıklarken metni uzatmak yerine mutlaka görsel kullan.
+               Karmaşık konularda görseli zorla uydurma; planlanmış artifact yoksa tablo, Mermaid veya kısa şema kullan.
 
             4. KAYNAK / DAYANAK → Wiki veya Korteks raporundaki bilgiyi alıntılarken inline link ver:
                "Algoritmanın temel mantığı 1936'da Turing tarafından ortaya kondu ([Wikipedia: Turing Machine](https://en.wikipedia.org/wiki/Turing_machine))."
                Frontend bu linkleri hover preview'lı citation olarak gösterir.
 
-            [P4 GÖRSEL ÖĞRENME VALIDATOR]:
+            [P4 GÖRSEL ÖĞRENME VALIDATOR - ACTION PLAN ÖNCELİKLİ]:
             Cevabı göndermeden önce zihinsel kontrol yap:
             - Konu matematik/formül içeriyorsa en az bir LaTeX formül veya adım tablosu olmalı.
             - Konu algoritma, mimari, süreç, sistem veya workflow ise en az bir Mermaid akış/sequence/state diyagramı olmalı.
             - Konu ezber, tarih, dil veya sınav hazırlığı ise kısa tablo, timeline, kart veya tekrar planı olmalı.
             - Öğrenci zayıf beceri veya "anlamadım" sinyali verdiyse açıklama + somut örnek + mikro kontrol sorusu birlikte gelmeli.
-            - Uygun görsel öğe yoksa yanıtı tamamlanmış sayma; kısa ama öğretici bir görsel iskelet ekle.
+            - Uygun ve planlanmış görsel öğe yoksa yanıtı kısa bir tablo, metinsel şema veya mikro kontrol ile tamamla.
 
             [SES MODU — VOICE/PODCAST KIP]:
             Eğer system bağlamında "[VOICE_MODE: PODCAST]" işareti varsa, çıktın iki veya üç sesli bir podcast diyaloğu olmalı:
@@ -82,7 +92,7 @@ public class TutorAgent : ITutorAgent
             Eğer lowQualityHint içinde "Öğrenci ... kez başarısız" geçiyorsa:
             - Ana konuyu tekrar anlatma. Sadece eksik kavramı 2-3 cümlede yeniden, daha basit bir analojiyle ver.
             - "Şimdi tekrar deneyelim mi?" diyerek kullanıcıyı tekrar quiz'e davet et.
-            - Pollinations görseli veya çok somut bir gerçek-hayat örneği şart.
+            - Action plan görsel istiyorsa görsel/diagram; istemiyorsa çok somut bir gerçek-hayat örneği yeterlidir.
             """;
 
     public TutorAgent(
@@ -95,7 +105,15 @@ public class TutorAgent : ITutorAgent
         IRedisMemoryService redisService,
         ILearningSourceService learningSourceService,
         ILearningSignalService learningSignals,
-        IEducatorCoreService educatorCore)
+        IEducatorCoreService educatorCore,
+        ITutorPolicyEngine tutorPolicy,
+        ITutorTurnStateAssembler turnStateAssembler,
+        ITutorActionPlanner actionPlanner,
+        ITutorToolOrchestrator toolOrchestrator,
+        ITeachingArtifactService teachingArtifacts,
+        ITutorReflectionService tutorReflection,
+        ITutorPedagogyEvaluationService tutorPedagogyEvaluation,
+        ITutorPedagogyQualityGate tutorPedagogyQualityGate)
     {
         _contextBuilder = contextBuilder;
         _factory = factory;
@@ -107,6 +125,14 @@ public class TutorAgent : ITutorAgent
         _learningSourceService = learningSourceService;
         _learningSignals = learningSignals;
         _educatorCore = educatorCore;
+        _tutorPolicy = tutorPolicy;
+        _turnStateAssembler = turnStateAssembler;
+        _actionPlanner = actionPlanner;
+        _toolOrchestrator = toolOrchestrator;
+        _teachingArtifacts = teachingArtifacts;
+        _tutorReflection = tutorReflection;
+        _tutorPedagogyEvaluation = tutorPedagogyEvaluation;
+        _tutorPedagogyQualityGate = tutorPedagogyQualityGate;
     }
 
     public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
@@ -130,6 +156,7 @@ public class TutorAgent : ITutorAgent
         );
 
         var contextMessages = await contextTask;
+        var learnerEvidenceContext = BuildTutorEvidenceContext(parallelResults);
         var teacherContext = await _educatorCore.BuildTeacherContextAsync(
             userId,
             session.TopicId,
@@ -137,26 +164,83 @@ public class TutorAgent : ITutorAgent
             content,
             parallelResults[7],
             parallelResults[3],
-            parallelResults[8],
+            learnerEvidenceContext,
             parallelResults[9]);
+        var tutorPolicy = await _tutorPolicy.BuildAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            content,
+            parallelResults[7],
+            parallelResults[3],
+            learnerEvidenceContext);
+        var orchestration = await BuildTutorOrchestrationAsync(
+            userId,
+            content,
+            session,
+            contextMessages,
+            parallelResults[7],
+            parallelResults[3],
+            learnerEvidenceContext,
+            parallelResults[4],
+            tutorPolicy,
+            CancellationToken.None);
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            activeTopicContext: parallelResults[0],
-            memoryContext:      parallelResults[1],
-            performanceHint:    parallelResults[2],
-            wikiContext:        parallelResults[3],
-            pistonContext:      parallelResults[4],
-            goldExamples:       parallelResults[5],
-            lowQualityHint:     parallelResults[6],
-            notebookContext:    parallelResults[7],
-            learningSignalContext: parallelResults[8],
             educatorCoreContext: teacherContext.PromptBlock,
-            reviewPressureContext: parallelResults[10]);
+            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
 
         var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
         await _educatorCore.RecordAnswerQualitySignalsAsync(userId, session.TopicId, session.Id, answer, teacherContext);
+        var reflection = await _tutorReflection.ReflectAsync(
+            orchestration.TurnState,
+            orchestration.ActionPlan,
+            answer,
+            orchestration.Artifacts,
+            CancellationToken.None);
+
+        var pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+        {
+            TurnState = orchestration.TurnState,
+            ActionPlan = orchestration.ActionPlan,
+            Reflection = reflection,
+            ToolCalls = orchestration.ToolCalls,
+            Artifacts = orchestration.Artifacts,
+            AssistantAnswer = answer,
+            AllowLlmJudge = false
+        }, CancellationToken.None);
+
+        if (_tutorPedagogyQualityGate.RequiresRepair(pedagogyEval))
+        {
+            var repairPrompt = _tutorPedagogyQualityGate.BuildRepairPrompt(
+                pedagogyEval,
+                orchestration.TurnState,
+                orchestration.ActionPlan,
+                answer);
+            var repaired = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt + "\n\n" + repairPrompt, userMessage);
+            if (!string.IsNullOrWhiteSpace(repaired))
+            {
+                answer = repaired;
+                reflection = await _tutorReflection.ReflectAsync(
+                    orchestration.TurnState,
+                    orchestration.ActionPlan,
+                    answer,
+                    orchestration.Artifacts,
+                    CancellationToken.None);
+                await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+                {
+                    TurnState = orchestration.TurnState,
+                    ActionPlan = orchestration.ActionPlan,
+                    Reflection = reflection,
+                    ToolCalls = orchestration.ToolCalls,
+                    Artifacts = orchestration.Artifacts,
+                    AssistantAnswer = answer,
+                    AllowLlmJudge = false
+                }, CancellationToken.None);
+            }
+        }
         return answer;
     }
 
@@ -319,6 +403,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
     public async IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        yield return BuildStreamEvent("thinking", new { message = "Tutor state hazirlaniyor" });
+
         // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var hasTopic = session.TopicId.HasValue;
@@ -338,6 +424,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         );
 
         var contextMessages = await contextTask;
+        var learnerEvidenceContext = BuildTutorEvidenceContext(parallelResults);
         var teacherContext = await _educatorCore.BuildTeacherContextAsync(
             userId,
             session.TopicId,
@@ -345,23 +432,76 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             content,
             parallelResults[7],
             parallelResults[3],
-            parallelResults[8],
+            learnerEvidenceContext,
             parallelResults[9],
             ct);
+        var tutorPolicy = await _tutorPolicy.BuildAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            content,
+            parallelResults[7],
+            parallelResults[3],
+            learnerEvidenceContext,
+            ct);
+        var orchestrationState = await BuildTutorStateAndActionPlanAsync(
+            userId,
+            content,
+            session,
+            contextMessages,
+            parallelResults[7],
+            parallelResults[3],
+            learnerEvidenceContext,
+            parallelResults[4],
+            tutorPolicy,
+            ct);
+        var startedToolIds = orchestrationState.ActionPlan.ToolPlans.Select(p => p.ToolId).ToArray();
+        foreach (var toolId in startedToolIds)
+        {
+            yield return BuildStreamEvent("tool_started", new
+            {
+                toolId,
+                tutorActionTraceId = orchestrationState.ActionPlan.Id
+            });
+        }
+
+        var toolCalls = await _toolOrchestrator.RunAsync(orchestrationState.ActionPlan, orchestrationState.TurnState, ct);
+        var artifacts = await _teachingArtifacts.BuildArtifactsAsync(orchestrationState.ActionPlan, orchestrationState.TurnState, ct);
+        var orchestration = (
+            orchestrationState.TurnState,
+            orchestrationState.ActionPlan,
+            ToolCalls: toolCalls,
+            Artifacts: artifacts,
+            PromptBlock: BuildOrchestrationPromptBlock(orchestrationState.TurnState, orchestrationState.ActionPlan, toolCalls, artifacts));
+
+        foreach (var tool in orchestration.ToolCalls)
+        {
+            yield return BuildStreamEvent("tool_finished", new
+            {
+                toolCallId = tool.Id,
+                toolId = tool.ToolId,
+                status = tool.Status,
+                riskLevel = tool.RiskLevel,
+                success = tool.Success,
+                provider = tool.Provider,
+                safeMessage = tool.SafeMessage
+            });
+        }
+
+        foreach (var artifact in orchestration.Artifacts)
+        {
+            yield return BuildStreamEvent("artifact_ready", new
+            {
+                artifactId = artifact.Id,
+                artifactType = artifact.ArtifactType,
+                title = artifact.Title
+            });
+        }
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            activeTopicContext: parallelResults[0],
-            memoryContext:      parallelResults[1],
-            performanceHint:    parallelResults[2],
-            wikiContext:        parallelResults[3],
-            pistonContext:      parallelResults[4],
-            goldExamples:       parallelResults[5],
-            lowQualityHint:     parallelResults[6],
-            notebookContext:    parallelResults[7],
-            learningSignalContext: parallelResults[8],
             educatorCoreContext: teacherContext.PromptBlock,
-            reviewPressureContext: parallelResults[10]);
+            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
 
         // AIAgentFactory: Primary → Gemini → Mistral (stream failover zinciri)
@@ -379,7 +519,124 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             answerBuffer.ToString(),
             teacherContext,
             CancellationToken.None);
+        var reflection = await _tutorReflection.ReflectAsync(
+            orchestration.TurnState,
+            orchestration.ActionPlan,
+            answerBuffer.ToString(),
+            orchestration.Artifacts,
+            CancellationToken.None);
+        var pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+        {
+            TurnState = orchestration.TurnState,
+            ActionPlan = orchestration.ActionPlan,
+            Reflection = reflection,
+            ToolCalls = orchestration.ToolCalls,
+            Artifacts = orchestration.Artifacts,
+            AssistantAnswer = answerBuffer.ToString(),
+            AllowLlmJudge = false
+        }, CancellationToken.None);
+        yield return BuildStreamEvent("final", new
+        {
+            tutorTurnStateId = orchestration.TurnState.Id,
+            tutorActionTraceId = orchestration.ActionPlan.Id,
+            artifactIds = orchestration.Artifacts.Select(a => a.Id).ToArray(),
+            tutorPedagogyEvaluationRunId = pedagogyEval.Id,
+            tutorPedagogyStatus = pedagogyEval.Status,
+            tutorPedagogyScore = pedagogyEval.OverallScore
+        });
     }
+
+    private async Task<(
+        TutorTurnStateDto TurnState,
+        TutorActionPlanDto ActionPlan,
+        IReadOnlyList<TutorToolCallDto> ToolCalls,
+        IReadOnlyList<TeachingArtifactDto> Artifacts,
+        string PromptBlock)> BuildTutorOrchestrationAsync(
+        Guid userId,
+        string content,
+        Session session,
+        IEnumerable<Message> contextMessages,
+        string notebookContext,
+        string wikiContext,
+        string learningSignalContext,
+        string ideContext,
+        TutorPolicyContextDto tutorPolicy,
+        CancellationToken ct)
+    {
+        var (turnState, actionPlan) = await BuildTutorStateAndActionPlanAsync(
+            userId,
+            content,
+            session,
+            contextMessages,
+            notebookContext,
+            wikiContext,
+            learningSignalContext,
+            ideContext,
+            tutorPolicy,
+            ct);
+
+        var toolCalls = await _toolOrchestrator.RunAsync(actionPlan, turnState, ct);
+        var artifacts = await _teachingArtifacts.BuildArtifactsAsync(actionPlan, turnState, ct);
+        return (turnState, actionPlan, toolCalls, artifacts, BuildOrchestrationPromptBlock(turnState, actionPlan, toolCalls, artifacts));
+    }
+
+    private async Task<(TutorTurnStateDto TurnState, TutorActionPlanDto ActionPlan)> BuildTutorStateAndActionPlanAsync(
+        Guid userId,
+        string content,
+        Session session,
+        IEnumerable<Message> contextMessages,
+        string notebookContext,
+        string wikiContext,
+        string learningSignalContext,
+        string ideContext,
+        TutorPolicyContextDto tutorPolicy,
+        CancellationToken ct)
+    {
+        var turnState = await _turnStateAssembler.BuildAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            content,
+            BuildContextSummary(contextMessages),
+            notebookContext,
+            wikiContext,
+            learningSignalContext,
+            ideContext,
+            tutorPolicy,
+            ct);
+
+        var actionPlan = await _actionPlanner.PlanAsync(turnState, ct);
+        return (turnState, actionPlan);
+    }
+
+    private static string BuildOrchestrationPromptBlock(
+        TutorTurnStateDto turnState,
+        TutorActionPlanDto actionPlan,
+        IReadOnlyList<TutorToolCallDto> toolCalls,
+        IReadOnlyList<TeachingArtifactDto> artifacts)
+    {
+        var toolPrompt = toolCalls.Count == 0
+            ? string.Empty
+            : $"""
+
+                [TUTOR TOOL ORCHESTRATION v3]
+                {string.Join("\n", toolCalls.Select(t => $"- {t.ToolId}: {t.Status}; success={t.Success}; provider={t.Provider}; evidence={t.Evidence ?? "none"}; warning={t.SafeMessage ?? t.FallbackReason ?? "none"}"))}
+                [TOOL KURALI] External provider required ise success=false veya status ready degilse kesin bilgi iddiasi kurma; safeMessage'i kisa ve dürüst sekilde kullan.
+                """;
+
+        var artifactPrompt = artifacts.Count == 0
+            ? string.Empty
+            : string.Join("\n", artifacts.Select(a => a.PromptBlock));
+
+        return turnState.PromptBlock + actionPlan.PromptBlock + toolPrompt + artifactPrompt;
+    }
+
+    private static string BuildStreamEvent(string type, object payload) =>
+        JsonSerializer.Serialize(new
+        {
+            type,
+            data = payload
+        });
 
     /// <summary>
     /// Faz 16: Bir önceki yanıt için EvaluatorAgent düşük puan (≤ 6) verdiyse
@@ -821,6 +1078,34 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return string.Join("\n", msgs.Select(m => $"{(m.Role?.ToLower() == "user" ? "Kullanıcı" : "Asistan")}: {m.Content}"));
     }
 
+    private static string BuildTutorEvidenceContext(IReadOnlyList<string> contextBlocks)
+    {
+        string Pick(int index) => index >= 0 && index < contextBlocks.Count ? contextBlocks[index] : string.Empty;
+        var sections = new[]
+        {
+            ("active_topic", Pick(0)),
+            ("legacy_skill_memory", Pick(1)),
+            ("legacy_redis_performance", Pick(2)),
+            ("learning_signals", Pick(8)),
+            ("gold_examples", Pick(5)),
+            ("low_quality_feedback", Pick(6)),
+            ("review_pressure", Pick(10))
+        }
+        .Where(s => !string.IsNullOrWhiteSpace(s.Item2))
+        .Select(s => $"[{s.Item1}]\n{TrimForState(s.Item2, 1200)}")
+        .ToList();
+
+        return sections.Count == 0
+            ? string.Empty
+            : "[TUTOR STATE INPUTS - LEGACY SIGNALS AS LOW PRIORITY EVIDENCE]\n" + string.Join("\n\n", sections);
+    }
+
+    private static string TrimForState(string value, int maxChars)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxChars ? trimmed : trimmed[..maxChars] + "...";
+    }
+
     private string BuildTutorSystemPrompt(
         bool isQuizPending,
         string activeTopicContext = "",
@@ -833,6 +1118,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         string notebookContext = "",
         string learningSignalContext = "",
         string educatorCoreContext = "",
+        string tutorPolicyContext = "",
         string reviewPressureContext = "")
     {
         var prompt = $$"""
@@ -848,6 +1134,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             {{learningSignalContext}}
             {{reviewPressureContext}}
             {{educatorCoreContext}}
+            {{tutorPolicyContext}}
 
             [TEMEL KURAL — ÖĞRETİM TARZI]:
             Chat ekranında konuyu detaylı, derinlemesine ve doyurucu bir şekilde anlat. Konuları asla yüzeysel veya çok kısa (1-2 cümle) geçme.

@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
@@ -14,10 +16,18 @@ namespace Orka.API.Controllers;
 public class WikiController : ControllerBase
 {
     private readonly IWikiService _wikiService;
+    private readonly IWikiLearningAssistant _wikiLearningAssistant;
+    private readonly IWikiEvidenceService _wikiEvidenceService;
+    private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
 
-    public WikiController(IWikiService wikiService)
+    public WikiController(
+        IWikiService wikiService,
+        IWikiLearningAssistant wikiLearningAssistant,
+        IWikiEvidenceService wikiEvidenceService)
     {
         _wikiService = wikiService;
+        _wikiLearningAssistant = wikiLearningAssistant;
+        _wikiEvidenceService = wikiEvidenceService;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -42,7 +52,7 @@ public class WikiController : ControllerBase
     {
         var userId = GetUserId();
         var page = await _wikiService.GetWikiPageAsync(pageId, userId);
-        if (page == null) return NotFound(new { message = "Sayfa bulunamadÄ±." });
+        if (page == null) return NotFound(new { message = "Sayfa bulunamadı." });
 
         return Ok(new
         {
@@ -90,7 +100,7 @@ public class WikiController : ControllerBase
     }
 
     /// <summary>
-    /// Konunun tÃ¼m Wiki iÃ§eriÄŸini tek bir Markdown string olarak dÃ¶ner (export/print iÃ§in).
+    /// Konunun tüm Wiki içeriğini tek bir Markdown string olarak döner (export/print için).
     /// </summary>
     [HttpGet("{topicId}/export")]
     public async Task<IActionResult> ExportWiki(Guid topicId)
@@ -100,7 +110,7 @@ public class WikiController : ControllerBase
         {
             var content = await _wikiService.GetWikiFullContentAsync(topicId, userId);
             if (string.IsNullOrWhiteSpace(content))
-                return NotFound(new { message = "Bu konu iÃ§in henÃ¼z wiki iÃ§eriÄŸi oluÅŸturulmamÄ±ÅŸ." });
+                return NotFound(new { message = "Bu konu için henüz wiki içeriği oluşturulmamış." });
 
             return Ok(new
             {
@@ -118,8 +128,8 @@ public class WikiController : ControllerBase
     }
 
     /// <summary>
-    /// NotebookLM-tarzÄ± "Briefing Document" â€” okumadan Ã¶nce hÄ±zlÄ± bakÄ±ÅŸ.
-    /// Wiki + Korteks raporundan TL;DR + 5 anahtar Ã§Ä±karÄ±m + 3 Ã¶neri soru.
+    /// NotebookLM-tarzı "Briefing Document" — okumadan önce hızlı bakış.
+    /// Wiki + Korteks raporundan TL;DR + 5 anahtar çıkarım + 3 öneri soru.
     /// 1 saatlik in-memory cache.
     /// </summary>
     [HttpGet("{topicId}/briefing")]
@@ -221,30 +231,52 @@ public class WikiController : ControllerBase
     }
 
     /// <summary>
-    /// Wiki iÃ§eriÄŸinden soru cevaplama (mevcut ajan).
+    /// Wiki içeriğinden soru cevaplama (mevcut ajan).
     /// </summary>
     [HttpPost("{topicId}/chat")]
-    public async Task AskWikiQuestion(Guid topicId, [FromBody] WikiChatRequest request, [FromServices] IWikiAgent wikiAgent)
+    public async Task AskWikiQuestion(Guid topicId, [FromBody] WikiChatRequest request)
     {
         var userId = GetUserId();
-        var wikiContent = await _wikiService.GetWikiFullContentAsync(topicId, userId);
+        var ct = HttpContext.RequestAborted;
 
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
 
-        await foreach (var chunk in wikiAgent.AskQuestionStreamAsync(wikiContent, request.Question))
+        var learningRequest = new WikiLearningRequestDto
         {
-            var data = System.Text.Json.JsonSerializer.Serialize(new { content = chunk });
-            await Response.WriteAsync($"data: {data}\n\n");
-            await Response.Body.FlushAsync();
+            UserId = userId,
+            TopicId = topicId,
+            Question = request.Question,
+            Mode = string.IsNullOrWhiteSpace(request.Mode) ? "wiki" : request.Mode.Trim(),
+            SourceId = request.SourceId,
+            ActivePageId = request.ActivePageId,
+            SessionId = request.SessionId
+        };
+
+        await foreach (var evt in _wikiLearningAssistant.StreamAsync(learningRequest, ct))
+        {
+            var data = JsonSerializer.Serialize(evt, SseJsonOptions);
+            await Response.WriteAsync($"data: {data}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
         }
+
+        await Response.WriteAsync("data: [DONE]\n\n", ct);
+        await Response.Body.FlushAsync(ct);
+    }
+
+    [HttpGet("{topicId}/workspace-state")]
+    public async Task<IActionResult> GetWorkspaceState(Guid topicId)
+    {
+        var userId = GetUserId();
+        var state = await _wikiEvidenceService.GetWorkspaceStateAsync(userId, topicId, HttpContext.RequestAborted);
+        return Ok(state);
     }
 
     /// <summary>
-    /// Korteks ile derin araÅŸtÄ±rma â€” Wiki Copilot.
-    /// Wiki belgesi yetersizse, Korteks internetten araÅŸtÄ±rma yapar.
-    /// Frontend'e SSE stream olarak adÄ±m adÄ±m bilgi akar.
+    /// Korteks ile derin araştırma — Wiki Copilot.
+    /// Wiki belgesi yetersizse, Korteks internetten araştırma yapar.
+    /// Frontend'e SSE stream olarak adım adım bilgi akar.
     /// </summary>
     [HttpPost("{topicId}/research")]
     public async Task KorteksResearch(Guid topicId, [FromBody] WikiChatRequest request, [FromServices] IKorteksAgent korteks)
@@ -272,6 +304,10 @@ public class WikiController : ControllerBase
 public class WikiChatRequest
 {
     public string Question { get; set; } = string.Empty;
+    public string? Mode { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? ActivePageId { get; set; }
+    public Guid? SessionId { get; set; }
 }
 
 public class AddNoteRequest

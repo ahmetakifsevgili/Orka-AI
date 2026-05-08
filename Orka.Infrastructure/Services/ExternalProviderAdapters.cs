@@ -210,14 +210,17 @@ public sealed class WeatherProvider : IWeatherProvider
         _logger = logger;
     }
 
-    public async Task<ProviderToolResultDto> GetWeatherAsync(double latitude, double longitude, string? locationName = null, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default)
+    public Task<ProviderToolResultDto> GetWeatherAsync(double latitude, double longitude, string? locationName = null, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default) =>
+        GetGeographyContextAsync(latitude, longitude, locationName, userId, sessionId, topicId, ct);
+
+    public async Task<ProviderToolResultDto> GetGeographyContextAsync(double latitude, double longitude, string? locationName = null, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default)
     {
         const string toolId = "weather";
         var sw = Stopwatch.StartNew();
         var enabled = bool.TryParse(_configuration["Tools:Weather:Enabled"], out var enabledValue) && enabledValue;
         var apiKey = _configuration["Tools:Weather:ApiKey"] ?? _configuration["OpenWeatherMap:ApiKey"];
         if (double.IsNaN(latitude) || double.IsNaN(longitude) || Math.Abs(latitude) > 90 || Math.Abs(longitude) > 180)
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "weather", "blocked", "malformed_location", "Weather location is invalid.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "geography_context", "blocked", "malformed_location", "Geography location is invalid.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
 
         try
         {
@@ -250,23 +253,180 @@ public sealed class WeatherProvider : IWeatherProvider
                 ? locationName
                 : doc.RootElement.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? $"{latitude},{longitude}" : $"{latitude},{longitude}";
             var source = provider == "openweathermap" ? "OpenWeatherMap" : "Open-Meteo";
-            var dto = new WeatherContextDto(name, DateTime.UtcNow, temp, conditions, source);
-            var result = new ProviderToolResultDto(true, toolId, provider, "ready", dto, [new ProviderCitationDto($"{source} current weather", null, source, DateTime.UtcNow, 0.8)], DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Current weather context is available.", 0.8, 1);
+            var dto = new WeatherContextDto(
+                name,
+                DateTime.UtcNow,
+                temp,
+                conditions,
+                source,
+                latitude,
+                longitude,
+                BuildClimateSummary(latitude, temp, conditions),
+                BuildGeographySummary(name, latitude, longitude),
+                "Use this as geography context: location, latitude band, hemisphere, climate cue, and map reasoning. Treat live weather as supporting evidence only.");
+            var result = new ProviderToolResultDto(
+                true,
+                toolId,
+                provider,
+                "ready",
+                dto,
+                [new ProviderCitationDto($"{source} geography context", null, source, DateTime.UtcNow, 0.8)],
+                DateTime.UtcNow,
+                sw.ElapsedMilliseconds,
+                false,
+                null,
+                "Geography context is available; live weather is only a supporting signal.",
+                0.8,
+                1);
             return await RecordAsync(result, userId, sessionId, topicId, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "openweathermap", "timeout", ProviderFailureCodes.ProviderTimeout, "Weather provider timed out.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "geography_context", "timeout", ProviderFailureCodes.ProviderTimeout, "Geography context provider timed out.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
         catch (Exception ex) when (ex is JsonException or HttpRequestException)
         {
             _logger.LogWarning(ex, "[Weather] Provider call failed.");
-            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "openweathermap", "degraded", ex is JsonException ? ProviderFailureCodes.MalformedResponse : ProviderFailureCodes.ProviderError, "Weather provider failed safely.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "geography_context", "degraded", ex is JsonException ? ProviderFailureCodes.MalformedResponse : ProviderFailureCodes.ProviderError, "Geography context provider failed safely.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+        }
+    }
+
+    private static string BuildClimateSummary(double latitude, double? temperatureC, string? conditions)
+    {
+        var band = Math.Abs(latitude) switch
+        {
+            < 23.5 => "tropical latitude band",
+            < 35 => "subtropical latitude band",
+            < 55 => "mid-latitude band",
+            < 66.5 => "subpolar latitude band",
+            _ => "polar latitude band"
+        };
+        var tempText = temperatureC.HasValue ? $" Current temperature signal: {temperatureC.Value:0.#}C." : string.Empty;
+        var conditionText = string.IsNullOrWhiteSpace(conditions) ? string.Empty : $" Current condition signal: {conditions}.";
+        return $"{band}.{tempText}{conditionText}";
+    }
+
+    private static string BuildGeographySummary(string location, double latitude, double longitude)
+    {
+        var hemisphere = latitude >= 0 ? "Northern Hemisphere" : "Southern Hemisphere";
+        var eastWest = longitude >= 0 ? "Eastern Hemisphere" : "Western Hemisphere";
+        return $"{location} is at approximately {Math.Abs(latitude):0.##} degrees {(latitude >= 0 ? "N" : "S")}, {Math.Abs(longitude):0.##} degrees {(longitude >= 0 ? "E" : "W")} ({hemisphere}, {eastWest}). Use this for map position, latitude-climate reasoning, regional comparison, and place-based examples.";
+    }
+
+    private async Task<ProviderToolResultDto> RecordAsync(ProviderToolResultDto result, Guid? userId, Guid? sessionId, Guid? topicId, CancellationToken ct)
+    {
+        await ProviderTelemetry.RecordAsync(_telemetry, result, userId, sessionId, topicId, ct);
+        return result;
+    }
+}
+
+public sealed class GeocodingProvider : IGeocodingProvider
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IRuntimeTelemetryService _telemetry;
+    private readonly ILogger<GeocodingProvider> _logger;
+
+    public GeocodingProvider(
+        IHttpClientFactory httpClientFactory,
+        IRuntimeTelemetryService telemetry,
+        ILogger<GeocodingProvider> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _telemetry = telemetry;
+        _logger = logger;
+    }
+
+    public async Task<ProviderToolResultDto> GeocodeAsync(string location, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default)
+    {
+        const string toolId = "geocoding";
+        var sw = Stopwatch.StartNew();
+        if (string.IsNullOrWhiteSpace(location) || location.Trim().Length < 2)
+        {
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "needs_input", "missing_location", "Geography context needs a city, region, or location before provider data can be used."), userId, sessionId, topicId, ct);
+        }
+
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(8));
+            var client = _httpClientFactory.CreateClient("Geocoding");
+            var url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(location.Trim())}&count=1&language=tr&format=json";
+            var response = await client.GetAsync(url, timeout.Token);
+            var body = await response.Content.ReadAsStringAsync(timeout.Token);
+            if (!response.IsSuccessStatusCode)
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "degraded", ProviderFailureCodes.ProviderError, $"Geocoding failed with status {(int)response.StatusCode}.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "needs_input", ProviderFailureCodes.EmptyResult, "Location could not be resolved; ask the learner for a clearer city/location.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+
+            var first = results[0];
+            var name = first.TryGetProperty("name", out var n) ? n.GetString() ?? location.Trim() : location.Trim();
+            var country = first.TryGetProperty("country", out var c) ? c.GetString() : null;
+            var label = string.IsNullOrWhiteSpace(country) ? name : $"{name}, {country}";
+            var lat = first.TryGetProperty("latitude", out var latProp) ? latProp.GetDouble() : double.NaN;
+            var lon = first.TryGetProperty("longitude", out var lonProp) ? lonProp.GetDouble() : double.NaN;
+            if (double.IsNaN(lat) || double.IsNaN(lon))
+                return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "degraded", ProviderFailureCodes.MalformedResponse, "Location coordinates were missing.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+
+            var dto = new GeocodingResultDto(label, lat, lon, "Open-Meteo Geocoding");
+            var result = new ProviderToolResultDto(true, toolId, "open_meteo_geocoding", "ready", dto, [new ProviderCitationDto("Open-Meteo geocoding", null, "Open-Meteo", DateTime.UtcNow, 0.80)], DateTime.UtcNow, sw.ElapsedMilliseconds, false, null, "Location resolved for geography context.", 0.80, 1);
+            return await RecordAsync(result, userId, sessionId, topicId, ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "timeout", ProviderFailureCodes.ProviderTimeout, "Geocoding timed out; geography context should ask for location confirmation.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Geocoding] Provider call failed.");
+            return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "degraded", ProviderFailureCodes.UnknownFailure, "Geocoding failed safely; do not invent location data.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
 
     private async Task<ProviderToolResultDto> RecordAsync(ProviderToolResultDto result, Guid? userId, Guid? sessionId, Guid? topicId, CancellationToken ct)
     {
+        await ProviderTelemetry.RecordAsync(_telemetry, result, userId, sessionId, topicId, ct);
+        return result;
+    }
+}
+
+public sealed class VisualArtifactProvider : IVisualArtifactProvider
+{
+    private readonly IConfiguration _configuration;
+    private readonly IRuntimeTelemetryService _telemetry;
+
+    public VisualArtifactProvider(IConfiguration configuration, IRuntimeTelemetryService telemetry)
+    {
+        _configuration = configuration;
+        _telemetry = telemetry;
+    }
+
+    public async Task<ProviderToolResultDto> CreateVisualAsync(string prompt, string artifactType = "image_prompt", Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default)
+    {
+        const string toolId = "visual_generation";
+        var enabled = bool.TryParse(_configuration["Tools:VisualGeneration:Enabled"] ?? _configuration["AI:VisualGeneration:Enabled"], out var value) && value;
+        var safePrompt = string.IsNullOrWhiteSpace(prompt)
+            ? "educational concept diagram, clean labels, high contrast"
+            : prompt.Trim();
+
+        ProviderToolResultDto result;
+        if (!enabled)
+        {
+            result = ProviderToolResultDto.Fallback(
+                toolId,
+                "visual_fallback",
+                "degraded",
+                ProviderFailureCodes.ProviderDisabled,
+                "Visual image generation is disabled; use Mermaid/table fallback instead.");
+        }
+        else
+        {
+            var url = $"https://image.pollinations.ai/prompt/{Uri.EscapeDataString(safePrompt)}";
+            var dto = new VisualArtifactResultDto(safePrompt, url, "pollinations", "image_url", "Mermaid/table fallback remains available.");
+            result = new ProviderToolResultDto(true, toolId, "pollinations", "ready", dto, [new ProviderCitationDto("Generated visual prompt", url, "Pollinations", DateTime.UtcNow, 0.60)], DateTime.UtcNow, 0, false, null, "Visual artifact URL is available; verify it before treating it as factual evidence.", 0.60, 1);
+        }
+
         await ProviderTelemetry.RecordAsync(_telemetry, result, userId, sessionId, topicId, ct);
         return result;
     }

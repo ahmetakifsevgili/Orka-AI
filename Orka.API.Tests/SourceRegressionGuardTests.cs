@@ -6,41 +6,48 @@ namespace Orka.API.Tests;
 
 public sealed class SourceRegressionGuardTests
 {
+    private const string MojibakeContinuation =
+        @"(?:[\u0080-\u00bf]|\u20ac|\u201a|\u0192|\u201e|\u2026|\u2020|\u2021|\u02c6|\u2030|\u0160|\u2039|\u0152|\u017d|\u2018|\u2019|\u201c|\u201d|\u2022|\u2013|\u2014|\u02dc|\u2122|\u0161|\u203a|\u0153|\u017e|\u0178)";
+
     private static readonly Regex MojibakeRegex = new(
-        "[\u00c2\u00c3\u00c4\u00c5\ufffd]|\u00e2\u20ac|\u011f\u0178",
+        $@"(?:[\u00c2-\u00c5]{MojibakeContinuation}|\u00e2{MojibakeContinuation}{{1,2}}|\u011f\u0178|\u00ef\u00b8|\ufffd)",
         RegexOptions.Compiled);
 
     [Fact]
     public void ProductSource_DoesNotContainCommonMojibakeMarkers()
     {
-        string[] files =
-        [
-            "Orka.API/Controllers/CodeController.cs",
-            "Orka.Core/DTOs/Code/CodeRunRequest.cs",
-            "Orka.Infrastructure/Services/ClassroomService.cs",
-            "Orka.Infrastructure/Services/ContextBuilder.cs",
-            "Orka.Infrastructure/Services/DeepPlanAgent.cs",
-            "Orka.Infrastructure/Services/AgentOrchestratorService.cs",
-            "Orka.Infrastructure/Services/TutorAgent.cs",
-            "Orka.Infrastructure/SemanticKernel/Plugins/YouTubeTranscriptPlugin.cs",
-            "Orka-Front/src/components/ClassroomAudioPlayer.tsx",
-            "Orka-Front/src/components/InteractiveIDE.tsx",
-            "Orka-Front/src/components/QuizCard.tsx",
-            "Orka-Front/src/components/RichMarkdown.tsx",
-            "Orka-Front/src/components/SystemHealthHUD.tsx",
-            "Orka-Front/src/components/WikiMainPanel.tsx",
-            "Orka-Front/src/pages/Landing.tsx",
-            "Orka-Front/src/pages/Login.tsx",
-            "Orka-Front/src/services/api.ts"
-        ];
-
-        var dirtyFiles = files
+        var dirtyFiles = EnumerateProductSourceFiles()
             .Select(relative => (relative, text: ReadRepoText(relative)))
             .Where(item => MojibakeRegex.IsMatch(item.text))
             .Select(item => item.relative)
             .ToArray();
 
         Assert.True(dirtyFiles.Length == 0, "Mojibake markers found in: " + string.Join(", ", dirtyFiles));
+    }
+
+    [Theory]
+    [InlineData("T\u00c3\u00bcrk\u00c3\u00a7e")]
+    [InlineData("Ba\u00c5\u017flang\u00c4\u00b1\u00c3\u00a7")]
+    [InlineData("Akademik \u00e2\u20ac\u201d kaynak")]
+    [InlineData("sel\u00c3\u0192\u00c2\u00a7uk")]
+    [InlineData("\u011f\u0178\u201c\u0161")]
+    [InlineData("\u00ef\u00b8\u008f")]
+    [InlineData("\u00c2\u00b7")]
+    public void MojibakeGuard_DetectsKnownDirtyExamples(string dirty)
+    {
+        Assert.Matches(MojibakeRegex, dirty);
+    }
+
+    [Theory]
+    [InlineData("Türkçe")]
+    [InlineData("Français")]
+    [InlineData("Español")]
+    [InlineData("Português")]
+    [InlineData("Üben")]
+    [InlineData("hâlâ")]
+    public void MojibakeGuard_AllowsValidUnicodeLanguageNames(string clean)
+    {
+        Assert.DoesNotMatch(MojibakeRegex, clean);
     }
 
     [Fact]
@@ -113,16 +120,16 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("NotebookLM", landing);
         Assert.Contains("QA ve sistem g\u00fcveni", landing);
 
-        Assert.Contains("[P4 G\u00d6RSEL \u00d6\u011eRENME VALIDATOR]", tutor);
+        Assert.Contains("[P4 G\u00d6RSEL \u00d6\u011eRENME VALIDATOR - ACTION PLAN \u00d6NCEL\u0130KL\u0130]", tutor);
         Assert.Contains("Mermaid", tutor);
         Assert.Contains("mikro kontrol sorusu", tutor);
 
-        Assert.Contains("PlanDomain.Exam", deepPlan);
-        Assert.Contains("PlanDomain.Algorithm", deepPlan);
-        Assert.Contains("PlanDomain.Math", deepPlan);
-        Assert.Contains("PlanDomain.Language", deepPlan);
-        Assert.Contains("Spaced Repetition", deepPlan);
-        Assert.Contains("Speaking Prompt", deepPlan);
+        Assert.Contains("BuildConceptGraphPlanningGuidance", deepPlan);
+        Assert.Contains("BuildConceptGraphFallbackModules", deepPlan);
+        Assert.Contains("onkosul -> ana kavram", deepPlan);
+        Assert.DoesNotContain("PlanDomain.", deepPlan);
+        Assert.DoesNotContain("BuildDomainPlanningGuidance", deepPlan);
+        Assert.DoesNotContain("BuildDomainFallbackModules", deepPlan);
     }
 
     [Fact]
@@ -154,6 +161,98 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("tour-nav-dashboard", onboarding);
         Assert.Contains("tour-nav-wiki", onboarding);
         Assert.Contains("tour-nav-ide", onboarding);
+    }
+
+    [Fact]
+    public void WikiV2_ReplacesRawWikiAgentChatPath()
+    {
+        var controller = ReadRepoText("Orka.API/Controllers/WikiController.cs");
+        var program = ReadRepoText("Orka.API/Program.cs");
+        var services = ReadRepoText("Orka.Infrastructure/Services/WikiLearningServices.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var panel = ReadRepoText("Orka-Front/src/components/WikiMainPanel.tsx");
+
+        Assert.Contains("IWikiLearningAssistant", controller);
+        Assert.Contains("workspace-state", controller);
+        Assert.DoesNotContain("IWikiAgent wikiAgent", controller);
+        Assert.False(RepoFileExists("Orka.Core/Interfaces/IWikiAgent.cs"));
+        Assert.False(RepoFileExists("Orka.Infrastructure/Services/WikiAgent.cs"));
+
+        Assert.Contains("AddScoped<IWikiLearningAssistant, WikiLearningAssistant>", program);
+        Assert.DoesNotContain("IWikiAgent", program);
+        Assert.DoesNotContain("WikiAgent", program);
+        Assert.Contains("WikiCitationGuard", services);
+        Assert.Contains("RetrieveTopicEvidenceAsync", services);
+        Assert.Contains("SourceCitationCheck", services);
+        Assert.Contains("getWorkspaceState", api);
+        Assert.Contains("getTopicQuality", api);
+        Assert.Contains("artifact_ready", panel);
+        Assert.Contains("TutorAPI.getArtifact", panel);
+        Assert.Contains("Kaynak Sağlığı", panel);
+    }
+
+    [Fact]
+    public void Phase0AndPhase2ClosureGuards_TextHealthAndNotebookToolsAreWired()
+    {
+        var program = ReadRepoText("Orka.API/Program.cs");
+        var textController = ReadRepoText("Orka.API/Controllers/TextHealthController.cs");
+        var textService = ReadRepoText("Orka.Infrastructure/Services/TextHealthService.cs");
+        var summarizer = ReadRepoText("Orka.Infrastructure/Services/SummarizerAgent.cs");
+        var ragEvalSet = ReadRepoText("Orka.API.Tests/TestData/RagMiniEvalSet.json");
+
+        Assert.Contains("ITextHealthService", program);
+        Assert.Contains("api/dev/text-health", textController);
+        Assert.Contains("TextHealth:RepairEnabled", textController);
+        Assert.Contains("DryRunAsync", textService);
+        Assert.Contains("RepairAsync", textService);
+        Assert.Contains("Dirty(0x00c3, 0x00bc)", textService);
+
+        Assert.Contains("BuildNotebookToolEvidenceAsync", summarizer);
+        Assert.Contains("IWikiEvidenceService", summarizer);
+        Assert.Contains("RecordNotebookToolCitationChecksAsync", summarizer);
+        Assert.Contains("SourceCitationChecks", summarizer);
+        Assert.DoesNotContain("var source = await BuildNotebookToolSourceAsync", summarizer);
+
+        Assert.Contains("source-grounded-pdf-qa", ragEvalSet);
+        Assert.Contains("source-poisoning-chunk", ragEvalSet);
+        Assert.Contains("notebook-tools-grounding", ragEvalSet);
+    }
+
+    [Fact]
+    public void Phase4ShellReadModel_IsWiredWithoutReplacingStableRoutes()
+    {
+        var dashboardController = ReadRepoText("Orka.API/Controllers/DashboardController.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var home = ReadRepoText("Orka-Front/src/pages/Home.tsx");
+        var sidebar = ReadRepoText("Orka-Front/src/components/LeftSidebar.tsx");
+        var dashboardPanel = ReadRepoText("Orka-Front/src/components/DashboardPanel.tsx");
+
+        Assert.Contains("HttpGet(\"today\")", dashboardController);
+        Assert.Contains("DashboardTodayDto", dashboardController);
+        Assert.Contains("Kaynak yok", dashboardController);
+        Assert.Contains("Citation desteklenmiyor", dashboardController);
+        Assert.Contains("getToday", api);
+        Assert.Contains("DashboardTodayDto", api);
+
+        Assert.Contains("\"sources\"", home);
+        Assert.Contains("\"practice\"", home);
+        Assert.Contains("\"progress\"", home);
+        Assert.Contains("Kaynaklar için önce bir konu seç.", home);
+
+        Assert.Contains("labelKey: \"learn\"", sidebar);
+        Assert.Contains("labelKey: \"sources\"", sidebar);
+        Assert.Contains("labelKey: \"practice\"", sidebar);
+        Assert.Contains("labelKey: \"review\"", sidebar);
+        Assert.Contains("labelKey: \"progress\"", sidebar);
+
+        Assert.Contains("todayFocusTitle", dashboardPanel);
+        Assert.Contains("sourceHealthLabel", dashboardPanel);
+        Assert.Contains("todayActionView", dashboardPanel);
+        Assert.Contains("Çalışmaya geç", dashboardPanel);
+        Assert.Contains("Kaynakları aç", dashboardPanel);
+        Assert.DoesNotContain("Calismaya Gec", dashboardPanel);
+        Assert.DoesNotContain("Henuz aktif", dashboardPanel);
+        Assert.DoesNotContain("Hatasini", dashboardPanel);
     }
 
     [Fact]
@@ -346,6 +445,84 @@ public sealed class SourceRegressionGuardTests
         var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(fullPath), "Missing expected source file: " + fullPath);
         return File.ReadAllText(fullPath, Encoding.UTF8);
+    }
+
+    private static bool RepoFileExists(string relativePath)
+    {
+        var root = FindRepoRoot();
+        var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        return File.Exists(fullPath);
+    }
+
+    private static IEnumerable<string> EnumerateProductSourceFiles()
+    {
+        var root = FindRepoRoot();
+        string[] sourceRoots =
+        [
+            "Orka.API",
+            "Orka.Core",
+            "Orka.Infrastructure",
+            "Orka-Front/src",
+            "Orka-Front/scripts",
+            "docs"
+        ];
+
+        HashSet<string> extensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".cs",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".mjs",
+            ".json",
+            ".md",
+            ".css",
+            ".html"
+        };
+
+        foreach (var relativeRoot in sourceRoots)
+        {
+            var fullRoot = Path.Combine(root, relativeRoot.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(fullRoot))
+            {
+                continue;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(fullRoot, "*", SearchOption.AllDirectories))
+            {
+                if (!extensions.Contains(Path.GetExtension(file)) || IsIgnoredSourceFile(root, file))
+                {
+                    continue;
+                }
+
+                yield return Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
+            }
+        }
+    }
+
+    private static bool IsIgnoredSourceFile(string root, string file)
+    {
+        var relative = Path.GetRelativePath(root, file);
+        var parts = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string[] ignoredDirectories =
+        [
+            "bin",
+            "obj",
+            "node_modules",
+            "dist",
+            "build",
+            ".git",
+            ".vs"
+        ];
+
+        if (parts.Any(part => ignoredDirectories.Contains(part, StringComparer.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var fileName = Path.GetFileName(file);
+        return fileName.EndsWith(".Designer.cs", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(fileName, "OrkaDbContextModelSnapshot.cs", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepoRoot()

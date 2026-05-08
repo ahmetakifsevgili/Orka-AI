@@ -14,12 +14,43 @@ public interface INewsProvider
 
 public interface IWeatherProvider
 {
+    Task<ProviderToolResultDto> GetGeographyContextAsync(double latitude, double longitude, string? locationName = null, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default);
+
     Task<ProviderToolResultDto> GetWeatherAsync(double latitude, double longitude, string? locationName = null, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default);
+}
+
+public interface IGeocodingProvider
+{
+    Task<ProviderToolResultDto> GeocodeAsync(string location, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default);
 }
 
 public interface IMarketDataProvider
 {
     Task<ProviderToolResultDto> GetMarketDataAsync(string assetIds, Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default);
+}
+
+public interface IVisualArtifactProvider
+{
+    Task<ProviderToolResultDto> CreateVisualAsync(string prompt, string artifactType = "image_prompt", Guid? userId = null, Guid? sessionId = null, Guid? topicId = null, CancellationToken ct = default);
+}
+
+public interface ITeachingEvidenceRouter
+{
+    IReadOnlyList<TutorToolPlanDto> Route(TutorTurnStateDto turnState, string normalizedUserMessage);
+}
+
+public interface IRealWorldEvidenceService
+{
+    Task<TeachingEvidenceResultDto> GetEvidenceAsync(
+        TeachingEvidenceRequestDto request,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<TeachingEvidenceCardDto>> GetRecentCardsAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? tutorActionTraceId = null,
+        int take = 8,
+        CancellationToken ct = default);
 }
 
 public interface IMistakeClassifierService

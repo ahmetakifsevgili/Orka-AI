@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -37,6 +37,31 @@ const stableQuestionHash = (quiz: QuizData) =>
     .replace(/\s+/g, " ")
     .slice(0, 180);
 
+const buildSourceRefs = (quiz: QuizData) => {
+  const base =
+    quiz.sourceRefs && typeof quiz.sourceRefs === "object" && !Array.isArray(quiz.sourceRefs)
+      ? { ...(quiz.sourceRefs as Record<string, unknown>) }
+      : quiz.sourceRefs
+        ? { rawSourceRefs: quiz.sourceRefs }
+        : {};
+
+  return {
+    ...base,
+    assessmentItemId: quiz.assessmentItemId,
+    assessmentItemKey: quiz.assessmentItemKey,
+    conceptKey: quiz.conceptKey,
+    conceptTag: quiz.conceptTag,
+    cognitiveSkill: quiz.cognitiveSkill,
+    misconceptionTarget: quiz.misconceptionTarget,
+    evidenceExpected: quiz.evidenceExpected,
+    scoringRule: quiz.scoringRule,
+    learningOutcomeIds: quiz.learningOutcomeIds,
+    knowledgeTracingStateId: quiz.knowledgeTracingStateId,
+    masteryProbability: quiz.masteryProbability,
+    itemQualityStatus: quiz.itemQualityStatus,
+  };
+};
+
 export default function QuizCard({
   quiz,
   messageId,
@@ -61,6 +86,7 @@ export default function QuizCard({
   const [completionNote, setCompletionNote] = useState<string | null>(null);
   const [confirmingZeroStart, setConfirmingZeroStart] = useState(false);
   const [answers, setAnswers] = useState<Array<{ isCorrect: boolean; skill?: string }>>([]);
+  const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const { addQuizAttempt } = useQuizHistory();
 
   const activeQuiz = quizArray[currentQuestionIdx] ?? currentQuiz;
@@ -69,10 +95,15 @@ export default function QuizCard({
   const isCorrectAnswer = selectedOption?.isCorrect ?? false;
   const isLastQuestion = currentQuestionIdx >= totalQuestions - 1;
 
+  useEffect(() => {
+    setQuestionStartedAt(Date.now());
+  }, [currentQuestionIdx, activeQuiz.questionId, activeQuiz.question]);
+
   const buildAttempt = (): QuizAttempt | null => {
     if (!selectedOption || !selectedId) return null;
     const idx = activeQuiz.options.findIndex((option) => option.id === selectedId);
     const label = OPTION_LABELS[idx] ?? "?";
+    const sourceRefs = buildSourceRefs(activeQuiz);
     return {
       id: `qa-${Date.now()}`,
       messageId,
@@ -85,11 +116,24 @@ export default function QuizCard({
       isCorrect: selectedOption.isCorrect,
       explanation: activeQuiz.explanation,
       skillTag: activeQuiz.skillTag ?? activeQuiz.topic,
+      assessmentItemId: activeQuiz.assessmentItemId,
+      conceptKey: activeQuiz.conceptKey,
+      conceptTag: activeQuiz.conceptTag,
+      cognitiveSkill: activeQuiz.cognitiveSkill,
+      misconceptionTarget: activeQuiz.misconceptionTarget,
+      evidenceExpected: activeQuiz.evidenceExpected,
+      scoringRule: activeQuiz.scoringRule,
+      learningOutcomeIdsJson: activeQuiz.learningOutcomeIds ? JSON.stringify(activeQuiz.learningOutcomeIds) : undefined,
+      knowledgeTracingStateId: activeQuiz.knowledgeTracingStateId,
+      masteryProbability: activeQuiz.masteryProbability,
+      itemQualityStatus: activeQuiz.itemQualityStatus,
       topicPath: activeQuiz.topicPath ?? activeQuiz.topic,
       difficulty: activeQuiz.difficulty,
       cognitiveType: activeQuiz.cognitiveType,
       questionHash: stableQuestionHash(activeQuiz),
-      sourceRefsJson: activeQuiz.sourceRefs ? JSON.stringify(activeQuiz.sourceRefs) : undefined,
+      sourceRefsJson: JSON.stringify(sourceRefs),
+      responseTimeMs: Math.max(0, Date.now() - questionStartedAt),
+      wasSkipped: false,
       timestamp: new Date(),
     };
   };
@@ -106,11 +150,22 @@ export default function QuizCard({
       isCorrect: attempt.isCorrect,
       explanation: attempt.explanation,
       skillTag: attempt.skillTag,
+      assessmentItemId: attempt.assessmentItemId,
+      conceptKey: attempt.conceptKey,
+      conceptTag: attempt.conceptTag,
+      cognitiveSkill: attempt.cognitiveSkill,
+      misconceptionTarget: attempt.misconceptionTarget,
+      evidenceExpected: attempt.evidenceExpected,
+      scoringRule: attempt.scoringRule,
+      learningOutcomeIdsJson: attempt.learningOutcomeIdsJson,
       topicPath: attempt.topicPath,
       difficulty: attempt.difficulty,
       cognitiveType: attempt.cognitiveType,
       questionHash: attempt.questionHash,
       sourceRefsJson: attempt.sourceRefsJson,
+      responseTimeMs: attempt.responseTimeMs,
+      wasSkipped: attempt.wasSkipped,
+      confidenceSelfRating: attempt.confidenceSelfRating,
     };
 
     if (planDiagnostic) {

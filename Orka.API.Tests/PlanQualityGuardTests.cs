@@ -8,54 +8,61 @@ namespace Orka.API.Tests;
 public sealed class PlanQualityGuardTests
 {
     [Theory]
-    [InlineData("KPSS genel yetenek ve genel kultur", "Exam")]
-    [InlineData("HackerRank algoritma hazirligi", "Algorithm")]
-    [InlineData("Matematik olasilik ve kombinasyon", "Math")]
-    [InlineData("IELTS icin Ingilizce konusma", "Language")]
-    public void DeepPlan_DetectsDomainSpecificPlanningMode(string topic, string expectedDomain)
+    [InlineData("DetectPlanDomain")]
+    [InlineData("BuildDomainPlanningGuidance")]
+    [InlineData("BuildDomainFallbackModules")]
+    public void DeepPlan_NoLongerExposesDomainSpecificPlanningMode(string methodName)
     {
-        var domain = InvokePrivateStatic("DetectPlanDomain", topic);
+        var method = typeof(DeepPlanAgent).GetMethod(
+            methodName,
+            BindingFlags.NonPublic | BindingFlags.Static);
 
-        Assert.Equal(expectedDomain, domain?.ToString());
+        Assert.Null(method);
+    }
+
+    [Fact]
+    public void DeepPlan_GuidanceIsConceptGraphBased()
+    {
+        var guidance = Assert.IsType<string>(InvokePrivateStatic("BuildConceptGraphPlanningGuidance"));
+
+        Assert.Contains("GENERIC CONCEPT GRAPH", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("onkosul", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ana kavram", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("mastery", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SINAV HAZIRLIK", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ALGORITMA / HACKERRANK", guidance, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Spaced repetition", guidance, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
-    [InlineData("KPSS genel yetenek ve genel kultur", "SINAV HAZIRLIK", "Deneme", "Yanlis")]
-    [InlineData("HackerRank algoritma hazirligi", "ALGORITMA / HACKERRANK", "two pointers", "IDE")]
-    [InlineData("Matematik olasilik ve kombinasyon", "MATEMATIK", "Formulun", "Karma")]
-    [InlineData("IELTS icin Ingilizce konusma", "DIL OGRENIMI", "Spaced repetition", "speaking prompt")]
-    public void DeepPlan_GuidanceIsDomainSpecific(string topic, string requiredHeader, string requiredA, string requiredB)
-    {
-        var guidance = Assert.IsType<string>(InvokePrivateStatic("BuildDomainPlanningGuidance", topic));
-
-        Assert.Contains(requiredHeader, guidance, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(requiredA, guidance, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(requiredB, guidance, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Theory]
-    [InlineData("KPSS genel yetenek ve genel kultur", "Deneme", "Paragraf", "Matematik")]
-    [InlineData("HackerRank algoritma hazirligi", "Two Pointers", "Dynamic Programming", "HackerRank")]
-    [InlineData("Matematik olasilik ve kombinasyon", "Formulun", "Problem", "Telafi")]
-    [InlineData("IELTS icin Ingilizce konusma", "Telaffuz", "Speaking", "Spaced Repetition")]
-    public void DeepPlan_FallbackModulesAreNotGeneric(string topic, string requiredA, string requiredB, string requiredC)
+    [InlineData("KPSS genel yetenek ve genel kultur")]
+    [InlineData("HackerRank algoritma hazirligi")]
+    [InlineData("Matematik olasilik ve kombinasyon")]
+    [InlineData("IELTS icin Ingilizce konusma")]
+    public void DeepPlan_FallbackModulesComeFromGenericConceptGraph(string topic)
     {
         var modules = GetFallbackModules(topic);
         var text = string.Join("\n", modules.SelectMany(m => new[] { m.Title }.Concat(m.Topics)));
 
-        Assert.True(modules.Count >= 4);
-        Assert.Contains(requiredA, text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(requiredB, text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(requiredC, text, StringComparison.OrdinalIgnoreCase);
+        Assert.True(modules.Count >= 6);
+        Assert.All(modules, module => Assert.True(module.Topics.Count >= 4));
+        Assert.True(modules.Sum(module => module.Topics.Count) >= 24);
+        Assert.Contains("Onkosul", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Ana Kavram", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Yanilgi Onarimi", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Mastery Kontrolu", text, StringComparison.OrdinalIgnoreCase);
 
         string[] forbidden =
         [
+            "PlanDomain",
+            "BuildDomainFallbackModules",
+            "Two Pointers",
+            "Dynamic Programming",
+            "Spaced Repetition",
+            "Speaking Prompt",
             "Genel Bakis",
-            "Genel Bakış",
             "Modul 1",
-            "Modül 1",
-            "Bolum 1",
-            "Bölüm 1"
+            "Bolum 1"
         ];
 
         foreach (var phrase in forbidden)
@@ -76,7 +83,7 @@ public sealed class PlanQualityGuardTests
 
     private static IReadOnlyList<(string Title, IReadOnlyList<string> Topics)> GetFallbackModules(string topic)
     {
-        var result = InvokePrivateStatic("BuildDomainFallbackModules", topic, false);
+        var result = InvokePrivateStatic("BuildQualityFallbackModules", topic);
         Assert.NotNull(result);
 
         var output = new List<(string Title, IReadOnlyList<string> Topics)>();
@@ -85,7 +92,17 @@ public sealed class PlanQualityGuardTests
             var type = item.GetType();
             var title = type.GetProperty("Title")?.GetValue(item)?.ToString() ?? string.Empty;
             var topicsRaw = type.GetProperty("Topics")?.GetValue(item) as IEnumerable;
-            var topics = topicsRaw?.Cast<object>().Select(x => x.ToString() ?? string.Empty).ToList() ?? [];
+            var topics = topicsRaw?.Cast<object>().Select(x => x.ToString() ?? string.Empty).ToList();
+            if (topics is null)
+            {
+                var lessonsRaw = type.GetProperty("Lessons")?.GetValue(item) as IEnumerable;
+                topics = lessonsRaw?.Cast<object>().Select(lesson =>
+                {
+                    var lessonType = lesson.GetType();
+                    return lessonType.GetProperty("Title")?.GetValue(lesson)?.ToString() ?? string.Empty;
+                }).ToList() ?? [];
+            }
+
             output.Add((title, topics));
         }
 

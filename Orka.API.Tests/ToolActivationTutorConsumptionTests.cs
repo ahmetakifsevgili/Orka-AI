@@ -209,6 +209,12 @@ public sealed class ToolActivationTutorConsumptionTests
         public Task<IEnumerable<ProviderUsageStat>> GetProviderUsageAsync() => Task.FromResult<IEnumerable<ProviderUsageStat>>([]);
         public Task<string?> GetJsonAsync(string key) => Task.FromResult<string?>(null);
         public Task SetJsonAsync(string key, string payload, TimeSpan ttl) => Task.CompletedTask;
+        public Task AddStreamEventAsync(string key, IReadOnlyDictionary<string, string> values, TimeSpan? ttl = null) => Task.CompletedTask;
+        public Task<IReadOnlyList<RedisStreamEventDto>> ReadStreamEventsAsync(string key, string afterId = "0-0", int count = 50) => Task.FromResult<IReadOnlyList<RedisStreamEventDto>>([]);
+        public Task<bool> EnsureConsumerGroupAsync(string key, string group, string startId = "0-0") => Task.FromResult(true);
+        public Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">") => Task.FromResult<IReadOnlyList<RedisStreamEventDto>>([]);
+        public Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds) => Task.CompletedTask;
+        public Task<bool> SupportsVectorSearchAsync() => Task.FromResult(false);
         public Task DeleteKeyAsync(string key) => Task.CompletedTask;
         public Task<long> GetTopicVersionAsync(Guid topicId) => Task.FromResult(1L);
         public Task<long> BumpTopicVersionAsync(Guid topicId, string reason) => Task.FromResult(2L);

@@ -45,6 +45,18 @@ public static class PlanIntelligenceBriefBuilder
             : "0";
         sb.AppendLine($"GroundingMode: {groundingMode}");
         sb.AppendLine($"SourceAwareness: {sourceCountValue} bounded source signals; source titles are not curriculum titles.");
+        var graphQuality = parsed.TryGetValue("ConceptGraphQualityStatus", out var graphQualityValues)
+            ? graphQualityValues.FirstOrDefault() ?? "unknown"
+            : "unknown";
+        var assessmentQuality = parsed.TryGetValue("AssessmentQualityStatus", out var assessmentQualityValues)
+            ? assessmentQualityValues.FirstOrDefault() ?? "unknown"
+            : "unknown";
+        sb.AppendLine($"QualityAwareness: graph={graphQuality}; assessment={assessmentQuality}");
+        if (graphQuality.Equals("degraded", StringComparison.OrdinalIgnoreCase) ||
+            assessmentQuality.Equals("degraded", StringComparison.OrdinalIgnoreCase))
+        {
+            sb.AppendLine("QualityCaution: use conservative pacing, add extra verification checkpoints, and do not overclaim learner mastery.");
+        }
 
         if (parsed.TryGetValue("FallbackWarning", out var fallback) && fallback.Count > 0)
         {
@@ -70,6 +82,8 @@ public static class PlanIntelligenceBriefBuilder
         AppendSection(sb, "MustUseFromBlueprint.PlanModules", parsed, "BlueprintPlanModules", 8);
         AppendSection(sb, "MustUseFromBlueprint.Timeline", parsed, "BlueprintTimeline", 8);
         AppendSection(sb, "MustUseFromBlueprint.CauseEffect", parsed, "BlueprintCauseEffectPairs", 6);
+        AppendSection(sb, "MustUseFromConceptGraph.Concepts", parsed, "Concepts", 12);
+        AppendSection(sb, "MustUseFromAssessmentGrammar.ItemSpecs", parsed, "ItemSpecs", 8);
         AppendKeyFactsOnlyIfUseful(sb, parsed, topic);
 
         sb.AppendLine("MustIgnore:");
@@ -156,6 +170,9 @@ public static class PlanIntelligenceBriefBuilder
                 line.StartsWith("PracticeConcepts:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("WeakConcepts:", StringComparison.OrdinalIgnoreCase) ||
                 line.StartsWith("MistakePatterns:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("DiagnosticProfileId:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("ConceptMastery:", StringComparison.OrdinalIgnoreCase) ||
+                (line.StartsWith("-", StringComparison.OrdinalIgnoreCase) && line.Contains("score=", StringComparison.OrdinalIgnoreCase)) ||
                 line.StartsWith("Instruction:", StringComparison.OrdinalIgnoreCase))
             .Take(10)
             .Select(line => Trim(line, 220))
@@ -230,7 +247,7 @@ public static class PlanIntelligenceBriefBuilder
         {
             case PlanBriefDomain.Programming:
                 yield return "For programming, start from language/concept logic, then add code reading, debugging, refactor, mini project, and review checkpoints.";
-                yield return "Mention Orka IDE/sandbox only inside suitable practice lessons, not as the curriculum spine.";
+                yield return "Mention Orka IDE/sandbox only inside suitable practice lessons, not as the central lesson structure.";
                 break;
             case PlanBriefDomain.Algorithm:
                 yield return "For algorithms, sequence by patterns, data structures, complexity, drills, and timed problem solving.";
@@ -293,7 +310,7 @@ public static class PlanIntelligenceBriefBuilder
             return PlanBriefDomain.Language;
         }
 
-        if (ContainsAny(text, "tarih", "history", "selcuk", "selÃ§uk", "selcuklu", "selÃ§uklu", "osmanli", "osmanlÄ±", "ottoman", "roma", "medieval"))
+        if (ContainsAny(text, "tarih", "history", "selcuk", "selçuk", "selcuklu", "selçuklu", "osmanli", "osmanlı", "ottoman", "roma", "medieval"))
         {
             return PlanBriefDomain.History;
         }

@@ -111,7 +111,7 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackIsDomainAwareForNonTechnicalTopics()
+    public void DiagnosticQuizQuality_FallbackUsesGenericAssessmentPathForNonTechnicalTopics()
     {
         var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS tarih ve genel kultur");
 
@@ -119,18 +119,20 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".Result", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("async/await", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("neden-sonuc", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(DiagnosticQuizQualityGate.Validate(result, "KPSS tarih ve genel kultur").IsAcceptable);
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesExamReadingOptionsForKpssParagraph()
+    public void DiagnosticQuizQuality_FallbackDoesNotUseExamSpecificQuestionPackForKpssParagraph()
     {
         var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS paragraf sorularinda hizlanmak");
 
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
         Assert.Contains("paragraf", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ana fikir", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("celdirici", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("misconception_probe", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
         Assert.True(DiagnosticQuizQualityGate.Validate(result, "KPSS paragraf sorularinda hizlanmak").IsAcceptable);
@@ -144,31 +146,44 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
         Assert.Contains("```sql", result, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("index", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("execution plan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
         Assert.True(DiagnosticQuizQualityGate.Validate(result, "SQL index ve sorgu optimizasyonu").IsAcceptable);
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesHistoryBlueprintForSeljuk()
+    public void DiagnosticQuizQuality_FallbackUsesLegacyBlueprintOnlyAsGenericAdapterForSeljuk()
     {
-        var blueprint = LearningBlueprintBuilder.Build(
-            "Seljuk Empire history learning path",
-            "Selcuklu tarihi: tarih",
-            "Selcuklu tarihi",
-            "tarih",
-            new Orka.Core.DTOs.Korteks.CompressedPlanResearchContextDto());
+        var blueprint = new LearningBlueprintDto
+        {
+            Domain = "legacy-adapter",
+            ApprovedResearchIntent = "Seljuk Empire history learning path",
+            LearningRoute = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"],
+            SubConcepts = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"],
+            Concepts = ["state-formation", "political-authority", "administration", "culture", "economy", "military-structure", "source-reading", "chronology"],
+            AssessmentAxes = ["state-formation", "political-authority", "administration", "culture", "economy", "military-structure", "source-reading", "chronology"],
+            PlanModules =
+            [
+                new LearningBlueprintModuleDto
+                {
+                    Title = "Concept Graph Module 1",
+                    Lessons = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"]
+                }
+            ],
+            RecommendedQuestionCount = 20
+        };
 
         var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Selcuklu tarihi: tarih", blueprint);
         var report = DiagnosticQuizQualityGate.Validate(result, "Selcuklu tarihi: tarih");
 
         Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("Dandanakan", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Malazgirt", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Nizam", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Katvan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Dandanakan", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Malazgirt", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Katvan", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("debugging", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api-shape", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
@@ -184,7 +199,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Bu kodu dogru okumak icin hangi yaklasim", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("asagidaki ornek", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -196,7 +211,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("Kod parcasinda veri akisini ve karar noktasini tespit eder", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Bu parcada seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Islem siralamasini kurar", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Bu kodu dogru okumak icin hangi yaklasim", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("asagidaki ornek", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -207,9 +222,8 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
         Assert.Contains("```java", result, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Arrays.sort", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Binary search", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("HashMap", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Dynamic programming", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("async", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Task.Result", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
@@ -233,12 +247,14 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_ThrowsWhenPlanDiagnosticLeaksGenericJavaScaffold()
+    public void DiagnosticQuizQuality_GenericFallbackIsPortableAcrossTechnicalTopics()
     {
         var generic = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async await");
 
-        Assert.Throws<InvalidOperationException>(() =>
-            DiagnosticQuizQualityGate.EnsureQualityOrThrow(generic, "Java programlama: algoritmalar", 20, out _));
+        var result = DiagnosticQuizQualityGate.EnsureQualityOrThrow(generic, "Java programlama: algoritmalar", 20, out var report);
+
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
     }
 
     private static string BuildQuiz(

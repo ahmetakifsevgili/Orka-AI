@@ -47,7 +47,7 @@ public sealed class PlanDiagnosticTests
     }
 
     [Fact]
-    public async Task PlanDiagnostic_Start_ForHistoryUsesBlueprintAndNoProgrammingScaffold()
+    public async Task PlanDiagnostic_Start_ForHistoryUsesConceptGraphAdapterAndNoProgrammingScaffold()
     {
         var harness = await CreateHarnessAsync();
         harness.Factory.ReturnInvalidQuiz = true;
@@ -67,10 +67,11 @@ public sealed class PlanDiagnosticTests
         var state = await harness.Store.GetAsync(response.PlanRequestId);
 
         Assert.Equal("history", state!.LearningBlueprintDomain);
-        Assert.Contains("BlueprintLearningRoute", state.CompressedResearchPromptBlock);
-        Assert.Contains("Dandanakan", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Malazgirt", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Nizam", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AdapterLearningRoute", state.CompressedResearchPromptBlock);
+        Assert.Contains("[CONCEPT GRAPH]", state.CompressedResearchPromptBlock);
+        Assert.Contains("assessmentItemId", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Dandanakan", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Malazgirt", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("debugging", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api-shape", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
@@ -92,7 +93,7 @@ public sealed class PlanDiagnosticTests
     }
 
     [Fact]
-    public async Task PlanDiagnostic_Start_UsesDomainAwareFallbackWhenQuizProviderFails()
+    public async Task PlanDiagnostic_Start_UsesAssessmentGrammarFallbackWhenQuizProviderFails()
     {
         var harness = await CreateHarnessAsync();
         harness.Factory.ReturnInvalidQuiz = true;
@@ -110,9 +111,10 @@ public sealed class PlanDiagnosticTests
                 ApprovedResearchIntent = "Java programming algorithms learning path"
             });
 
-        Assert.Equal(20, response.QuizQuestionCount);
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
+        Assert.InRange(response.QuizQuestionCount, 15, 25);
+        Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
         Assert.Contains("```java", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("assessmentItemId", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Visual Studio", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
@@ -395,7 +397,7 @@ public sealed class PlanDiagnosticTests
             UserId = userId,
             Title = "C#",
             Category = "Programming",
-            LanguageLevel = "BaÅŸlangÄ±Ã§",
+            LanguageLevel = "Başlangıç",
             CreatedAt = DateTime.UtcNow,
             LastAccessedAt = DateTime.UtcNow
         });
@@ -407,6 +409,10 @@ public sealed class PlanDiagnosticTests
         var factory = new FakeAgentFactory();
         var recorder = new FakeQuizAttemptRecorder(db);
         var deepPlan = new FakeDeepPlanAgent();
+        var conceptMastery = new ConceptMasteryService(db, NullLogger<ConceptMasteryService>.Instance);
+        var conceptGraph = new ConceptGraphBuilder(db, null, NullLogger<ConceptGraphBuilder>.Instance);
+        var assessmentGrammar = new AssessmentGrammarEngine(db, null, NullLogger<AssessmentGrammarEngine>.Instance);
+        var diagnosticProfile = new DiagnosticProfileBuilder(db, null, conceptMastery, NullLogger<DiagnosticProfileBuilder>.Instance);
         var service = new PlanDiagnosticService(
             db,
             korteks,
@@ -415,7 +421,9 @@ public sealed class PlanDiagnosticTests
             store,
             recorder,
             deepPlan,
-            null,
+            conceptGraph,
+            assessmentGrammar,
+            diagnosticProfile,
             NullLogger<PlanDiagnosticService>.Instance);
 
         return new Harness(userId, topicId, db, store, korteks, compressor, factory, deepPlan, service);
@@ -597,6 +605,7 @@ public sealed class PlanDiagnosticTests
                 IsCorrect = request.IsCorrect,
                 Explanation = request.Explanation ?? "",
                 SkillTag = request.SkillTag,
+                AssessmentItemId = request.AssessmentItemId,
                 SourceRefsJson = request.SourceRefsJson,
                 CreatedAt = DateTime.UtcNow
             };

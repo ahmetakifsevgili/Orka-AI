@@ -105,7 +105,44 @@ builder.Services.AddScoped<IQuizAttemptRecorder, QuizAttemptRecorder>();
 builder.Services.AddScoped<IPlanDiagnosticStateStore, RedisPlanDiagnosticStateStore>();
 builder.Services.AddScoped<IPlanDiagnosticService, PlanDiagnosticService>();
 builder.Services.AddScoped<IStudyIntentAnalyzer, StudyIntentAnalyzer>();
-builder.Services.AddScoped<IWikiAgent, WikiAgent>();
+builder.Services.AddScoped<IConceptGraphBuilder, ConceptGraphBuilder>();
+builder.Services.AddScoped<IConceptGraphQualityService, ConceptGraphQualityService>();
+builder.Services.AddScoped<IAssessmentGrammarEngine, AssessmentGrammarEngine>();
+builder.Services.AddScoped<IAssessmentQualityService, AssessmentQualityService>();
+builder.Services.AddScoped<IDiagnosticProfileBuilder, DiagnosticProfileBuilder>();
+builder.Services.AddScoped<IConceptMasteryService, ConceptMasteryService>();
+builder.Services.AddScoped<IKnowledgeTracingService, KnowledgeTracingService>();
+builder.Services.AddScoped<ILearningEventSchemaService, LearningEventSchemaService>();
+builder.Services.AddScoped<ILearningEventNormalizer, LearningEventNormalizer>();
+builder.Services.AddScoped<ITutorPolicyEngine, TutorPolicyEngine>();
+builder.Services.AddScoped<ITutorPolicyTraceService, TutorPolicyTraceService>();
+builder.Services.AddScoped<ILearningStyleSignalService, LearningStyleSignalService>();
+builder.Services.AddScoped<IAffectiveSignalService, AffectiveSignalService>();
+builder.Services.AddScoped<ICognitiveLoadService, CognitiveLoadService>();
+builder.Services.AddScoped<ILearnerProfileService, LearnerProfileService>();
+builder.Services.AddScoped<ITutorWorkingMemoryService, TutorWorkingMemoryService>();
+builder.Services.AddScoped<ITutorTurnStateAssembler, TutorTurnStateAssembler>();
+builder.Services.AddScoped<ITutorActionPlanner, TutorActionPlanner>();
+builder.Services.AddScoped<ITutorToolOrchestrator, TutorToolOrchestrator>();
+builder.Services.AddScoped<ITeachingArtifactService, TeachingArtifactService>();
+builder.Services.AddScoped<ITutorReflectionService, TutorReflectionService>();
+builder.Services.AddScoped<ITutorPedagogyRubricService, TutorPedagogyRubricService>();
+builder.Services.AddScoped<ITutorPedagogyQualityGate, TutorPedagogyQualityGate>();
+builder.Services.AddScoped<ITutorPedagogyFeedbackService, TutorPedagogyFeedbackService>();
+builder.Services.AddScoped<ITutorPedagogyEvaluationService, TutorPedagogyEvaluationService>();
+builder.Services.AddScoped<ITutorGoldenScenarioService, TutorGoldenScenarioService>();
+builder.Services.AddScoped<IResourceConceptAlignmentService, ResourceConceptAlignmentService>();
+builder.Services.AddScoped<ILearningQualityReportService, LearningQualityReportService>();
+builder.Services.AddScoped<IRagEvaluationService, RagEvaluationService>();
+builder.Services.AddScoped<ITutorMemoryFragmentService, TutorMemoryFragmentService>();
+builder.Services.AddScoped<ITeachingEvidenceRouter, TeachingEvidenceRouter>();
+builder.Services.AddScoped<IRealWorldEvidenceService, RealWorldEvidenceService>();
+builder.Services.AddScoped<IWikiEvidenceService, WikiEvidenceService>();
+builder.Services.AddScoped<IWikiAnswerPolicyEngine, WikiAnswerPolicyEngine>();
+builder.Services.AddScoped<IWikiCitationGuard, WikiCitationGuard>();
+builder.Services.AddScoped<IWikiArtifactService, WikiArtifactService>();
+builder.Services.AddScoped<IWikiLearningAssistant, WikiLearningAssistant>();
+builder.Services.AddScoped<ITextHealthService, TextHealthService>();
 builder.Services.AddScoped<IKorteksAgent, KorteksAgent>();
 builder.Services.AddScoped<ISupervisorAgent, SupervisorAgent>();
 builder.Services.AddScoped<IGraderAgent, GraderAgent>();
@@ -127,13 +164,14 @@ builder.Services.AddScoped<IPushDeliveryService, PushDeliveryService>();
 builder.Services.AddScoped<ISrsReminderWorkerService, SrsReminderWorkerService>();
 builder.Services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerService>();
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
-builder.Services.AddScoped<ITutorToolRuntime, TutorToolRuntime>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
 builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
 builder.Services.AddScoped<IWolframProvider, WolframProvider>();
 builder.Services.AddScoped<INewsProvider, NewsProvider>();
 builder.Services.AddScoped<IWeatherProvider, WeatherProvider>();
+builder.Services.AddScoped<IGeocodingProvider, GeocodingProvider>();
 builder.Services.AddScoped<IMarketDataProvider, MarketDataProvider>();
+builder.Services.AddScoped<IVisualArtifactProvider, VisualArtifactProvider>();
 builder.Services.AddScoped<IMistakeClassifierService, MistakeClassifierService>();
 builder.Services.AddScoped<IYouTubeTranscriptProvider, YouTubeTranscriptProvider>();
 builder.Services.AddScoped<IYouTubeTeachingReferenceService, YouTubeTeachingReferenceService>();
@@ -338,11 +376,31 @@ builder.Services.AddHttpClient("Weather", c =>
         PooledConnectionLifetime = TimeSpan.FromMinutes(2)
     });
 
+builder.Services.AddHttpClient("Geocoding", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(8);
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
 builder.Services.AddHttpClient("MarketData", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(10);
     c.BaseAddress = new Uri(builder.Configuration["Tools:Crypto:BaseUrl"] ?? "https://api.coingecko.com/");
     c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform)");
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+
+builder.Services.AddHttpClient("RealWorldEvidence", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(12);
+    c.DefaultRequestHeaders.Add("User-Agent", "OrkaAI/1.0 (educational platform; real-world teaching evidence)");
 })
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
@@ -382,7 +440,7 @@ builder.Services.AddScoped<Kernel>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
 
-    // GitHub Models (Azure AI Inference) — WikiAgent SK Kernel
+    // GitHub Models (Azure AI Inference) — Semantic Kernel fallback
     var model   = config["AI:GitHubModels:Agents:Korteks:Model"] ?? "Meta-Llama-3.1-405B-Instruct";
     var apiKey  = config["AI:GitHubModels:Token"]                ?? throw new InvalidOperationException("AI:GitHubModels:Token eksik.");
     var baseUrl = config["AI:GitHubModels:BaseUrl"]              ?? "https://models.inference.ai.azure.com";

@@ -42,6 +42,49 @@ public class OrkaDbContext : DbContext
     public DbSet<PushSubscription> PushSubscriptions { get; set; } = null!;
     public DbSet<ToolTelemetryEvent> ToolTelemetryEvents { get; set; } = null!;
     public DbSet<CostRecord> CostRecords { get; set; } = null!;
+    public DbSet<ConceptGraphSnapshot> ConceptGraphSnapshots { get; set; } = null!;
+    public DbSet<LearningConcept> LearningConcepts { get; set; } = null!;
+    public DbSet<ConceptRelation> ConceptRelations { get; set; } = null!;
+    public DbSet<LearningOutcome> LearningOutcomes { get; set; } = null!;
+    public DbSet<OutcomeAlignment> OutcomeAlignments { get; set; } = null!;
+    public DbSet<AssessmentItem> AssessmentItems { get; set; } = null!;
+    public DbSet<DiagnosticProfile> DiagnosticProfiles { get; set; } = null!;
+    public DbSet<ConceptMastery> ConceptMasteries { get; set; } = null!;
+    public DbSet<LearningEvent> LearningEvents { get; set; } = null!;
+    public DbSet<ConceptGraphQualityRun> ConceptGraphQualityRuns { get; set; } = null!;
+    public DbSet<AssessmentQualityRun> AssessmentQualityRuns { get; set; } = null!;
+    public DbSet<AssessmentItemStat> AssessmentItemStats { get; set; } = null!;
+    public DbSet<KnowledgeTracingState> KnowledgeTracingStates { get; set; } = null!;
+    public DbSet<TutorPolicyTrace> TutorPolicyTraces { get; set; } = null!;
+    public DbSet<LearningEventSchemaViolation> LearningEventSchemaViolations { get; set; } = null!;
+    public DbSet<ResourceConceptAlignment> ResourceConceptAlignments { get; set; } = null!;
+    public DbSet<LearningQualityReport> LearningQualityReports { get; set; } = null!;
+    public DbSet<TutorWorkingMemorySnapshot> TutorWorkingMemorySnapshots { get; set; } = null!;
+    public DbSet<TutorTurnState> TutorTurnStates { get; set; } = null!;
+    public DbSet<TutorMemoryPatch> TutorMemoryPatches { get; set; } = null!;
+    public DbSet<LearnerProfile> LearnerProfiles { get; set; } = null!;
+    public DbSet<LearningStyleSignal> LearningStyleSignals { get; set; } = null!;
+    public DbSet<AffectiveSignal> AffectiveSignals { get; set; } = null!;
+    public DbSet<CognitiveLoadSignal> CognitiveLoadSignals { get; set; } = null!;
+    public DbSet<TutorActionTrace> TutorActionTraces { get; set; } = null!;
+    public DbSet<TutorToolCall> TutorToolCalls { get; set; } = null!;
+    public DbSet<TeachingArtifact> TeachingArtifacts { get; set; } = null!;
+    public DbSet<TutorReflectionUpdate> TutorReflectionUpdates { get; set; } = null!;
+    public DbSet<TutorPolicyViolationV2> TutorPolicyViolationsV2 { get; set; } = null!;
+    public DbSet<TutorMemoryFragment> TutorMemoryFragments { get; set; } = null!;
+    public DbSet<RagEvaluationRun> RagEvaluationRuns { get; set; } = null!;
+    public DbSet<RagEvaluationItem> RagEvaluationItems { get; set; } = null!;
+    public DbSet<TeachingEvidenceItem> TeachingEvidenceItems { get; set; } = null!;
+    public DbSet<TeachingEvidenceProviderHealth> TeachingEvidenceProviderHealth { get; set; } = null!;
+    public DbSet<SourceRetrievalRun> SourceRetrievalRuns { get; set; } = null!;
+    public DbSet<SourceRetrievalItem> SourceRetrievalItems { get; set; } = null!;
+    public DbSet<SourceCitationCheck> SourceCitationChecks { get; set; } = null!;
+    public DbSet<SourceQualityReport> SourceQualityReports { get; set; } = null!;
+    public DbSet<TutorPedagogyEvaluationRun> TutorPedagogyEvaluationRuns { get; set; } = null!;
+    public DbSet<TutorPedagogyEvaluationItem> TutorPedagogyEvaluationItems { get; set; } = null!;
+    public DbSet<TutorPedagogyRubricScore> TutorPedagogyRubricScores { get; set; } = null!;
+    public DbSet<TutorGoldenScenario> TutorGoldenScenarios { get; set; } = null!;
+    public DbSet<TutorPedagogyFeedbackPatch> TutorPedagogyFeedbackPatches { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -164,6 +207,13 @@ public class OrkaDbContext : DbContext
             .IsRequired(false)
             .OnDelete(DeleteBehavior.NoAction);
 
+        modelBuilder.Entity<QuizAttempt>()
+            .HasOne(qa => qa.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(qa => qa.AssessmentItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
         // QuizAttempt FK ilişkileri — nullable (serbest sohbette SessionId/TopicId null olabilir)
         modelBuilder.Entity<QuizAttempt>()
             .HasOne(qa => qa.Session)
@@ -191,7 +241,14 @@ public class OrkaDbContext : DbContext
             .HasMaxLength(450);
 
         modelBuilder.Entity<QuizAttempt>()
+            .Property(qa => qa.ConfidenceSelfRating)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<QuizAttempt>()
             .HasIndex(qa => new { qa.UserId, qa.TopicId, qa.SkillTag });
+
+        modelBuilder.Entity<QuizAttempt>()
+            .HasIndex(qa => new { qa.UserId, qa.AssessmentItemId });
 
         modelBuilder.Entity<QuizRun>()
             .HasOne(qr => qr.User)
@@ -249,6 +306,1159 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<LearningSignal>()
             .HasIndex(s => new { s.UserId, s.TopicId, s.SignalType, s.CreatedAt });
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .Property(s => s.IntentHash)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .Property(s => s.SourceBundleHash)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.IntentHash, s.CreatedAt });
+
+        modelBuilder.Entity<ConceptGraphSnapshot>()
+            .HasIndex(s => s.PlanRequestId);
+
+        modelBuilder.Entity<LearningConcept>()
+            .HasOne(c => c.ConceptGraphSnapshot)
+            .WithMany(s => s.Concepts)
+            .HasForeignKey(c => c.ConceptGraphSnapshotId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<LearningConcept>()
+            .Property(c => c.StableKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<LearningConcept>()
+            .HasIndex(c => new { c.ConceptGraphSnapshotId, c.StableKey })
+            .IsUnique();
+
+        modelBuilder.Entity<ConceptRelation>()
+            .HasOne(r => r.ConceptGraphSnapshot)
+            .WithMany(s => s.Relations)
+            .HasForeignKey(r => r.ConceptGraphSnapshotId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ConceptRelation>()
+            .Property(r => r.SourceConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ConceptRelation>()
+            .Property(r => r.TargetConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ConceptRelation>()
+            .HasIndex(r => new { r.ConceptGraphSnapshotId, r.SourceConceptKey, r.TargetConceptKey, r.RelationType });
+
+        modelBuilder.Entity<LearningOutcome>()
+            .HasOne(o => o.ConceptGraphSnapshot)
+            .WithMany(s => s.Outcomes)
+            .HasForeignKey(o => o.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<LearningOutcome>()
+            .Property(o => o.StableKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<LearningOutcome>()
+            .HasIndex(o => new { o.ConceptGraphSnapshotId, o.StableKey });
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .HasOne(a => a.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(a => a.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .HasOne(a => a.LearningOutcome)
+            .WithMany()
+            .HasForeignKey(a => a.LearningOutcomeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .Property(a => a.EntityType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .Property(a => a.EntityKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .HasIndex(a => new { a.EntityType, a.EntityId });
+
+        modelBuilder.Entity<OutcomeAlignment>()
+            .HasIndex(a => new { a.EntityType, a.EntityKey });
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasOne(i => i.User)
+            .WithMany()
+            .HasForeignKey(i => i.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasOne(i => i.Topic)
+            .WithMany()
+            .HasForeignKey(i => i.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasOne(i => i.QuizRun)
+            .WithMany()
+            .HasForeignKey(i => i.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasOne(i => i.ConceptGraphSnapshot)
+            .WithMany(s => s.AssessmentItems)
+            .HasForeignKey(i => i.ConceptGraphSnapshotId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasOne(i => i.LearningConcept)
+            .WithMany()
+            .HasForeignKey(i => i.LearningConceptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .Property(i => i.AssessmentItemKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .Property(i => i.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasIndex(i => new { i.UserId, i.PlanRequestId, i.Order });
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasIndex(i => new { i.UserId, i.TopicId, i.ConceptKey });
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasOne(p => p.User)
+            .WithMany()
+            .HasForeignKey(p => p.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasOne(p => p.Topic)
+            .WithMany()
+            .HasForeignKey(p => p.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasOne(p => p.QuizRun)
+            .WithMany()
+            .HasForeignKey(p => p.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasOne(p => p.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(p => p.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasIndex(p => new { p.UserId, p.TopicId, p.CreatedAt });
+
+        modelBuilder.Entity<DiagnosticProfile>()
+            .HasIndex(p => new { p.UserId, p.PlanRequestId });
+
+        modelBuilder.Entity<ConceptMastery>()
+            .HasOne(m => m.User)
+            .WithMany()
+            .HasForeignKey(m => m.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .HasOne(m => m.Topic)
+            .WithMany()
+            .HasForeignKey(m => m.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .HasOne(m => m.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(m => m.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .Property(m => m.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .Property(m => m.MasteryScore)
+            .HasPrecision(5, 2);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .Property(m => m.Confidence)
+            .HasPrecision(5, 2);
+
+        modelBuilder.Entity<ConceptMastery>()
+            .HasIndex(m => new { m.UserId, m.TopicId, m.ConceptKey })
+            .IsUnique();
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasOne(e => e.User)
+            .WithMany()
+            .HasForeignKey(e => e.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasOne(e => e.Topic)
+            .WithMany()
+            .HasForeignKey(e => e.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasOne(e => e.Session)
+            .WithMany()
+            .HasForeignKey(e => e.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasOne(e => e.QuizAttempt)
+            .WithMany()
+            .HasForeignKey(e => e.QuizAttemptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasOne(e => e.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(e => e.AssessmentItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEvent>()
+            .Property(e => e.EventType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningEvent>()
+            .Property(e => e.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.EventType, e.OccurredAt });
+
+        modelBuilder.Entity<LearningEvent>()
+            .HasIndex(e => new { e.UserId, e.ConceptKey, e.OccurredAt });
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .HasOne(q => q.User)
+            .WithMany()
+            .HasForeignKey(q => q.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .HasOne(q => q.Topic)
+            .WithMany()
+            .HasForeignKey(q => q.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .HasOne(q => q.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(q => q.ConceptGraphSnapshotId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.FailuresJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.DuplicateRatio)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.OutcomeCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.MisconceptionCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.SourceEvidenceRatio)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .Property(q => q.RelationDensity)
+            .HasPrecision(8, 6);
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .HasIndex(q => new { q.UserId, q.TopicId, q.CreatedAt });
+
+        modelBuilder.Entity<ConceptGraphQualityRun>()
+            .HasIndex(q => q.ConceptGraphSnapshotId);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasOne(q => q.User)
+            .WithMany()
+            .HasForeignKey(q => q.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasOne(q => q.Topic)
+            .WithMany()
+            .HasForeignKey(q => q.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasOne(q => q.QuizRun)
+            .WithMany()
+            .HasForeignKey(q => q.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasOne(q => q.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(q => q.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.FailuresJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.ConceptCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.LearningOutcomeCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.MisconceptionTargetingRatio)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.OptionQualityRatio)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .Property(q => q.ScoringRulePresenceRatio)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasIndex(q => new { q.UserId, q.TopicId, q.CreatedAt });
+
+        modelBuilder.Entity<AssessmentQualityRun>()
+            .HasIndex(q => q.AssessmentDraftId);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasOne(s => s.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(s => s.AssessmentItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasOne(s => s.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.CorrectRate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.DiscriminationProxy)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.TotalTimeSeconds)
+            .HasPrecision(12, 2);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.LastResponseTimeSeconds)
+            .HasPrecision(10, 2);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.AverageTimeSeconds)
+            .HasPrecision(10, 2);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.SkipRate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasIndex(s => s.AssessmentItemId)
+            .IsUnique();
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .HasOne(s => s.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.MasteryProbability)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.PriorMastery)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.LearnRate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.Slip)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.Guess)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .Property(s => s.Decay)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<KnowledgeTracingState>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.ConceptKey })
+            .IsUnique();
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasOne(t => t.User)
+            .WithMany()
+            .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasOne(t => t.Topic)
+            .WithMany()
+            .HasForeignKey(t => t.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasOne(t => t.Session)
+            .WithMany()
+            .HasForeignKey(t => t.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasOne(t => t.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(t => t.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .Property(t => t.ActiveConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .Property(t => t.PolicyViolationsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasIndex(t => new { t.UserId, t.TopicId, t.CreatedAt });
+
+        modelBuilder.Entity<TutorPolicyTrace>()
+            .HasIndex(t => new { t.UserId, t.SessionId, t.CreatedAt });
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .HasOne(v => v.LearningEvent)
+            .WithMany()
+            .HasForeignKey(v => v.LearningEventId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .HasOne(v => v.User)
+            .WithMany()
+            .HasForeignKey(v => v.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .HasOne(v => v.Topic)
+            .WithMany()
+            .HasForeignKey(v => v.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .Property(v => v.EventType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .Property(v => v.ViolationCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .Property(v => v.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningEventSchemaViolation>()
+            .HasIndex(v => new { v.UserId, v.TopicId, v.CreatedAt });
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .HasOne(a => a.Topic)
+            .WithMany()
+            .HasForeignKey(a => a.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .HasOne(a => a.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(a => a.ConceptGraphSnapshotId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .Property(a => a.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .Property(a => a.OutcomeKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .Property(a => a.AlignmentScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .HasIndex(a => new { a.UserId, a.TopicId, a.CreatedAt });
+
+        modelBuilder.Entity<ResourceConceptAlignment>()
+            .HasIndex(a => new { a.ConceptGraphSnapshotId, a.ConceptKey });
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .HasOne(r => r.Topic)
+            .WithMany()
+            .HasForeignKey(r => r.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .HasOne(r => r.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(r => r.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.ReportJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.TutorPedagogyScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.GeneratedAt });
+
+        modelBuilder.Entity<TutorWorkingMemorySnapshot>()
+            .Property(s => s.ActiveConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TutorWorkingMemorySnapshot>()
+            .Property(s => s.SnapshotJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorWorkingMemorySnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<TutorWorkingMemorySnapshot>()
+            .HasIndex(s => new { s.UserId, s.SessionId, s.CreatedAt });
+
+        modelBuilder.Entity<TutorTurnState>()
+            .Property(s => s.ActiveConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TutorTurnState>()
+            .Property(s => s.UserMessageHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TutorTurnState>()
+            .Property(s => s.StateJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorTurnState>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<TutorTurnState>()
+            .HasIndex(s => new { s.UserId, s.SessionId, s.CreatedAt });
+
+        modelBuilder.Entity<TutorMemoryPatch>()
+            .Property(p => p.PatchJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorMemoryPatch>()
+            .HasIndex(p => new { p.UserId, p.TopicId, p.CreatedAt });
+
+        modelBuilder.Entity<LearnerProfile>()
+            .Property(p => p.StyleConfidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearnerProfile>()
+            .Property(p => p.ProfileJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearnerProfile>()
+            .HasIndex(p => new { p.UserId, p.TopicId, p.UpdatedAt });
+
+        modelBuilder.Entity<LearningStyleSignal>()
+            .Property(s => s.Weight)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningStyleSignal>()
+            .Property(s => s.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningStyleSignal>()
+            .Property(s => s.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningStyleSignal>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<AffectiveSignal>()
+            .Property(s => s.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AffectiveSignal>()
+            .Property(s => s.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AffectiveSignal>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<CognitiveLoadSignal>()
+            .Property(s => s.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<CognitiveLoadSignal>()
+            .Property(s => s.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<CognitiveLoadSignal>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<TutorActionTrace>()
+            .Property(t => t.ActiveConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TutorActionTrace>()
+            .Property(t => t.ToolPlanJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorActionTrace>()
+            .Property(t => t.ArtifactPlanJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorActionTrace>()
+            .HasIndex(t => new { t.UserId, t.TopicId, t.CreatedAt });
+
+        modelBuilder.Entity<TutorActionTrace>()
+            .HasIndex(t => new { t.UserId, t.SessionId, t.CreatedAt });
+
+        modelBuilder.Entity<TutorToolCall>()
+            .Property(t => t.ResultJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorToolCall>()
+            .Property(t => t.Provider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TutorToolCall>()
+            .Property(t => t.ErrorCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TutorToolCall>()
+            .Property(t => t.SafeMessage)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorToolCall>()
+            .HasIndex(t => new { t.UserId, t.SessionId, t.CreatedAt });
+
+        modelBuilder.Entity<TeachingArtifact>()
+            .Property(a => a.Content)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingArtifact>()
+            .Property(a => a.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingArtifact>()
+            .Property(a => a.ExternalUrl)
+            .HasMaxLength(2048);
+
+        modelBuilder.Entity<TeachingArtifact>()
+            .Property(a => a.RenderError)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingArtifact>()
+            .HasIndex(a => new { a.UserId, a.TopicId, a.CreatedAt });
+
+        modelBuilder.Entity<TutorReflectionUpdate>()
+            .Property(r => r.ReflectionJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorReflectionUpdate>()
+            .HasIndex(r => new { r.UserId, r.SessionId, r.CreatedAt });
+
+        modelBuilder.Entity<TutorPolicyViolationV2>()
+            .HasIndex(v => new { v.UserId, v.SessionId, v.CreatedAt });
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .Property(e => e.OverallScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .Property(e => e.RunJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .Property(e => e.Summary)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .Property(e => e.Recommendation)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.CreatedAt });
+
+        modelBuilder.Entity<TutorPedagogyEvaluationRun>()
+            .HasIndex(e => new { e.UserId, e.SessionId, e.CreatedAt });
+
+        modelBuilder.Entity<TutorPedagogyEvaluationItem>()
+            .Property(e => e.UserMessage)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationItem>()
+            .Property(e => e.AssistantAnswer)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationItem>()
+            .Property(e => e.ItemJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyEvaluationItem>()
+            .HasOne(e => e.Run)
+            .WithMany()
+            .HasForeignKey(e => e.EvaluationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TutorPedagogyRubricScore>()
+            .Property(e => e.Score)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<TutorPedagogyRubricScore>()
+            .Property(e => e.Evidence)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyRubricScore>()
+            .Property(e => e.Recommendation)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyRubricScore>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.CreatedAt });
+
+        modelBuilder.Entity<TutorPedagogyRubricScore>()
+            .HasOne(e => e.Run)
+            .WithMany()
+            .HasForeignKey(e => e.EvaluationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TutorGoldenScenario>()
+            .HasIndex(e => e.ScenarioKey)
+            .IsUnique();
+
+        modelBuilder.Entity<TutorGoldenScenario>()
+            .Property(e => e.RequiredRubricsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyFeedbackPatch>()
+            .Property(e => e.Feedback)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyFeedbackPatch>()
+            .Property(e => e.PatchJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorPedagogyFeedbackPatch>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.CreatedAt });
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .Property(f => f.Content)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .Property(f => f.EmbeddingJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .Property(f => f.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .Property(f => f.Importance)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .HasIndex(f => new { f.UserId, f.TopicId, f.CreatedAt });
+
+        modelBuilder.Entity<TutorMemoryFragment>()
+            .HasIndex(f => new { f.UserId, f.FragmentType, f.CreatedAt });
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .Property(r => r.ReportJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .Property(r => r.FaithfulnessScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .Property(r => r.ContextRelevanceScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .Property(r => r.AnswerRelevanceScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .Property(r => r.CitationCoverageScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationRun>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.CreatedAt });
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .HasOne(i => i.Run)
+            .WithMany()
+            .HasForeignKey(i => i.RagEvaluationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.Query)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.Answer)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.ContextJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.Notes)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.FaithfulnessScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.ContextRelevanceScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.AnswerRelevanceScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<RagEvaluationItem>()
+            .Property(i => i.CitationCoverageScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.Provider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.EvidenceType)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.Query)
+            .HasMaxLength(900);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.Title)
+            .HasMaxLength(900);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.Summary)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.FactualClaim)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.AnalogyCandidate)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.ClassroomUse)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.CitationUrl)
+            .HasMaxLength(2048);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .Property(e => e.RawPayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.CreatedAt });
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .HasIndex(e => new { e.UserId, e.TutorActionTraceId, e.CreatedAt });
+
+        modelBuilder.Entity<TeachingEvidenceItem>()
+            .HasIndex(e => new { e.EvidenceType, e.Provider, e.RawPayloadHash });
+
+        modelBuilder.Entity<TeachingEvidenceProviderHealth>()
+            .Property(h => h.Provider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TeachingEvidenceProviderHealth>()
+            .Property(h => h.EvidenceType)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<TeachingEvidenceProviderHealth>()
+            .Property(h => h.LastErrorCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TeachingEvidenceProviderHealth>()
+            .Property(h => h.Notes)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TeachingEvidenceProviderHealth>()
+            .HasIndex(h => new { h.Provider, h.EvidenceType, h.CheckedAt });
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .Property(r => r.Query)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .Property(r => r.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .Property(r => r.MaxScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .Property(r => r.AverageScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.CreatedAt });
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .HasIndex(r => new { r.UserId, r.SourceId, r.CreatedAt });
+
+        modelBuilder.Entity<SourceRetrievalRun>()
+            .HasOne(r => r.Source)
+            .WithMany()
+            .HasForeignKey(r => r.SourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .Property(i => i.EmbeddingScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .Property(i => i.LexicalScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .Property(i => i.FusedScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .Property(i => i.Snippet)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .HasIndex(i => new { i.SourceRetrievalRunId, i.Rank });
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .HasOne(i => i.Source)
+            .WithMany()
+            .HasForeignKey(i => i.SourceId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceRetrievalItem>()
+            .HasOne(i => i.SourceChunk)
+            .WithMany()
+            .HasForeignKey(i => i.SourceChunkId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .Property(c => c.Answer)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .Property(c => c.ClaimText)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .Property(c => c.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .HasIndex(c => new { c.UserId, c.TopicId, c.CreatedAt });
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .HasIndex(c => new { c.SourceRetrievalRunId, c.CheckStatus });
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .HasOne(c => c.RetrievalRun)
+            .WithMany()
+            .HasForeignKey(c => c.SourceRetrievalRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .HasOne(c => c.Source)
+            .WithMany()
+            .HasForeignKey(c => c.SourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceCitationCheck>()
+            .HasOne(c => c.SourceChunk)
+            .WithMany()
+            .HasForeignKey(c => c.SourceChunkId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceQualityReport>()
+            .Property(r => r.AverageContextRelevance)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceQualityReport>()
+            .Property(r => r.CitationCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceQualityReport>()
+            .Property(r => r.ReportJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceQualityReport>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.GeneratedAt });
+
+        modelBuilder.Entity<SourceQualityReport>()
+            .HasOne(r => r.Source)
+            .WithMany()
+            .HasForeignKey(r => r.SourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<RemediationPlan>()
             .HasOne(r => r.User)

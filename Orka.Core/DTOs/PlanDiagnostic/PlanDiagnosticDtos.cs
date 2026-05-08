@@ -25,6 +25,21 @@ public sealed class PlanDiagnosticStateDto
     public string LearningBlueprintHash { get; set; } = string.Empty;
     public string LearningBlueprintDomain { get; set; } = string.Empty;
     public string LearningBlueprintSourceConfidence { get; set; } = string.Empty;
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public string ConceptGraphJson { get; set; } = string.Empty;
+    public string ConceptGraphHash { get; set; } = string.Empty;
+    public string ConceptGraphCacheKey { get; set; } = string.Empty;
+    public Guid? ConceptGraphQualityRunId { get; set; }
+    public string ConceptGraphQualityStatus { get; set; } = "unknown";
+    public string SourceBundleHash { get; set; } = string.Empty;
+    public string SourceBundleCacheKey { get; set; } = string.Empty;
+    public Guid? AssessmentDraftId { get; set; }
+    public string AssessmentGrammarJson { get; set; } = string.Empty;
+    public string AssessmentDraftCacheKey { get; set; } = string.Empty;
+    public Guid? AssessmentQualityRunId { get; set; }
+    public string AssessmentQualityStatus { get; set; } = "unknown";
+    public Guid? DiagnosticProfileId { get; set; }
+    public Guid? QualityReportId { get; set; }
     public GroundingMode GroundingMode { get; set; }
     public int SourceCount { get; set; }
     public Guid QuizRunId { get; set; }
@@ -71,6 +86,13 @@ public sealed class StartPlanDiagnosticResponse
     public string QuestionsJson { get; set; } = "[]";
     public GroundingMode GroundingMode { get; set; }
     public int SourceCount { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? AssessmentDraftId { get; set; }
+    public string ConceptGraphQualityStatus { get; set; } = "unknown";
+    public string AssessmentQualityStatus { get; set; } = "unknown";
+    public Guid? QualityReportId { get; set; }
+    public string SourceBundleHash { get; set; } = string.Empty;
+    public string SourceBundleCacheKey { get; set; } = string.Empty;
     public int QuizQuestionCount { get; set; }
     public Guid? IntentRequestId { get; set; }
     public string ApprovedMainTopic { get; set; } = string.Empty;

@@ -84,7 +84,12 @@ public record BriefingDocument(
     string TLDR,
     IReadOnlyList<string> KeyTakeaways,
     IReadOnlyList<string> SuggestedQuestions,
-    DateTime GeneratedAt);
+    DateTime GeneratedAt,
+    string? GroundingStatus = null,
+    string? CitationCoverageStatus = null,
+    string? SourceQualityStatus = null,
+    Guid? RetrievalRunId = null,
+    IReadOnlyList<Orka.Core.DTOs.Chat.CitationDto>? Citations = null);
 
 public interface IQuizAgent
 {

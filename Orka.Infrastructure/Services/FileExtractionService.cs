@@ -13,7 +13,7 @@ public record ExtractedDocument(IReadOnlyList<ExtractedPage> Pages, string? Erro
 }
 
 /// <summary>
-/// KullanÄ±cÄ±dan gelen dosyalarÄ± dÃ¼z metne Ã§evirir.
+/// Kullanıcıdan gelen dosyaları düz metne çevirir.
 /// Desteklenen formatlar: PDF, TXT, MD.
 /// </summary>
 public class FileExtractionService
@@ -28,7 +28,7 @@ public class FileExtractionService
     }
 
     /// <summary>
-    /// Korteks geriye uyumluluÄŸu iÃ§in dÃ¼z metin dÃ¶ndÃ¼rÃ¼r.
+    /// Korteks geriye uyumluluğu için düz metin döndürür.
     /// </summary>
     public string Extract(string fileName, byte[] fileBytes)
     {
@@ -37,12 +37,12 @@ public class FileExtractionService
 
         var text = doc.FullText.Trim();
         return text.Length > MaxExtractChars
-            ? text[..MaxExtractChars] + $"\n\n[...metin kesildi, ilk {MaxExtractChars} karakter gÃ¶sterildi]"
+            ? text[..MaxExtractChars] + $"\n\n[...metin kesildi, ilk {MaxExtractChars} karakter gösterildi]"
             : text;
     }
 
     /// <summary>
-    /// NotebookLM kaynak pinning iÃ§in sayfa numarasÄ±nÄ± koruyarak metin Ã§Ä±karÄ±r.
+    /// NotebookLM kaynak pinning için sayfa numarasını koruyarak metin çıkarır.
     /// </summary>
     public ExtractedDocument ExtractWithPages(string fileName, byte[] fileBytes)
     {
@@ -55,12 +55,12 @@ public class FileExtractionService
                 ".pdf" => ExtractPdfPages(fileBytes),
                 ".txt" => ExtractTextPages(fileBytes),
                 ".md" => ExtractTextPages(fileBytes),
-                _ => new ExtractedDocument([], $"[Desteklenmeyen dosya formatÄ±: {ext}. PDF, TXT veya MD yÃ¼kleyin.]")
+                _ => new ExtractedDocument([], $"[Desteklenmeyen dosya formatı: {ext}. PDF, TXT veya MD yükleyin.]")
             };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[FileExtraction] {File} okunamadÄ±.", fileName);
+            _logger.LogWarning(ex, "[FileExtraction] {File} okunamadı.", fileName);
             return new ExtractedDocument([], "[Dosya okunamadi. Dosya bicimini veya icerigini kontrol edip tekrar deneyin.]");
         }
     }
@@ -78,7 +78,7 @@ public class FileExtractionService
         }
 
         return pages.Count == 0
-            ? new ExtractedDocument([], "[PDF metni Ã§Ä±karÄ±lamadÄ±; taranmÄ±ÅŸ/gÃ¶rÃ¼ntÃ¼ tabanlÄ± PDF olabilir.]")
+            ? new ExtractedDocument([], "[PDF metni çıkarılamadı; taranmış/görüntü tabanlı PDF olabilir.]")
             : new ExtractedDocument(pages);
     }
 
@@ -86,7 +86,7 @@ public class FileExtractionService
     {
         var text = Encoding.UTF8.GetString(bytes).Trim();
         return string.IsNullOrWhiteSpace(text)
-            ? new ExtractedDocument([], "[Dosyada okunabilir metin bulunamadÄ±.]")
+            ? new ExtractedDocument([], "[Dosyada okunabilir metin bulunamadı.]")
             : new ExtractedDocument([new ExtractedPage(1, text)]);
     }
 }

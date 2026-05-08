@@ -26,13 +26,23 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) output.push(...walk(full));
-    else if (/\.(tsx?|css)$/.test(entry.name)) output.push(full);
+    else if (/\.(tsx?|css|mjs|js)$/.test(entry.name)) output.push(full);
   }
   return output;
 }
 
-const mojibake = /Ãƒ|Ã„|Ã…|Ã¢â‚¬|Ã¢â€ |Ã¢Å“|ÄŸÅ¸|ï¿½/;
-const dirty = walk(srcRoot).filter((file) => mojibake.test(fs.readFileSync(file, "utf8")));
+const mojibakeContinuation =
+  "(?:[\\u0080-\\u00BF]|\\u20AC|\\u201A|\\u0192|\\u201E|\\u2026|\\u2020|\\u2021|\\u02C6|\\u2030|\\u0160|\\u2039|\\u0152|\\u017D|\\u2018|\\u2019|\\u201C|\\u201D|\\u2022|\\u2013|\\u2014|\\u02DC|\\u2122|\\u0161|\\u203A|\\u0153|\\u017E|\\u0178)";
+const mojibake = new RegExp(
+  [
+    `[\\u00C2-\\u00C5]${mojibakeContinuation}`,
+    `\\u00E2${mojibakeContinuation}{1,2}`,
+    "\\uFFFD",
+  ].join("|")
+);
+const dirty = [srcRoot, path.join(root, "scripts")]
+  .flatMap((sourceRoot) => fs.existsSync(sourceRoot) ? walk(sourceRoot) : [])
+  .filter((file) => mojibake.test(fs.readFileSync(file, "utf8")));
 addCheck("Turkish mojibake guard", dirty.length === 0, dirty.map((file) => path.relative(root, file)).join(", "));
 
 const landing = read("src/pages/Landing.tsx");
@@ -60,6 +70,7 @@ addCheck("Classroom assistant never disappears", classroom.includes("ensureClass
 
 const api = read("src/services/api.ts");
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
+addCheck("Learning quality API exposed", api.includes("/learning-quality/topic") && api.includes("getTopicQuality"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
 addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
@@ -96,6 +107,7 @@ const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
+addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
 addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayriliyor") && chatPanel.includes("Baglam taraniyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Ogrenme yolu uretiliyor"));
 
 const packageJson = read("package.json");
@@ -107,8 +119,9 @@ const languages = read("src/i18n/languages.ts");
 const messages = read("src/i18n/messages.ts");
 const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("First-wave language foundation exists", languages.includes('"pt-BR"') && languages.includes('"pl"') && messages.includes("landing_title_a") && languageContext.includes("normalizeLocale"));
+addCheck("Legacy Turkish locale fallback avoids dirty literals", languages.includes("LEGACY_TURKISH_MOJIBAKE") && languages.includes(".map((code) => String.fromCharCode(code))") && languages.includes("0xc3"));
 addCheck("Landing and app shell expose language selector", landing.includes("setLanguage") && landing.includes("languages.map") && sidebar.includes("languages.map") && sidebar.includes("interface_language"));
-addCheck("OrkaLM source notebook is wired into app shell", home.includes('"orkalm"') && home.includes('mode="orkalm"') && sidebar.includes('labelKey: "orkalm"') && messages.includes("orkalm"));
+addCheck("OrkaLM source notebook is wired into app shell", home.includes('"sources"') && home.includes('mode="orkalm"') && sidebar.includes('labelKey: "sources"') && messages.includes("sources"));
 
 const classroomPlayer = read("src/components/ClassroomAudioPlayer.tsx");
 addCheck("Classroom active segment bridge", classroomPlayer.includes("activeSegment") && (classroomPlayer.includes("Anlamadım") || classroomPlayer.includes('t("confused")')));
@@ -133,13 +146,13 @@ const planDiagnostic = readRepo("Orka.Infrastructure/Services/PlanDiagnosticServ
 const v29QualityTests = readRepo("Orka.API.Tests/OrkaV29QualityRealityGateTests.cs");
 addCheck("Backend StudyIntentAnalyzer is the plan gate", studyIntentAnalyzer.includes("StudyIntentAnalyzer") && studyIntentAnalyzer.includes("researchIntent") && planDiagnostic.includes("Approved study intent is required"));
 addCheck("V2.9 quality reality gate is wired", v29QualityTests.includes("QualityScenarioCatalog") && v29QualityTests.includes("A01") && v29QualityTests.includes("E56") && v29QualityTests.includes("StudyIntentAnalyzer_ProducesApprovedResearchIntentQualitySignals"));
-addCheck("P4 visual learning validator exists", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
-addCheck("P4 domain plan templates exist", deepPlanAgent.includes("PlanDomain.Exam") && deepPlanAgent.includes("PlanDomain.Algorithm") && deepPlanAgent.includes("PlanDomain.Math") && deepPlanAgent.includes("PlanDomain.Language"));
-addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("Orka IDE/sandbox uygun pratiklerde destekleyici"));
-addCheck("Programming fallback is topic-first without hardcoded C# lock", deepPlanAgent.includes("BuildProgrammingFallbackModules") && deepPlanAgent.includes("DetectProgrammingProfile") && deepPlanAgent.includes("Kod calistirma sonucunu Tutor") && deepPlanAgent.includes("Python") && !deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi"));
+addCheck("P4 visual learning validator is action-plan aware", tutorAgent.includes("[P4 GÖRSEL ÖĞRENME VALIDATOR - ACTION PLAN ÖNCELİKLİ]") && tutorAgent.includes("Mermaid") && tutorAgent.includes("mikro kontrol sorusu"));
+addCheck("P4 domain plan templates are removed", !deepPlanAgent.includes("PlanDomain.") && !deepPlanAgent.includes("BuildDomainFallbackModules") && deepPlanAgent.includes("BuildConceptGraphPlanningGuidance"));
+addCheck("DeepPlan quality floor rejects thin plans", deepPlanAgent.includes("MinimumProgrammingTotalLessons = 24") && deepPlanAgent.includes("TryAcceptPlanModules") && deepPlanAgent.includes("Orka IDE/sandbox yalnizca uygun pratik"));
+addCheck("Programming fallback is generic concept-graph based", deepPlanAgent.includes("BuildConceptGraphFallbackModules") && deepPlanAgent.includes("Onkosul Haritasi") && deepPlanAgent.includes("Mastery Kontrolu") && !deepPlanAgent.includes("BuildProgrammingFallbackModules") && !deepPlanAgent.includes("Orka IDE sandbox'ta ilk {subject} uygulamasi"));
 addCheck("Tutor coding lessons default to Orka IDE", tutorAgent.includes("ORKA IDE VARSAYILAN ORTAMDIR") && tutorAgent.includes("harici kurulumları ilk adım gibi anlatma"));
-addCheck("P4 language learning plan template exists", deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && deepPlanAgent.includes("Spaced Repetition") && deepPlanAgent.includes("Speaking Prompt"));
-addCheck("P4 plan quality backend guard exists", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesAreNotGeneric"));
+addCheck("P4 language-specific plan template is removed", !deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && !deepPlanAgent.includes("Spaced Repetition") && !deepPlanAgent.includes("Speaking Prompt") && deepPlanAgent.includes("GENERIC CONCEPT GRAPH"));
+addCheck("P4 plan quality backend guard checks generic architecture", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesComeFromGenericConceptGraph") && planQualityTests.includes("DeepPlan_NoLongerExposesDomainSpecificPlanningMode"));
 addCheck("P5 YouTube transcript plugin is in SK bridge", program.includes("YouTubeTranscriptPlugin") && program.includes("AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())"));
 
 for (const check of checks) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   BookOpen,
   Brain,
@@ -19,7 +19,7 @@ import {
   Repeat2,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
-import { QuizAPI, DashboardAPI, UserAPI, storage } from "@/services/api";
+import { QuizAPI, DashboardAPI, UserAPI, storage, type DashboardTodayDto } from "@/services/api";
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -27,6 +27,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 interface DashboardPanelProps {
   topics: ApiTopic[];
   onViewChange: (view: string) => void;
+  mode?: "today" | "progress";
 }
 
 /** 
@@ -92,7 +93,7 @@ const STUDY_FOCUS_OPTIONS = [
   { id: "math", labelKey: "focus_math", hintKey: "focus_math_hint" },
 ];
 
-export default function DashboardPanel({ topics, onViewChange }: DashboardPanelProps) {
+export default function DashboardPanel({ topics, onViewChange, mode = "today" }: DashboardPanelProps) {
   const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
   // HUD yalnızca admin hesaplarda görünür — LLMOps verisi operasyon sırrıdır.
@@ -100,6 +101,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   const [activeTab, setActiveTab] = useState<"karne" | "hud">("karne");
   const [stats, setStats] = useState<ApiGlobalStats | null>(null);
   const [dashStats, setDashStats] = useState<ApiDashboardStats | null>(null);
+  const [today, setToday] = useState<DashboardTodayDto | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
   const [loading, setLoading] = useState(true);
   const [studyFocusPreference, setStudyFocusPreference] = useState(() => {
@@ -107,6 +109,10 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
   });
 
   useEffect(() => {
+    DashboardAPI.getToday()
+      .then(res => setToday(res.data))
+      .catch(err => console.error("Dashboard today fetch error:", err));
+
     // Quiz istatistikleri (doğruluk oranı, sparkline)
     QuizAPI.getGlobalStats()
       .then(res => setStats(res.data))
@@ -162,6 +168,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
       ? t("small_step_topic")
       : t("small_step_first");
   const selectedFocus = STUDY_FOCUS_OPTIONS.find((item) => item.id === studyFocusPreference) ?? STUDY_FOCUS_OPTIONS[0];
+  const todayFocusTitle = today?.dailyFocusTitle || studyFocusTitle;
+  const todayFocusReason = today?.dailyFocusReason || studyFocusReason;
+  const todayActionView = today?.nextAction?.view || "chat";
+  const todayActionLabel = today?.nextAction?.label || t("continue_with_tutor");
+  const sourceHealthLabel = today?.sourceHealth?.userSafeLabel || "Kaynak durumu ölçülüyor";
+  const sourceHealthDetail = today?.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Wiki ve Tutor daha güvenli cevap verir.";
 
   const handleStudyFocusChange = (focusId: string) => {
     setStudyFocusPreference(focusId);
@@ -214,10 +226,10 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
           {/* Header & Mastery Card */}
           <div className="flex items-center justify-between mb-10">
             <div>
-              <h1 className="text-2xl font-bold text-[#172033] mb-1.5 tracking-tight">Öğrenme Karnesi</h1>
+              <h1 className="text-2xl font-bold text-[#172033] mb-1.5 tracking-tight">{mode === "progress" ? "İlerleme" : "Bugün"}</h1>
               <div className="flex items-center gap-2">
                 <span className="flex h-2 w-2 rounded-full bg-[#8fb7a2] animate-pulse"></span>
-                <p className="text-[11px] font-medium text-[#667085] uppercase tracking-widest">Sistem Analitiği Aktif</p>
+                <p className="text-[11px] font-medium text-[#667085] uppercase tracking-widest">{mode === "progress" ? "Öğrenme kanıtı" : "Sıradaki en iyi adım"}</p>
               </div>
             </div>
             
@@ -237,8 +249,8 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                   <Compass className="h-3.5 w-3.5" />
                   {t("daily_focus")}
                 </div>
-                <h2 className="text-xl font-black tracking-tight text-[#172033]">{studyFocusTitle}</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f6f7b]">{studyFocusReason}</p>
+                <h2 className="text-xl font-black tracking-tight text-[#172033]">{todayFocusTitle}</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f6f7b]">{todayFocusReason}</p>
                 {!hasStudyData && (
                   <p className="mt-3 rounded-2xl border border-dashed border-[#526d82]/16 bg-white/48 px-4 py-3 text-xs leading-6 text-[#667085]">
                     {t("no_fake_progress")}
@@ -246,11 +258,11 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                 )}
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
-                    onClick={() => onViewChange("chat")}
+                    onClick={() => onViewChange(todayActionView)}
                     className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
                   >
                     <MessageSquareText className="h-4 w-4" />
-                    {t("continue_with_tutor")}
+                    {todayActionLabel}
                   </button>
                   <button
                     onClick={() => onViewChange("learning")}
@@ -267,6 +279,11 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                   {t("next_small_step")}
                 </p>
                 <p className="text-sm font-bold leading-6 text-[#172033]">{nextSmallStep}</p>
+                <div className="mt-4 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/65 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#667085]">Kaynak sağlığı</p>
+                  <p className="mt-1 text-xs font-bold text-[#172033]">{sourceHealthLabel}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#667085]">{sourceHealthDetail}</p>
+                </div>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
                   <div className="rounded-xl bg-[#dcecf3]/55 px-3 py-2">
                     <span className="block text-base font-black text-[#172033]">{weakSkills.length}</span>
@@ -432,7 +449,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                   onClick={() => onViewChange("chat")}
                    className="text-[11px] font-bold text-[#667085] hover:text-[#344054] flex items-center gap-1 transition-colors uppercase tracking-wider"
                 >
-                  Calismaya Gec
+                  Çalışmaya geç
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
@@ -443,11 +460,11 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                     <FileText className="h-4 w-4 text-[#52768a]" />
                   </div>
                   <p className="text-sm font-bold text-[#172033]">
-                    {topics.length === 0 ? "Henuz aktif bir ogrenme yolunuz bulunmuyor." : "Plan var; gerçek ilerleme henüz başlamadı."}
+                    {topics.length === 0 ? "Henüz aktif bir öğrenme yolun bulunmuyor." : "Plan var; gerçek ilerleme henüz başlamadı."}
                   </p>
                   <p className="mx-auto mt-2 max-w-sm text-xs leading-6 text-[#667085]">
                     {topics.length === 0
-                      ? "Tutor'a hedefini yaz; Orka ilk konu yolunu acsin. Kaynak, kod hatasi, quiz ve tekrar sinyalleri geldikce burasi gercek verilerle dolar."
+                      ? "Tutor'a hedefini yaz; Orka ilk konu yolunu açsın. Kaynak, kod hatası, quiz ve tekrar sinyalleri geldikçe burası gerçek verilerle dolar."
                       : "Bu liste sahte %0 kartları basmaz. İlk ders, quiz, IDE sonucu veya tekrar aksiyonu geldikçe ilerleme burada gerçek veriye dönüşür."}
                   </p>
                   <button
@@ -455,7 +472,7 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                     className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white transition hover:bg-[#243044]"
                   >
                     <MessageSquareText className="h-4 w-4" />
-                    Ilk konuya basla
+                    İlk konuya başla
                   </button>
                 </div>
               ) : (
@@ -515,12 +532,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
                 </button>
 
                 <button
-                  onClick={() => onViewChange("ide")}
+                  onClick={() => onViewChange("practice")}
                   className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033]">Kod Hatasini Coz</span>
-                    <span className="text-[10px] text-[#667085]">IDE sonucunu Tutor'a bagla</span>
+                    <span className="text-xs font-bold text-[#172033]">Pratik yap</span>
+                    <span className="text-[10px] text-[#667085]">Quiz veya IDE sonucunu Tutor'a bağla</span>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
                     <Code2 className="w-4 h-4 text-[#667085]" />
@@ -529,12 +546,12 @@ export default function DashboardPanel({ topics, onViewChange }: DashboardPanelP
 
                 <button
                   id="tour-wiki-access"
-                  onClick={() => onViewChange("wiki")}
+                  onClick={() => onViewChange("sources")}
                   className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                    <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033]">Wiki Kütüphanesi</span>
-                    <span className="text-[10px] text-[#667085]">Hafıza haritasını keşfet</span>
+                    <span className="text-xs font-bold text-[#172033]">Kaynakları aç</span>
+                    <span className="text-[10px] text-[#667085]">Wiki ve OrkaLM kanıtlarını gör</span>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
                     <BookOpen className="w-4 h-4 text-[#667085]" />

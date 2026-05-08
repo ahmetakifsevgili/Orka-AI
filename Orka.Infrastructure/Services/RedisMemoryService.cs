@@ -424,6 +424,112 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
+    public async Task AddStreamEventAsync(string key, IReadOnlyDictionary<string, string> values, TimeSpan? ttl = null)
+    {
+        try
+        {
+            var fields = values.Count == 0
+                ? new[] { new NameValueEntry("event", "empty") }
+                : values.Select(kv => new NameValueEntry(kv.Key, kv.Value ?? string.Empty)).ToArray();
+
+            await _db.StreamAddAsync(
+                key,
+                fields,
+                maxLength: 500,
+                useApproximateMaxLength: true);
+
+            if (ttl.HasValue)
+            {
+                await _db.KeyExpireAsync(key, ttl.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Stream event yazılamadı. Key={Key}", key);
+        }
+    }
+
+    public async Task<IReadOnlyList<RedisStreamEventDto>> ReadStreamEventsAsync(string key, string afterId = "0-0", int count = 50)
+    {
+        try
+        {
+            var start = string.IsNullOrWhiteSpace(afterId) ? "0-0" : afterId;
+            var entries = await _db.StreamReadAsync(key, start, Math.Clamp(count, 1, 200));
+            return entries
+                .Where(e => !string.Equals(e.Id, start, StringComparison.Ordinal))
+                .Select(ToStreamDto)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Stream okunamadi. Key={Key}", key);
+            return [];
+        }
+    }
+
+    public async Task<bool> EnsureConsumerGroupAsync(string key, string group, string startId = "0-0")
+    {
+        try
+        {
+            await _db.StreamCreateConsumerGroupAsync(key, group, startId, createStream: true);
+            return true;
+        }
+        catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Consumer group olusturulamadi. Key={Key} Group={Group}", key, group);
+            return false;
+        }
+    }
+
+    public async Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">")
+    {
+        try
+        {
+            var entries = await _db.StreamReadGroupAsync(key, group, consumer, streamId, Math.Clamp(count, 1, 200));
+            return entries.Select(ToStreamDto).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Consumer group stream okunamadi. Key={Key} Group={Group}", key, group);
+            return [];
+        }
+    }
+
+    public async Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds)
+    {
+        var ids = eventIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => (RedisValue)id)
+            .ToArray();
+        if (ids.Length == 0) return;
+
+        try
+        {
+            await _db.StreamAcknowledgeAsync(key, group, ids);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Stream ack basarisiz. Key={Key} Group={Group}", key, group);
+        }
+    }
+
+    public async Task<bool> SupportsVectorSearchAsync()
+    {
+        try
+        {
+            await _db.ExecuteAsync("FT._LIST");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task DeleteKeyAsync(string key)
     {
         try
@@ -991,4 +1097,13 @@ public class RedisMemoryService : IRedisMemoryService
             .ToArray());
         return string.IsNullOrWhiteSpace(clean) ? "unknown" : clean;
     }
+
+    private static RedisStreamEventDto ToStreamDto(StreamEntry entry) => new()
+    {
+        Id = entry.Id.ToString(),
+        Values = entry.Values.ToDictionary(
+            x => x.Name.ToString(),
+            x => x.Value.ToString(),
+            StringComparer.OrdinalIgnoreCase)
+    };
 }

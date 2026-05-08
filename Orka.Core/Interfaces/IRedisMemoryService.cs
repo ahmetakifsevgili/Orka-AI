@@ -95,6 +95,18 @@ public interface IRedisMemoryService
 
     Task SetJsonAsync(string key, string payload, TimeSpan ttl);
 
+    Task AddStreamEventAsync(string key, IReadOnlyDictionary<string, string> values, TimeSpan? ttl = null);
+
+    Task<IReadOnlyList<RedisStreamEventDto>> ReadStreamEventsAsync(string key, string afterId = "0-0", int count = 50);
+
+    Task<bool> EnsureConsumerGroupAsync(string key, string group, string startId = "0-0");
+
+    Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">");
+
+    Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds);
+
+    Task<bool> SupportsVectorSearchAsync();
+
     Task DeleteKeyAsync(string key);
 
     Task<long> GetTopicVersionAsync(Guid topicId);

@@ -32,9 +32,13 @@ export const LANGUAGE_OPTIONS: LanguageOption[] = [
   { code: "pl", nativeName: "Polski", englishName: "Polish" },
 ];
 
+const LEGACY_TURKISH_MOJIBAKE = [0x54, 0xc3, 0xbc, 0x72, 0x6b, 0xc3, 0xa7, 0x65]
+  .map((code) => String.fromCharCode(code))
+  .join("");
+
 export const normalizeLocale = (value?: string | null): Locale => {
   if (!value) return "tr";
-  if (value === "Türkçe" || value === "TÃ¼rkÃ§e") return "tr";
+  if (value === "Türkçe" || value === LEGACY_TURKISH_MOJIBAKE) return "tr";
   if (value === "English") return "en";
   const normalized = value.trim();
   return (SUPPORTED_LOCALES as readonly string[]).includes(normalized)

@@ -62,6 +62,13 @@ public class SourcesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("topic/{topicId:guid}/quality")]
+    public async Task<IActionResult> GetTopicQuality(Guid topicId)
+    {
+        var result = await _sources.GetTopicQualityAsync(GetUserId(), topicId, HttpContext.RequestAborted);
+        return Ok(result);
+    }
+
     [HttpPost("{sourceId:guid}/ask")]
     public async Task<IActionResult> Ask(Guid sourceId, [FromBody] SourceAskRequest request)
     {

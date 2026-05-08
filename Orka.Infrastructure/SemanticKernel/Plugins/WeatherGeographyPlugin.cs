@@ -16,11 +16,11 @@ public sealed class WeatherGeographyPlugin
         _logger = logger;
     }
 
-    [KernelFunction, Description("Gets current weather/geography context when configured. If unavailable, returns a safe fallback and does not invent live conditions.")]
+    [KernelFunction, Description("Gets geography context for a place: coordinates, latitude band, climate cue, and map reasoning. Live weather is only a supporting signal.")]
     public async Task<string> GetWeatherAndGeography(double latitude, double longitude, string locationName = "")
     {
-        var result = await _provider.GetWeatherAsync(latitude, longitude, locationName);
-        _logger.LogInformation("[Weather] Result Status={Status} Success={Success}", result.Status, result.Success);
+        var result = await _provider.GetGeographyContextAsync(latitude, longitude, locationName);
+        _logger.LogInformation("[Geography] Result Status={Status} Success={Success}", result.Status, result.Success);
         return ProviderResultFormatter.Format(result);
     }
 }
