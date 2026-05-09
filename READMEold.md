@@ -1,6 +1,6 @@
 <div align="center">
 
-# Orka AI (V1 Production Ready)
+# Orka AI
 
 **Kişiselleştirilmiş Öğrenme Orkestratörü**
 
@@ -25,10 +25,10 @@ Klasik online kursların aksine Orka:
 
 - **Sabit içerik sunmaz** — her kullanıcıya ve her konuya özel bir yol çizer.
 - **Tek bir LLM'e bağımlı değildir** — görevin doğasına göre farklı ajanlar farklı modelleri kullanır.
-- **Kendi cevap kalitesini ölçer** — bir `EvaluatorAgent` her anlatımı 3 boyutta puanlar; düşük puanlı cevaplar bir sonraki prompt'ta **ders niteliğinde geri besleme** olarak geri gelir. RAG kalite metrikleri (Faithfulness & Relevance) `RagEvaluationService` tarafından otonom olarak denetlenir.
-- **Öğrenciyi ezberlemez, modeller** — "Öğrenci Profili" ve CAT (Computerized Adaptive Testing) ile kullanıcının zayıf noktalarını sürekli güncel tutar. Klasik test teorisiyle (CTT) soru zorluklarını kendi kendine kalibre eder.
+- **Kendi cevap kalitesini ölçer** — bir `EvaluatorAgent` her anlatımı 3 boyutta puanlar; düşük puanlı cevaplar bir sonraki prompt'ta **ders niteliğinde geri besleme** olarak geri gelir.
+- **Öğrenciyi ezberlemez, modeller** — "Öğrenci Profili" (Yaşayan Organizasyon) kullanıcının zayıf noktalarını canlı tutarak anlatımı bunlara göre bükler.
 
-Kısaca: Orka, cevap veren değil, **cevabını sürekli iyileştiren** ve uluslararası eğitim standartlarıyla (CASE/QTI/xAPI) uyumlu yaşayan bir sistemdir.
+Kısaca: Orka, cevap veren değil, **cevabını sürekli iyileştiren** bir sistemdir.
 
 ---
 
@@ -36,7 +36,7 @@ Kısaca: Orka, cevap veren değil, **cevabını sürekli iyileştiren** ve ulusl
 
 Orka'nın çekirdeği, klasik "iste-cevapla" akışının üzerine kurulmuş bir **kapalı geri besleme döngüsüdür**. Her kullanıcı etkileşimi aşağıdaki zinciri tetikler:
 
-```text
+```
 Kullanıcı mesajı
       │
       ▼
@@ -64,7 +64,6 @@ Kullanıcı mesajı
 │  • orka:student_profile:{topicId} (anlık)    │ ← zayıf noktalar, seviye
 │  • orka:gold:{topicId}            (≥9 puan)  │ ← başarılı anlatım örneği
 │  • orka:metrics:{agentRole}       (TTFT vs.) │ ← LLMOps telemetri
-│  • orka:v3:tutor-events:{id}                 │ ← Frontend Live Trace Akışı
 └──────────┬───────────────────────────────────┘
            │  bir sonraki mesajda…
            ▼
@@ -86,9 +85,15 @@ Kullanıcı mesajı
 
 `overall = ((pedagogy + factual + context) / 15) × 10` formülüyle 1–10 arası normalize edilir. `factual < 3` → `hallucinationRisk = true` otomatik.
 
-### 2.2 Üç Katmanlı Hafıza ve Live Trace
+### 2.2 Üç Katmanlı Hafıza
 
-Orka üç farklı zaman ölçeğinde hafıza tutar (Mesaj, Session, Topic). Buna ek olarak V1 mimarisinde **Redis Live Trace UX** aktiftir. Ajanların arka planda yaşadığı "Düşünme, Planlama, Kaynak tarama" anları frontend'deki `LiveTutorTrace` sekmesinde canlı olarak okunabilir.
+Orka üç farklı zaman ölçeğinde hafıza tutar:
+
+| Katman | Nerede | Ömür | Amaç |
+|---|---|---|---|
+| **Mesaj bazlı** | SQL `AgentEvaluation` + `Message` | Kalıcı | Audit log, dashboard |
+| **Session bazlı** | Redis `orka:feedback:{sessionId}` | 7 gün | Anlık tonlama, "sade ol" uyarısı |
+| **Topic bazlı** | Redis `orka:topic_score:{topicId}` + `student_profile` | 30 gün | Konu kalitesi, öğrenci modeli |
 
 ### 2.3 Gelişen Prompt (Dynamic Few-Shot)
 
@@ -103,15 +108,33 @@ Böylece aynı konuyu ikinci kez anlatırken sistem zaten daha iyidir — kopya 
 
 ### 2.4 Altın Örnek Kütüphanesi
 
-`EvaluatorAgent` bir `TutorAgent` cevabına 9 veya 10 verdiyse ve `hallucinationRisk=false` ise, bu konuşma `orka:gold:{topicId}` anahtarına kaydedilir. Halüsinasyon riskli yüksek-puanlı cevaplar **kasten** örnek kütüphanesine alınmaz.
+`EvaluatorAgent` bir `TutorAgent` cevabına 9 veya 10 verdiyse ve `hallucinationRisk=false` ise, bu konuşma `orka:gold:{topicId}` anahtarına kaydedilir. Halüsinasyon riskli yüksek-puanlı cevaplar **kasten** örnek kütüphanesine alınmaz — yanlış bilgi pekişmesin diye.
 
-### 2.5 State Machine & CAT (Adaptive Assessment)
+### 2.5 Sağlayıcı Zinciri + Telemetri
 
-Orka'nın soru sorma aşaması statik değildir. Quiz moduna geçildiğinde `AdaptiveAssessmentSelector` devreye girer. Formül bazlı bir kalibrasyon sistemi (`AssessmentCalibrationServices`), öğrencinin hangi konuda zorlandığını bularak klasik test teorisi (CTT) prensipleriyle o an sorulabilecek en mükemmel zorluktaki soruyu seçer.
+`AIAgentFactory`, her ajan rolü için `appsettings.json`'daki **model yönlendirme tablosuna** bakar. Birincil sağlayıcı çökerse zincir otomatik fallback'e düşer (GitHub Models → Groq → Gemini → OpenRouter → Mistral). Her çağrı `orka:metrics:{role}` anahtarına **TTFT, gecikme, başarı, sağlayıcı** olarak yazılır. Dashboard'da:
 
-### 2.6 Production Hardening & Otomatik Bakım
+- Sağlayıcı dağılımı (Primary ≥ %85 sağlıklı sayılır)
+- Ajan başına ortalama gecikme
+- Hata oranı & son aktif sağlayıcı
 
-Sistem, veritabanı loglarının şişmesini veya ölü audio dosyalarının kalmasını engellemek için kendi kendini temizler. `RetentionCleanupWorker` ve `RedisStreamMaintenanceWorker` arka planda periyodik bakım yapar. Sistemin tüm sinyalleri API katmanına entegre edilmiş **OpenTelemetry** SDK ile izlenebilir durumdadır.
+gerçek zamanlı görülebilir.
+
+### 2.6 State Machine — Session Yaşam Döngüsü
+
+```
+Learning ──(Analyzer: konu bitti)──► TopicCompleted
+    │                                      │
+    │                                      ▼
+    │                                 QuizPending
+    │                                      │
+    │                                      ▼
+    │                                  QuizMode ──(Grader)──► Learning (bir sonraki)
+    │
+    └──(yeni konu)──► AwaitingChoice ──► BaselineQuizMode ──► Planning ──► Learning
+```
+
+Session state geçişleri **yalnızca** `AgentOrchestratorService`'in `Handle*` metotlarından yapılır — başka yerden müdahale yasak.
 
 ---
 
@@ -119,11 +142,12 @@ Sistem, veritabanı loglarının şişmesini veya ölü audio dosyalarının kal
 
 > 💡 **Not:** Sistemin tüm detaylı akışları (DeepPlan Modül/Ders Hiyerarşisi, Piston IDE Entegrasyonu, Korteks Araştırma Sekansları vb.) için özel olarak hazırladığımız kapsamlı [ARCHITECTURE.md](ARCHITECTURE.md) dosyasını inceleyebilirsiniz.
 
+
 ```mermaid
 graph TB
     subgraph Client["🖥️ Frontend — React 19 + Vite + Tailwind v4"]
         UI[Home · Landing · Courses]
-        CP[ChatPanel<br/>SSE & Polling Trace]
+        CP[ChatPanel<br/>SSE consumer]
         WP[WikiMainPanel<br/>polling]
         IDE[InteractiveIDE<br/>Monaco]
         HUD[SystemHealthHUD<br/>admin only]
@@ -143,7 +167,7 @@ graph TB
         VOICE[VoiceController<br/>Edge TTS Stream]
         USERC[UserController]
         SKILL[SkillMasteryController]
-        MW[OpenTelemetry +<br/>ExceptionMiddleware]
+        MW[CorrelationId +<br/>ExceptionMiddleware]
     end
 
     subgraph Orchestrator["🧠 Agent Orchestrator — Infrastructure"]
@@ -280,7 +304,7 @@ graph TB
 
 ## 4. Redis UML — Anahtar Topolojisi
 
-Redis, Orka'nın **canlı hafızasıdır**. Kalıcı veri SQL'dedir; Redis yalnızca **hızla değişen, yüksek TTL'li** öğrenme sinyallerini ve trace loglarını tutar.
+Redis, Orka'nın **canlı hafızasıdır**. Kalıcı veri SQL'dedir; Redis yalnızca **hızla değişen, yüksek TTL'li** öğrenme sinyallerini tutar.
 
 ```mermaid
 graph LR
@@ -355,6 +379,7 @@ graph LR
 ```
 
 **Tasarım Prensipleri:**
+
 - **Key namespace'i** her zaman `orka:<amaç>:<scope-id>` — hem pattern taraması hem silme için.
 - **Hiçbir anahtar kalıcı değil** (globalPolicy hariç) — TTL her yazımda yenilenir.
 - **Fail-open rate limit** — Redis düşerse sistem kilitlenmez, limit devre dışı kalır.
@@ -549,11 +574,16 @@ erDiagram
 ```
 
 **Önemli Kısıtlar:**
-- `User.Email` / `RefreshToken.Token` — **unique index**
+
+- `User.Email` — **unique index**
+- `RefreshToken.Token` — **unique index**
 - `Topic.ParentTopicId` — self-reference (silme zinciri `NoAction` — cascade cycle engeli)
 - `Message (SessionId, CreatedAt)` — composite index (chat listesi sıralı okuma)
 - `Session (UserId, TopicId)` — composite index
+- `Topic (UserId, Order)` — composite index (sidebar sıralama)
+- `SkillMastery (UserId, TopicId)` — composite index
 - Enum alanları **string** olarak saklanır (`HasConversion<string>()`)
+- `decimal` maliyet alanları — `precision(10, 6)`
 
 ---
 
@@ -567,13 +597,14 @@ erDiagram
 | Web API | **ASP.NET Core 8** Minimal hosting + Controller pattern |
 | ORM | **Entity Framework Core 8** (Code-First, auto-migrate at boot) |
 | Veritabanı | **SQL Server 2022 LocalDB** (prod: Azure SQL) |
-| Cache & Events | **Redis 7** via `StackExchange.Redis` |
+| Cache / Canlı Hafıza | **Redis 7** via `StackExchange.Redis` |
 | AI Orchestration | **Microsoft Semantic Kernel** (plugin bazlı) |
 | Mediator | **MediatR** — domain event'leri (`TopicCompletedEvent`) |
-| Observability | **OpenTelemetry** — SDK Trace, Metric & Log Exporter |
-| HTTP Resilience | **Microsoft.Extensions.Http.Resilience** — retry + circuit breaker |
+| Auth | **JWT Bearer** + Refresh Token rotation (60 dk + 30 gün) |
+| HTTP Resilience | **Microsoft.Extensions.Http.Resilience** — retry + circuit breaker + timeout |
 | Health | `AspNetCore.HealthChecks.Redis` + `AddDbContextCheck` |
-| Background Jobs | `IHostedService` (Retention Cleanup, DB Audit) |
+| Docs | Swagger / OpenAPI |
+| Secrets | `dotnet user-secrets` (appsettings'de API anahtarı yasak) |
 
 ### Frontend (React 19)
 
@@ -581,33 +612,85 @@ erDiagram
 |---|---|
 | Framework | **React 19** + **TypeScript 5.8** |
 | Build | **Vite 6** |
-| Styling | **Tailwind CSS v4** (config-less) |
+| Styling | **Tailwind CSS v4** (config-less, `@tailwindcss/vite` plugin) |
+| Typography | `@tailwindcss/typography` (prose-invert) |
 | Router | **wouter** (react-router kullanılmaz) |
-| HTTP | **Axios** + native `fetch` (SSE/Polling LiveTrace) |
+| HTTP | **Axios** (tek instance + 401 refresh queue) + native `fetch` (SSE için) |
+| State | Local `useState` + React Context (Theme / Language / FontSize / QuizHistory) |
+| Animation | **framer-motion** (sayfa/modal) + Tailwind transitions (mikro) |
+| Markdown | **react-markdown** + **remark-gfm** + **react-syntax-highlighter** |
 | Kod Editör | **@monaco-editor/react** (InteractiveIDE) |
+| Icons | **lucide-react** |
+| Toast | **react-hot-toast** |
 | Layout | **react-resizable-panels** (SplitPane) |
 
 ### AI Katmanı
 
 | Ajan / Servis | Rol |
 |---|---|
-| **AgentOrchestratorService** | Tüm akışların merkezi — state machine + routing |
+| **AgentOrchestratorService** | Tüm `ProcessMessage*` akışlarının merkezi — state machine + routing |
 | **TutorAgent** | Ders anlatımı, cevap değerlendirme |
 | **DeepPlanAgent** | Müfredat (hiyerarşik topic tree) üretimi |
+| **AnalyzerAgent** | "Konu tamamlandı mı?" kararı |
+| **SummarizerAgent** | Wiki markdown üretimi (idempotent, `ConcurrentDictionary` lock) |
+| **QuizAgent** / **GraderAgent** | Quiz üretimi + puanlama |
+| **WikiAgent** | Wiki üzerine SSE stream Q&A |
+| **KorteksAgent** | Tavily + Wikipedia ile grounded deep research |
+| **SupervisorAgent** | Meta-kontrol, kritik cevap denetimi |
 | **EvaluatorAgent** | **LLMOps kalite — 3 boyutlu skorlama** |
-| **RagEvaluationService** | Faithfulness ve Relevance RAG analizleri |
-| **AdaptiveAssessmentSelector** | CAT tabanlı, belirsizlik durumuna göre zorluk/soru seçimi |
-| **StandardsAndProductionServices**| CASE, QTI, Caliper ve xAPI formatlarına çevrim, uyumluluk |
+| **IntentClassifierAgent** | Mesajın niyetini (Plan/Explain/Quiz/...) etiketler |
 | **EdgeTtsStreamService** | Python `edge-tts` subprocess üzerinden canlı ses akışı (Podcast) |
+| **RouterService** | Intent → ajan yönlendirme (orchestrator bağımlılığı yasak) |
+| **IAIAgentFactory** | Rol → model eşleme + TTFT telemetri |
+| **IAIServiceChain** | Provider failover zinciri |
+| **TokenCostEstimator** | 2026 fiyat tablosu, her mesaj/session kümülatif |
+
+### LLM Sağlayıcıları (Failover Sıralı)
+
+1. **GitHub Models** (Azure AI Inference) — *Primary*
+2. **Groq** — düşük gecikme fallback
+3. **Google Gemini 2.5 Flash**
+4. **Mistral**
+5. **SambaNova**
+6. **Cerebras**
+7. **OpenRouter** — son çare
+8. **Cohere Embed** — embedding (paralel, failover değil)
+
+### Semantic Kernel Plugins
+
+- `TavilySearchPlugin` — web arama (KorteksAgent)
+- `WikipediaPlugin` — grounding / halüsinasyon önleme
+- `WikiPlugin` — kullanıcının kendi wiki'sinden soru cevaplama
+- `TopicPlugin` — topic CRUD AI üzerinden
+
+### Harici Servisler
+
+- **Tavily Search API** — deep research
+- **Wikipedia REST API** — fact grounding
+- **Judge0 CE / Piston** — sandbox kod çalıştırma (Python, C#, JS, Go, Rust, ... 70+ dil)
+- **Edge TTS (Python CLI)** — Yüksek kaliteli, sıfır gecikmeli Türkçe ses sentezi
 
 ### Mimari Desenler
+
 - **Clean Architecture** — `Core → Infrastructure → API` tek yönlü bağımlılık
+- **Mediator Pattern** — MediatR ile domain event'ler
 - **Factory Pattern** — `AIAgentFactory` rol bazlı model seçimi
 - **Chain of Responsibility** — `AIServiceChain` provider failover
 - **State Machine** — `SessionState` + `TopicPhase` enum driven
-- **CQRS-lite** — okuma/yazma servis ayrımı
+- **CQRS-lite** — okuma/yazma servis ayrımı (özellikle Redis)
 - **Plugin Pattern** — Semantic Kernel plugin'leri dinamik yüklenebilir
-- **Rate Limiting & Fail-Open Security** — Redis çökerse sistem kilitlenmez, limit devre dışı kalır.
+- **Observability** — Correlation ID middleware, structured logging (`ILogger`)
+- **Chaos Engineering** — `X-Chaos-Fail` header ile provider başarısızlığı simülasyonu
+- **Rate Limiting** — Redis Token Bucket (IP + Plan bazlı)
+- **Fail-Open Security** — Redis/cache çökse de sistem çalışmaya devam eder
+- **OASI (Orka Agent Stability Index)** — Hata, gecikme ve SQL kalite puanlarını harmanlayan Ajan Sağlık Skoru (S, A, B, C, F)
+- **SSE (Server-Sent Events)** — chat + wiki akışı için; özel sinyaller: `[THINKING:]`, `[PLAN_READY]`, `[TOPIC_COMPLETE:guid]`, `[ERROR]:`, `[DONE]`
+
+### Test & Kalite
+
+- **LLM Eval** — `promptfoo` (scenario-based, LLM-as-judge)
+- **Healthcheck** — `scripts/healthcheck.mjs` (Node.js, cross-platform, PASS/FAIL/BONUS raporu)
+- **Type Check** — `dotnet build` + `npx tsc --noEmit` (commit öncesi zorunlu)
 
 ---
 
@@ -620,7 +703,7 @@ erDiagram
 - SQL Server LocalDB (Visual Studio ile gelir)
 - Redis 7 — yerel instance veya Docker (`docker run -p 6379:6379 redis:7`)
 
-### Backend'i Çalıştırma (API)
+### Backend
 
 ```bash
 # API anahtarlarını user-secrets'a ekle
@@ -628,28 +711,31 @@ cd Orka.API
 dotnet user-secrets set "AI:GitHubModels:Token" "ghp_..."
 dotnet user-secrets set "AI:Groq:ApiKey" "gsk_..."
 
-# Vite proxy (5101) ile uyumlu başlat
-dotnet run --urls "http://localhost:5101"
+# Migration otomatik uygulanır — direkt çalıştır
+dotnet run
+# → http://localhost:5065
 ```
 
-### Frontend'i Çalıştırma
+### Frontend
 
 ```bash
 cd Orka-Front
 npm install
 npm run dev
-# → http://localhost:3000
+# → http://localhost:5173
 ```
 
-### Testleri Çalıştırma
+### Sağlık Kontrolü
 
 ```bash
-# Backend Testleri
-dotnet test
+# Backend ayaktayken
+node scripts/healthcheck.mjs
+```
 
-# Frontend Smoke ve Contract Testleri
-cd Orka-Front
-npm run quick:smoke
+### Admin Yapma
+
+```bash
+sqlcmd -S "(localdb)\mssqllocaldb" -d OrkaDb -i promote_admin.sql
 ```
 
 ---
