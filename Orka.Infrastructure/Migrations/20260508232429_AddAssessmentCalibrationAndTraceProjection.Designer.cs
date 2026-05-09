@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Orka.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Orka.Infrastructure.Data;
 namespace Orka.Infrastructure.Migrations
 {
     [DbContext(typeof(OrkaDbContext))]
-    partial class OrkaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260508232429_AddAssessmentCalibrationAndTraceProjection")]
+    partial class AddAssessmentCalibrationAndTraceProjection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -677,17 +680,8 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("AudioByteLength")
-                        .HasColumnType("bigint");
-
                     b.Property<byte[]>("AudioBytes")
                         .HasColumnType("varbinary(max)");
-
-                    b.Property<DateTime?>("AudioExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("AudioPurgedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
@@ -724,8 +718,6 @@ namespace Orka.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AudioExpiresAt");
 
                     b.HasIndex("SessionId");
 
@@ -875,17 +867,8 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<long>("AudioByteLength")
-                        .HasColumnType("bigint");
-
                     b.Property<byte[]>("AudioBytes")
                         .HasColumnType("varbinary(max)");
-
-                    b.Property<DateTime?>("AudioExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("AudioPurgedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<Guid>("ClassroomSessionId")
                         .HasColumnType("uniqueidentifier");
@@ -902,8 +885,6 @@ namespace Orka.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AudioExpiresAt");
 
                     b.HasIndex("ClassroomSessionId");
 
@@ -1932,14 +1913,6 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<decimal>("CaliperXapiCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<decimal>("CaseLikeCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
                     b.Property<Guid?>("ConceptGraphSnapshotId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1996,10 +1969,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<Guid?>("PlanRequestId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<decimal>("QtiLikeCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
                     b.Property<string>("QualityStatus")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -2015,11 +1984,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<string>("SourceGroundingStatus")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("StandardsAlignmentStatus")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("ToolExecutionHealthStatus")
                         .IsRequired()
@@ -3429,220 +3393,6 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("UserId", "TopicId", "CreatedAt");
 
                     b.ToTable("SourceRetrievalRuns");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsExportItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("EntityId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("EntityKey")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("StandardFamily")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid>("StandardsExportRunId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("TopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StandardsExportRunId", "StandardFamily", "EntityType");
-
-                    b.ToTable("StandardsExportItems");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsExportRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("CaliperXapiCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<decimal>("CaseCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<Guid?>("ConceptGraphSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ExportType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<int>("ItemCount")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("QtiCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid?>("TopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "TopicId", "CreatedAt");
-
-                    b.ToTable("StandardsExportRuns");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsValidationItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DetailJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("EntityId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("EntityKey")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("EntityType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("IssueCode")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("StandardFamily")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid>("StandardsValidationRunId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("TopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("UserSafeMessage")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StandardsValidationRunId", "StandardFamily", "Severity");
-
-                    b.ToTable("StandardsValidationItems");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsValidationRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("CaliperXapiCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<decimal>("CaseCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<int>("CheckedItemCount")
-                        .HasColumnType("int");
-
-                    b.Property<Guid?>("ConceptGraphSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("IssueCount")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("QtiCoverage")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("decimal(6,4)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("SummaryJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("TopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "TopicId", "CreatedAt");
-
-                    b.ToTable("StandardsValidationRuns");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.StudyRecommendation", b =>
@@ -6363,46 +6113,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("Topic");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsExportItem", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.StandardsExportRun", "StandardsExportRun")
-                        .WithMany()
-                        .HasForeignKey("StandardsExportRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("StandardsExportRun");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsExportRun", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsValidationItem", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.StandardsValidationRun", "StandardsValidationRun")
-                        .WithMany()
-                        .HasForeignKey("StandardsValidationRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("StandardsValidationRun");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.StandardsValidationRun", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.StudyRecommendation", b =>

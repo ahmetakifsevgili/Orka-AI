@@ -10,6 +10,9 @@ public class ClassroomInteraction
     public string AnswerScript { get; set; } = string.Empty;
     public byte[]? AudioBytes { get; set; }
     public string ContentType { get; set; } = "audio/mpeg";
+    public long AudioByteLength { get; set; }
+    public DateTime? AudioExpiresAt { get; set; }
+    public DateTime? AudioPurgedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ClassroomSession ClassroomSession { get; set; } = null!;

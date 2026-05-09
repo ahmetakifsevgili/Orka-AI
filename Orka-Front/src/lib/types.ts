@@ -238,6 +238,91 @@ export interface ChatResponseMetadata {
   planDiagnostic?: PlanDiagnosticMeta;
 }
 
+export interface AssessmentCalibrationRun {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  calibrationStatus: string;
+  adaptiveReadiness: string;
+  itemBankHealth: string;
+  itemCount: number;
+  healthyItemCount: number;
+  conceptCount: number;
+  readyConceptCount: number;
+  averageDifficulty: number;
+  averageDiscrimination: number;
+  averageExposure: number;
+  createdAt: string;
+  items?: Array<{
+    id: string;
+    assessmentItemId: string;
+    conceptKey: string;
+    difficultyEstimate: number;
+    discriminationEstimate: number;
+    exposureCount: number;
+    evidenceCount: number;
+    calibrationStatus: string;
+    reason: string;
+  }>;
+}
+
+export interface AdaptiveAssessmentSession {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  quizRunId?: string | null;
+  status: string;
+  targetConcepts: string[];
+  stopReason: string;
+  minItems: number;
+  maxItems: number;
+  answeredCount: number;
+  correctCount: number;
+  createdAt: string;
+}
+
+export interface AdaptiveAssessmentNextItem {
+  sessionId: string;
+  status: string;
+  isComplete: boolean;
+  stopReason: string;
+  decision?: {
+    id: string;
+    assessmentItemId: string;
+    conceptKey: string;
+    selectionScore: number;
+    masteryProbability: number;
+    masteryConfidence: number;
+    itemQualityScore: number;
+    exposurePenalty: number;
+    decisionReason: string;
+    question: QuizData;
+  } | null;
+}
+
+export interface TutorTraceTimeline {
+  sessionId: string;
+  after: string;
+  lastEventId: string;
+  source: string;
+  traceHealth: string;
+  events: TutorTraceTimelineEvent[];
+}
+
+export interface TutorTraceTimelineEvent {
+  id: string;
+  streamId: string;
+  eventType: string;
+  eventGroup: string;
+  userSafeLabel: string;
+  userSafeDetail: string;
+  severity: string;
+  values: Record<string, string>;
+  occurredAt: string;
+}
+
 export interface PlanDiagnosticMeta {
   planRequestId: string;
   quizRunId: string;
@@ -530,6 +615,14 @@ export interface LearningQualityReport {
   forumSignalUsageStatus?: string;
   evidenceCitationCoverageStatus?: string;
   tutorPedagogyStatus?: string;
+  assessmentCalibrationStatus?: string;
+  adaptiveReadiness?: string;
+  itemBankHealth?: string;
+  traceHealth?: string;
+  standardsAlignmentStatus?: string;
+  caseLikeCoverage?: number;
+  qtiLikeCoverage?: number;
+  caliperXapiCoverage?: number;
   tutorPedagogyScore?: number | null;
   criticalPedagogyViolationCount?: number;
   eventSchemaViolationCount: number;
@@ -567,6 +660,9 @@ export interface LearningQualityReport {
     createdAt: string;
   } | null;
   sourceQuality?: SourceQualityReportDto | null;
+  assessmentCalibration?: AssessmentCalibrationRun | null;
+  recentTutorTraceEvents?: TutorTraceTimelineEvent[];
+  standardsSummary?: StandardsSummary | null;
   graphQuality?: {
     id: string;
     qualityStatus: string;
@@ -619,6 +715,111 @@ export interface LearningQualityReport {
     alignmentScore: number;
     alignmentStatus: string;
   }>;
+}
+
+export interface StandardsSummary {
+  userId: string;
+  topicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  standardsAlignmentStatus: string;
+  caseCoverage: number;
+  qtiCoverage: number;
+  caliperXapiCoverage: number;
+  outcomeCount: number;
+  conceptCount: number;
+  assessmentItemCount: number;
+  learningEventCount: number;
+  issueCount: number;
+  generatedAt: string;
+  recentIssues: StandardsValidationItem[];
+}
+
+export interface StandardsValidationRun {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  status: string;
+  caseCoverage: number;
+  qtiCoverage: number;
+  caliperXapiCoverage: number;
+  checkedItemCount: number;
+  issueCount: number;
+  issues: StandardsValidationItem[];
+  createdAt: string;
+}
+
+export interface StandardsValidationItem {
+  id: string;
+  standardFamily: string;
+  entityType: string;
+  entityKey: string;
+  severity: string;
+  issueCode: string;
+  userSafeMessage: string;
+}
+
+export interface StandardsExportRun {
+  id: string;
+  userId: string;
+  topicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  exportType: string;
+  status: string;
+  itemCount: number;
+  caseCoverage: number;
+  qtiCoverage: number;
+  caliperXapiCoverage: number;
+  payloadJson: string;
+  createdAt: string;
+}
+
+export interface ProductionReadiness {
+  status: string;
+  sections: Array<{ key: string; status: string; userSafeLabel: string; userSafeDetail: string }>;
+  providerGovernance: {
+    status: string;
+    providerCount: number;
+    healthyProviderCount: number;
+    recentFailureCount: number;
+    estimatedCostUsdToday: number;
+    providers: Array<{
+      provider: string;
+      status: string;
+      calls24h: number;
+      failures24h: number;
+      averageLatencyMs: number;
+      estimatedCostUsdToday: number;
+      userSafeMessage: string;
+    }>;
+  };
+  audioRetention: {
+    status: string;
+    readyAudioCount: number;
+    expiredAudioCount: number;
+    purgedAudioCount: number;
+    storedAudioBytes: number;
+    retentionDays: number;
+  };
+  redisStreams: {
+    status: string;
+    streamCount: number;
+    maxLength: number;
+    approximateTotalLength: number;
+    trimmedStreamCount: number;
+    notes: string;
+  };
+  dbIndexAudit: {
+    status: string;
+    requiredIndexCount: number;
+    missingIndexCount: number;
+    missingIndexes: string[];
+  };
+  regressionGate: {
+    status: string;
+    scenarios: Array<{ key: string; status: string; userSafeLabel: string; evidence: string }>;
+  };
+  generatedAt: string;
 }
 
 // ─── Course Types ───────────────────────────────────────────────────────────

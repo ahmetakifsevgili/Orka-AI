@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Orka.API.Middleware;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
@@ -23,6 +26,32 @@ var useInMemoryDatabase = databaseProvider.Equals("InMemory", StringComparison.O
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
+
+var otlpEndpoint = builder.Configuration["OpenTelemetry:OtlpEndpoint"];
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("Orka.API"))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddSource("Orka");
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            tracing.AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddMeter("Orka");
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            metrics.AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+        }
+    });
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -109,6 +138,9 @@ builder.Services.AddScoped<IConceptGraphBuilder, ConceptGraphBuilder>();
 builder.Services.AddScoped<IConceptGraphQualityService, ConceptGraphQualityService>();
 builder.Services.AddScoped<IAssessmentGrammarEngine, AssessmentGrammarEngine>();
 builder.Services.AddScoped<IAssessmentQualityService, AssessmentQualityService>();
+builder.Services.AddScoped<IAssessmentCalibrationService, AssessmentCalibrationService>();
+builder.Services.AddScoped<IAdaptiveAssessmentSelector, AdaptiveAssessmentSelector>();
+builder.Services.AddScoped<IAdaptiveAssessmentSessionService, AdaptiveAssessmentSessionService>();
 builder.Services.AddScoped<IDiagnosticProfileBuilder, DiagnosticProfileBuilder>();
 builder.Services.AddScoped<IConceptMasteryService, ConceptMasteryService>();
 builder.Services.AddScoped<IKnowledgeTracingService, KnowledgeTracingService>();
@@ -121,6 +153,7 @@ builder.Services.AddScoped<IAffectiveSignalService, AffectiveSignalService>();
 builder.Services.AddScoped<ICognitiveLoadService, CognitiveLoadService>();
 builder.Services.AddScoped<ILearnerProfileService, LearnerProfileService>();
 builder.Services.AddScoped<ITutorWorkingMemoryService, TutorWorkingMemoryService>();
+builder.Services.AddScoped<ITutorTraceProjectionService, TutorTraceProjectionService>();
 builder.Services.AddScoped<ITutorTurnStateAssembler, TutorTurnStateAssembler>();
 builder.Services.AddScoped<ITutorActionPlanner, TutorActionPlanner>();
 builder.Services.AddScoped<ITutorToolOrchestrator, TutorToolOrchestrator>();
@@ -166,6 +199,15 @@ builder.Services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerSer
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
 builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
+builder.Services.AddScoped<IStandardsAlignmentService, StandardsAlignmentService>();
+builder.Services.AddScoped<IStandardsValidationService, StandardsValidationService>();
+builder.Services.AddScoped<IStandardsExportService, StandardsExportService>();
+builder.Services.AddScoped<IProviderGovernanceService, ProviderGovernanceService>();
+builder.Services.AddScoped<IRetentionCleanupService, RetentionCleanupService>();
+builder.Services.AddScoped<IRedisStreamMaintenanceService, RedisStreamMaintenanceService>();
+builder.Services.AddScoped<IDbIndexAuditService, DbIndexAuditService>();
+builder.Services.AddScoped<IV1RegressionGateService, V1RegressionGateService>();
+builder.Services.AddScoped<IProductionReadinessService, ProductionReadinessService>();
 builder.Services.AddScoped<IWolframProvider, WolframProvider>();
 builder.Services.AddScoped<INewsProvider, NewsProvider>();
 builder.Services.AddScoped<IWeatherProvider, WeatherProvider>();
@@ -180,6 +222,8 @@ builder.Services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
 builder.Services.AddHostedService<SrsReminderWorker>();
 builder.Services.AddHostedService<DailyChallengeWorker>();
+builder.Services.AddHostedService<RetentionCleanupWorker>();
+builder.Services.AddHostedService<RedisStreamMaintenanceWorker>();
 
 // LLMOps: Token/Cost Estimator (Dashboard maliyet verisi için)
 builder.Services.AddSingleton<ITokenCostEstimator, TokenCostEstimator>();

@@ -14,7 +14,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
 import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Link2, Image as ImageIcon } from "lucide-react";
-import type { ChatMessage as ChatMessageType, TeachingArtifact } from "@/lib/types";
+import type { ChatMessage as ChatMessageType, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
 import { TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
@@ -486,7 +486,68 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"] }) {
+function LiveTutorTrace({ sessionId, enabled }: { sessionId?: string; enabled: boolean }) {
+  const [events, setEvents] = useState<TutorTraceTimelineEvent[]>([]);
+  const [lastId, setLastId] = useState("0-0");
+  const [source, setSource] = useState<string>("");
+
+  useEffect(() => {
+    if (!sessionId || !enabled) return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const load = async () => {
+      try {
+        const timeline = await TutorAPI.getSessionTimeline(sessionId, lastId, 20);
+        if (cancelled) return;
+        if (timeline.events?.length) {
+          setEvents((prev) => {
+            const known = new Set(prev.map((item) => item.streamId));
+            const next = timeline.events.filter((item) => !known.has(item.streamId));
+            return [...prev, ...next].slice(-12);
+          });
+          setLastId(timeline.lastEventId || lastId);
+        }
+        setSource(timeline.source);
+      } catch {
+        // Trace is an explainability layer; the answer itself should not fail.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(load, 3000);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [sessionId, enabled, lastId]);
+
+  if (!enabled || events.length === 0) return null;
+
+  return (
+    <details className="mt-2 rounded-2xl border border-[#526d82]/12 bg-white/60 px-4 py-3 text-xs text-[#344054]">
+      <summary className="cursor-pointer select-none font-black text-[#172033]">
+        Canlı Tutor izi {source === "sql_projection" ? "(geçmiş kayıt)" : ""}
+      </summary>
+      <div className="mt-3 space-y-2">
+        {events.slice(-8).map((event) => (
+          <div key={`${event.streamId}-${event.id}`} className="rounded-xl bg-[#f7f9fa] px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-[#172033]">{event.userSafeLabel}</span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                {formatTechnicalLabel(event.eventGroup)}
+              </span>
+            </div>
+            <p className="mt-1 leading-5 text-[#667085]">{event.userSafeDetail}</p>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ChatLearningTrace({ metadata, sessionId }: { metadata: ChatMessageType["metadata"]; sessionId?: string }) {
   const tools = metadata?.usedTools ?? [];
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
@@ -572,6 +633,7 @@ function ChatLearningTrace({ metadata }: { metadata: ChatMessageType["metadata"]
           </p>
         )}
       </div>
+      <LiveTutorTrace sessionId={sessionId} enabled={Boolean(metadata?.tutorTurnStateId || metadata?.tutorActionTraceId || toolStatuses.length > 0 || tools.length > 0)} />
     </div>
   );
 }
@@ -765,7 +827,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                 </div>
                   <TeachingArtifactRenderer artifacts={message.artifacts} />
                   <ChatMetadataChips metadata={message.metadata} />
-                  <ChatLearningTrace metadata={message.metadata} />
+                <ChatLearningTrace metadata={message.metadata} sessionId={sessionId} />
                 </>
               );
             })()}

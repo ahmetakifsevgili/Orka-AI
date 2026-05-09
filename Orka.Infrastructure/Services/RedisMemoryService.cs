@@ -517,6 +517,40 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
+    public async Task<long> TrimStreamAsync(string key, long maxLength, bool approximate = true)
+    {
+        try
+        {
+            return await _db.StreamTrimAsync(key, Math.Max(1, maxLength), useApproximateMaxLength: approximate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Stream trim basarisiz. Key={Key}", key);
+            return 0;
+        }
+    }
+
+    public Task<IReadOnlyList<string>> ScanKeysAsync(string pattern, int take = 100)
+    {
+        try
+        {
+            var endpoint = _redis.GetEndPoints().FirstOrDefault();
+            if (endpoint == null) return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            var server = _redis.GetServer(endpoint);
+            var keys = server.Keys(pattern: pattern, pageSize: Math.Clamp(take, 10, 1000))
+                .Take(Math.Clamp(take, 1, 1000))
+                .Select(k => k.ToString())
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<string>>(keys);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Redis] Key scan basarisiz. Pattern={Pattern}", pattern);
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+    }
+
     public async Task<bool> SupportsVectorSearchAsync()
     {
         try

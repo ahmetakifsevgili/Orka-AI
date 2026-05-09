@@ -19,6 +19,7 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
     private readonly IResourceConceptAlignmentService _resourceAlignment;
     private readonly IRagEvaluationService _ragEvaluation;
     private readonly ILearningSourceService _sources;
+    private readonly IStandardsAlignmentService _standards;
     private readonly IRedisMemoryService? _redis;
     private readonly ILogger<LearningQualityReportService> _logger;
 
@@ -31,6 +32,7 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         IResourceConceptAlignmentService resourceAlignment,
         IRagEvaluationService ragEvaluation,
         ILearningSourceService sources,
+        IStandardsAlignmentService standards,
         IRedisMemoryService? redis,
         ILogger<LearningQualityReportService> logger)
     {
@@ -42,6 +44,7 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         _resourceAlignment = resourceAlignment;
         _ragEvaluation = ragEvaluation;
         _sources = sources;
+        _standards = standards;
         _redis = redis;
         _logger = logger;
     }
@@ -60,6 +63,8 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         var alignments = (await _resourceAlignment.GetRecentAsync(userId, topicId, snapshot?.Id, 20, ct)).ToList();
         var latestRag = await _ragEvaluation.GetLatestAsync(userId, topicId, ct)
             ?? await _ragEvaluation.EvaluateTopicAsync(userId, topicId, snapshot?.Id, ct);
+        var assessmentCalibration = await LatestAssessmentCalibrationAsync(userId, topicId, ct);
+        var standardsSummary = await _standards.GetSummaryAsync(userId, topicId, ct);
         SourceQualityReportDto? sourceQuality = null;
         if (topicId.HasValue)
         {
@@ -87,6 +92,12 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
             .AsNoTracking()
             .OrderByDescending(h => h.CheckedAt)
             .Take(30)
+            .ToListAsync(ct);
+        var recentTraceEvents = await _db.TutorTraceProjections
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && (!topicId.HasValue || p.TopicId == topicId.Value))
+            .OrderByDescending(p => p.OccurredAt)
+            .Take(20)
             .ToListAsync(ct);
 
         var violationCount = await _db.LearningEventSchemaViolations
@@ -144,7 +155,31 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         var pedagogyStatus = PedagogyStatus(effectivePedagogyRuns);
         var pedagogyScore = effectivePedagogyRuns.Count == 0 ? (decimal?)null : Math.Round(effectivePedagogyRuns.Average(r => r.OverallScore), 4);
         var criticalPedagogyViolations = effectivePedagogyRuns.Sum(r => r.CriticalViolationCount);
-        var overall = OverallStatus(graphStatus, assessmentStatus, masteryStatus, policyStatus, eventStatus, sourceStatus, toolStatus, artifactStatus, learnerEvidenceStatus, ragStatus, evidenceCoverage, providerHealth, evidenceFreshness, evidenceCitation, pedagogyStatus);
+        var calibrationStatus = assessmentCalibration?.CalibrationStatus ?? "unknown";
+        var adaptiveReadiness = assessmentCalibration?.AdaptiveReadiness ?? "unknown";
+        var itemBankHealth = assessmentCalibration?.ItemBankHealth ?? "unknown";
+        var traceHealth = recentTraceEvents.Count > 0 ? "healthy" : "empty";
+        var standardsStatus = standardsSummary.StandardsAlignmentStatus;
+        var overall = OverallStatus(
+            graphStatus,
+            assessmentStatus,
+            masteryStatus,
+            policyStatus,
+            eventStatus,
+            sourceStatus,
+            toolStatus,
+            artifactStatus,
+            learnerEvidenceStatus,
+            ragStatus,
+            evidenceCoverage,
+            providerHealth,
+            evidenceFreshness,
+            evidenceCitation,
+            pedagogyStatus,
+            calibrationStatus,
+            adaptiveReadiness,
+            itemBankHealth,
+            standardsStatus);
 
         var dto = new LearningQualityReportDto
         {
@@ -170,6 +205,14 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
             ForumSignalUsageStatus = forumUsage,
             EvidenceCitationCoverageStatus = evidenceCitation,
             TutorPedagogyStatus = pedagogyStatus,
+            AssessmentCalibrationStatus = calibrationStatus,
+            AdaptiveReadiness = adaptiveReadiness,
+            ItemBankHealth = itemBankHealth,
+            TraceHealth = traceHealth,
+            StandardsAlignmentStatus = standardsStatus,
+            CaseLikeCoverage = standardsSummary.CaseCoverage,
+            QtiLikeCoverage = standardsSummary.QtiCoverage,
+            CaliperXapiCoverage = standardsSummary.CaliperXapiCoverage,
             TutorPedagogyScore = pedagogyScore,
             CriticalPedagogyViolationCount = criticalPedagogyViolations,
             GraphQuality = graphQuality,
@@ -184,6 +227,9 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
             RecentEvidenceCards = recentEvidence.Take(12).Select(ToEvidenceDto).ToArray(),
             LatestRagEvaluation = latestRag,
             SourceQuality = sourceQuality,
+            AssessmentCalibration = assessmentCalibration,
+            RecentTutorTraceEvents = recentTraceEvents.Select(ToTraceDto).ToArray(),
+            StandardsSummary = standardsSummary,
             ResourceAlignments = alignments,
             GeneratedAt = DateTimeOffset.UtcNow
         };
@@ -212,6 +258,14 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
             ForumSignalUsageStatus = dto.ForumSignalUsageStatus,
             EvidenceCitationCoverageStatus = dto.EvidenceCitationCoverageStatus,
             TutorPedagogyStatus = dto.TutorPedagogyStatus,
+            AssessmentCalibrationStatus = dto.AssessmentCalibrationStatus,
+            AdaptiveReadiness = dto.AdaptiveReadiness,
+            ItemBankHealth = dto.ItemBankHealth,
+            TraceHealth = dto.TraceHealth,
+            StandardsAlignmentStatus = dto.StandardsAlignmentStatus,
+            CaseLikeCoverage = dto.CaseLikeCoverage,
+            QtiLikeCoverage = dto.QtiLikeCoverage,
+            CaliperXapiCoverage = dto.CaliperXapiCoverage,
             TutorPedagogyScore = dto.TutorPedagogyScore,
             CriticalPedagogyViolationCount = dto.CriticalPedagogyViolationCount,
             ReportJson = JsonSerializer.Serialize(dto, JsonOptions),
@@ -249,6 +303,55 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         if (topicId.HasValue) query = query.Where(s => s.TopicId == topicId.Value);
         if (planRequestId.HasValue) query = query.Where(s => s.PlanRequestId == planRequestId.Value);
         return await query.OrderByDescending(s => s.CreatedAt).FirstOrDefaultAsync(ct);
+    }
+
+    private async Task<AssessmentCalibrationRunDto?> LatestAssessmentCalibrationAsync(Guid userId, Guid? topicId, CancellationToken ct)
+    {
+        var run = await _db.AssessmentCalibrationRuns
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && r.TopicId == topicId)
+            .OrderByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (run == null) return null;
+
+        var items = await _db.AssessmentCalibrationItems
+            .AsNoTracking()
+            .Where(i => i.AssessmentCalibrationRunId == run.Id)
+            .OrderByDescending(i => i.DiscriminationEstimate)
+            .Take(40)
+            .Select(i => new AssessmentCalibrationItemDto
+            {
+                Id = i.Id,
+                AssessmentItemId = i.AssessmentItemId,
+                ConceptKey = i.ConceptKey,
+                DifficultyEstimate = i.DifficultyEstimate,
+                DiscriminationEstimate = i.DiscriminationEstimate,
+                ExposureCount = i.ExposureCount,
+                EvidenceCount = i.EvidenceCount,
+                CalibrationStatus = i.CalibrationStatus,
+                Reason = i.Reason
+            })
+            .ToListAsync(ct);
+
+        return new AssessmentCalibrationRunDto
+        {
+            Id = run.Id,
+            UserId = run.UserId,
+            TopicId = run.TopicId,
+            ConceptGraphSnapshotId = run.ConceptGraphSnapshotId,
+            CalibrationStatus = run.CalibrationStatus,
+            AdaptiveReadiness = run.AdaptiveReadiness,
+            ItemBankHealth = run.ItemBankHealth,
+            ItemCount = run.ItemCount,
+            HealthyItemCount = run.HealthyItemCount,
+            ConceptCount = run.ConceptCount,
+            ReadyConceptCount = run.ReadyConceptCount,
+            AverageDifficulty = run.AverageDifficulty,
+            AverageDiscrimination = run.AverageDiscrimination,
+            AverageExposure = run.AverageExposure,
+            Items = items,
+            CreatedAt = run.CreatedAt
+        };
     }
 
     private async Task TryCacheAsync(Guid userId, Guid? topicId, LearningQualityReportDto dto)
@@ -359,7 +462,11 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
                 string.Equals(s, "degraded", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "watch", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "weak", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s, "limited", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s, "thin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s, "not_ready", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "unverified", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s, "empty", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "evidence_insufficient", StringComparison.OrdinalIgnoreCase)))
         {
             return "degraded";
@@ -448,4 +555,29 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         Status = entity.Status,
         CreatedAt = entity.CreatedAt
     };
+
+    private static TutorTraceTimelineEventDto ToTraceDto(TutorTraceProjection entity) => new()
+    {
+        Id = entity.Id,
+        StreamId = entity.StreamId,
+        EventType = entity.EventType,
+        EventGroup = entity.EventGroup,
+        UserSafeLabel = entity.UserSafeLabel,
+        UserSafeDetail = entity.UserSafeDetail,
+        Severity = entity.Severity,
+        Values = DeserializeTraceValues(entity.PayloadJson),
+        OccurredAt = entity.OccurredAt
+    };
+
+    private static Dictionary<string, string> DeserializeTraceValues(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions) ?? new Dictionary<string, string>();
+        }
+        catch
+        {
+            return new Dictionary<string, string>();
+        }
+    }
 }

@@ -127,6 +127,9 @@ public class AudioOverviewService : IAudioOverviewService
                 }
 
                 job.AudioBytes = audioBytes;
+                job.AudioByteLength = audioBytes.LongLength;
+                job.AudioExpiresAt = DateTime.UtcNow.AddDays(7);
+                job.AudioPurgedAt = null;
                 job.ContentType = "audio/mpeg";
                 job.Status = "ready";
                 _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);

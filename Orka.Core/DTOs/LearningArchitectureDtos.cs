@@ -220,7 +220,126 @@ public sealed class AssessmentItemStatDto
     public decimal AverageTimeSeconds { get; set; }
     public decimal SkipRate { get; set; }
     public string QualityStatus { get; set; } = "unknown";
+    public decimal DifficultyEstimate { get; set; }
+    public decimal DiscriminationEstimate { get; set; }
+    public int ExposureCount { get; set; }
+    public DateTimeOffset? LastSelectedAt { get; set; }
+    public string CalibrationStatus { get; set; } = "uncalibrated";
 }
+
+public sealed class AssessmentCalibrationRunDto
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public string CalibrationStatus { get; set; } = "unknown";
+    public string AdaptiveReadiness { get; set; } = "unknown";
+    public string ItemBankHealth { get; set; } = "unknown";
+    public int ItemCount { get; set; }
+    public int HealthyItemCount { get; set; }
+    public int ConceptCount { get; set; }
+    public int ReadyConceptCount { get; set; }
+    public decimal AverageDifficulty { get; set; }
+    public decimal AverageDiscrimination { get; set; }
+    public decimal AverageExposure { get; set; }
+    public IReadOnlyList<AssessmentCalibrationItemDto> Items { get; set; } = Array.Empty<AssessmentCalibrationItemDto>();
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AssessmentCalibrationItemDto
+{
+    public Guid Id { get; set; }
+    public Guid AssessmentItemId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public decimal DifficultyEstimate { get; set; }
+    public decimal DiscriminationEstimate { get; set; }
+    public int ExposureCount { get; set; }
+    public int EvidenceCount { get; set; }
+    public string CalibrationStatus { get; set; } = "uncalibrated";
+    public string Reason { get; set; } = string.Empty;
+}
+
+public sealed class AdaptiveAssessmentStartRequest
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public int? MinItems { get; set; }
+    public int? MaxItems { get; set; }
+    public IReadOnlyList<string>? TargetConceptKeys { get; set; }
+}
+
+public sealed class AdaptiveAssessmentAnswerRequest : RecordQuizAttemptRequest
+{
+    public Guid DecisionId { get; set; }
+}
+
+public sealed class AdaptiveAssessmentSessionDto
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public string Status { get; set; } = "active";
+    public IReadOnlyList<string> TargetConcepts { get; set; } = Array.Empty<string>();
+    public string StopReason { get; set; } = string.Empty;
+    public int MinItems { get; set; }
+    public int MaxItems { get; set; }
+    public int AnsweredCount { get; set; }
+    public int CorrectCount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AdaptiveAssessmentNextItemDto
+{
+    public Guid SessionId { get; set; }
+    public string Status { get; set; } = "active";
+    public bool IsComplete { get; set; }
+    public string StopReason { get; set; } = string.Empty;
+    public AdaptiveAssessmentDecisionDto? Decision { get; set; }
+}
+
+public sealed class AdaptiveAssessmentDecisionDto
+{
+    public Guid Id { get; set; }
+    public Guid AssessmentItemId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public decimal SelectionScore { get; set; }
+    public decimal MasteryProbability { get; set; }
+    public decimal MasteryConfidence { get; set; }
+    public decimal ItemQualityScore { get; set; }
+    public decimal ExposurePenalty { get; set; }
+    public string DecisionReason { get; set; } = string.Empty;
+    public QuizDataDto Question { get; set; } = new();
+}
+
+public sealed class QuizDataDto
+{
+    public string Type { get; set; } = "multiple_choice";
+    public Guid? QuizRunId { get; set; }
+    public string QuestionId { get; set; } = string.Empty;
+    public string Question { get; set; } = string.Empty;
+    public IReadOnlyList<QuizOptionDto> Options { get; set; } = Array.Empty<QuizOptionDto>();
+    public string Explanation { get; set; } = string.Empty;
+    public string? Topic { get; set; }
+    public string? SkillTag { get; set; }
+    public string? TopicPath { get; set; }
+    public string? Difficulty { get; set; }
+    public string? CognitiveType { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public string? AssessmentItemKey { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptTag { get; set; }
+    public string? CognitiveSkill { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRule { get; set; }
+    public IReadOnlyList<string> LearningOutcomeIds { get; set; } = Array.Empty<string>();
+    public string? QuestionHash { get; set; }
+}
+
+public sealed record QuizOptionDto(string Id, string Text, bool IsCorrect);
 
 public sealed class KnowledgeTracingStateDto
 {
@@ -310,6 +429,14 @@ public sealed class LearningQualityReportDto
     public string ForumSignalUsageStatus { get; set; } = "none";
     public string EvidenceCitationCoverageStatus { get; set; } = "unknown";
     public string TutorPedagogyStatus { get; set; } = "unknown";
+    public string AssessmentCalibrationStatus { get; set; } = "unknown";
+    public string AdaptiveReadiness { get; set; } = "unknown";
+    public string ItemBankHealth { get; set; } = "unknown";
+    public string TraceHealth { get; set; } = "unknown";
+    public string StandardsAlignmentStatus { get; set; } = "unknown";
+    public decimal CaseLikeCoverage { get; set; }
+    public decimal QtiLikeCoverage { get; set; }
+    public decimal CaliperXapiCoverage { get; set; }
     public decimal? TutorPedagogyScore { get; set; }
     public int CriticalPedagogyViolationCount { get; set; }
     public ConceptGraphQualityDto? GraphQuality { get; set; }
@@ -324,8 +451,72 @@ public sealed class LearningQualityReportDto
     public IReadOnlyList<TeachingEvidenceCardDto> RecentEvidenceCards { get; set; } = Array.Empty<TeachingEvidenceCardDto>();
     public RagEvaluationRunDto? LatestRagEvaluation { get; set; }
     public SourceQualityReportDto? SourceQuality { get; set; }
+    public AssessmentCalibrationRunDto? AssessmentCalibration { get; set; }
+    public IReadOnlyList<TutorTraceTimelineEventDto> RecentTutorTraceEvents { get; set; } = Array.Empty<TutorTraceTimelineEventDto>();
+    public StandardsSummaryDto? StandardsSummary { get; set; }
     public List<ResourceConceptAlignmentDto> ResourceAlignments { get; set; } = [];
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class StandardsSummaryDto
+{
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public string StandardsAlignmentStatus { get; set; } = "unknown";
+    public decimal CaseCoverage { get; set; }
+    public decimal QtiCoverage { get; set; }
+    public decimal CaliperXapiCoverage { get; set; }
+    public int OutcomeCount { get; set; }
+    public int ConceptCount { get; set; }
+    public int AssessmentItemCount { get; set; }
+    public int LearningEventCount { get; set; }
+    public int IssueCount { get; set; }
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+    public IReadOnlyList<StandardsValidationItemDto> RecentIssues { get; set; } = Array.Empty<StandardsValidationItemDto>();
+}
+
+public sealed class StandardsValidationRunDto
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public string Status { get; set; } = "unknown";
+    public decimal CaseCoverage { get; set; }
+    public decimal QtiCoverage { get; set; }
+    public decimal CaliperXapiCoverage { get; set; }
+    public int CheckedItemCount { get; set; }
+    public int IssueCount { get; set; }
+    public IReadOnlyList<StandardsValidationItemDto> Issues { get; set; } = Array.Empty<StandardsValidationItemDto>();
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class StandardsValidationItemDto
+{
+    public Guid Id { get; set; }
+    public string StandardFamily { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string EntityKey { get; set; } = string.Empty;
+    public string Severity { get; set; } = "warning";
+    public string IssueCode { get; set; } = string.Empty;
+    public string UserSafeMessage { get; set; } = string.Empty;
+}
+
+public sealed class StandardsExportRunDto
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public string ExportType { get; set; } = "combined";
+    public string Status { get; set; } = "ready";
+    public int ItemCount { get; set; }
+    public decimal CaseCoverage { get; set; }
+    public decimal QtiCoverage { get; set; }
+    public decimal CaliperXapiCoverage { get; set; }
+    public string PayloadJson { get; set; } = "{}";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class RagEvaluationRunDto

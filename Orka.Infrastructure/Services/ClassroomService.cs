@@ -240,6 +240,9 @@ public class ClassroomService : IClassroomService
                     if (interaction == null) return;
 
                     interaction.AudioBytes = audioBytes;
+                    interaction.AudioByteLength = audioBytes.LongLength;
+                    interaction.AudioExpiresAt = DateTime.UtcNow.AddDays(7);
+                    interaction.AudioPurgedAt = null;
                     interaction.ContentType = "audio/mpeg";
                     await db.SaveChangesAsync(ct);
                     _logger.LogInformation("[Classroom] Edge-TTS audio attached. Interaction={InteractionId} Bytes={Bytes}",

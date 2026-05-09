@@ -153,6 +153,7 @@ public sealed class AssessmentQualityService : IAssessmentQualityService
         stat.DiscriminationProxy = Math.Round((stat.CorrectRate - 0.50m) - skipPenalty, 4);
         stat.QualityStatus = stat.Attempts < 5 ? "insufficient_data" :
             stat.SkipRate > 0.35m || stat.CorrectRate is < 0.20m or > 0.95m ? "needs_review" : "healthy";
+        AssessmentCalibrationService.ApplyCalibration(stat);
         stat.LastAttemptAt = attempt.CreatedAt;
         stat.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -170,7 +171,12 @@ public sealed class AssessmentQualityService : IAssessmentQualityService
             LastResponseTimeSeconds = stat.LastResponseTimeSeconds,
             AverageTimeSeconds = stat.AverageTimeSeconds,
             SkipRate = stat.SkipRate,
-            QualityStatus = stat.QualityStatus
+            QualityStatus = stat.QualityStatus,
+            DifficultyEstimate = stat.DifficultyEstimate,
+            DiscriminationEstimate = stat.DiscriminationEstimate,
+            ExposureCount = stat.ExposureCount,
+            LastSelectedAt = stat.LastSelectedAt,
+            CalibrationStatus = stat.CalibrationStatus
         };
     }
 

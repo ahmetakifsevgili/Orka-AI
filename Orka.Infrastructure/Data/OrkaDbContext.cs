@@ -85,6 +85,15 @@ public class OrkaDbContext : DbContext
     public DbSet<TutorPedagogyRubricScore> TutorPedagogyRubricScores { get; set; } = null!;
     public DbSet<TutorGoldenScenario> TutorGoldenScenarios { get; set; } = null!;
     public DbSet<TutorPedagogyFeedbackPatch> TutorPedagogyFeedbackPatches { get; set; } = null!;
+    public DbSet<AssessmentCalibrationRun> AssessmentCalibrationRuns { get; set; } = null!;
+    public DbSet<AssessmentCalibrationItem> AssessmentCalibrationItems { get; set; } = null!;
+    public DbSet<AdaptiveAssessmentSession> AdaptiveAssessmentSessions { get; set; } = null!;
+    public DbSet<AdaptiveAssessmentDecision> AdaptiveAssessmentDecisions { get; set; } = null!;
+    public DbSet<TutorTraceProjection> TutorTraceProjections { get; set; } = null!;
+    public DbSet<StandardsExportRun> StandardsExportRuns { get; set; } = null!;
+    public DbSet<StandardsExportItem> StandardsExportItems { get; set; } = null!;
+    public DbSet<StandardsValidationRun> StandardsValidationRuns { get; set; } = null!;
+    public DbSet<StandardsValidationItem> StandardsValidationItems { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -744,6 +753,18 @@ public class OrkaDbContext : DbContext
             .HasPrecision(6, 4);
 
         modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.DifficultyEstimate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.DiscriminationEstimate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .Property(s => s.CalibrationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentItemStat>()
             .HasIndex(s => s.AssessmentItemId)
             .IsUnique();
 
@@ -941,6 +962,38 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<LearningQualityReport>()
             .Property(r => r.TutorPedagogyScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.AssessmentCalibrationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.AdaptiveReadiness)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.ItemBankHealth)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.TraceHealth)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.StandardsAlignmentStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.CaseLikeCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.QtiLikeCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningQualityReport>()
+            .Property(r => r.CaliperXapiCoverage)
             .HasPrecision(6, 4);
 
         modelBuilder.Entity<LearningQualityReport>()
@@ -2025,5 +2078,354 @@ public class OrkaDbContext : DbContext
             .HasIndex(p => new { p.UserId, p.Endpoint })
             .IsUnique()
             .HasFilter("[Status] = 'active'");
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .HasOne(r => r.Topic)
+            .WithMany()
+            .HasForeignKey(r => r.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .HasOne(r => r.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(r => r.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.AverageDifficulty)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.CalibrationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.AdaptiveReadiness)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.ItemBankHealth)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.AverageDiscrimination)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.AverageExposure)
+            .HasPrecision(10, 4);
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .Property(r => r.ReportJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AssessmentCalibrationRun>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.CreatedAt });
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .HasOne(i => i.Run)
+            .WithMany()
+            .HasForeignKey(i => i.AssessmentCalibrationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .HasOne(i => i.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(i => i.AssessmentItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .Property(i => i.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .Property(i => i.CalibrationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .Property(i => i.DifficultyEstimate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .Property(i => i.DiscriminationEstimate)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .HasIndex(i => new { i.UserId, i.TopicId, i.ConceptKey });
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasOne(s => s.Session)
+            .WithMany()
+            .HasForeignKey(s => s.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasOne(s => s.QuizRun)
+            .WithMany()
+            .HasForeignKey(s => s.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasOne(s => s.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .Property(s => s.TargetConceptsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .Property(s => s.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .Property(s => s.StopReason)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<AdaptiveAssessmentSession>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.CreatedAt });
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .HasOne(d => d.AdaptiveAssessmentSession)
+            .WithMany()
+            .HasForeignKey(d => d.AdaptiveAssessmentSessionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .HasOne(d => d.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(d => d.AssessmentItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .HasOne(d => d.QuizAttempt)
+            .WithMany()
+            .HasForeignKey(d => d.QuizAttemptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.SelectionScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.MasteryProbability)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.MasteryConfidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.ItemQualityScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.ExposurePenalty)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.SelectedQuestionJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .HasIndex(d => new { d.AdaptiveAssessmentSessionId, d.WasAnswered, d.CreatedAt });
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasOne(p => p.User)
+            .WithMany()
+            .HasForeignKey(p => p.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasOne(p => p.Session)
+            .WithMany()
+            .HasForeignKey(p => p.SessionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasOne(p => p.Topic)
+            .WithMany()
+            .HasForeignKey(p => p.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .Property(p => p.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .Property(p => p.EventType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .Property(p => p.EventGroup)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .Property(p => p.Severity)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasIndex(p => new { p.SessionId, p.StreamId })
+            .IsUnique();
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasIndex(p => new { p.UserId, p.SessionId, p.OccurredAt });
+
+        modelBuilder.Entity<AudioOverviewJob>()
+            .HasIndex(a => a.AudioExpiresAt);
+
+        modelBuilder.Entity<ClassroomInteraction>()
+            .HasIndex(c => c.AudioExpiresAt);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.ExportType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.CaseCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.QtiCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .Property(r => r.CaliperXapiCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsExportRun>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.CreatedAt });
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .HasOne(i => i.StandardsExportRun)
+            .WithMany()
+            .HasForeignKey(i => i.StandardsExportRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .Property(i => i.PayloadJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .Property(i => i.StandardFamily)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .Property(i => i.EntityType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .Property(i => i.EntityKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<StandardsExportItem>()
+            .HasIndex(i => new { i.StandardsExportRunId, i.StandardFamily, i.EntityType });
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .Property(r => r.SummaryJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .Property(r => r.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .Property(r => r.CaseCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .Property(r => r.QtiCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .Property(r => r.CaliperXapiCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<StandardsValidationRun>()
+            .HasIndex(r => new { r.UserId, r.TopicId, r.CreatedAt });
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .HasOne(i => i.StandardsValidationRun)
+            .WithMany()
+            .HasForeignKey(i => i.StandardsValidationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.DetailJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.StandardFamily)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.EntityType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.EntityKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.Severity)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .Property(i => i.IssueCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<StandardsValidationItem>()
+            .HasIndex(i => new { i.StandardsValidationRunId, i.StandardFamily, i.Severity });
     }
 }

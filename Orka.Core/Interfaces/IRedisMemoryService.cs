@@ -105,6 +105,10 @@ public interface IRedisMemoryService
 
     Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds);
 
+    Task<long> TrimStreamAsync(string key, long maxLength, bool approximate = true) => Task.FromResult(0L);
+
+    Task<IReadOnlyList<string>> ScanKeysAsync(string pattern, int take = 100) => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+
     Task<bool> SupportsVectorSearchAsync();
 
     Task DeleteKeyAsync(string key);

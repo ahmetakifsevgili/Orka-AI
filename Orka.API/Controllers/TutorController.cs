@@ -17,19 +17,22 @@ public sealed class TutorController : ControllerBase
     private readonly IRedisMemoryService _redis;
     private readonly ITeachingArtifactService _artifacts;
     private readonly ITutorPedagogyEvaluationService _pedagogy;
+    private readonly ITutorTraceProjectionService _traceProjection;
 
     public TutorController(
         OrkaDbContext db,
         ILearningStyleSignalService styleSignals,
         IRedisMemoryService redis,
         ITeachingArtifactService artifacts,
-        ITutorPedagogyEvaluationService pedagogy)
+        ITutorPedagogyEvaluationService pedagogy,
+        ITutorTraceProjectionService traceProjection)
     {
         _db = db;
         _styleSignals = styleSignals;
         _redis = redis;
         _artifacts = artifacts;
         _pedagogy = pedagogy;
+        _traceProjection = traceProjection;
     }
 
     [HttpGet("state/topic/{topicId:guid}")]
@@ -170,6 +173,21 @@ public sealed class TutorController : ControllerBase
             after = after ?? "0-0",
             events
         });
+    }
+
+    [HttpGet("events/session/{sessionId:guid}/timeline")]
+    public async Task<IActionResult> GetSessionTimeline(Guid sessionId, [FromQuery] string? after = "0-0", [FromQuery] int take = 50, CancellationToken ct = default)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        try
+        {
+            var result = await _traceProjection.GetTimelineAsync(userId, sessionId, after ?? "0-0", take, ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
     }
 
     [HttpPost("style-signal")]

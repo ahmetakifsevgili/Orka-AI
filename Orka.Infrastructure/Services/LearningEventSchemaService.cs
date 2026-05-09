@@ -23,6 +23,10 @@ public sealed class LearningEventSchemaService : ILearningEventSchemaService
         "tutor.pedagogy.evaluated",
         "tutor.pedagogy.violation.detected",
         "tutor.feedback.patch.created",
+        "assessment.adaptive.started",
+        "assessment.item.selected",
+        "assessment.calibration.updated",
+        "assessment.adaptive.completed",
         "plan.node.completed",
         "learning.activity"
     };
@@ -48,6 +52,10 @@ public sealed class LearningEventSchemaService : ILearningEventSchemaService
         {
             return "assessment.item.answered";
         }
+        if (lower.Contains("assessment.item.selected")) return "assessment.item.selected";
+        if (lower.Contains("assessment.calibration")) return "assessment.calibration.updated";
+        if (lower.Contains("assessment.adaptive.started")) return "assessment.adaptive.started";
+        if (lower.Contains("assessment.adaptive.completed")) return "assessment.adaptive.completed";
         if (lower.Contains("concept.mastery") || lower.Contains("mastery.updated")) return "concept.mastery.updated";
         if (lower.Contains("wiki")) return "wiki.opened";
         if (lower.Contains("review")) return "review.completed";

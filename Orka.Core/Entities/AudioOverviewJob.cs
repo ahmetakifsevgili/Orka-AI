@@ -16,6 +16,9 @@ public class AudioOverviewJob
     public string SpeakersJson { get; set; } = "[]";
     public byte[]? AudioBytes { get; set; }
     public string ContentType { get; set; } = "audio/mpeg";
+    public long AudioByteLength { get; set; }
+    public DateTime? AudioExpiresAt { get; set; }
+    public DateTime? AudioPurgedAt { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

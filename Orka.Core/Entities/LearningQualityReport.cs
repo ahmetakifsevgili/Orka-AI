@@ -24,6 +24,14 @@ public sealed class LearningQualityReport
     public string ForumSignalUsageStatus { get; set; } = "none";
     public string EvidenceCitationCoverageStatus { get; set; } = "unknown";
     public string TutorPedagogyStatus { get; set; } = "unknown";
+    public string AssessmentCalibrationStatus { get; set; } = "unknown";
+    public string AdaptiveReadiness { get; set; } = "unknown";
+    public string ItemBankHealth { get; set; } = "unknown";
+    public string TraceHealth { get; set; } = "unknown";
+    public string StandardsAlignmentStatus { get; set; } = "unknown";
+    public decimal CaseLikeCoverage { get; set; }
+    public decimal QtiLikeCoverage { get; set; }
+    public decimal CaliperXapiCoverage { get; set; }
     public decimal? TutorPedagogyScore { get; set; }
     public int CriticalPedagogyViolationCount { get; set; }
     public string ReportJson { get; set; } = "{}";

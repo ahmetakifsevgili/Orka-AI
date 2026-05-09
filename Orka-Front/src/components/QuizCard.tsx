@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { PlanDiagnosticMeta, QuizAttempt, QuizData } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, PlanDiagnosticMeta, QuizAttempt, QuizData } from "@/lib/types";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI } from "@/services/api";
 
@@ -24,6 +24,11 @@ interface QuizCardProps {
   }) => void;
   isBaseline?: boolean;
   onOpenIDE?: (question?: string) => void;
+  adaptiveAssessment?: {
+    sessionId: string;
+    decisionId: string;
+    onResult?: (result: AdaptiveAssessmentNextItem) => void;
+  };
 }
 
 const OPTION_LABELS = ["A", "B", "C", "D", "E", "F"];
@@ -70,6 +75,7 @@ export default function QuizCard({
   planDiagnostic,
   onPlanComplete,
   onOpenIDE,
+  adaptiveAssessment,
   isBaseline = false,
 }: QuizCardProps) {
   const quizArray = useMemo(() => {
@@ -168,11 +174,19 @@ export default function QuizCard({
       confidenceSelfRating: attempt.confidenceSelfRating,
     };
 
+    if (adaptiveAssessment) {
+      return await QuizAPI.answerAdaptive(adaptiveAssessment.sessionId, {
+        ...payload,
+        decisionId: adaptiveAssessment.decisionId,
+      });
+    }
+
     if (planDiagnostic) {
       await QuizAPI.recordPlanDiagnosticAttempt(planDiagnostic.planRequestId, payload);
     } else {
       await QuizAPI.recordAttempt(payload);
     }
+    return null;
   };
 
   const finalizePlanIfNeeded = async (nextAnswers: Array<{ isCorrect: boolean; skill?: string }>) => {
@@ -197,10 +211,16 @@ export default function QuizCard({
 
     try {
       addQuizAttempt(attempt);
-      await recordAttempt(attempt);
+      const adaptiveResult = await recordAttempt(attempt);
       const nextAnswers = [...answers, { isCorrect: attempt.isCorrect, skill: attempt.skillTag }];
       setAnswers(nextAnswers);
       setSubmitState("done");
+      if (adaptiveResult && adaptiveAssessment?.onResult) {
+        adaptiveAssessment.onResult(adaptiveResult);
+        if (adaptiveResult.isComplete) {
+          setCompletionNote("Adaptif pratik tamamlandı. Orka yeni kanıtı mastery hesabına ekledi.");
+        }
+      }
       await finalizePlanIfNeeded(nextAnswers);
     } catch {
       setSubmitState("done");
@@ -262,7 +282,7 @@ export default function QuizCard({
     >
       <div className={`border-b px-6 pb-4 pt-5 ${isBaseline ? "border-[#8fb7a2]/25 bg-[#f2faf5]/80" : "border-[#526d82]/12"}`}>
         <p className={`text-[11px] font-black uppercase tracking-[0.14em] ${isBaseline ? "text-[#47725d]" : "text-[#667085]"}`}>
-          {planDiagnostic ? "Seviye testi" : "Quiz"}
+          {adaptiveAssessment ? "Adaptif pratik" : planDiagnostic ? "Seviye testi" : "Quiz"}
         </p>
         <h3 className={`mt-1 text-[15px] font-semibold ${isBaseline ? "text-[#47725d]" : "text-[#172033]"}`}>
           {activeQuiz.topic || planDiagnostic?.topicTitle || "Bilgi kontrolü"} · Soru {currentQuestionIdx + 1}/{totalQuestions}

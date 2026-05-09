@@ -71,6 +71,11 @@ addCheck("Classroom assistant never disappears", classroom.includes("ensureClass
 const api = read("src/services/api.ts");
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
 addCheck("Learning quality API exposed", api.includes("/learning-quality/topic") && api.includes("getTopicQuality"));
+addCheck("Assessment calibration API exposed", api.includes("/assessment/topic") && api.includes("runCalibration"));
+addCheck("Adaptive quiz API exposed", api.includes("/quiz/adaptive/start") && api.includes("getAdaptiveNext") && api.includes("answerAdaptive"));
+addCheck("Tutor timeline API exposed", api.includes("/tutor/events/session") && api.includes("getSessionTimeline"));
+addCheck("Standards alignment API exposed", api.includes("/standards/topic") && api.includes("StandardsAPI"));
+addCheck("Production readiness API exposed", api.includes("/production-readiness/v1") && api.includes("ProductionReadinessAPI"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
 addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
@@ -102,10 +107,12 @@ addCheck("Learning panel is wired into app shell", home.includes("LearningPanel"
 
 const learningPanel = read("src/components/LearningPanel.tsx");
 addCheck("Learning panel uses durable backend surfaces", learningPanel.includes("FlashcardsAPI") && learningPanel.includes("ReviewAPI") && learningPanel.includes("DailyChallengeAPI") && learningPanel.includes("BookmarksAPI"));
+addCheck("Adaptive practice is wired into learning panel", learningPanel.includes("startAdaptivePractice") && learningPanel.includes("adaptiveNext") && learningPanel.includes("QuizAPI.startAdaptive"));
 
 const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
+addCheck("Live tutor trace timeline is rendered", chatMessage.includes("LiveTutorTrace") && chatMessage.includes("TutorAPI.getSessionTimeline") && chatMessage.includes("Tutor izi"));
 addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
 addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayriliyor") && chatPanel.includes("Baglam taraniyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Ogrenme yolu uretiliyor"));

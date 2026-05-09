@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { LearningQualityReport, SourceQualityReportDto, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, LearningQualityReport, ProductionReadiness, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -550,8 +550,17 @@ export const TutorAPI = {
     api.post(`/tutor/artifacts/${artifactId}/rendered`, { renderError: renderError ?? null }, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   getSessionEvents: (sessionId: string, after = "0-0", take = 50) =>
     api.get(`/tutor/events/session/${sessionId}?after=${encodeURIComponent(after)}&take=${take}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getSessionTimeline: (sessionId: string, after = "0-0", take = 50) =>
+    api.get<TutorTraceTimeline>(`/tutor/events/session/${sessionId}/timeline?after=${encodeURIComponent(after)}&take=${take}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   recordStyleSignal: (data: { topicId?: string; sessionId?: string; message: string }) =>
     api.post("/tutor/style-signal", data).then((r) => r.data),
+};
+
+export const AssessmentAPI = {
+  getCalibration: (topicId: string) =>
+    api.get<AssessmentCalibrationRun>(`/assessment/topic/${topicId}/calibration`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  runCalibration: (topicId: string) =>
+    api.post<AssessmentCalibrationRun>(`/assessment/topic/${topicId}/calibration/run`).then((r) => r.data),
 };
 
 export const ClassroomAPI = {
@@ -679,6 +688,12 @@ export const QuizAPI = {
       generatedTopicIds: string[];
     }>(`/quiz/plan-diagnostic/${planRequestId}/skip`, {}, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   recordAttempt: (data: QuizAttemptPayload) => api.post("/quiz/attempt", data, { suppressErrorToast: true } as OrkaAxiosConfig),
+  startAdaptive: (data: { topicId?: string; sessionId?: string; minItems?: number; maxItems?: number; targetConceptKeys?: string[] }) =>
+    api.post<AdaptiveAssessmentSession>("/quiz/adaptive/start", data).then((r) => r.data),
+  getAdaptiveNext: (adaptiveSessionId: string) =>
+    api.get<AdaptiveAssessmentNextItem>(`/quiz/adaptive/${adaptiveSessionId}/next`).then((r) => r.data),
+  answerAdaptive: (adaptiveSessionId: string, data: QuizAttemptPayload & { decisionId: string }) =>
+    api.post<AdaptiveAssessmentNextItem>(`/quiz/adaptive/${adaptiveSessionId}/answer`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   getGlobalStats: () => api.get("/quiz/stats"),
   getHistory: (topicId: string) => api.get(`/quiz/history/${topicId}`),
 };
@@ -721,6 +736,21 @@ export const ToolsAPI = {
     api
       .get<ToolCapability>(`/tools/capabilities/${toolId}${includeInternal ? "?includeInternal=true" : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
       .then((r) => r.data),
+};
+
+export const StandardsAPI = {
+  getSummary: (topicId: string) =>
+    api.get<StandardsSummary>(`/standards/topic/${topicId}/summary`).then((r) => r.data),
+  validate: (topicId: string) =>
+    api.post<StandardsValidationRun>(`/standards/topic/${topicId}/validate`).then((r) => r.data),
+  exportTopic: (topicId: string, exportType = "combined") =>
+    api.post<StandardsExportRun>(`/standards/topic/${topicId}/export?exportType=${encodeURIComponent(exportType)}`).then((r) => r.data),
+};
+
+export const ProductionReadinessAPI = {
+  getV1: () => api.get<ProductionReadiness>("/production-readiness/v1").then((r) => r.data),
+  purgeExpiredAudio: () => api.post("/production-readiness/retention/audio/purge").then((r) => r.data),
+  trimTutorEvents: () => api.post("/production-readiness/redis/tutor-events/trim").then((r) => r.data),
 };
 
 export const CodeAPI = {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import type { ApiTopic } from "@/lib/types";
-import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, ReviewAPI } from "@/services/api";
+import type { AdaptiveAssessmentNextItem, ApiTopic } from "@/lib/types";
+import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuizAPI, ReviewAPI } from "@/services/api";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
+import QuizCard from "./QuizCard";
 
 type PanelProps = {
   topic: ApiTopic | null;
@@ -17,6 +18,9 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
   const [reviews, setReviews] = useState<any[]>([]);
   const [bookmarks, setBookmarks] = useState<any[]>([]);
   const [challenge, setChallenge] = useState<any | null>(null);
+  const [adaptiveSessionId, setAdaptiveSessionId] = useState<string | null>(null);
+  const [adaptiveNext, setAdaptiveNext] = useState<AdaptiveAssessmentNextItem | null>(null);
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [bookmarkNote, setBookmarkNote] = useState("");
@@ -90,6 +94,27 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
     }
   };
 
+  const startAdaptivePractice = async () => {
+    if (!topicId) {
+      toast.error("Adaptif pratik için önce bir konu seç.");
+      return;
+    }
+    setAdaptiveLoading(true);
+    try {
+      const session = await QuizAPI.startAdaptive({ topicId, sessionId, minItems: 8, maxItems: 20 });
+      setAdaptiveSessionId(session.id);
+      const next = await QuizAPI.getAdaptiveNext(session.id);
+      setAdaptiveNext(next);
+      if (next.isComplete) {
+        toast("Bu konu için adaptif soru havuzu henüz hazır değil.");
+      }
+    } catch {
+      toast.error("Adaptif pratik başlatılamadı.");
+    } finally {
+      setAdaptiveLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent">
       <div className="flex-shrink-0 border-b border-[#526d82]/10 px-6 py-5">
@@ -142,6 +167,52 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
               </div>
             </div>
           </div>
+        </section>
+        <section className="mb-5 rounded-[1.5rem] border border-[#8fb7a2]/28 bg-[#f2faf5]/76 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#47725d]">
+                <Sparkles className="h-3.5 w-3.5" />
+                Adaptif pratik
+              </p>
+              <h2 className="mt-1 text-lg font-black text-[#172033]">Sıradaki soru zayıf/kararsız kavrama göre seçilir.</h2>
+              <p className="mt-2 text-sm leading-6 text-[#667085]">
+                Bu akış klasik quiz değildir; her cevap item istatistiğini, knowledge tracing durumunu ve kavram mastery kanıtını günceller.
+              </p>
+            </div>
+            <button
+              onClick={startAdaptivePractice}
+              disabled={adaptiveLoading || !topicId}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] disabled:opacity-40"
+            >
+              {adaptiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Adaptif pratiği başlat
+            </button>
+          </div>
+          {adaptiveNext?.decision && adaptiveSessionId && (
+            <div className="mt-4">
+              <p className="mb-2 rounded-xl bg-white/58 px-3 py-2 text-xs font-bold text-[#47725d]">
+                {adaptiveNext.decision.decisionReason}
+              </p>
+              <QuizCard
+                key={adaptiveNext.decision.id}
+                quiz={adaptiveNext.decision.question}
+                messageId={`adaptive-${adaptiveNext.decision.id}`}
+                topicId={topicId}
+                sessionId={sessionId}
+                adaptiveAssessment={{
+                  sessionId: adaptiveSessionId,
+                  decisionId: adaptiveNext.decision.id,
+                  onResult: setAdaptiveNext,
+                }}
+              />
+            </div>
+          )}
+          {adaptiveNext?.isComplete && (
+            <p className="mt-4 rounded-xl border border-[#8fb7a2]/35 bg-white/65 px-4 py-3 text-xs font-bold text-[#47725d]">
+              Adaptif pratik tamamlandı: {adaptiveNext.stopReason || "kanıt yeterli"}.
+            </p>
+          )}
         </section>
         <div className="grid gap-5 xl:grid-cols-2">
           <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">

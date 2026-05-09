@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
@@ -275,6 +276,100 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task AssessmentCalibrationService_ComputesItemReadinessAndExposure()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var snapshotId = await SeedConceptSnapshotAsync(db, userId, topicId);
+        var item = SeedAssessmentItem(db, userId, topicId, snapshotId, "joins", "orta");
+        db.AssessmentItemStats.Add(new AssessmentItemStat
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            AssessmentItemId = item.Id,
+            ConceptGraphSnapshotId = snapshotId,
+            ConceptKey = "joins",
+            Attempts = 6,
+            Correct = 4,
+            Incorrect = 2,
+            CorrectRate = 0.6667m,
+            SkipRate = 0m,
+            QualityStatus = "healthy",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = new AssessmentCalibrationService(db);
+        var run = await service.RunAsync(userId, topicId);
+
+        Assert.Equal("watch", run.CalibrationStatus);
+        Assert.Equal("not_ready", run.AdaptiveReadiness);
+        Assert.Equal("thin", run.ItemBankHealth);
+        Assert.Contains(run.Items, i => i.ConceptKey == "joins" && i.CalibrationStatus == "healthy");
+        Assert.Equal(1, await db.AssessmentCalibrationRuns.CountAsync());
+    }
+
+    [Fact]
+    public async Task AdaptiveAssessmentSelector_PrioritizesWeakConceptAndPenalizesExposure()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var snapshotId = await SeedConceptSnapshotAsync(db, userId, topicId);
+        var weak = SeedAssessmentItem(db, userId, topicId, snapshotId, "indexes", "orta");
+        var overexposed = SeedAssessmentItem(db, userId, topicId, snapshotId, "joins", "orta");
+        db.KnowledgeTracingStates.AddRange(
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "indexes",
+                Label = "Indexes",
+                MasteryProbability = 0.35m,
+                Confidence = 0.35m,
+                EvidenceCount = 2,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "joins",
+                Label = "Joins",
+                MasteryProbability = 0.82m,
+                Confidence = 0.80m,
+                EvidenceCount = 5,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        db.AssessmentItemStats.AddRange(
+            Stat(userId, topicId, weak.Id, "indexes", exposure: 0),
+            Stat(userId, topicId, overexposed.Id, "joins", exposure: 20));
+        await db.SaveChangesAsync();
+
+        var selector = new AdaptiveAssessmentSelector(db);
+        var selected = await selector.SelectNextAsync(new AdaptiveAssessmentSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            QuizRunId = Guid.NewGuid(),
+            ConceptGraphSnapshotId = snapshotId,
+            TargetConceptsJson = """["indexes","joins"]""",
+            CreatedAt = DateTime.UtcNow
+        });
+
+        Assert.NotNull(selected);
+        Assert.Equal("indexes", selected!.ConceptKey);
+        Assert.Contains("kanıt", selected.DecisionReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, await db.AssessmentItemStats.Where(s => s.AssessmentItemId == weak.Id).Select(s => s.ExposureCount).FirstAsync());
+    }
+
+    [Fact]
     public async Task LearningEventSchemaService_LogsViolationsForMalformedPayload()
     {
         await using var db = CreateDb();
@@ -433,6 +528,123 @@ public sealed class LearningArchitectureTests
         Assert.Equal(1, await db.LearningEvents.CountAsync(e => e.EventType == "tutor.policy.applied"));
     }
 
+    [Fact]
+    public async Task StandardsValidationAndExport_CoverCaseQtiAndCaliperProfiles()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var snapshotId = await SeedConceptSnapshotAsync(db, userId, topicId);
+        db.LearningConcepts.Add(new LearningConcept
+        {
+            Id = Guid.NewGuid(),
+            ConceptGraphSnapshotId = snapshotId,
+            StableKey = "indexes",
+            Label = "Indexes",
+            LearningOutcomeKeysJson = """["outcome:indexes"]""",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.LearningOutcomes.Add(new LearningOutcome
+        {
+            Id = Guid.NewGuid(),
+            ConceptGraphSnapshotId = snapshotId,
+            StableKey = "outcome:indexes",
+            Label = "Index kullanımını açıklar",
+            Description = "Öğrenci index kullanımını açıklar.",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.AssessmentItems.Add(new AssessmentItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ConceptGraphSnapshotId = snapshotId,
+            AssessmentItemKey = "item:indexes",
+            ConceptKey = "indexes",
+            ConceptLabel = "Indexes",
+            CognitiveSkill = "apply",
+            Difficulty = "orta",
+            ScoringRuleJson = """{"type":"exact"}""",
+            LearningOutcomeKeysJson = """["outcome:indexes"]""",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.LearningEvents.Add(new LearningEvent
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            EventType = "assessment.item.answered",
+            Actor = "learner",
+            Verb = "answered",
+            ObjectType = "assessment_item",
+            PayloadJson = """{"schemaVersion":"orka.learning-event.v1"}""",
+            CreatedAt = DateTime.UtcNow,
+            OccurredAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var alignment = new StandardsAlignmentService(db);
+        var validation = new StandardsValidationService(db, alignment);
+        var export = new StandardsExportService(db, alignment);
+
+        var run = await validation.ValidateAsync(userId, topicId);
+        var exported = await export.ExportAsync(userId, topicId);
+
+        Assert.Equal("healthy", run.Status);
+        Assert.Equal(0, run.IssueCount);
+        Assert.Contains("qtiLike", exported.PayloadJson);
+        Assert.Equal(1, await db.StandardsValidationRuns.CountAsync());
+        Assert.Equal(3, await db.StandardsExportItems.CountAsync());
+    }
+
+    [Fact]
+    public async Task RetentionCleanupService_PurgesAudioBytesButKeepsLearningRecords()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var expired = DateTime.UtcNow.AddDays(-1);
+        var job = new AudioOverviewJob
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            Status = "ready",
+            Script = "[HOCA]: Kalıcı script.",
+            AudioBytes = [1, 2, 3],
+            AudioByteLength = 3,
+            AudioExpiresAt = expired,
+            CreatedAt = DateTime.UtcNow.AddDays(-10),
+            UpdatedAt = DateTime.UtcNow.AddDays(-10)
+        };
+        var interaction = new ClassroomInteraction
+        {
+            Id = Guid.NewGuid(),
+            ClassroomSessionId = Guid.NewGuid(),
+            Question = "Anlamadım",
+            AnswerScript = "[HOCA]: Tekrar anlatalım.",
+            AudioBytes = [4, 5],
+            AudioByteLength = 2,
+            AudioExpiresAt = expired,
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
+        };
+        db.AudioOverviewJobs.Add(job);
+        db.ClassroomInteractions.Add(interaction);
+        await db.SaveChangesAsync();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:AudioBytesDays"] = "7" })
+            .Build();
+        var service = new RetentionCleanupService(db, config);
+
+        var summary = await service.PurgeExpiredAudioAsync();
+
+        var storedJob = await db.AudioOverviewJobs.SingleAsync();
+        var storedInteraction = await db.ClassroomInteractions.SingleAsync();
+        Assert.Null(storedJob.AudioBytes);
+        Assert.Null(storedInteraction.AudioBytes);
+        Assert.Equal("[HOCA]: Kalıcı script.", storedJob.Script);
+        Assert.Equal("[HOCA]: Tekrar anlatalım.", storedInteraction.AnswerScript);
+        Assert.Equal(2, summary.PurgedAudioCount);
+    }
+
     private static OrkaDbContext CreateDb() =>
         new(new DbContextOptionsBuilder<OrkaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -447,6 +659,72 @@ public sealed class LearningArchitectureTests
         await db.SaveChangesAsync();
         return (userId, topicId);
     }
+
+    private static async Task<Guid> SeedConceptSnapshotAsync(OrkaDbContext db, Guid userId, Guid topicId)
+    {
+        var snapshotId = Guid.NewGuid();
+        db.ConceptGraphSnapshots.Add(new ConceptGraphSnapshot
+        {
+            Id = snapshotId,
+            UserId = userId,
+            TopicId = topicId,
+            PlanRequestId = Guid.NewGuid(),
+            IntentHash = $"intent-{snapshotId:N}",
+            TopicTitle = "Adaptive",
+            ApprovedResearchIntent = "Adaptive",
+            Domain = "general",
+            SourceConfidence = "medium",
+            SourceBundleHash = "source",
+            GraphJson = "{}",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        return snapshotId;
+    }
+
+    private static AssessmentItem SeedAssessmentItem(OrkaDbContext db, Guid userId, Guid topicId, Guid snapshotId, string conceptKey, string difficulty)
+    {
+        var item = new AssessmentItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ConceptGraphSnapshotId = snapshotId,
+            AssessmentItemKey = $"item:{conceptKey}",
+            ConceptKey = conceptKey,
+            ConceptLabel = conceptKey,
+            CognitiveSkill = "conceptual",
+            Difficulty = difficulty,
+            GeneratedQuestionJson = $$"""
+            {"question":"{{conceptKey}} nedir?","options":[{"id":"A","text":"Doğru açıklama","isCorrect":true},{"id":"B","text":"Yanlış açıklama","isCorrect":false}],"explanation":"A doğru.","skillTag":"{{conceptKey}}","conceptKey":"{{conceptKey}}"}
+            """,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.AssessmentItems.Add(item);
+        return item;
+    }
+
+    private static AssessmentItemStat Stat(Guid userId, Guid topicId, Guid itemId, string conceptKey, int exposure) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        TopicId = topicId,
+        AssessmentItemId = itemId,
+        ConceptKey = conceptKey,
+        Attempts = 6,
+        Correct = 4,
+        Incorrect = 2,
+        CorrectRate = 0.6667m,
+        DiscriminationProxy = 0.1667m,
+        SkipRate = 0m,
+        QualityStatus = "healthy",
+        DifficultyEstimate = 0.3333m,
+        DiscriminationEstimate = 0.3334m,
+        ExposureCount = exposure,
+        CalibrationStatus = "healthy",
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
 
     private static CompressedPlanResearchContextDto ResearchContext() => new()
     {

@@ -76,6 +76,45 @@ public interface IAssessmentQualityService
         CancellationToken ct = default);
 }
 
+public interface IAssessmentCalibrationService
+{
+    Task<AssessmentCalibrationRunDto> RunAsync(
+        Guid userId,
+        Guid? topicId,
+        CancellationToken ct = default);
+
+    Task<AssessmentCalibrationRunDto?> GetLatestAsync(
+        Guid userId,
+        Guid? topicId,
+        CancellationToken ct = default);
+}
+
+public interface IAdaptiveAssessmentSelector
+{
+    Task<AdaptiveAssessmentDecisionDto?> SelectNextAsync(
+        AdaptiveAssessmentSession session,
+        CancellationToken ct = default);
+}
+
+public interface IAdaptiveAssessmentSessionService
+{
+    Task<AdaptiveAssessmentSessionDto> StartAsync(
+        Guid userId,
+        AdaptiveAssessmentStartRequest request,
+        CancellationToken ct = default);
+
+    Task<AdaptiveAssessmentNextItemDto> GetNextAsync(
+        Guid userId,
+        Guid adaptiveSessionId,
+        CancellationToken ct = default);
+
+    Task<AdaptiveAssessmentNextItemDto> RecordAnswerAsync(
+        Guid userId,
+        Guid adaptiveSessionId,
+        AdaptiveAssessmentAnswerRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IDiagnosticProfileBuilder
 {
     Task<DiagnosticProfileDto> BuildAndSaveAsync(
@@ -210,6 +249,16 @@ public interface ITutorWorkingMemoryService
         Guid sessionId,
         string eventType,
         IReadOnlyDictionary<string, string> fields,
+        CancellationToken ct = default);
+}
+
+public interface ITutorTraceProjectionService
+{
+    Task<TutorTraceTimelineDto> GetTimelineAsync(
+        Guid userId,
+        Guid sessionId,
+        string afterId = "0-0",
+        int take = 50,
         CancellationToken ct = default);
 }
 
@@ -407,4 +456,53 @@ public interface ILearningQualityReportService
         Guid userId,
         Guid? topicId,
         CancellationToken ct = default);
+}
+
+public interface IStandardsAlignmentService
+{
+    Task<StandardsSummaryDto> GetSummaryAsync(Guid userId, Guid? topicId, CancellationToken ct = default);
+}
+
+public interface IStandardsValidationService
+{
+    Task<StandardsValidationRunDto> ValidateAsync(Guid userId, Guid? topicId, CancellationToken ct = default);
+}
+
+public interface IStandardsExportService
+{
+    Task<StandardsExportRunDto> ExportAsync(Guid userId, Guid? topicId, string exportType = "combined", CancellationToken ct = default);
+}
+
+public interface IProviderGovernanceService
+{
+    Task<ProviderGovernanceSummaryDto> GetSummaryAsync(Guid? userId = null, CancellationToken ct = default);
+}
+
+public interface IRetentionCleanupService
+{
+    Task<AudioRetentionSummaryDto> GetAudioRetentionSummaryAsync(CancellationToken ct = default);
+
+    Task<AudioRetentionSummaryDto> PurgeExpiredAudioAsync(CancellationToken ct = default);
+}
+
+public interface IRedisStreamMaintenanceService
+{
+    Task<RedisStreamMaintenanceSummaryDto> GetSummaryAsync(CancellationToken ct = default);
+
+    Task<RedisStreamMaintenanceSummaryDto> TrimTutorEventStreamsAsync(CancellationToken ct = default);
+}
+
+public interface IDbIndexAuditService
+{
+    Task<DbIndexAuditSummaryDto> AuditAsync(CancellationToken ct = default);
+}
+
+public interface IV1RegressionGateService
+{
+    Task<V1RegressionGateDto> EvaluateAsync(CancellationToken ct = default);
+}
+
+public interface IProductionReadinessService
+{
+    Task<ProductionReadinessDto> GetV1ReadinessAsync(Guid? userId = null, CancellationToken ct = default);
 }

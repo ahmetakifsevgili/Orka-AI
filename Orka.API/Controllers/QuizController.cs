@@ -20,6 +20,7 @@ public class QuizController : ControllerBase
     private readonly IDeepPlanAgent _deepPlan;
     private readonly IPlanDiagnosticService _planDiagnostic;
     private readonly IStudyIntentAnalyzer _studyIntentAnalyzer;
+    private readonly IAdaptiveAssessmentSessionService _adaptiveAssessment;
     private readonly ILogger<QuizController> _logger;
 
     public QuizController(
@@ -28,6 +29,7 @@ public class QuizController : ControllerBase
         IDeepPlanAgent deepPlan,
         IPlanDiagnosticService planDiagnostic,
         IStudyIntentAnalyzer studyIntentAnalyzer,
+        IAdaptiveAssessmentSessionService adaptiveAssessment,
         ILogger<QuizController> logger)
     {
         _db = db;
@@ -35,6 +37,7 @@ public class QuizController : ControllerBase
         _deepPlan = deepPlan;
         _planDiagnostic = planDiagnostic;
         _studyIntentAnalyzer = studyIntentAnalyzer;
+        _adaptiveAssessment = adaptiveAssessment;
         _logger = logger;
     }
 
@@ -113,6 +116,68 @@ public class QuizController : ControllerBase
         {
             _logger.LogError(ex, "[QuizController] Quiz sonucu kaydedilemedi. UserId={UserId}", userId);
             return StatusCode(500, new { error = "Quiz sonucu kaydedilemedi." });
+        }
+    }
+
+    [HttpPost("adaptive/start")]
+    public async Task<IActionResult> StartAdaptive([FromBody] AdaptiveAssessmentStartRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _adaptiveAssessment.StartAsync(userId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Adaptive assessment start failed. UserId={UserId}", userId);
+            return StatusCode(500, new { error = "Adaptive practice could not be started." });
+        }
+    }
+
+    [HttpGet("adaptive/{adaptiveSessionId:guid}/next")]
+    public async Task<IActionResult> GetAdaptiveNext(Guid adaptiveSessionId)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _adaptiveAssessment.GetNextAsync(userId, adaptiveSessionId, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Adaptive assessment next failed. UserId={UserId} SessionId={SessionId}", userId, adaptiveSessionId);
+            return StatusCode(500, new { error = "Next adaptive question could not be selected." });
+        }
+    }
+
+    [HttpPost("adaptive/{adaptiveSessionId:guid}/answer")]
+    public async Task<IActionResult> RecordAdaptiveAnswer(Guid adaptiveSessionId, [FromBody] AdaptiveAssessmentAnswerRequest request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _adaptiveAssessment.RecordAnswerAsync(userId, adaptiveSessionId, request, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[QuizController] Adaptive assessment answer failed. UserId={UserId} SessionId={SessionId}", userId, adaptiveSessionId);
+            return StatusCode(500, new { error = "Adaptive answer could not be recorded." });
         }
     }
 

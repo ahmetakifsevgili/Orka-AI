@@ -170,6 +170,29 @@ public sealed class RedisStreamEventDto
     public Dictionary<string, string> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
+public sealed class TutorTraceTimelineDto
+{
+    public Guid SessionId { get; set; }
+    public string After { get; set; } = "0-0";
+    public string LastEventId { get; set; } = "0-0";
+    public string Source { get; set; } = "redis";
+    public string TraceHealth { get; set; } = "unknown";
+    public IReadOnlyList<TutorTraceTimelineEventDto> Events { get; set; } = Array.Empty<TutorTraceTimelineEventDto>();
+}
+
+public sealed class TutorTraceTimelineEventDto
+{
+    public Guid Id { get; set; }
+    public string StreamId { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string EventGroup { get; set; } = "state";
+    public string UserSafeLabel { get; set; } = string.Empty;
+    public string UserSafeDetail { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public Dictionary<string, string> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class TutorMemoryFragmentDto
 {
     public Guid Id { get; set; }

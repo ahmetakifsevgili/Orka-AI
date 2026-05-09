@@ -19,6 +19,11 @@ public sealed class AssessmentItemStat
     public decimal AverageTimeSeconds { get; set; }
     public decimal SkipRate { get; set; }
     public string QualityStatus { get; set; } = "unknown";
+    public decimal DifficultyEstimate { get; set; } = 0.50m;
+    public decimal DiscriminationEstimate { get; set; }
+    public int ExposureCount { get; set; }
+    public DateTime? LastSelectedAt { get; set; }
+    public string CalibrationStatus { get; set; } = "uncalibrated";
     public DateTime? LastAttemptAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
