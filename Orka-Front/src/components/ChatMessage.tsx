@@ -18,7 +18,7 @@ import type { ChatMessage as ChatMessageType, CitationDto, TeachingArtifact, Tut
 import { TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { userSafeStatus } from "@/lib/userSafeStatus";
-import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary } from "@/lib/citationDisplay";
+import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel } from "@/lib/citationDisplay";
 import {
   BlockedImagePlaceholder,
   displayHost,
@@ -591,11 +591,18 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
   const evidenceSummary = metadata?.evidenceSummary;
+  const evidenceQuality = metadata?.evidenceQuality;
   const allTools = [...tools, ...toolStatuses];
   const mode = metadata?.groundingMode?.toLowerCase() ?? "";
   const items: LearningTraceSummaryItem[] = [];
 
-  if (citations.length > 0 || (evidenceSummary?.sourceCount ?? 0) > 0 || mode.includes("source") || mode.includes("wiki")) {
+  if (evidenceQuality?.status && ["partial", "weak", "missing"].includes(evidenceQuality.status.toLowerCase())) {
+    items.push({
+      label: evidenceQualityLabel(evidenceQuality),
+      detail: evidenceQualityDetail(evidenceQuality),
+      tone: "watch",
+    });
+  } else if (citations.length > 0 || (evidenceSummary?.sourceCount ?? 0) > 0 || mode.includes("source") || mode.includes("wiki")) {
     items.push({
       label: "Bu cevap kaynaklarla desteklendi.",
       detail: citations.length > 0

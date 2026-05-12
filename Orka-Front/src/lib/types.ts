@@ -120,6 +120,18 @@ export interface SourceCitationCheckDto {
   createdAt: string;
 }
 
+export interface EvidenceQualityDto {
+  status?: "strong" | "partial" | "weak" | "missing" | "unknown" | string;
+  userSafeLabel?: string | null;
+  reasons?: string[];
+  sourceCount?: number;
+  readySourceCount?: number;
+  retrievedEvidenceCount?: number;
+  citationCoverage?: number;
+  unsupportedCitationCount?: number;
+  citationMissingCount?: number;
+}
+
 export interface SourceQualityReportDto {
   id: string;
   userId: string;
@@ -136,6 +148,7 @@ export interface SourceQualityReportDto {
   citationMissingCount: number;
   averageContextRelevance: number;
   citationCoverage: number;
+  evidenceQuality?: EvidenceQualityDto | null;
   generatedAt: string;
   recentRetrievalRuns?: SourceRetrievalRunDto[];
   recentCitationChecks?: SourceCitationCheckDto[];
@@ -236,6 +249,7 @@ export interface ChatResponseMetadata {
   evidenceSummary?: EvidenceSummaryDto | null;
   policyViolationCount?: number | null;
   ragQualityStatus?: string | null;
+  evidenceQuality?: EvidenceQualityDto | null;
   nextCheckPrompt?: string | null;
   cognitiveLoad?: string | null;
   affectiveState?: string | null;

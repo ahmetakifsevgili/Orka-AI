@@ -71,6 +71,7 @@ public sealed class WikiEvidenceBundleDto
     public string RagQualityStatus { get; set; } = "unknown";
     public decimal CitationCoverage { get; set; }
     public int UnsupportedCitationCount { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
 }
 
 public sealed class WikiAnswerPolicyDto
@@ -117,6 +118,7 @@ public sealed class WikiWorkspaceStateDto
     public string RetrievalHealth { get; set; } = "unknown";
     public decimal CitationCoverage { get; set; }
     public int UnsupportedCitationCount { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
     public IReadOnlyList<string> ActiveConcepts { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> WeakConcepts { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> RecommendedActions { get; set; } = Array.Empty<string>();

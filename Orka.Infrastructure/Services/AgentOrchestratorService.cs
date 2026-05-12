@@ -13,6 +13,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Core.Services;
 using Orka.Core.DTOs.Chat;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Utilities;
@@ -332,6 +333,12 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 "TutorAgent",
                 session.CurrentState,
                 isStream: true);
+            var metadata = await BuildTutorMetadataAsync(userId, session, fullResponse);
+            yield return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                type = "metadata",
+                data = new { metadata }
+            });
         }
     }
 
@@ -830,7 +837,92 @@ public class AgentOrchestratorService : IAgentOrchestrator
             }
         }
 
+        await EnrichEvidenceQualityAsync(metadata, userId, session.TopicId);
         return metadata;
+    }
+
+    private async Task EnrichEvidenceQualityAsync(ChatResponseMetadata metadata, Guid userId, Guid? topicId)
+    {
+        if (!topicId.HasValue)
+        {
+            metadata.EvidenceQuality ??= EvidenceQualityEvaluator.Unknown();
+            return;
+        }
+
+        try
+        {
+            var topicScope = await _topicScopeResolver.ResolveAsync(userId, topicId.Value);
+            var scopedTopicIds = topicScope.IsValid
+                ? new[] { topicScope.CurrentTopicId }
+                    .Concat(topicScope.AncestorTopicIds)
+                    .Concat(topicScope.DescendantTopicIds)
+                    .Distinct()
+                    .ToArray()
+                : new[] { topicId.Value };
+
+            var sourceStats = await _db.LearningSources
+                .AsNoTracking()
+                .Where(s => s.UserId == userId && !s.IsDeleted && s.TopicId.HasValue && scopedTopicIds.Contains(s.TopicId.Value))
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    SourceCount = g.Count(),
+                    ReadySourceCount = g.Count(s => s.Status == "ready")
+                })
+                .FirstOrDefaultAsync();
+            var sourceCount = sourceStats?.SourceCount ?? 0;
+            var readySourceCount = sourceStats?.ReadySourceCount ?? 0;
+
+            var recentRuns = await _db.SourceRetrievalRuns
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.TopicId.HasValue && scopedTopicIds.Contains(r.TopicId.Value))
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(30)
+                .Select(r => new { r.RetrievedCount, r.IsEmpty, r.QualityStatus })
+                .ToListAsync();
+            var recentChecks = await _db.SourceCitationChecks
+                .AsNoTracking()
+                .Where(c => c.UserId == userId && c.TopicId.HasValue && scopedTopicIds.Contains(c.TopicId.Value))
+                .OrderByDescending(c => c.CreatedAt)
+                .Take(50)
+                .Select(c => c.CheckStatus)
+                .ToListAsync();
+
+            var runCount = recentRuns.Count;
+            var emptyCount = recentRuns.Count(r => r.IsEmpty || r.QualityStatus is "source_retrieval_empty" or "empty");
+            var unsupported = recentChecks.Count(s => s == "citation_unsupported");
+            var missing = recentChecks.Count(s => s == "citation_missing");
+            var supported = recentChecks.Count(s => s == "supported");
+            var checkCount = recentChecks.Count;
+            var citationCoverage = checkCount == 0 ? 0m : Math.Round(supported / (decimal)checkCount, 4);
+            var retrievalHealth = runCount == 0 ? "unverified" :
+                emptyCount == runCount ? "source_retrieval_empty" :
+                recentRuns.Any(r => r.QualityStatus == "low_confidence") ? "low_confidence" :
+                recentRuns.Any(r => r.QualityStatus == "degraded") ? "degraded" :
+                "healthy";
+            var citationStatus = checkCount == 0 ? "unverified" :
+                missing > 0 ? "citation_missing" :
+                unsupported > 0 ? "citation_unsupported" :
+                "healthy";
+
+            metadata.EvidenceQuality = EvidenceQualityEvaluator.Build(
+                sourceCount,
+                readySourceCount,
+                recentRuns.Sum(r => r.RetrievedCount),
+                citationCoverage,
+                unsupported,
+                missing,
+                retrievalHealth,
+                citationStatus);
+            metadata.RagQualityStatus ??= metadata.EvidenceQuality.Status is "strong" ? "healthy" :
+                metadata.EvidenceQuality.Status is "weak" or "missing" ? "degraded" :
+                metadata.EvidenceQuality.Status;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[ChatMetadata] Evidence quality enrichment skipped. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            metadata.EvidenceQuality ??= EvidenceQualityEvaluator.Unknown();
+        }
     }
 
     private async Task<(string Response, bool WikiUpdated)> HandleAwaitingChoiceStateAsync(Guid userId, string content, Session session)

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Core.Services;
 using Orka.Infrastructure.Data;
 using System.Security.Claims;
 
@@ -42,7 +43,7 @@ public class DashboardController : ControllerBase
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    private static DashboardSourceHealthDto BuildSourceHealth(Orka.Core.Entities.SourceQualityReport? report)
+    private static DashboardSourceHealthDto BuildSourceHealth(Orka.Core.Entities.SourceQualityReport? report, int sourceCount = 0, int readySourceCount = 0)
     {
         if (report is null)
         {
@@ -50,7 +51,10 @@ public class DashboardController : ControllerBase
             {
                 Status = "unknown",
                 UserSafeLabel = "Kaynak yok",
-                UserSafeDetail = "Kaynak eklenirse Wiki ve Tutor cevaplari daha guvenli olur."
+                UserSafeDetail = "Kaynak eklenirse Wiki ve Tutor cevaplari daha guvenli olur.",
+                EvidenceQuality = sourceCount > 0
+                    ? EvidenceQualityEvaluator.Build(sourceCount, readySourceCount, 0, 0m, 0, 0, "unverified", "unverified")
+                    : EvidenceQualityEvaluator.Build(0, 0, 0, 0m, 0, 0, "no_source", "unknown")
             };
         }
 
@@ -85,7 +89,16 @@ public class DashboardController : ControllerBase
             UserSafeLabel = label,
             UserSafeDetail = detail,
             CitationCoverage = report.CitationCoverage,
-            UnsupportedCitationCount = report.UnsupportedCitationCount
+            UnsupportedCitationCount = report.UnsupportedCitationCount,
+            EvidenceQuality = EvidenceQualityEvaluator.Build(
+                sourceCount,
+                readySourceCount,
+                report.RetrievalRunCount,
+                report.CitationCoverage,
+                report.UnsupportedCitationCount,
+                report.CitationMissingCount,
+                report.RetrievalHealthStatus,
+                report.CitationCoverageStatus)
         };
     }
 
@@ -149,6 +162,9 @@ public class DashboardController : ControllerBase
         var scopedSourceCount = await _dbContext.LearningSources
             .AsNoTracking()
             .CountAsync(s => s.UserId == userId && !s.IsDeleted && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
+        var scopedReadySourceCount = await _dbContext.LearningSources
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && !s.IsDeleted && s.Status == "ready" && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
         var scopedQuizAttemptCount = await _dbContext.QuizAttempts
             .AsNoTracking()
             .CountAsync(a => a.UserId == userId && (activeScopeTopicIds.Length == 0 || (a.TopicId.HasValue && activeScopeTopicIds.Contains(a.TopicId.Value))), ct);
@@ -158,13 +174,14 @@ public class DashboardController : ControllerBase
         var coordinationHealth = await BuildCoordinationHealthAsync(userId, activeTopicId, activeScope, activeScopeTopicIds, ct);
 
         var sourceHealth = latestSourceQuality is not null
-            ? BuildSourceHealth(latestSourceQuality)
+            ? BuildSourceHealth(latestSourceQuality, scopedSourceCount, scopedReadySourceCount)
             : scopedSourceCount > 0
                 ? new DashboardSourceHealthDto
                 {
                     Status = "unverified",
                     UserSafeLabel = "Kaynaklar hazir",
-                    UserSafeDetail = "Kaynaklar var; citation kalitesi ilk kullanimda olculecek."
+                    UserSafeDetail = "Kaynaklar var; citation kalitesi ilk kullanimda olculecek.",
+                    EvidenceQuality = EvidenceQualityEvaluator.Build(scopedSourceCount, scopedReadySourceCount, 0, 0m, 0, 0, "unverified", "unverified")
                 }
                 : BuildSourceHealth(null);
         var hasRealData = activeTopic is not null ||

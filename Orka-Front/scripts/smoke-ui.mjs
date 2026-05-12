@@ -118,6 +118,7 @@ addCheck("Topic readiness badges are visible", sidebar.includes("TopicReadinessB
 addCheck("App sidebar exposes logout action", sidebar.includes("Çıkış yap") && sidebar.includes("onLogout") && sidebar.includes("logoutLoading") && sidebar.includes("LogOut"));
 
 const citationDisplay = read("src/lib/citationDisplay.ts");
+addCheck("Evidence quality helpers have user-facing labels", citationDisplay.includes("evidenceQualityLabel") && citationDisplay.includes("Kaynak güveni güçlü") && citationDisplay.includes("Kaynak güveni sınırlı") && citationDisplay.includes("Kaynak bulunamadı"));
 addCheck("Citation scope metadata has user-facing labels", citationDisplay.includes("Bu ders") && citationDisplay.includes("Üst konu") && citationDisplay.includes("Alt ders") && citationDisplay.includes("Wiki ağacı"));
 
 const richMarkdown = read("src/components/RichMarkdown.tsx");
@@ -134,6 +135,7 @@ addCheck("Adaptive practice is wired into learning panel", learningPanel.include
 
 const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
+addCheck("Chat learning trace shows evidence quality warnings", chatMessage.includes("evidenceQuality") && chatMessage.includes("evidenceQualityDetail") && chatMessage.includes("evidenceQualityLabel"));
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Chat citation chips expose scope summaries", chatMessage.includes("citationScopeSummary") && chatMessage.includes("citationDisplayTitle") && chatMessage.includes("citationPrimaryLabel"));
 addCheck("Chat learning trace summary is user-facing", chatMessage.includes("LearningTraceSummaryLite") && chatMessage.includes("Orka bu turda") && chatMessage.includes("Bu cevap kaynaklarla desteklendi.") && chatMessage.includes("Henüz öğrenme izi oluşmadı."));

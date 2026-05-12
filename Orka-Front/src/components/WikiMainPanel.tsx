@@ -33,7 +33,7 @@ import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import type { ChatResponseMetadata, CitationDto, SourceQualityReportDto, TeachingArtifact } from "@/lib/types";
-import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary } from "@/lib/citationDisplay";
+import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
 
@@ -140,6 +140,16 @@ function buildWikiSourceCoverageCoach(input: {
   totalChunks: number;
   quality: SourceQualityReportDto | null;
 }): { title: string; detail: string; tone: SourceCoverageCoachTone; actionLabel: string } {
+  if (input.quality?.evidenceQuality) {
+    const tone = evidenceQualityTone(input.quality.evidenceQuality);
+    return {
+      title: evidenceQualityLabel(input.quality.evidenceQuality),
+      detail: evidenceQualityDetail(input.quality.evidenceQuality),
+      tone,
+      actionLabel: tone === "ready" ? "Kanıtları incele" : "Kaynak ekle",
+    };
+  }
+
   if (input.sourceCount === 0) {
     return {
       title: "Kaynak durumu için henüz yeterli veri yok.",
@@ -1440,7 +1450,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                             {sourceAnswerMetadata && (
                               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#526d82]/12 bg-white/60 px-3 py-2 text-[11px] text-[#667085]">
                                 <span className="font-bold text-[#344054]">Kaynak durumu:</span>
-                                <span>{sourceQualityLabel(sourceAnswerMetadata.sourceQualityStatus ?? sourceAnswerMetadata.groundingStatus ?? sourceAnswerMetadata.groundingMode)}</span>
+                                <span>{sourceAnswerMetadata.evidenceQuality ? evidenceQualityLabel(sourceAnswerMetadata.evidenceQuality) : sourceQualityLabel(sourceAnswerMetadata.sourceQualityStatus ?? sourceAnswerMetadata.groundingStatus ?? sourceAnswerMetadata.groundingMode)}</span>
                                 {sourceAnswerMetadata.ragQualityStatus && (
                                   <span>RAG {sourceQualityLabel(sourceAnswerMetadata.ragQualityStatus)}</span>
                                 )}

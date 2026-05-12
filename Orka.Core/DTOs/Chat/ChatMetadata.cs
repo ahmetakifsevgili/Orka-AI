@@ -26,6 +26,7 @@ public sealed class ChatResponseMetadata
     public EvidenceSummaryDto? EvidenceSummary { get; set; }
     public int? PolicyViolationCount { get; set; }
     public string? RagQualityStatus { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
     public string? NextCheckPrompt { get; set; }
     public string? CognitiveLoad { get; set; }
     public string? AffectiveState { get; set; }
@@ -91,3 +92,16 @@ public sealed record EvidenceSummaryDto(
     int SourceCount,
     string GroundingStatus,
     string LearnerEvidenceStatus);
+
+public sealed class EvidenceQualityDto
+{
+    public string Status { get; set; } = "unknown";
+    public string UserSafeLabel { get; set; } = "Kaynak durumu bilinmiyor";
+    public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+    public int SourceCount { get; set; }
+    public int ReadySourceCount { get; set; }
+    public int RetrievedEvidenceCount { get; set; }
+    public decimal CitationCoverage { get; set; }
+    public int UnsupportedCitationCount { get; set; }
+    public int CitationMissingCount { get; set; }
+}

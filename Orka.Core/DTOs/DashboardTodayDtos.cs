@@ -1,3 +1,5 @@
+using Orka.Core.DTOs.Chat;
+
 namespace Orka.Core.DTOs;
 
 public sealed class DashboardTodayDto
@@ -42,6 +44,7 @@ public sealed class DashboardSourceHealthDto
     public string UserSafeDetail { get; set; } = "Kaynak eklenince cevaplar daha güvenli hale gelir.";
     public decimal CitationCoverage { get; set; }
     public int UnsupportedCitationCount { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
 }
 
 public sealed class DashboardActivePlanDto

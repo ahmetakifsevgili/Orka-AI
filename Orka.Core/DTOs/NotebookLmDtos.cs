@@ -42,7 +42,8 @@ public record SourceMetadataDto(
     Guid? RetrievalRunId = null,
     string? SourceQualityStatus = null,
     int UnsupportedCitationCount = 0,
-    int CitationMissingCount = 0);
+    int CitationMissingCount = 0,
+    EvidenceQualityDto? EvidenceQuality = null);
 
 public sealed class SourceRetrievalRunDto
 {
@@ -114,6 +115,7 @@ public sealed class SourceQualityReportDto
     public int CitationMissingCount { get; set; }
     public decimal AverageContextRelevance { get; set; }
     public decimal CitationCoverage { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
     public IReadOnlyList<SourceRetrievalRunDto> RecentRetrievalRuns { get; set; } = Array.Empty<SourceRetrievalRunDto>();
     public IReadOnlyList<SourceCitationCheckDto> RecentCitationChecks { get; set; } = Array.Empty<SourceCitationCheckDto>();

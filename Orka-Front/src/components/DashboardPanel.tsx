@@ -21,6 +21,7 @@ import {
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage, type DashboardTodayDto } from "@/services/api";
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
+import { evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { WorkspaceHeader, SourceHealthStrip, WorkspaceMetric } from "./AgenticWorkspace";
@@ -270,6 +271,19 @@ function deriveSourceCoverageCoach(sourceHealth?: DashboardTodayDto["sourceHealt
       primaryView: "sources",
       secondaryLabel: "Wiki’yi kontrol et",
       secondaryView: "wiki",
+    };
+  }
+
+  if (sourceHealth.evidenceQuality) {
+    const tone = evidenceQualityTone(sourceHealth.evidenceQuality);
+    return {
+      title: evidenceQualityLabel(sourceHealth.evidenceQuality),
+      detail: evidenceQualityDetail(sourceHealth.evidenceQuality),
+      tone,
+      primaryLabel: tone === "ready" ? "Wiki’yi kontrol et" : "Kaynak ekle",
+      primaryView: tone === "ready" ? "wiki" : "sources",
+      secondaryLabel: "Quiz/pratikle kanıt oluştur",
+      secondaryView: "practice",
     };
   }
 

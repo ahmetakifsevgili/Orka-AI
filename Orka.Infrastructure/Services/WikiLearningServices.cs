@@ -8,6 +8,7 @@ using Orka.Core.DTOs.Chat;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Core.Services;
 using Orka.Infrastructure.Data;
 
 namespace Orka.Infrastructure.Services;
@@ -113,6 +114,21 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         var retrievalHealth = sourceChunks.Count == 0 ? (readySources.Count == 0 ? "no_source" : "source_retrieval_empty") :
             sourceChunks.Any(c => c.QualityStatus == "low_confidence") ? "low_confidence" :
             "healthy";
+        var citationCoverage = latestSourceQuality?.CitationCoverage ?? 0m;
+        var unsupportedCitationCount = latestSourceQuality?.UnsupportedCitationCount ?? 0;
+        var citationMissingCount = latestSourceQuality?.CitationMissingCount ?? 0;
+        var scopedRetrievedSourceCount = sourceChunks.Select(c => c.SourceId).Distinct().Count();
+        var effectiveSourceCount = Math.Max(sources.Count, scopedRetrievedSourceCount);
+        var effectiveReadySourceCount = Math.Max(readySources.Count, scopedRetrievedSourceCount);
+        var evidenceQuality = EvidenceQualityEvaluator.Build(
+            effectiveSourceCount,
+            effectiveReadySourceCount,
+            sourceChunks.Count,
+            citationCoverage,
+            unsupportedCitationCount,
+            citationMissingCount,
+            retrievalHealth,
+            latestSourceQuality?.CitationCoverageStatus ?? (sourceChunks.Count > 0 ? "unverified" : "unknown"));
 
         return new WikiEvidenceBundleDto
         {
@@ -135,8 +151,9 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
             LatestRetrievalRunId = sourceChunks.FirstOrDefault()?.RetrievalRunId,
             RetrievalHealth = retrievalHealth,
             RagQualityStatus = latestRag?.QualityStatus ?? latestSourceQuality?.QualityStatus ?? "unknown",
-            CitationCoverage = latestSourceQuality?.CitationCoverage ?? 0m,
-            UnsupportedCitationCount = latestSourceQuality?.UnsupportedCitationCount ?? 0
+            CitationCoverage = citationCoverage,
+            UnsupportedCitationCount = unsupportedCitationCount,
+            EvidenceQuality = evidenceQuality
         };
     }
 
@@ -171,6 +188,7 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
             RetrievalHealth = evidence.RetrievalHealth,
             CitationCoverage = evidence.CitationCoverage,
             UnsupportedCitationCount = evidence.UnsupportedCitationCount,
+            EvidenceQuality = evidence.EvidenceQuality,
             ActiveConcepts = evidence.ActiveConcepts,
             WeakConcepts = evidence.WeakConcepts,
             RecommendedActions = evidence.Recommendations,
@@ -419,6 +437,7 @@ public sealed class WikiCitationGuard : IWikiCitationGuard
                 FallbackReason = policy.FallbackReason,
                 SourceConfidence = citations.Count > 0 ? citations.Max(c => c.Confidence ?? 0) : null,
                 RagQualityStatus = evidence.RagQualityStatus,
+                EvidenceQuality = evidence.EvidenceQuality,
                 EvidenceSummary = new EvidenceSummaryDto(
                     ReadyToolCount: 0,
                     SourceCount: evidence.SourceChunks.Count + evidence.WikiBlocks.Count,

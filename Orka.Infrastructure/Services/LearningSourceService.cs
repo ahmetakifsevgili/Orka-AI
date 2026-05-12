@@ -9,6 +9,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
+using Orka.Core.Services;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
 
@@ -313,10 +314,19 @@ public class LearningSourceService : ILearningSourceService
         {
             await RecordSourceAskedAsync(userId, source, question, citationCount: 0, ct);
             await RecordCitationChecksAsync(userId, source.TopicId, source.SessionId, retrievalRun.Id, sourceId, NotebookSourceContextFormatter.SourceMissingAnswer(), ranked, ct);
+            var missingEvidenceQuality = EvidenceQualityEvaluator.Build(
+                sourceCount: 1,
+                readySourceCount: IsReadySource(source.Status) ? 1 : 0,
+                retrievedEvidenceCount: 0,
+                citationCoverage: 0m,
+                unsupportedCitationCount: 0,
+                citationMissingCount: 1,
+                retrievalHealthStatus: retrievalRun.QualityStatus,
+                citationCoverageStatus: "citation_missing");
             return new SourceAskResultDto(
                 NotebookSourceContextFormatter.SourceMissingAnswer(),
                 citations,
-                new SourceMetadataDto([], "source_retrieval_empty", "source_retrieval_empty", null, retrievalRun.Id, "empty", 0, 1));
+                new SourceMetadataDto([], "source_retrieval_empty", "source_retrieval_empty", null, retrievalRun.Id, "empty", 0, 1, missingEvidenceQuality));
         }
 
         var wiki = source.TopicId.HasValue
@@ -377,6 +387,16 @@ public class LearningSourceService : ILearningSourceService
         var sourceQuality = missingCount > 0 ? "citation_missing" :
             unsupportedCount > 0 ? "citation_unsupported" :
             retrievalRun.QualityStatus;
+        var citationCoverage = citationChecks.Count == 0 ? 0m : Math.Round(supportedCount / (decimal)citationChecks.Count, 4);
+        var evidenceQuality = EvidenceQualityEvaluator.Build(
+            sourceCount: 1,
+            readySourceCount: IsReadySource(source.Status) ? 1 : 0,
+            retrievedEvidenceCount: ranked.Count,
+            citationCoverage: citationCoverage,
+            unsupportedCitationCount: unsupportedCount,
+            citationMissingCount: missingCount,
+            retrievalHealthStatus: retrievalRun.QualityStatus,
+            citationCoverageStatus: missingCount > 0 ? "citation_missing" : unsupportedCount > 0 ? "citation_unsupported" : "healthy");
 
         return new SourceAskResultDto(answer, citations, new SourceMetadataDto(
             citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto(
@@ -398,7 +418,8 @@ public class LearningSourceService : ILearningSourceService
             retrievalRun.Id,
             sourceQuality,
             unsupportedCount,
-            missingCount));
+            missingCount,
+            evidenceQuality));
     }
 
     public async Task<IReadOnlyList<TopicSourceEvidenceDto>> RetrieveTopicEvidenceAsync(
@@ -501,6 +522,19 @@ public class LearningSourceService : ILearningSourceService
         Guid topicId,
         CancellationToken ct = default)
     {
+        var sourceStats = await _db.LearningSources
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.TopicId == topicId && !s.IsDeleted)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                SourceCount = g.Count(),
+                ReadySourceCount = g.Count(s => s.Status == "ready")
+            })
+            .FirstOrDefaultAsync(ct);
+        var sourceCount = sourceStats?.SourceCount ?? 0;
+        var readySourceCount = sourceStats?.ReadySourceCount ?? 0;
+
         var recentRuns = await _db.SourceRetrievalRuns
             .AsNoTracking()
             .Include(r => r.Items)
@@ -529,6 +563,7 @@ public class LearningSourceService : ILearningSourceService
             latestReport.GeneratedAt >= latestEvidenceAt &&
             TryDeserializeQualityReport(latestReport.ReportJson, out var cached))
         {
+            HydrateEvidenceQuality(cached, sourceCount, readySourceCount);
             return cached;
         }
 
@@ -555,6 +590,16 @@ public class LearningSourceService : ILearningSourceService
         var quality = retrievalHealth == "healthy" && citationStatus == "healthy"
             ? "healthy"
             : runCount == 0 ? "unverified" : "degraded";
+        var retrievedEvidenceCount = recentRuns.Sum(r => r.RetrievedCount);
+        var evidenceQuality = EvidenceQualityEvaluator.Build(
+            sourceCount,
+            readySourceCount,
+            retrievedEvidenceCount,
+            citationCoverage,
+            unsupported,
+            missing,
+            retrievalHealth,
+            citationStatus);
 
         var dto = new SourceQualityReportDto
         {
@@ -572,6 +617,7 @@ public class LearningSourceService : ILearningSourceService
             CitationMissingCount = missing,
             AverageContextRelevance = avgContext,
             CitationCoverage = citationCoverage,
+            EvidenceQuality = evidenceQuality,
             GeneratedAt = DateTimeOffset.UtcNow,
             RecentRetrievalRuns = recentRuns.Take(8).Select(ToRetrievalRunDto).ToArray(),
             RecentCitationChecks = recentChecks.Take(12).Select(ToCitationCheckDto).ToArray()
@@ -729,8 +775,8 @@ public class LearningSourceService : ILearningSourceService
 
     private static IOrderedEnumerable<RankedSourceChunk> OrderByScoreStable(IEnumerable<RankedSourceChunk> candidates) =>
         candidates
-            .OrderByDescending(x => x.FusedScore + x.TopicScopeBoost)
-            .ThenBy(x => ScopeRelationPriority(x.ScopeRelation))
+            .OrderBy(x => ScopeRelationPriority(x.ScopeRelation))
+            .ThenByDescending(x => x.FusedScore + x.TopicScopeBoost)
             .ThenByDescending(x => x.FusedScore)
             .ThenBy(x => x.Chunk.PageNumber)
             .ThenBy(x => x.Chunk.ChunkIndex)
@@ -1051,6 +1097,22 @@ public class LearningSourceService : ILearningSourceService
             return false;
         }
     }
+
+    private static void HydrateEvidenceQuality(SourceQualityReportDto dto, int sourceCount, int readySourceCount)
+    {
+        dto.EvidenceQuality ??= EvidenceQualityEvaluator.Build(
+            sourceCount,
+            readySourceCount,
+            dto.RecentRetrievalRuns?.Sum(r => r.RetrievedCount) ?? dto.RetrievalRunCount,
+            dto.CitationCoverage,
+            dto.UnsupportedCitationCount,
+            dto.CitationMissingCount,
+            dto.RetrievalHealthStatus,
+            dto.CitationCoverageStatus);
+    }
+
+    private static bool IsReadySource(string? status) =>
+        string.Equals(status, "ready", StringComparison.OrdinalIgnoreCase);
 
     private static SourceRetrievalItemDto ToRetrievalItemDto(SourceRetrievalItem item) => new()
     {
