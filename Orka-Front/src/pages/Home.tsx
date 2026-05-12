@@ -6,10 +6,11 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useLocation } from "wouter";
 import { AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import type { ChatMessage, ApiTopic, ApiSession } from "@/lib/types";
-import { TopicsAPI } from "@/services/api";
+import { AuthAPI, TopicsAPI, storage } from "@/services/api";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import LeftSidebar from "@/components/LeftSidebar";
 import ChatPanel from "@/components/ChatPanel";
@@ -48,6 +49,7 @@ function mapApiMessages(session: ApiSession | null): ChatMessage[] {
 
 export default function Home() {
   usePremiumOnboarding();
+  const [, navigate] = useLocation();
   const { loadHistoryForTopic } = useQuizHistory();
   const [topics, setTopics] = useState<ApiTopic[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
@@ -70,6 +72,7 @@ export default function Home() {
   const [defaultChatMode, setDefaultChatMode] = useState<"plan" | "chat">("chat");
   const [pendingIDEMessage, setPendingIDEMessage] = useState<string | null>(null);
   const [activeQuizQuestion, setActiveQuizQuestion] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // ── Load topics on mount; localStorage'daki son aktif topic'i tercih et ─
   useEffect(() => {
@@ -251,6 +254,38 @@ export default function Home() {
 
   const handleCloseWiki = useCallback(() => setWikiTopicId(null), []);
 
+  const handleLogout = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    let revokeFailed = false;
+
+    try {
+      const refreshToken = storage.getRefresh();
+      if (refreshToken) {
+        await AuthAPI.logout(refreshToken);
+      }
+    } catch {
+      revokeFailed = true;
+    } finally {
+      storage.clear();
+      setTopics([]);
+      setActiveTopic(null);
+      setSessionId(null);
+      setMessages([]);
+      setWikiTopicId(null);
+      setPendingIDEMessage(null);
+      setActiveQuizQuestion(null);
+      setActiveView("dashboard");
+
+      if (revokeFailed) {
+        toast.error("Çıkış yapılamadı. Lütfen tekrar deneyin.");
+      }
+
+      navigate("/login");
+      setLoggingOut(false);
+    }
+  }, [loggingOut, navigate]);
+
   // ── View switching ─────────────────────────────────────────────────────
   const handleViewChange = useCallback((view: string) => {
     // wiki:subtopicId formatı — flyout panelden belirli bir subtopic wiki'si açılıyor
@@ -428,6 +463,8 @@ export default function Home() {
         activeView={activeView}
         onViewChange={handleViewChange}
         refreshTrigger={refreshTrigger}
+        onLogout={handleLogout}
+        logoutLoading={loggingOut}
       />
 
       <div className="relative z-10 flex flex-1 overflow-hidden p-3 pl-0">

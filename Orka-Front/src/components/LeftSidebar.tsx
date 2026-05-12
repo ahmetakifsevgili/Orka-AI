@@ -30,6 +30,7 @@ import {
   ClipboardCheck,
   Globe2,
   Network,
+  LogOut,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -50,6 +51,8 @@ interface LeftSidebarProps {
   onViewChange: (view: string) => void;
   /** ChatPanel'dan AI yanıtı geldiğinde artar; topic listesini yeniden çeker. */
   refreshTrigger: number;
+  onLogout: () => void | Promise<void>;
+  logoutLoading?: boolean;
 }
 
 // NAV_ITEMS: label artık t() ile çevriliyor, statik label kaldırıldı
@@ -121,6 +124,8 @@ export default function LeftSidebar({
   activeView,
   onViewChange,
   refreshTrigger,
+  onLogout,
+  logoutLoading = false,
 }: LeftSidebarProps) {
   const [, navigate] = useLocation();
   const { t, language, setLanguage, languages } = useLanguage();
@@ -522,6 +527,21 @@ export default function LeftSidebar({
           >
             <Settings className="w-4 h-4 flex-shrink-0" />
             <span>{t("settings") || "Ayarlar"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void onLogout()}
+            disabled={logoutLoading}
+            title="Çıkış yap"
+            aria-label="Çıkış yap"
+            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-[#8a3f3f] transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-wait disabled:opacity-60"
+          >
+            {logoutLoading ? (
+              <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" />
+            ) : (
+              <LogOut className="h-4 w-4 flex-shrink-0" />
+            )}
+            {isExpanded && <span>Çıkış yap</span>}
           </button>
         </div>
       </motion.div>
