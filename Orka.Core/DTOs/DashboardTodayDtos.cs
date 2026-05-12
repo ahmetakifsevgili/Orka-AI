@@ -35,6 +35,9 @@ public sealed class DashboardWeakConceptDto
     public decimal? Confidence { get; set; }
     public Guid? TopicId { get; set; }
     public string UserSafeStatus { get; set; } = "Kanıt düşük";
+    public MisconceptionSignalDto? MisconceptionSignal { get; set; }
+    public LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
+    public RemediationSeedDto? RemediationSeed { get; set; }
 }
 
 public sealed class DashboardSourceHealthDto

@@ -581,6 +581,105 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public void MisconceptionIntelligence_WrongQuizProducesUsableConceptSignal()
+    {
+        var topicId = Guid.NewGuid();
+        var attempt = new QuizAttempt
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            TopicId = topicId,
+            IsCorrect = false,
+            SkillTag = "indexes",
+            TopicPath = "SQL / Indexes",
+            SourceRefsJson = """{"conceptKey":"indexes","conceptTag":"Indexes"}"""
+        };
+        var mistake = new MistakeClassificationResult(
+            "Conceptual",
+            "Conceptual misunderstanding",
+            0.78,
+            "pattern",
+            "indexes",
+            "Indexes",
+            "review",
+            3,
+            true,
+            new Dictionary<string, string>());
+        var tracing = new KnowledgeTracingStateDto
+        {
+            TopicId = topicId,
+            ConceptKey = "indexes",
+            Label = "Indexes",
+            IncorrectCount = 2,
+            Confidence = 0.72m
+        };
+
+        var result = MisconceptionIntelligenceEvaluator.FromQuizAttempt(attempt, mistake, tracing);
+
+        Assert.Equal("concept_confusion", result.MisconceptionSignal.Category);
+        Assert.Equal("usable", result.LearningSignalConfidence.Status);
+        Assert.Equal("tutor_explain", result.RemediationSeed.FirstAction);
+        Assert.Contains("repeated_wrong_concept", result.LearningSignalConfidence.Reasons);
+        Assert.DoesNotContain("pattern", result.MisconceptionSignal.EvidenceBasis);
+    }
+
+    [Fact]
+    public void MisconceptionIntelligence_SourceMisreadIsCappedWhenEvidenceIsMissing()
+    {
+        var topicId = Guid.NewGuid();
+        var attempt = new QuizAttempt
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            TopicId = topicId,
+            IsCorrect = false,
+            SkillTag = "reading",
+            SourceRefsJson = """{"conceptKey":"citation-reading","sourceId":"8cbadbb6-70c0-4cc1-818b-698f9b351f10"}"""
+        };
+        var mistake = new MistakeClassificationResult(
+            "MisreadQuestion",
+            "Question was misread",
+            0.88,
+            "pattern",
+            "reading",
+            "citation-reading",
+            "review source",
+            2,
+            false,
+            new Dictionary<string, string>());
+
+        var result = MisconceptionIntelligenceEvaluator.FromQuizAttempt(
+            attempt,
+            mistake,
+            null,
+            new EvidenceQualityDto { Status = "missing" });
+
+        Assert.Equal("source_misread", result.MisconceptionSignal.Category);
+        Assert.Equal("observed_only", result.LearningSignalConfidence.Status);
+        Assert.True(result.LearningSignalConfidence.Confidence <= 0.45m);
+        Assert.Equal("source_check", result.RemediationSeed.FirstAction);
+        Assert.Contains("source_misread_evidence_capped", result.LearningSignalConfidence.Reasons);
+    }
+
+    [Fact]
+    public void MisconceptionIntelligence_WeakConceptFallbackBuildsRemediationSeed()
+    {
+        var result = MisconceptionIntelligenceEvaluator.FromWeakConcept(
+            Guid.NewGuid(),
+            "auth-refresh",
+            "Refresh token",
+            masteryProbability: 0.32m,
+            confidence: 0.64m,
+            incorrectCount: 3,
+            remediationNeed: "high");
+
+        Assert.Equal("concept_confusion", result.MisconceptionSignal.Category);
+        Assert.Equal("usable", result.LearningSignalConfidence.Status);
+        Assert.Equal("tutor_explain", result.RemediationSeed.FirstAction);
+        Assert.Contains("practice_quiz", result.RemediationSeed.SecondaryActions);
+    }
+
+    [Fact]
     public async Task TutorReflectionService_LogsNoSourceViolationAndLearningEvent()
     {
         await using var db = CreateDb();

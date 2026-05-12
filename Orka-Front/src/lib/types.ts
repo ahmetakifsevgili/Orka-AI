@@ -132,6 +132,38 @@ export interface EvidenceQualityDto {
   citationMissingCount?: number;
 }
 
+export interface LearningSignalConfidenceDto {
+  status?: "usable" | "observed_only" | "ignored" | string;
+  confidence?: number;
+  reasons?: string[];
+}
+
+export interface MisconceptionSignalDto {
+  category?: string;
+  userSafeLabel?: string | null;
+  confidence?: number;
+  confidenceStatus?: string | null;
+  topicId?: string | null;
+  conceptKey?: string | null;
+  label?: string | null;
+  safeHint?: string | null;
+  evidenceBasis?: string[];
+}
+
+export interface RemediationSeedDto {
+  conceptKey?: string | null;
+  label?: string | null;
+  topicId?: string | null;
+  reason?: string | null;
+  confidence?: number;
+  confidenceStatus?: string | null;
+  misconceptionCategory?: string | null;
+  userSafeMisconceptionLabel?: string | null;
+  firstAction?: "wiki_review" | "tutor_explain" | "practice_quiz" | "source_check" | "prerequisite_review" | string;
+  secondaryActions?: string[];
+  evidenceBasis?: string[];
+}
+
 export interface SourceQualityReportDto {
   id: string;
   userId: string;
@@ -255,6 +287,9 @@ export interface ChatResponseMetadata {
   personalizationMode?: string | null;
   masteryBasis?: string | null;
   weakConceptHints?: string[];
+  misconceptionSignal?: MisconceptionSignalDto | null;
+  learningSignalConfidence?: LearningSignalConfidenceDto | null;
+  remediationSeed?: RemediationSeedDto | null;
   nextCheckPrompt?: string | null;
   cognitiveLoad?: string | null;
   affectiveState?: string | null;

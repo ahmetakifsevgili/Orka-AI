@@ -674,6 +674,15 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
         : "Bu turdaki pratik çıktısı sonraki çalışma kararlarına bağlanabilir.",
       tone: "learning",
     });
+  } else if (metadata?.misconceptionSignal || metadata?.remediationSeed) {
+    const signal = metadata.misconceptionSignal;
+    const seed = metadata.remediationSeed;
+    const confidence = metadata.learningSignalConfidence?.status ?? seed?.confidenceStatus;
+    items.push({
+      label: "Yanılgı sinyali güvenli şekilde işlendi.",
+      detail: `${signal?.userSafeLabel ?? seed?.userSafeMisconceptionLabel ?? "Kesin teşhis değil; telafi sinyali olarak tutuldu."}${confidence ? ` Kanıt: ${formatTechnicalLabel(confidence)}.` : ""}`,
+      tone: "learning",
+    });
   } else if (typeof metadata?.masteryProbability === "number") {
     items.push({
       label: "Bu turda öğrenme izi güncellendi.",

@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, EvidenceQualityDto, LearningQualityReport, ProductionReadiness, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, EvidenceQualityDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, ProductionReadiness, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -332,6 +332,9 @@ export interface DashboardTodayDto {
     confidence?: number | null;
     topicId?: string | null;
     userSafeStatus: string;
+    misconceptionSignal?: MisconceptionSignalDto | null;
+    learningSignalConfidence?: LearningSignalConfidenceDto | null;
+    remediationSeed?: RemediationSeedDto | null;
   }>;
   sourceHealth: {
     status: string;
@@ -679,6 +682,23 @@ type QuizAttemptPayload = {
   confidenceSelfRating?: number;
 };
 
+export type QuizAttemptRecordResponse = {
+  id: string;
+  quizRunId?: string | null;
+  topicId?: string | null;
+  skillTag?: string | null;
+  questionHash?: string | null;
+  knowledgeTracingStateId?: string | null;
+  masteryProbability?: number | null;
+  itemQualityStatus?: string | null;
+  xp?: unknown;
+  review?: unknown;
+  mistake?: unknown;
+  misconceptionSignal?: MisconceptionSignalDto | null;
+  learningSignalConfidence?: LearningSignalConfidenceDto | null;
+  remediationSeed?: RemediationSeedDto | null;
+};
+
 export const QuizAPI = {
   analyzePlanIntent: (data: {
     rawRequest: string;
@@ -744,7 +764,8 @@ export const QuizAPI = {
       generatedPlanRootTopicId?: string;
       generatedTopicIds: string[];
     }>(`/quiz/plan-diagnostic/${planRequestId}/skip`, {}, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
-  recordAttempt: (data: QuizAttemptPayload) => api.post("/quiz/attempt", data, { suppressErrorToast: true } as OrkaAxiosConfig),
+  recordAttempt: (data: QuizAttemptPayload) =>
+    api.post<QuizAttemptRecordResponse>("/quiz/attempt", data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   startAdaptive: (data: { topicId?: string; sessionId?: string; minItems?: number; maxItems?: number; targetConceptKeys?: string[] }) =>
     api.post<AdaptiveAssessmentSession>("/quiz/adaptive/start", data).then((r) => r.data),
   getAdaptiveNext: (adaptiveSessionId: string) =>

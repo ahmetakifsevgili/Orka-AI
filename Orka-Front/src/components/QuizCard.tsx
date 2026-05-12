@@ -4,7 +4,7 @@ import { BookOpen, CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
-import type { AdaptiveAssessmentNextItem, PlanDiagnosticMeta, QuizAttempt, QuizData } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, LearningSignalConfidenceDto, MisconceptionSignalDto, PlanDiagnosticMeta, QuizAttempt, QuizData, RemediationSeedDto } from "@/lib/types";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI } from "@/services/api";
 
@@ -43,6 +43,14 @@ const stableQuestionHash = (quiz: QuizData) =>
     .toLowerCase()
     .replace(/\s+/g, " ")
     .slice(0, 180);
+
+const confidenceStatusLabel = (confidence?: LearningSignalConfidenceDto | null, fallback?: string | null) => {
+  const status = (confidence?.status ?? fallback ?? "").toLowerCase();
+  if (status === "usable") return "Kanıt güvenilir";
+  if (status === "observed_only") return "Kanıt düşük";
+  if (status === "ignored") return "Plan girdisi yapılmadı";
+  return "Kanıt izleniyor";
+};
 
 const buildSourceRefs = (quiz: QuizData) => {
   const base =
@@ -94,6 +102,9 @@ export default function QuizCard({
   const [recordError, setRecordError] = useState<string | null>(null);
   const [completionNote, setCompletionNote] = useState<string | null>(null);
   const [recoveryHint, setRecoveryHint] = useState<string | null>(null);
+  const [misconceptionSignal, setMisconceptionSignal] = useState<MisconceptionSignalDto | null>(null);
+  const [signalConfidence, setSignalConfidence] = useState<LearningSignalConfidenceDto | null>(null);
+  const [remediationSeed, setRemediationSeed] = useState<RemediationSeedDto | null>(null);
   const [confirmingZeroStart, setConfirmingZeroStart] = useState(false);
   const [answers, setAnswers] = useState<Array<{ isCorrect: boolean; skill?: string }>>([]);
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
@@ -190,7 +201,7 @@ export default function QuizCard({
     if (planDiagnostic) {
       await QuizAPI.recordPlanDiagnosticAttempt(planDiagnostic.planRequestId, payload);
     } else {
-      await QuizAPI.recordAttempt(payload);
+      return await QuizAPI.recordAttempt(payload);
     }
     return null;
   };
@@ -213,16 +224,24 @@ export default function QuizCard({
 
     setRecordError(null);
     setRecoveryHint(null);
+    setMisconceptionSignal(null);
+    setSignalConfidence(null);
+    setRemediationSeed(null);
     setSubmitState("evaluating");
     await wait(350);
 
     try {
       addQuizAttempt(attempt);
       const adaptiveResult = await recordAttempt(attempt);
+      if (!attempt.isCorrect && adaptiveResult && "remediationSeed" in adaptiveResult) {
+        setMisconceptionSignal(adaptiveResult.misconceptionSignal ?? null);
+        setSignalConfidence(adaptiveResult.learningSignalConfidence ?? null);
+        setRemediationSeed(adaptiveResult.remediationSeed ?? null);
+      }
       const nextAnswers = [...answers, { isCorrect: attempt.isCorrect, skill: attempt.skillTag }];
       setAnswers(nextAnswers);
       setSubmitState("done");
-      if (adaptiveResult && adaptiveAssessment?.onResult) {
+      if (adaptiveResult && "isComplete" in adaptiveResult && adaptiveAssessment?.onResult) {
         adaptiveAssessment.onResult(adaptiveResult);
         if (adaptiveResult.isComplete) {
           setCompletionNote("Adaptif pratik tamamlandı. Orka yeni kanıtı mastery hesabına ekledi.");
@@ -245,6 +264,9 @@ export default function QuizCard({
       setRecordError(null);
       setCompletionNote(null);
       setRecoveryHint(null);
+      setMisconceptionSignal(null);
+      setSignalConfidence(null);
+      setRemediationSeed(null);
     }
   };
 
@@ -378,6 +400,19 @@ export default function QuizCard({
                 <p className="mt-1 text-xs leading-5 text-[#667085]">
                   Yanlış cevap kaydedildi; ilerleme davranışı değişmeden buradan kısa bir telafi adımı seçebilirsin.
                 </p>
+                {(misconceptionSignal || remediationSeed) && (
+                  <div className="mt-3 rounded-lg border border-[#e8c46f]/24 bg-[#fff8ee]/62 px-3 py-2 text-[11px] leading-5 text-[#667085]">
+                    <p className="font-black text-[#8a641f]">
+                      Yanılgı sinyali: {misconceptionSignal?.userSafeLabel ?? remediationSeed?.userSafeMisconceptionLabel ?? "güvenli şekilde izlendi"}
+                    </p>
+                    <p className="mt-1">
+                      {remediationSeed?.reason ?? misconceptionSignal?.safeHint ?? "Bu sinyal kesin teşhis değil; kısa telafi için kullanılabilir."}
+                    </p>
+                    <p className="mt-1 font-bold text-[#8a641f]">
+                      Kanıt durumu: {confidenceStatusLabel(signalConfidence, remediationSeed?.confidenceStatus ?? misconceptionSignal?.confidenceStatus)}
+                    </p>
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"

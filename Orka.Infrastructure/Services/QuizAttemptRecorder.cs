@@ -124,6 +124,7 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         await _learningSignals.RecordQuizAnsweredAsync(attempt, ct);
 
         MistakeClassificationResult? mistake = null;
+        MisconceptionIntelligenceResult? misconceptionIntelligence = null;
         ReviewItem? reviewItem = null;
         if (!request.IsCorrect && request.TopicId.HasValue)
         {
@@ -157,6 +158,13 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                 flashcardId: null,
                 remediationPlanId: null,
                 ct);
+            misconceptionIntelligence = MisconceptionIntelligenceEvaluator.FromQuizAttempt(
+                attempt,
+                mistake,
+                tracingState);
+            attempt.SourceRefsJson = MergeMisconceptionMetadata(attempt.SourceRefsJson, misconceptionIntelligence);
+            await UpdateConceptMasteryMisconceptionEvidenceAsync(userId, request.TopicId.Value, misconceptionIntelligence, ct);
+            await EnrichQuizLearningSignalsAsync(attempt, misconceptionIntelligence, ct);
             await _db.SaveChangesAsync(ct);
         }
 
@@ -187,7 +195,10 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             mistake.SuggestedReviewPressure,
             null,
             mistake.SuggestedReviewPressure >= 3,
-            mistake.SuggestFlashcard));
+            mistake.SuggestFlashcard),
+            misconceptionIntelligence?.MisconceptionSignal,
+            misconceptionIntelligence?.LearningSignalConfidence,
+            misconceptionIntelligence?.RemediationSeed);
     }
 
     private async Task UpdateQuizRunAsync(
@@ -255,6 +266,70 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         mastery.Correct = tracingState.CorrectCount;
         mastery.LastEvidenceAt = tracingState.LastEvidenceAt?.UtcDateTime ?? attempt.CreatedAt;
         mastery.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private async Task UpdateConceptMasteryMisconceptionEvidenceAsync(
+        Guid userId,
+        Guid topicId,
+        MisconceptionIntelligenceResult intelligence,
+        CancellationToken ct)
+    {
+        var conceptKey = intelligence.MisconceptionSignal.ConceptKey;
+        if (string.IsNullOrWhiteSpace(conceptKey))
+        {
+            return;
+        }
+
+        var mastery = await _db.ConceptMasteries
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.TopicId == topicId && m.ConceptKey == conceptKey, ct);
+        if (mastery == null)
+        {
+            return;
+        }
+
+        var evidence = new List<object>();
+        if (!string.IsNullOrWhiteSpace(mastery.MisconceptionEvidenceJson))
+        {
+            try
+            {
+                var existing = JsonSerializer.Deserialize<List<JsonElement>>(mastery.MisconceptionEvidenceJson);
+                if (existing != null)
+                {
+                    evidence.AddRange(existing.Take(8).Select(item => JsonSerializer.Deserialize<object>(item.GetRawText())!));
+                }
+            }
+            catch
+            {
+                evidence.Clear();
+            }
+        }
+
+        evidence.Insert(0, new
+        {
+            intelligence.MisconceptionSignal.Category,
+            intelligence.MisconceptionSignal.UserSafeLabel,
+            intelligence.MisconceptionSignal.Confidence,
+            intelligence.MisconceptionSignal.ConfidenceStatus,
+            intelligence.RemediationSeed.FirstAction,
+            CreatedAt = DateTime.UtcNow
+        });
+        mastery.MisconceptionEvidenceJson = JsonSerializer.Serialize(evidence.Take(10));
+        mastery.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private async Task EnrichQuizLearningSignalsAsync(
+        QuizAttempt attempt,
+        MisconceptionIntelligenceResult intelligence,
+        CancellationToken ct)
+    {
+        var signals = await _db.LearningSignals
+            .Where(s => s.UserId == attempt.UserId && s.QuizAttemptId == attempt.Id)
+            .ToListAsync(ct);
+
+        foreach (var signal in signals)
+        {
+            signal.PayloadJson = MergeMisconceptionMetadata(signal.PayloadJson, intelligence);
+        }
     }
 
     private static string? Clean(string? value) =>
@@ -426,5 +501,37 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         }
 
         return metadata.Count == 0 ? null : JsonSerializer.Serialize(metadata);
+    }
+
+    private static string? MergeMisconceptionMetadata(
+        string? json,
+        MisconceptionIntelligenceResult intelligence)
+    {
+        var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        metadata[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                            ? property.Value.GetString()
+                            : JsonSerializer.Deserialize<object>(property.Value.GetRawText());
+                    }
+                }
+            }
+            catch
+            {
+                metadata["rawSourceRefs"] = json;
+            }
+        }
+
+        metadata["misconceptionSignal"] = intelligence.MisconceptionSignal;
+        metadata["learningSignalConfidence"] = intelligence.LearningSignalConfidence;
+        metadata["remediationSeed"] = intelligence.RemediationSeed;
+        return JsonSerializer.Serialize(metadata);
     }
 }

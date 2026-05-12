@@ -32,6 +32,9 @@ public sealed class ChatResponseMetadata
     public string? PersonalizationMode { get; set; }
     public string? MasteryBasis { get; set; }
     public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
+    public Orka.Core.DTOs.MisconceptionSignalDto? MisconceptionSignal { get; set; }
+    public Orka.Core.DTOs.LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
+    public Orka.Core.DTOs.RemediationSeedDto? RemediationSeed { get; set; }
     public string? NextCheckPrompt { get; set; }
     public string? CognitiveLoad { get; set; }
     public string? AffectiveState { get; set; }

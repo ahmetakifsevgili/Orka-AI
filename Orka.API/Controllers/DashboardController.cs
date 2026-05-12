@@ -9,6 +9,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 using Orka.Core.Services;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Services;
 using System.Security.Claims;
 
 namespace Orka.API.Controllers;
@@ -132,22 +133,49 @@ public class DashboardController : ControllerBase
                 : [activeTopicId.Value];
         }
 
-        var weakConcepts = await _dbContext.KnowledgeTracingStates
+        var weakConceptStates = await _dbContext.KnowledgeTracingStates
             .AsNoTracking()
             .Where(k => k.UserId == userId && (activeScopeTopicIds.Length == 0 || (k.TopicId.HasValue && activeScopeTopicIds.Contains(k.TopicId.Value))))
             .OrderBy(k => k.MasteryProbability)
             .ThenBy(k => k.Confidence)
             .Take(5)
-            .Select(k => new DashboardWeakConceptDto
+            .Select(k => new
             {
-                ConceptKey = k.ConceptKey,
-                Label = string.IsNullOrWhiteSpace(k.Label) ? k.ConceptKey : k.Label,
-                MasteryProbability = k.MasteryProbability,
-                Confidence = k.Confidence,
-                TopicId = k.TopicId,
-                UserSafeStatus = k.Confidence < 0.60m ? "Kanit dusuk" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "Izleniyor"
+                k.ConceptKey,
+                k.Label,
+                k.MasteryProbability,
+                k.Confidence,
+                k.TopicId,
+                k.IncorrectCount,
+                k.RemediationNeed
             })
             .ToListAsync(ct);
+        var weakConcepts = weakConceptStates
+            .Select(k =>
+            {
+                var label = string.IsNullOrWhiteSpace(k.Label) ? k.ConceptKey : k.Label;
+                var intelligence = MisconceptionIntelligenceEvaluator.FromWeakConcept(
+                    k.TopicId,
+                    k.ConceptKey,
+                    label,
+                    k.MasteryProbability,
+                    k.Confidence,
+                    k.IncorrectCount,
+                    k.RemediationNeed);
+                return new DashboardWeakConceptDto
+                {
+                    ConceptKey = k.ConceptKey,
+                    Label = label,
+                    MasteryProbability = k.MasteryProbability,
+                    Confidence = k.Confidence,
+                    TopicId = k.TopicId,
+                    UserSafeStatus = k.Confidence < 0.60m ? "Kanıt düşük" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "İzleniyor",
+                    MisconceptionSignal = intelligence.MisconceptionSignal,
+                    LearningSignalConfidence = intelligence.LearningSignalConfidence,
+                    RemediationSeed = intelligence.RemediationSeed
+                };
+            })
+            .ToList();
 
         var dueReviews = await _dbContext.ReviewItems
             .AsNoTracking()

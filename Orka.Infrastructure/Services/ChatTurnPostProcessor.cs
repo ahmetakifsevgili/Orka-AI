@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
@@ -125,6 +126,7 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
 
             if (score < 7 && request.AgentRole == "TutorAgent")
             {
+                await MergeSafeTutorMisconceptionMetadataAsync(db, request, score, feedback, ct);
                 var redis = services.GetRequiredService<IRedisMemoryService>();
                 await redis.SetLowQualityFeedbackAsync(request.SessionId, score, feedback);
             }
@@ -137,6 +139,56 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
                 request.AssistantMessageId,
                 request.CorrelationId);
         }
+    }
+
+    private static async Task MergeSafeTutorMisconceptionMetadataAsync(
+        OrkaDbContext db,
+        ChatTurnPostProcessRequest request,
+        int score,
+        string? feedback,
+        CancellationToken ct)
+    {
+        var message = await db.Messages.FirstOrDefaultAsync(m =>
+            m.Id == request.AssistantMessageId &&
+            m.UserId == request.UserId &&
+            m.SessionId == request.SessionId,
+            ct);
+        if (message == null)
+        {
+            return;
+        }
+
+        var intelligence = MisconceptionIntelligenceEvaluator.FromEvaluatorProjection(
+            request.TopicId,
+            score,
+            feedback);
+        var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(message.MetadataJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(message.MetadataJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        metadata[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                            ? property.Value.GetString()
+                            : JsonSerializer.Deserialize<object>(property.Value.GetRawText());
+                    }
+                }
+            }
+            catch
+            {
+                metadata.Clear();
+            }
+        }
+
+        metadata["misconceptionSignal"] = intelligence.MisconceptionSignal;
+        metadata["learningSignalConfidence"] = intelligence.LearningSignalConfidence;
+        metadata["remediationSeed"] = intelligence.RemediationSeed;
+        message.MetadataJson = JsonSerializer.Serialize(metadata);
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task RunAnalyzerWikiAndProgressionAsync(

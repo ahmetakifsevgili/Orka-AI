@@ -109,7 +109,10 @@ public class QuizController : ControllerBase
                         Badges = xpResult.NewlyEarnedBadges
                     },
                 review = result.Review,
-                mistake = result.Mistake
+                mistake = result.Mistake,
+                misconceptionSignal = result.MisconceptionSignal,
+                learningSignalConfidence = result.LearningSignalConfidence,
+                remediationSeed = result.RemediationSeed
             });
         }
         catch (Exception ex)

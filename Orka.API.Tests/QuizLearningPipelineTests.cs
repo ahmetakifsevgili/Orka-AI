@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -151,6 +152,44 @@ public sealed class QuizLearningPipelineTests
             e.UserId == user.UserId &&
             e.SessionId == sessionId &&
             e.QuizAttemptId == attempt.Id));
+    }
+
+    [Fact]
+    public async Task WrongQuizAttempt_ReturnsSafeMisconceptionAndRemediationSeed()
+    {
+        await using var factory = CreateFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "quiz-misconception");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Misconception");
+
+        var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId = tree.LessonId,
+            questionId = "q-pack3",
+            question = "Index neden kullanılır?",
+            selectedOptionId = "B) Tabloyu silmek için",
+            isCorrect = false,
+            explanation = "Kavram mantığı karışmış; index okuma hızını iyileştirir.",
+            skillTag = "indexes",
+            conceptTag = "Indexes",
+            sourceRefsJson = """{"conceptKey":"indexes","conceptTag":"Indexes","mistakeCategory":"Conceptual"}""",
+            questionHash = "pack3-misconception"
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("concept_confusion", body.RootElement.GetProperty("misconceptionSignal").GetProperty("category").GetString());
+        Assert.Equal("tutor_explain", body.RootElement.GetProperty("remediationSeed").GetProperty("firstAction").GetString());
+        Assert.NotEqual("ignored", body.RootElement.GetProperty("learningSignalConfidence").GetProperty("status").GetString());
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var attempt = await db.QuizAttempts.SingleAsync(a => a.UserId == user.UserId && a.QuestionHash == "pack3-misconception");
+        Assert.Contains("remediationSeed", attempt.SourceRefsJson);
+        Assert.True(await db.LearningSignals.AnyAsync(s =>
+            s.UserId == user.UserId &&
+            s.QuizAttemptId == attempt.Id &&
+            s.PayloadJson != null &&
+            s.PayloadJson.Contains("learningSignalConfidence")));
     }
 
     private const string PendingQuiz = """

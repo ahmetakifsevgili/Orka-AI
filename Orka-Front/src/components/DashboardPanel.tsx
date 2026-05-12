@@ -109,6 +109,7 @@ interface WeakConceptQueueItem {
   reason: string;
   actionLabel: string;
   actionView: GuidanceActionView;
+  confidenceLabel?: string;
   tone: "weak" | "source" | "practice";
 }
 
@@ -198,6 +199,30 @@ function pickCoordinationMetrics(metrics?: CoordinationMetric[]): CoordinationMe
     .filter(Boolean) as CoordinationMetric[];
 }
 
+function confidenceStatusLabel(status?: string | null): string {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "usable") return "Kanıt güvenilir";
+  if (normalized === "observed_only") return "Kanıt düşük";
+  if (normalized === "ignored") return "Plan girdisi yapılmadı";
+  return "Kanıt izleniyor";
+}
+
+function remediationAction(action?: string | null): { label: string; view: GuidanceActionView } {
+  switch ((action ?? "").toLowerCase()) {
+    case "wiki_review":
+      return { label: "Wiki’den tekrar et", view: "wiki" };
+    case "practice_quiz":
+      return { label: "Benzer pratik çöz", view: "practice" };
+    case "source_check":
+      return { label: "Kaynakları kontrol et", view: "sources" };
+    case "prerequisite_review":
+      return { label: "Ön koşulu gözden geçir", view: "wiki" };
+    case "tutor_explain":
+    default:
+      return { label: "Tutor’da telafi et", view: "chat" };
+  }
+}
+
 function buildWeakConceptActionQueue(input: {
   weakConcepts?: WeakConceptSignal[] | null;
   weakSkills: WeakSkillSignal[];
@@ -208,15 +233,20 @@ function buildWeakConceptActionQueue(input: {
   const items: WeakConceptQueueItem[] = [];
 
   for (const concept of (input.weakConcepts ?? []).slice(0, 2)) {
+    const action = remediationAction(concept.remediationSeed?.firstAction);
+    const signalLabel = concept.misconceptionSignal?.userSafeLabel ?? concept.remediationSeed?.userSafeMisconceptionLabel;
     items.push({
       id: `concept-${concept.conceptKey || concept.label}`,
       title: concept.label || "Zayıf kavram",
-      detail: concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor.",
+      detail: signalLabel
+        ? `${concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor."} · ${signalLabel}`
+        : concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor.",
       reason: concept.masteryProbability != null
         ? `Mastery tahmini %${Math.round(concept.masteryProbability * 100)}.`
-        : "Son öğrenme sinyallerinde telafi ihtiyacı görünüyor.",
-      actionLabel: "Tutor’da telafi et",
-      actionView: "chat",
+        : concept.remediationSeed?.reason ?? "Son öğrenme sinyallerinde telafi ihtiyacı görünüyor.",
+      actionLabel: action.label,
+      actionView: action.view,
+      confidenceLabel: confidenceStatusLabel(concept.learningSignalConfidence?.status ?? concept.remediationSeed?.confidenceStatus),
       tone: "weak",
     });
   }
@@ -522,6 +552,11 @@ function WeakConceptActionQueue({
                   <p className="text-xs font-black text-[#172033]">{item.title}</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#667085]">{item.detail}</p>
                   <p className="mt-1 text-[10px] font-bold text-[#8a641f]">{item.reason}</p>
+                  {item.confidenceLabel ? (
+                    <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#8a641f]">
+                      {item.confidenceLabel}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   onClick={() => onViewChange(item.actionView)}

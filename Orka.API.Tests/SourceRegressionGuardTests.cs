@@ -132,6 +132,22 @@ public sealed class SourceRegressionGuardTests
     }
 
     [Fact]
+    public void Pack3MisconceptionUi_UsesSafeProjectionAndDoesNotPrintRawEvaluatorPayload()
+    {
+        var quizCard = ReadRepoText("Orka-Front/src/components/QuizCard.tsx");
+        var dashboard = ReadRepoText("Orka-Front/src/components/DashboardPanel.tsx");
+        var chatMessage = ReadRepoText("Orka-Front/src/components/ChatMessage.tsx");
+
+        Assert.Contains("Yanılgı sinyali", quizCard);
+        Assert.Contains("Kanıt durumu", quizCard);
+        Assert.Contains("remediationSeed", dashboard);
+        Assert.Contains("Yanılgı sinyali güvenli şekilde işlendi", chatMessage);
+        Assert.DoesNotContain("EvaluatorFeedback", quizCard + dashboard + chatMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("evaluationScore", quizCard + dashboard + chatMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("trace dump", quizCard + dashboard + chatMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ClassroomSpeakerGuards_KeepTeacherAssistantAndGuestStable()
     {
         var backend = ReadRepoText("Orka.Infrastructure/Services/ClassroomService.cs");

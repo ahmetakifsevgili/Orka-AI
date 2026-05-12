@@ -130,6 +130,11 @@ public sealed class MistakeClassifierService : IMistakeClassifierService
         CancellationToken ct = default)
     {
         var result = await ClassifyAsync(request, ct);
+        var intelligence = MisconceptionIntelligenceEvaluator.FromMistakeClassification(
+            topicId,
+            request.ConceptTag ?? request.SkillTag,
+            request.ConceptTag ?? request.SkillTag,
+            result);
         try
         {
             await _signals.RecordSignalAsync(
@@ -150,7 +155,10 @@ public sealed class MistakeClassifierService : IMistakeClassifierService
                     result.RemediationHint,
                     result.SuggestedReviewPressure,
                     result.SuggestFlashcard,
-                    result.Metadata
+                    result.Metadata,
+                    misconceptionSignal = intelligence.MisconceptionSignal,
+                    learningSignalConfidence = intelligence.LearningSignalConfidence,
+                    remediationSeed = intelligence.RemediationSeed
                 }),
                 ct: ct);
 
@@ -170,7 +178,10 @@ public sealed class MistakeClassifierService : IMistakeClassifierService
                         result.Category,
                         result.RemediationHint,
                         reviewPressure = result.SuggestedReviewPressure,
-                        result.SuggestFlashcard
+                        result.SuggestFlashcard,
+                        misconceptionSignal = intelligence.MisconceptionSignal,
+                        learningSignalConfidence = intelligence.LearningSignalConfidence,
+                        remediationSeed = intelligence.RemediationSeed
                     }),
                     ct: ct);
             }

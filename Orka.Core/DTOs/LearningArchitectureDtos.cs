@@ -130,6 +130,41 @@ public sealed class ConceptMasteryDto
     public int Correct { get; set; }
 }
 
+public sealed class MisconceptionSignalDto
+{
+    public string Category { get; set; } = "unknown";
+    public string UserSafeLabel { get; set; } = "Yanılgı sinyali belirsiz";
+    public decimal Confidence { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public Guid? TopicId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string SafeHint { get; set; } = "Kısa bir telafi sorusu ile kontrol etmek güvenli olur.";
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+}
+
+public sealed class LearningSignalConfidenceDto
+{
+    public string Status { get; set; } = "observed_only";
+    public decimal Confidence { get; set; }
+    public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+}
+
+public sealed class RemediationSeedDto
+{
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public Guid? TopicId { get; set; }
+    public string Reason { get; set; } = "Bu kavram için kısa telafi iyi olabilir.";
+    public decimal Confidence { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public string MisconceptionCategory { get; set; } = "unknown";
+    public string UserSafeMisconceptionLabel { get; set; } = "Yanılgı sinyali belirsiz";
+    public string FirstAction { get; set; } = "tutor_explain";
+    public IReadOnlyList<string> SecondaryActions { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+}
+
 public sealed class LearningEventDto
 {
     public Guid Id { get; set; }

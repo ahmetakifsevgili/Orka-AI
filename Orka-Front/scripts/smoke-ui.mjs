@@ -169,6 +169,8 @@ addCheck("Quiz raw JSON leak guard", !quiz.includes("JSON.stringify(quiz") && !q
 addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && !quiz.includes("[SKIP_QUIZ]") && !quiz.includes("crypto.randomUUID") && quiz.includes("Quiz akışı tamamlandı"));
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
 addCheck("Quiz wrong answer recovery CTA is visible", quiz.includes("Toparlanma adımı") && quiz.includes("Tutor’a sor") && quiz.includes("Wiki’de tekrar et") && quiz.includes("Benzer pratik çöz"));
+addCheck("Pack 3 misconception remediation stays user-safe", quiz.includes("Yanılgı sinyali") && quiz.includes("Kanıt durumu") && dashboard.includes("remediationSeed") && chatMessage.includes("Yanılgı sinyali güvenli şekilde işlendi"));
+addCheck("Pack 3 raw evaluator payload is not rendered", !quiz.includes("EvaluatorFeedback") && !dashboard.includes("EvaluatorFeedback") && !chatMessage.includes("EvaluatorFeedback") && !quiz.includes("evaluationScore") && !dashboard.includes("evaluationScore") && !chatMessage.includes("evaluationScore"));
 addCheck("Quiz parser strips correctness labels from options", quizParser.includes("dogru") && quizParser.includes("yanlis") && quizParser.includes("incorrect"));
 addCheck("Mermaid error SVG falls back safely", chatMessage.includes("looksLikeMermaidFailure") && chatMessage.includes("Mermaid returned an error SVG."));
 addCheck("Favicon is present for runtime browser noise", fs.existsSync(path.join(root, "public", "favicon.ico")) && fs.statSync(path.join(root, "public", "favicon.ico")).size > 0);
