@@ -566,13 +566,164 @@ function LiveTutorTrace({ sessionId, enabled }: { sessionId?: string; enabled: b
   );
 }
 
-function ChatLearningTrace({ metadata, sessionId }: { metadata: ChatMessageType["metadata"]; sessionId?: string }) {
+type LearningTraceTone = "grounded" | "learning" | "watch";
+
+interface LearningTraceSummaryItem {
+  label: string;
+  detail: string;
+  tone: LearningTraceTone;
+}
+
+function traceToolLabel(toolId?: string | null, name?: string | null): string {
+  const id = (toolId ?? name ?? "tool").toLowerCase();
+  if (id.includes("ide") || id.includes("code")) return "kod/pratik çıktısı";
+  if (id.includes("source") || id.includes("rag")) return "ders kaynakları";
+  if (id.includes("wiki")) return "Wiki hafızası";
+  if (id.includes("quiz") || id.includes("assessment")) return "quiz/pratik kanıtı";
+  if (id.includes("youtube")) return "pedagojik kaynak";
+  if (id.includes("mermaid")) return "görsel açıklama";
+  return "araç bağlamı";
+}
+
+function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): LearningTraceSummaryItem[] {
   const tools = metadata?.usedTools ?? [];
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus;
+  const evidenceSummary = metadata?.evidenceSummary;
+  const allTools = [...tools, ...toolStatuses];
+  const mode = metadata?.groundingMode?.toLowerCase() ?? "";
+  const items: LearningTraceSummaryItem[] = [];
+
+  if (citations.length > 0 || (evidenceSummary?.sourceCount ?? 0) > 0 || mode.includes("source") || mode.includes("wiki")) {
+    items.push({
+      label: "Bu cevap kaynaklarla desteklendi.",
+      detail: citations.length > 0
+        ? `Orka bu cevabı ${citations.length} kaynak işaretiyle mevcut ders kaynaklarıyla ilişkilendirdi.`
+        : "Orka bu cevabı mevcut ders kaynaklarıyla ilişkilendirdi.",
+      tone: "grounded",
+    });
+  } else if (metadata?.fallbackReason || warnings.length > 0 || metadata?.sourceQualityStatus === "degraded" || metadata?.ragQualityStatus === "degraded") {
+    items.push({
+      label: "Orka sınırı gösterdi; kaynak veya sağlayıcı güveni düşük olabilir.",
+      detail: "Cevap güvenli modda tutuldu; kaynak bulunamadığında kesinlik iddiası kurulmadı.",
+      tone: "watch",
+    });
+  } else if (allTools.length > 0) {
+    const firstTool = allTools[0];
+    items.push({
+      label: "Orka bu cevabı mevcut çalışma bağlamıyla ilişkilendirdi.",
+      detail: `${traceToolLabel(firstTool.toolId, "name" in firstTool ? firstTool.name : firstTool.toolId)} cevap bağlamına eklendi.`,
+      tone: "grounded",
+    });
+  }
+
+  const hasPracticeEvidence = allTools.some((tool) => {
+    const id = (tool.toolId ?? ("name" in tool ? tool.name : "") ?? "").toLowerCase();
+    return id.includes("quiz") || id.includes("assessment") || id.includes("ide") || id.includes("code");
+  });
+
+  if (hasPracticeEvidence || evidenceSummary?.learnerEvidenceStatus) {
+    items.push({
+      label: "Quiz/pratik kanıtı güncellendi.",
+      detail: evidenceSummary?.learnerEvidenceStatus
+        ? `Öğrenen kanıtı: ${formatTechnicalLabel(evidenceSummary.learnerEvidenceStatus)}.`
+        : "Bu turdaki pratik çıktısı sonraki çalışma kararlarına bağlanabilir.",
+      tone: "learning",
+    });
+  } else if (typeof metadata?.masteryProbability === "number") {
+    items.push({
+      label: "Bu turda öğrenme izi güncellendi.",
+      detail: `Mastery tahmini %${Math.round(metadata.masteryProbability * 100)}; Orka bunu kesin öğrenildi iddiası olarak basmaz.`,
+      tone: "learning",
+    });
+  } else if (metadata?.teachingMode || metadata?.nextCheckPrompt || metadata?.activeConceptKey) {
+    items.push({
+      label: "Bu turda zayıf kavram / öğrenme sinyali oluşmuş olabilir.",
+      detail: metadata.nextCheckPrompt
+        ? `Sonraki kontrol: ${metadata.nextCheckPrompt}`
+        : `${metadata.activeConceptKey ? `${metadata.activeConceptKey} kavramı` : "Bu konu"} için kısa kontrol sorusu faydalı olabilir.`,
+      tone: "learning",
+    });
+  }
+
+  if (items.length === 0 && metadata) {
+    items.push({
+      label: "Henüz öğrenme izi oluşmadı.",
+      detail: "Bu cevapta kaynak, quiz veya pratik sinyali görünmüyor; Orka sadece mevcut bağlamı gösteriyor.",
+      tone: "watch",
+    });
+  }
+
+  return items.slice(0, 3);
+}
+
+function LearningTraceSummaryLite({
+  metadata,
+  sessionId,
+  compact = false,
+}: {
+  metadata: ChatMessageType["metadata"];
+  sessionId?: string;
+  compact?: boolean;
+}) {
+  const summary = buildLearningTraceSummary(metadata);
+  const citations = metadata?.citations ?? [];
+  const toolStatuses = metadata?.toolStatuses ?? [];
+  const tools = metadata?.usedTools ?? [];
+  if (summary.length === 0) return null;
+
+  const toneClass = {
+    grounded: "border-[#9ec7d9]/32 bg-[#dcecf3]/48",
+    learning: "border-[#8fb7a2]/28 bg-[#f2faf5]/70",
+    watch: "border-[#e8c46f]/32 bg-[#fff8ee]/75",
+  } satisfies Record<LearningTraceTone, string>;
+
+  return (
+    <div className={`${compact ? "mt-3" : "mt-2"} rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/72 px-4 py-3 text-[#344054] shadow-sm`}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+          Orka bu turda
+        </p>
+        {citations.length > 0 && (
+          <span className="rounded-full bg-white/64 px-2.5 py-1 text-[10px] font-bold text-[#47725d]">
+            {citations.length} kaynak işareti
+          </span>
+        )}
+      </div>
+      <div className={`grid gap-2 text-xs leading-5 ${compact ? "" : "md:grid-cols-2"}`}>
+        {summary.map((item) => (
+          <p key={item.label} className={`rounded-xl border px-3 py-2 ${toneClass[item.tone]}`}>
+            <span className="block font-black text-[#172033]">{item.label}</span>
+            <span className="mt-1 block text-[#667085]">{item.detail}</span>
+          </p>
+        ))}
+        {metadata?.tutorPedagogyStatus && !compact && (
+          <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
+            <span className="font-black text-[#172033]">Öğretim kalitesi: </span>
+            {metadata.tutorPedagogyStatus === "healthy"
+              ? "Tutor bu turda planlanan öğretim davranışına uydu."
+              : "Tutor cevabı izlemeye alındı; sonraki turda daha iyi ipucu, kaynak disiplini veya kontrol sorusu kullanacak."}
+          </p>
+        )}
+      </div>
+      {!compact && (
+        <LiveTutorTrace sessionId={sessionId} enabled={Boolean(metadata?.tutorTurnStateId || metadata?.tutorActionTraceId || toolStatuses.length > 0 || tools.length > 0)} />
+      )}
+    </div>
+  );
+}
+
+function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullable<ChatMessageType["metadata"]>; sessionId?: string }) {
+  const tools = metadata?.usedTools ?? [];
+  const toolStatuses = metadata?.toolStatuses ?? [];
+  const citations = metadata?.citations ?? [];
+  const warnings = metadata?.providerWarnings ?? [];
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
   if (!hasMeta) return null;
+  metadata = metadata ?? {};
+
+  return <LearningTraceSummaryLite metadata={metadata} sessionId={sessionId} />;
 
   const toolLabel = (toolId?: string | null, name?: string | null) => {
     const id = (toolId ?? name ?? "tool").toLowerCase();
@@ -842,7 +993,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                 </div>
                   <TeachingArtifactRenderer artifacts={message.artifacts} />
                   <ChatMetadataChips metadata={message.metadata} />
-                <ChatLearningTrace metadata={message.metadata} sessionId={sessionId} />
+                <ChatLearningTrace metadata={message.metadata ?? undefined} sessionId={sessionId} />
                 </>
               );
             })()}

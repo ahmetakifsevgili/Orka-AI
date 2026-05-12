@@ -99,6 +99,7 @@ type WeakSkillSignal = NonNullable<ApiDashboardStats["learningSignalBook"]>["wea
 type WeakConceptSignal = DashboardTodayDto["weakConcepts"][number];
 type HealthTone = "ok" | "warning" | "missing";
 type GuidanceActionView = "chat" | "wiki" | "practice" | "sources" | "learning" | "dashboard";
+type SourceCoverageTone = "ready" | "watch" | "empty";
 
 interface WeakConceptQueueItem {
   id: string;
@@ -108,6 +109,16 @@ interface WeakConceptQueueItem {
   actionLabel: string;
   actionView: GuidanceActionView;
   tone: "weak" | "source" | "practice";
+}
+
+interface SourceCoverageCoachModel {
+  title: string;
+  detail: string;
+  tone: SourceCoverageTone;
+  primaryLabel: string;
+  primaryView: GuidanceActionView;
+  secondaryLabel?: string;
+  secondaryView?: GuidanceActionView;
 }
 
 const COORDINATION_METRIC_ORDER = [
@@ -247,6 +258,70 @@ function buildWeakConceptActionQueue(input: {
   }
 
   return items;
+}
+
+function deriveSourceCoverageCoach(sourceHealth?: DashboardTodayDto["sourceHealth"] | null): SourceCoverageCoachModel {
+  if (!sourceHealth) {
+    return {
+      title: "Kaynak durumu için henüz yeterli veri yok.",
+      detail: "Kaynak, Wiki veya RAG kanıtı oluştuğunda Orka bu konunun kapsamasını burada gösterecek.",
+      tone: "empty",
+      primaryLabel: "Kaynakları aç",
+      primaryView: "sources",
+      secondaryLabel: "Wiki’yi kontrol et",
+      secondaryView: "wiki",
+    };
+  }
+
+  const status = (sourceHealth.status ?? "").toLowerCase();
+  const citationCoverage = sourceHealth.citationCoverage ?? 0;
+  const unsupportedCitationCount = sourceHealth.unsupportedCitationCount ?? 0;
+
+  if (status === "healthy" || status === "ready") {
+    return {
+      title: "Bu konu için kaynaklar hazır.",
+      detail: sourceHealth.userSafeDetail || "Kaynaklar Tutor, Wiki ve RAG cevaplarını destekleyecek durumda görünüyor.",
+      tone: "ready",
+      primaryLabel: "Wiki’yi kontrol et",
+      primaryView: "wiki",
+      secondaryLabel: "Quiz/pratikle kanıt oluştur",
+      secondaryView: "practice",
+    };
+  }
+
+  if (status === "source_retrieval_empty" || status === "unknown") {
+    return {
+      title: "Bu konuda kaynak eksik olabilir.",
+      detail: sourceHealth.userSafeDetail || "RAG yanıtları için yeterli kaynak bulunamayabilir.",
+      tone: "watch",
+      primaryLabel: "Kaynak ekle",
+      primaryView: "sources",
+      secondaryLabel: "Wiki’yi kontrol et",
+      secondaryView: "wiki",
+    };
+  }
+
+  if (citationCoverage > 0 && (citationCoverage < 0.55 || unsupportedCitationCount > 0)) {
+    return {
+      title: "Kaynak kalitesi zayıf; yeni kaynak eklemek faydalı olabilir.",
+      detail: `${Math.round(citationCoverage * 100)}% citation kapsamı ve ${unsupportedCitationCount} desteksiz citation görünüyor.`,
+      tone: "watch",
+      primaryLabel: "Kaynak ekle",
+      primaryView: "sources",
+      secondaryLabel: "Quiz/pratikle kanıt oluştur",
+      secondaryView: "practice",
+    };
+  }
+
+  return {
+    title: sourceHealth.userSafeLabel || "Kaynak kapsaması izleniyor.",
+    detail: sourceHealth.userSafeDetail || "Kaynak ve Wiki kanıtları geldikçe bu konu daha net değerlendirilecek.",
+    tone: "empty",
+    primaryLabel: "Kaynakları aç",
+    primaryView: "sources",
+    secondaryLabel: "Wiki’yi kontrol et",
+    secondaryView: "wiki",
+  };
 }
 
 function deriveGuidance(today: DashboardTodayDto | null, fallback: {
@@ -487,6 +562,51 @@ function ActiveLessonResumeCard({
   );
 }
 
+function SourceCoverageCoach({
+  coach,
+  onViewChange,
+}: {
+  coach: SourceCoverageCoachModel;
+  onViewChange: (view: string) => void;
+}) {
+  const toneClass = {
+    ready: "border-[#8fb7a2]/28 bg-[#f2faf5]/78 text-[#47725d]",
+    watch: "border-[#e8c46f]/34 bg-[#fff8ee]/82 text-[#8a641f]",
+    empty: "border-[#526d82]/12 bg-white/58 text-[#667085]",
+  } satisfies Record<SourceCoverageTone, string>;
+
+  return (
+    <div className={`mb-8 rounded-2xl border p-4 shadow-sm ${toneClass[coach.tone]}`}>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-80">
+            Kaynak kapsaması
+          </p>
+          <h3 className="mt-1 text-sm font-black text-[#172033]">{coach.title}</h3>
+          <p className="mt-1 text-xs leading-5 opacity-85">{coach.detail}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <button
+            onClick={() => onViewChange(coach.primaryView)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#172033] px-3 py-2 text-[11px] font-black text-white transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+          >
+            {coach.primaryLabel}
+            <ArrowRight className="h-3 w-3" />
+          </button>
+          {coach.secondaryLabel && coach.secondaryView ? (
+            <button
+              onClick={() => onViewChange(coach.secondaryView!)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-white/68 px-3 py-2 text-[11px] font-black text-[#172033] transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+            >
+              {coach.secondaryLabel}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPanel({ topics, onViewChange, mode = "today" }: DashboardPanelProps) {
   const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
@@ -568,6 +688,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const todayActionLabel = today?.nextAction?.label || t("continue_with_tutor");
   const sourceHealthLabel = today?.sourceHealth?.userSafeLabel || "Kaynak durumu ölçülüyor";
   const sourceHealthDetail = today?.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Wiki ve Tutor daha güvenli cevap verir.";
+  const sourceCoverageCoach = deriveSourceCoverageCoach(today?.sourceHealth);
   const activeLessonTopicId =
     today?.coordinationScope?.activeLessonTopicId ??
     today?.coordinationHealth?.activeLessonTopicId ??
@@ -673,6 +794,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
             citationCoverage={today?.sourceHealth?.citationCoverage}
             unsupportedCitationCount={today?.sourceHealth?.unsupportedCitationCount}
           />
+          <SourceCoverageCoach coach={sourceCoverageCoach} onViewChange={onViewChange} />
 
           <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl">
             <div className="grid gap-5 lg:grid-cols-[1.35fr_0.9fr]">

@@ -64,6 +64,53 @@ const NAV_ITEMS = [
 
 const EMOJI_SUGGESTIONS = ["📚", "🧠", "💻", "🔬", "🎨", "🗣️", "🏛️", "⚡", "🌍", "🎯"];
 
+type TopicReadinessTone = "ready" | "watch" | "new";
+
+function getTopicReadinessBadge(topic: ApiTopic): { label: string; title: string; tone: TopicReadinessTone } {
+  const progress = Math.min(100, Math.max(0, topic.progressPercentage ?? 0));
+  if (topic.isMastered || progress >= 100) {
+    return {
+      label: "Hazır",
+      title: "Bu konu tamamlanmış görünüyor.",
+      tone: "ready",
+    };
+  }
+
+  if (progress > 0) {
+    return {
+      label: "Dikkat",
+      title: "Bu konuda ilerleme var; tamamlanması gereken adımlar olabilir.",
+      tone: "watch",
+    };
+  }
+
+  return {
+    label: "Yeni",
+    title: "Bu konu için henüz yeterli çalışma kanıtı yok.",
+    tone: "new",
+  };
+}
+
+function TopicReadinessBadge({ topic, compact = false }: { topic: ApiTopic; compact?: boolean }) {
+  const badge = getTopicReadinessBadge(topic);
+  const toneClass = {
+    ready: "border-[#8fb7a2]/24 bg-[#f2faf5]/85 text-[#47725d]",
+    watch: "border-[#e8c46f]/28 bg-[#fff8ee]/85 text-[#8a641f]",
+    new: "border-[#526d82]/12 bg-white/54 text-[#667085]",
+  } satisfies Record<TopicReadinessTone, string>;
+
+  return (
+    <span
+      title={badge.title}
+      className={`inline-flex shrink-0 items-center rounded-full border font-black ${toneClass[badge.tone]} ${
+        compact ? "px-1.5 py-0.5 text-[8px]" : "px-2 py-0.5 text-[9px]"
+      }`}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
 export default function LeftSidebar({
   topics: initialTopics,
   topicsLoading: initialLoading,
@@ -223,6 +270,7 @@ export default function LeftSidebar({
             {topicToRender.title}
           </span>
           <div className="flex items-center gap-1">
+            <TopicReadinessBadge topic={topicToRender} compact />
             <button
               onClick={(e) => { e.stopPropagation(); onViewChange(`wiki:${topicToRender.id}`); }}
               title="Ders Wiki'si"
@@ -416,25 +464,28 @@ export default function LeftSidebar({
                       <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90 text-violet-400" : ""}`} />
                       <span className="text-xs truncate">{planTopic.title}</span>
                     </div>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm("Bu müfredatı (ve tüm alt derslerini) silmek istediğinizden emin misiniz?")) return;
-                        try {
-                          await TopicsAPI.delete(planTopic.id);
-                          setTopics(prev => prev.filter(t => t.id !== planTopic.id && t.parentTopicId !== planTopic.id));
-                          if (expandedPlanId === planTopic.id) setExpandedPlanId(null);
-                          if (activeTopic?.id === planTopic.id || activeTopic?.parentTopicId === planTopic.id) {
-                            onTopicClick(null, "plan");
-                          }
-                          toast.success("Müfredat silindi");
-                        } catch { toast.error("Silinemedi"); }
-                      }}
-                      className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-                      title="Müfredatı Sil"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <TopicReadinessBadge topic={planTopic} compact />
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm("Bu müfredatı (ve tüm alt derslerini) silmek istediğinizden emin misiniz?")) return;
+                          try {
+                            await TopicsAPI.delete(planTopic.id);
+                            setTopics(prev => prev.filter(t => t.id !== planTopic.id && t.parentTopicId !== planTopic.id));
+                            if (expandedPlanId === planTopic.id) setExpandedPlanId(null);
+                            if (activeTopic?.id === planTopic.id || activeTopic?.parentTopicId === planTopic.id) {
+                              onTopicClick(null, "plan");
+                            }
+                            toast.success("Müfredat silindi");
+                          } catch { toast.error("Silinemedi"); }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
+                        title="Müfredatı Sil"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -543,9 +594,12 @@ export default function LeftSidebar({
                           {mod.title}
                         </span>
                       </div>
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 text-[#667085] transition-transform duration-200 ${expandedModuleIds.has(mod.id) ? "rotate-180" : ""}`}
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <TopicReadinessBadge topic={mod} compact />
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-[#667085] transition-transform duration-200 ${expandedModuleIds.has(mod.id) ? "rotate-180" : ""}`}
+                        />
+                      </div>
                     </div>
                     {/* Dersler - AnimatePresence can be added later, basic conditional rendering for now */}
                     {expandedModuleIds.has(mod.id) && (

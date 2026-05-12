@@ -92,6 +92,8 @@ const dashboard = read("src/components/DashboardPanel.tsx");
 addCheck("Learning signal book visible", dashboard.includes("Öğrenci Sinyal Defteri") && dashboard.includes("learningSignalBook"));
 addCheck("Dashboard guidance and coordination visibility exist", dashboard.includes("Sıradaki en iyi adım") && dashboard.includes("Koordinasyon özeti") && dashboard.includes("coordinationHealth"));
 addCheck("Learning guidance pack surfaces are visible", dashboard.includes("Çalışma kuyruğu") && dashboard.includes("Eksiklerini tamamla") && dashboard.includes("Kaldığın dersten devam et") && dashboard.includes("buildWeakConceptActionQueue"));
+addCheck("Coordination health uses user-facing labels", dashboard.includes("Kaynaklar hazır") && dashboard.includes("Wiki eksik olabilir") && dashboard.includes("Quiz kanıtı zayıf") && dashboard.includes("RAG kaynak kalitesi iyi"));
+addCheck("Dashboard source coverage coach is visible", dashboard.includes("Kaynak kapsaması") && dashboard.includes("Bu konuda kaynak eksik olabilir.") && dashboard.includes("Kaynak kalitesi zayıf; yeni kaynak eklemek faydalı olabilir.") && dashboard.includes("deriveSourceCoverageCoach"));
 
 const healthHud = read("src/components/SystemHealthHUD.tsx");
 addCheck("Admin HUD shows learning bridges", healthHud.includes("learningBridge") && healthHud.includes("Agent bridge monitor"));
@@ -104,6 +106,11 @@ addCheck("Wiki source graph visible", wiki.includes("Kaynak graf") && wiki.inclu
 addCheck("Wiki source evidence panel visible", wiki.includes("Kaynak Kan") && wiki.includes("sourceCitations") && wiki.includes("handleSourcePageNav"));
 addCheck("Wiki source evidence trust strip visible", wiki.includes("source-evidence-trust-strip") && wiki.includes("Citation trail") && wiki.includes("Kaynak güveni"));
 addCheck("Wiki citation chips expose scope summaries", wiki.includes("citationScopeSummary") && wiki.includes("citationDisplayTitle") && wiki.includes("citationPrimaryLabel"));
+addCheck("Wiki source coverage coach is visible", wiki.includes("Kaynak kapsaması") && wiki.includes("Bu konu için kaynaklar hazır.") && wiki.includes("RAG yanıtları için yeterli kaynak bulunamayabilir") && wiki.includes("buildWikiSourceCoverageCoach"));
+addCheck("Wiki learning trace summary is user-facing", wiki.includes("WikiLearningTraceSummary") && wiki.includes("Orka bu turda") && wiki.includes("Bu cevap kaynaklarla desteklendi.") && wiki.includes("Quiz/pratik kanıtı güncellendi."));
+
+const sidebar = read("src/components/LeftSidebar.tsx");
+addCheck("Topic readiness badges are visible", sidebar.includes("TopicReadinessBadge") && sidebar.includes("Hazır") && sidebar.includes("Dikkat") && sidebar.includes("Yeni") && sidebar.includes("getTopicReadinessBadge"));
 
 const citationDisplay = read("src/lib/citationDisplay.ts");
 addCheck("Citation scope metadata has user-facing labels", citationDisplay.includes("Bu ders") && citationDisplay.includes("Üst konu") && citationDisplay.includes("Alt ders") && citationDisplay.includes("Wiki ağacı"));
@@ -124,6 +131,7 @@ const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Chat citation chips expose scope summaries", chatMessage.includes("citationScopeSummary") && chatMessage.includes("citationDisplayTitle") && chatMessage.includes("citationPrimaryLabel"));
+addCheck("Chat learning trace summary is user-facing", chatMessage.includes("LearningTraceSummaryLite") && chatMessage.includes("Orka bu turda") && chatMessage.includes("Bu cevap kaynaklarla desteklendi.") && chatMessage.includes("Henüz öğrenme izi oluşmadı."));
 addCheck("Live tutor trace timeline is rendered", chatMessage.includes("LiveTutorTrace") && chatMessage.includes("TutorAPI.getSessionTimeline") && chatMessage.includes("Tutor izi"));
 addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve araştır") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
@@ -136,7 +144,6 @@ addCheck("P5 premium onboarding is wired", packageJson.includes('"driver.js"') &
 const languageContext = read("src/contexts/LanguageContext.tsx");
 const languages = read("src/i18n/languages.ts");
 const messages = read("src/i18n/messages.ts");
-const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("First-wave language foundation exists", languages.includes('"pt-BR"') && languages.includes('"pl"') && messages.includes("landing_title_a") && languageContext.includes("normalizeLocale"));
 addCheck("Legacy Turkish locale fallback avoids dirty literals", languages.includes("LEGACY_TURKISH_MOJIBAKE") && languages.includes(".map((code) => String.fromCharCode(code))") && languages.includes("0xc3"));
 addCheck("Landing and app shell expose language selector", landing.includes("setLanguage") && landing.includes("languages.map") && sidebar.includes("languages.map") && sidebar.includes("interface_language"));

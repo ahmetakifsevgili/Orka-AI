@@ -123,6 +123,186 @@ const sourceQualityLabel = (status?: string | null) => {
   }
 };
 
+type SourceCoverageCoachTone = "ready" | "watch" | "empty";
+
+function buildWikiSourceCoverageCoach(input: {
+  sourceCount: number;
+  readySources: number;
+  totalChunks: number;
+  quality: SourceQualityReportDto | null;
+}): { title: string; detail: string; tone: SourceCoverageCoachTone; actionLabel: string } {
+  if (input.sourceCount === 0) {
+    return {
+      title: "Kaynak durumu için henüz yeterli veri yok.",
+      detail: "Bu konuya kaynak eklediğinde Wiki ve RAG yanıtları daha güvenilir hale gelir.",
+      tone: "empty",
+      actionLabel: "Kaynak ekle",
+    };
+  }
+
+  const retrievalStatus = (input.quality?.retrievalHealthStatus ?? "").toLowerCase();
+  const citationStatus = (input.quality?.citationCoverageStatus ?? "").toLowerCase();
+  const hasWeakQuality =
+    retrievalStatus === "source_retrieval_empty" ||
+    retrievalStatus === "empty" ||
+    retrievalStatus === "degraded" ||
+    citationStatus === "citation_missing" ||
+    citationStatus === "citation_unsupported" ||
+    (input.quality?.emptyRunCount ?? 0) > 0 ||
+    (input.quality?.unsupportedCitationCount ?? 0) > 0 ||
+    (input.quality?.citationMissingCount ?? 0) > 0;
+
+  if (input.readySources === 0 || input.totalChunks === 0) {
+    return {
+      title: "Bu konuda kaynak eksik olabilir.",
+      detail: "RAG yanıtları için yeterli kaynak bulunamayabilir; hazır veya parçalanmış kaynak görünmüyor.",
+      tone: "watch",
+      actionLabel: "Kaynak ekle",
+    };
+  }
+
+  if (hasWeakQuality) {
+    return {
+      title: "Kaynak kalitesi zayıf; yeni kaynak eklemek faydalı olabilir.",
+      detail: `${input.quality?.emptyRunCount ?? 0} boş arama izi ve ${(input.quality?.unsupportedCitationCount ?? 0) + (input.quality?.citationMissingCount ?? 0)} citation sorunu görünüyor.`,
+      tone: "watch",
+      actionLabel: "Kaynakları yenile",
+    };
+  }
+
+  return {
+    title: "Bu konu için kaynaklar hazır.",
+    detail: `${input.readySources}/${input.sourceCount} kaynak hazır; Wiki ve RAG yanıtları için yeterli kaynak kapsaması görünüyor.`,
+    tone: "ready",
+    actionLabel: "Wiki’yi kontrol et",
+  };
+}
+
+function SourceCoverageCoach({
+  title,
+  detail,
+  tone,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  detail: string;
+  tone: SourceCoverageCoachTone;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  const toneClass = {
+    ready: "border-[#8fb7a2]/28 bg-[#f2faf5]/80 text-[#47725d]",
+    watch: "border-[#e8c46f]/32 bg-[#fff8ee]/82 text-[#8a641f]",
+    empty: "border-[#526d82]/14 bg-[#f7f9fa]/70 text-[#667085]",
+  } satisfies Record<SourceCoverageCoachTone, string>;
+
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${toneClass[tone]}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-black uppercase tracking-[0.18em] opacity-80">
+            Kaynak kapsaması
+          </div>
+          <p className="mt-1 text-sm font-black text-[#172033]">{title}</p>
+          <p className="mt-1 text-[11px] leading-5 opacity-85">{detail}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onAction}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-white/75 px-3 py-2 text-[11px] font-black text-[#172033] shadow-sm transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+        >
+          {actionLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function buildWikiLearningTraceSummary(metadata?: ChatResponseMetadata | null): Array<{ label: string; detail: string; tone: "grounded" | "learning" | "watch" }> {
+  if (!metadata) return [];
+  const citations = metadata.citations ?? [];
+  const warnings = metadata.providerWarnings ?? [];
+  const tools = [...(metadata.usedTools ?? []), ...(metadata.toolStatuses ?? [])];
+  const evidenceSummary = metadata.evidenceSummary;
+  const mode = metadata.groundingMode?.toLowerCase() ?? "";
+  const items: Array<{ label: string; detail: string; tone: "grounded" | "learning" | "watch" }> = [];
+
+  if (citations.length > 0 || (evidenceSummary?.sourceCount ?? 0) > 0 || mode.includes("source") || mode.includes("wiki")) {
+    items.push({
+      label: "Bu cevap kaynaklarla desteklendi.",
+      detail: citations.length > 0
+        ? `Orka bu cevabı ${citations.length} kaynak işaretiyle mevcut ders kaynaklarıyla ilişkilendirdi.`
+        : "Orka bu cevabı mevcut ders kaynaklarıyla ilişkilendirdi.",
+      tone: "grounded",
+    });
+  } else if (metadata.fallbackReason || warnings.length > 0 || metadata.ragQualityStatus === "degraded") {
+    items.push({
+      label: "Orka sınırı gösterdi; kaynak veya sağlayıcı güveni düşük olabilir.",
+      detail: "Cevap güvenli modda tutuldu; kaynak zayıfsa kesinlik iddiası kurulmadı.",
+      tone: "watch",
+    });
+  }
+
+  const hasPracticeEvidence = tools.some((tool) => {
+    const id = (tool.toolId ?? ("name" in tool ? tool.name : "") ?? "").toLowerCase();
+    return id.includes("quiz") || id.includes("assessment") || id.includes("ide") || id.includes("code");
+  });
+
+  if (hasPracticeEvidence || evidenceSummary?.learnerEvidenceStatus) {
+    items.push({
+      label: "Quiz/pratik kanıtı güncellendi.",
+      detail: "Bu turdaki öğrenen kanıtı sonraki çalışma kararlarına bağlanabilir.",
+      tone: "learning",
+    });
+  } else if (metadata.teachingMode || metadata.nextCheckPrompt || metadata.activeConceptKey) {
+    items.push({
+      label: "Bu turda zayıf kavram / öğrenme sinyali oluşmuş olabilir.",
+      detail: metadata.nextCheckPrompt
+        ? `Sonraki kontrol: ${metadata.nextCheckPrompt}`
+        : "Bu cevap sonraki kısa kontrol sorusuna bağlanabilir.",
+      tone: "learning",
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      label: "Henüz öğrenme izi oluşmadı.",
+      detail: "Bu yanıtta kaynak, quiz veya pratik sinyali görünmüyor.",
+      tone: "watch",
+    });
+  }
+
+  return items.slice(0, 2);
+}
+
+function WikiLearningTraceSummary({ metadata }: { metadata?: ChatResponseMetadata | null }) {
+  const items = buildWikiLearningTraceSummary(metadata);
+  if (!metadata || items.length === 0) return null;
+
+  const toneClass = {
+    grounded: "border-[#9ec7d9]/32 bg-[#dcecf3]/48",
+    learning: "border-[#8fb7a2]/28 bg-[#f2faf5]/70",
+    watch: "border-[#e8c46f]/32 bg-[#fff8ee]/75",
+  } satisfies Record<"grounded" | "learning" | "watch", string>;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/70 px-3 py-3 text-[#344054]">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+        Orka bu turda
+      </p>
+      <div className="space-y-2 text-[11px] leading-5">
+        {items.map((item) => (
+          <p key={item.label} className={`rounded-xl border px-3 py-2 ${toneClass[item.tone]}`}>
+            <span className="block font-black text-[#172033]">{item.label}</span>
+            <span className="mt-1 block text-[#667085]">{item.detail}</span>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiMainPanelProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
@@ -580,6 +760,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       density: sources.length === 0 ? 0 : Math.round(totalChunks / Math.max(totalPages, 1)),
     };
   }, [sources]);
+  const sourceCoverageCoach = buildWikiSourceCoverageCoach({
+    sourceCount: sources.length,
+    readySources: sourceGraph.readySources,
+    totalChunks: sourceGraph.totalChunks,
+    quality: sourceQuality,
+  });
 
   // ─── Copilot Send ────────────────────────────────────────
   const handleSend = async () => {
@@ -939,6 +1125,21 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         Kaynaklar yükleniyor...
                       </div>
                     )}
+                    <SourceCoverageCoach
+                      title={sourceCoverageCoach.title}
+                      detail={sourceCoverageCoach.detail}
+                      tone={sourceCoverageCoach.tone}
+                      actionLabel={sourceCoverageCoach.actionLabel}
+                      onAction={() => {
+                        if (sources.length === 0 || sourceCoverageCoach.actionLabel === "Kaynak ekle") {
+                          fileInputRef.current?.click();
+                        } else if (sourceCoverageCoach.actionLabel === "Kaynakları yenile") {
+                          void refreshSources();
+                        } else {
+                          setShowCopilot(false);
+                        }
+                      }}
+                    />
                     {!sourcesLoading && sources.length === 0 && (
                       <p className="text-sm text-[#667085]">
                         {isOrkaLm
@@ -1648,6 +1849,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                           );
                         })}
                       </div>
+                    )}
+                    {msg.role === "assistant" && msg.metadata && (
+                      <WikiLearningTraceSummary metadata={msg.metadata} />
                     )}
                     {msg.role === "assistant" && (msg.artifacts?.length ?? 0) > 0 && (
                       <div className="mt-3 space-y-2">
