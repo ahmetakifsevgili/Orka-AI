@@ -105,11 +105,13 @@ return without calling an external provider.
 - Provider-heavy or AI-quality work: keep out of the deterministic baseline unless explicitly gated.
 - Additive migration work: generate an idempotent script and review it under `docs/deployment/migration-policy.md`.
 
-## Stage 4 Codex Skills Workflow
+## Codex Skills Feature Workflow
 
-Small and medium feature work must follow the current roadmap in
+Feature work must follow the current roadmap in
 `docs/project-state/current-roadmap.md` and the constitutions in
-`docs/codex-skills/`.
+`docs/codex-skills/`. Stage 4 small/medium feature packs are closed; the current
+phase is Stage 5, which starts with the Production-ready enterprise hardening /
+scalability plan.
 
 Default flow:
 

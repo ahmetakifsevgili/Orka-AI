@@ -13,8 +13,10 @@ Before any feature work:
 4. Produce a short plan before code changes.
 5. Do not stage/commit unless explicitly requested.
 6. Do not reorder roadmap without user approval.
-7. During Stage 4, do not introduce:
+7. During Stage 4 feature work, do not introduce:
    - production enterprise hardening
    - frontend redesign
    - major AI/model integrations
    - large refactors
+8. Stage 5 starts with the Production-ready enterprise hardening / scalability plan.
+9. Stage 6 major AI/model integrations stay after Stage 5.

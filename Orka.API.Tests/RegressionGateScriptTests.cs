@@ -88,6 +88,7 @@ public sealed class RegressionGateScriptTests
             Assert.True(File.Exists(Path.Combine(FindRepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar))), $"{relativePath} is missing.");
 
         var codexEntrypoint = Read("CODEX.md");
+        var roadmap = Read("docs/project-state/current-roadmap.md");
         var readme = Read("README.md");
         var codexSkillsReadme = Read("docs/codex-skills/README.md");
         var devContract = Read("docs/dev-contract.md");
@@ -97,6 +98,11 @@ public sealed class RegressionGateScriptTests
         Assert.Contains("docs/codex-skills/README.md", codexEntrypoint);
         Assert.Contains("Do not stage/commit unless explicitly requested", codexEntrypoint);
         Assert.Contains("Do not reorder roadmap without user approval", codexEntrypoint);
+        Assert.Contains("Stage 5 — Production-ready enterprise hardening / scalability plan", roadmap);
+        Assert.Contains("Codex Skills Anayasası + küçük/orta özellikler ✅", roadmap);
+        Assert.Contains("Stage 4 Small/Medium Feature Completion Audit", roadmap);
+        Assert.Contains("Stage 5'e geçilebilir", roadmap);
+        Assert.Contains("Stage 5 starts with the Production-ready enterprise hardening / scalability plan", codexEntrypoint);
         Assert.Contains("CODEX.md", readme);
         Assert.Contains("CODEX.md", codexSkillsReadme);
         Assert.Contains("docs/project-state/current-roadmap.md", readme);

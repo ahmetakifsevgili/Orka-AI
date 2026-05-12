@@ -264,7 +264,9 @@ git status --short
 
 ## Codex Skills Gate
 
-Kucuk/orta feature isleri `docs/codex-skills/` anayasalarini takip eder.
+Feature isleri `docs/project-state/current-roadmap.md` ve `docs/codex-skills/`
+anayasalarini takip eder. Stage 4 small/medium feature packs kapandi; current
+phase Stage 5 Production-ready enterprise hardening / scalability plan'dir.
 
 Before planning/coding:
 
