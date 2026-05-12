@@ -30,6 +30,14 @@ public sealed class DashboardAggregationTests
         Assert.Contains(weakConcepts, c => c.GetProperty("label").GetString() == "Lesson Weak");
         Assert.DoesNotContain(weakConcepts, c => c.GetProperty("label").GetString() == "Foreign Weak");
 
+        var learningMemory = root.GetProperty("learningMemory");
+        Assert.True(learningMemory.GetProperty("hasEnoughSignals").GetBoolean());
+        Assert.Contains("Lesson Weak", learningMemory.GetProperty("summary").GetString());
+        var memoryWeakConcepts = learningMemory.GetProperty("weakConcepts").EnumerateArray().ToList();
+        Assert.Contains(memoryWeakConcepts, c => c.GetProperty("label").GetString() == "Lesson Weak");
+        Assert.DoesNotContain(memoryWeakConcepts, c => c.GetProperty("label").GetString() == "Foreign Weak");
+        Assert.True(learningMemory.GetProperty("goalReadiness").TryGetProperty("needsMoreEvidence", out _));
+
         var sourceHealth = root.GetProperty("sourceHealth");
         Assert.Equal("unverified", sourceHealth.GetProperty("status").GetString());
 

@@ -183,6 +183,7 @@ builder.Services.AddScoped<IAdaptiveAssessmentSessionService, AdaptiveAssessment
 builder.Services.AddScoped<IDiagnosticProfileBuilder, DiagnosticProfileBuilder>();
 builder.Services.AddScoped<IConceptMasteryService, ConceptMasteryService>();
 builder.Services.AddScoped<IKnowledgeTracingService, KnowledgeTracingService>();
+builder.Services.AddScoped<ILearningMemoryService, LearningMemoryService>();
 builder.Services.AddScoped<ILearningEventSchemaService, LearningEventSchemaService>();
 builder.Services.AddScoped<ILearningEventNormalizer, LearningEventNormalizer>();
 builder.Services.AddScoped<ITutorPolicyEngine, TutorPolicyEngine>();

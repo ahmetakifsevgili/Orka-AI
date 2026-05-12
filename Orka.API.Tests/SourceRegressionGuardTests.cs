@@ -148,6 +148,27 @@ public sealed class SourceRegressionGuardTests
     }
 
     [Fact]
+    public void Pack4LearningMemoryUi_UsesSafeStudentProfileSummary()
+    {
+        var dashboard = ReadRepoText("Orka-Front/src/components/DashboardPanel.tsx");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var dtos = ReadRepoText("Orka.Core/DTOs/LearningArchitectureDtos.cs");
+
+        Assert.Contains("Orka’nın öğrenci profili", dashboard);
+        Assert.Contains("Güçlü ilerlediğin alanlar", dashboard);
+        Assert.Contains("Tekrar gerektiren alanlar", dashboard);
+        Assert.Contains("Orka’nın emin olmadığı alanlar", dashboard);
+        Assert.Contains("Henüz yeterli öğrenme sinyali yok. Quiz, chat ve Wiki kullandıkça profil oluşur.", dashboard);
+        Assert.Contains("learningMemory?: LearningMemoryLiteDto | null", api);
+        Assert.Contains("GoalReadinessDto", dtos);
+        Assert.DoesNotContain("EvaluatorFeedback", dashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("evaluationScore", dashboard, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("trace dump", dashboard, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("goalType", dashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("targetDate", dashboard, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ClassroomSpeakerGuards_KeepTeacherAssistantAndGuestStable()
     {
         var backend = ReadRepoText("Orka.Infrastructure/Services/ClassroomService.cs");

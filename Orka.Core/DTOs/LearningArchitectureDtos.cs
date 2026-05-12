@@ -165,6 +165,67 @@ public sealed class RemediationSeedDto
     public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
 }
 
+public sealed class LearningMemoryLiteDto
+{
+    public string Summary { get; set; } = "Henüz yeterli öğrenme sinyali yok. Quiz, chat ve Wiki kullandıkça profil oluşur.";
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public IReadOnlyList<LearningMemoryTopicDto> StrongTopics { get; set; } = Array.Empty<LearningMemoryTopicDto>();
+    public IReadOnlyList<LearningMemoryTopicDto> WeakTopics { get; set; } = Array.Empty<LearningMemoryTopicDto>();
+    public IReadOnlyList<LearningMemoryConceptDto> WeakConcepts { get; set; } = Array.Empty<LearningMemoryConceptDto>();
+    public IReadOnlyList<LearningMemoryConceptDto> RecentMisconceptions { get; set; } = Array.Empty<LearningMemoryConceptDto>();
+    public IReadOnlyList<LearningMemoryConceptDto> RemediationReadyItems { get; set; } = Array.Empty<LearningMemoryConceptDto>();
+    public LearningMemoryConfidenceSummaryDto ConfidenceSummary { get; set; } = new();
+    public string SourceReadiness { get; set; } = "unknown";
+    public IReadOnlyList<string> RecentProgressSignals { get; set; } = Array.Empty<string>();
+    public GoalReadinessDto GoalReadiness { get; set; } = new();
+    public DateTimeOffset LastUpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool HasEnoughSignals { get; set; }
+}
+
+public sealed class LearningMemoryTopicDto
+{
+    public Guid? TopicId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal? MasteryProbability { get; set; }
+    public decimal? Confidence { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public string UserSafeReason { get; set; } = "Öğrenme sinyali izleniyor.";
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+}
+
+public sealed class LearningMemoryConceptDto
+{
+    public Guid? TopicId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public decimal? Confidence { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public string UserSafeReason { get; set; } = "Bu kavram için daha fazla kanıt gerekiyor.";
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+    public RemediationSeedDto? RemediationSeed { get; set; }
+}
+
+public sealed class LearningMemoryConfidenceSummaryDto
+{
+    public int UsableSignalCount { get; set; }
+    public int ObservedOnlySignalCount { get; set; }
+    public int IgnoredSignalCount { get; set; }
+    public int StrongAreaCount { get; set; }
+    public int WeakAreaCount { get; set; }
+    public string UserSafeSummary { get; set; } = "Öğrenme kanıtı oluşuyor.";
+}
+
+public sealed class GoalReadinessDto
+{
+    public string ObservedLevel { get; set; } = "unknown";
+    public decimal ObservedLevelConfidence { get; set; }
+    public IReadOnlyList<LearningMemoryConceptDto> PlannerReadyWeakAreas { get; set; } = Array.Empty<LearningMemoryConceptDto>();
+    public IReadOnlyList<LearningMemoryTopicDto> PlannerReadyStrengths { get; set; } = Array.Empty<LearningMemoryTopicDto>();
+    public IReadOnlyList<string> PlannerWarnings { get; set; } = Array.Empty<string>();
+    public bool NeedsMoreEvidence { get; set; } = true;
+    public IReadOnlyList<string> SuggestedDiagnosticFocus { get; set; } = Array.Empty<string>();
+}
+
 public sealed class LearningEventDto
 {
     public Guid Id { get; set; }

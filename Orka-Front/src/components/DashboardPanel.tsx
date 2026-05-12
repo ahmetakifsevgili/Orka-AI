@@ -98,6 +98,7 @@ const STUDY_FOCUS_OPTIONS = [
 type CoordinationMetric = NonNullable<DashboardTodayDto["coordinationHealth"]>["metrics"][number];
 type WeakSkillSignal = NonNullable<ApiDashboardStats["learningSignalBook"]>["weakSkills"][number];
 type WeakConceptSignal = DashboardTodayDto["weakConcepts"][number];
+type LearningMemory = NonNullable<DashboardTodayDto["learningMemory"]>;
 type HealthTone = "ok" | "warning" | "missing";
 type GuidanceActionView = "chat" | "wiki" | "practice" | "sources" | "learning" | "dashboard";
 type SourceCoverageTone = "ready" | "watch" | "empty";
@@ -656,6 +657,77 @@ function SourceCoverageCoach({
   );
 }
 
+function sourceReadinessLabel(status?: string | null): string {
+  switch ((status ?? "").toLowerCase()) {
+    case "ready":
+      return "Kaynak zemini hazır";
+    case "limited":
+      return "Kaynak zemini sınırlı";
+    case "weak":
+      return "Kaynak zemini zayıf";
+    case "missing":
+      return "Kaynak kanıtı eksik";
+    default:
+      return "Kaynak zemini izleniyor";
+  }
+}
+
+function StudentProfileSummary({ memory }: { memory?: LearningMemory | null }) {
+  const strong = memory?.strongTopics?.[0];
+  const weak = memory?.weakConcepts?.[0] ?? memory?.weakTopics?.[0];
+  const uncertain = memory?.recentMisconceptions?.find((item) => item.confidenceStatus !== "usable");
+  const remediation = memory?.remediationReadyItems?.[0];
+  const hasMemory = Boolean(memory?.hasEnoughSignals || strong || weak || uncertain || remediation);
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[#526d82]/12 bg-white/58 p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Orka’nın öğrenci profili
+          </p>
+          <h3 className="mt-1 text-sm font-black text-[#172033]">
+            {memory?.summary || "Henüz yeterli öğrenme sinyali yok."}
+          </h3>
+        </div>
+        <span className="rounded-full bg-[#eef1f3]/85 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+          {confidenceStatusLabel(memory?.confidenceStatus)}
+        </span>
+      </div>
+
+      {!hasMemory ? (
+        <p className="rounded-xl border border-dashed border-[#526d82]/16 bg-[#f7f9fa]/58 px-3 py-3 text-xs leading-6 text-[#667085]">
+          Henüz yeterli öğrenme sinyali yok. Quiz, chat ve Wiki kullandıkça profil oluşur.
+        </p>
+      ) : (
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="rounded-xl bg-[#f2faf5]/76 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#47725d]">Güçlü ilerlediğin alanlar</p>
+            <p className="mt-1 text-xs font-bold text-[#172033]">{strong?.label || "Güçlü alan için daha fazla kanıt gerekiyor."}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[#667085]">{strong?.userSafeReason || memory?.confidenceSummary?.userSafeSummary}</p>
+          </div>
+          <div className="rounded-xl bg-[#fff8ee]/82 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#8a641f]">Tekrar gerektiren alanlar</p>
+            <p className="mt-1 text-xs font-bold text-[#172033]">{weak?.label || "Belirgin tekrar alanı yok."}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[#667085]">{weak?.userSafeReason || "Orka düşük güvenli sinyalleri kesin etiket gibi kullanmaz."}</p>
+          </div>
+          <div className="rounded-xl bg-[#eef1f3]/72 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#667085]">Orka’nın emin olmadığı alanlar</p>
+            <p className="mt-1 text-xs font-bold text-[#172033]">{uncertain?.label || sourceReadinessLabel(memory?.sourceReadiness)}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[#667085]">{uncertain?.userSafeReason || "Sinyal sınırlıysa profil önerisi de temkinli kalır."}</p>
+          </div>
+          <div className="rounded-xl bg-[#dcecf3]/58 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#2d5870]">Önerilen telafi odağı</p>
+            <p className="mt-1 text-xs font-bold text-[#172033]">{remediation?.label || memory?.goalReadiness?.suggestedDiagnosticFocus?.[0] || "Telafi odağı bekleniyor."}</p>
+            <p className="mt-1 text-[11px] leading-5 text-[#667085]">{remediation?.userSafeReason || "Planner için güvenli öğrenme girdileri hazırlanıyor; bu bir çalışma planı değildir."}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPanel({ topics, onViewChange, mode = "today" }: DashboardPanelProps) {
   const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
@@ -738,6 +810,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const sourceHealthLabel = today?.sourceHealth?.userSafeLabel || "Kaynak durumu ölçülüyor";
   const sourceHealthDetail = today?.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Wiki ve Tutor daha güvenli cevap verir.";
   const sourceCoverageCoach = deriveSourceCoverageCoach(today?.sourceHealth);
+  const learningMemory = today?.learningMemory ?? null;
   const activeLessonTopicId =
     today?.coordinationScope?.activeLessonTopicId ??
     today?.coordinationHealth?.activeLessonTopicId ??
@@ -978,6 +1051,8 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                 {learningSignalBook?.totalRecentAttempts ?? 0} son deneme
               </span>
             </div>
+
+            <StudentProfileSummary memory={learningMemory} />
 
             <WeakConceptActionQueue items={weakConceptQueue} onViewChange={onViewChange} />
 

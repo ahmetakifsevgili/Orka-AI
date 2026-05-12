@@ -164,6 +164,62 @@ export interface RemediationSeedDto {
   evidenceBasis?: string[];
 }
 
+export interface LearningMemoryTopicDto {
+  topicId?: string | null;
+  label: string;
+  masteryProbability?: number | null;
+  confidence?: number | null;
+  confidenceStatus?: string | null;
+  userSafeReason?: string | null;
+  evidenceBasis?: string[];
+}
+
+export interface LearningMemoryConceptDto {
+  topicId?: string | null;
+  conceptKey?: string | null;
+  label: string;
+  confidence?: number | null;
+  confidenceStatus?: string | null;
+  userSafeReason?: string | null;
+  evidenceBasis?: string[];
+  remediationSeed?: RemediationSeedDto | null;
+}
+
+export interface LearningMemoryConfidenceSummaryDto {
+  usableSignalCount: number;
+  observedOnlySignalCount: number;
+  ignoredSignalCount: number;
+  strongAreaCount: number;
+  weakAreaCount: number;
+  userSafeSummary: string;
+}
+
+export interface GoalReadinessDto {
+  observedLevel: string;
+  observedLevelConfidence: number;
+  plannerReadyWeakAreas: LearningMemoryConceptDto[];
+  plannerReadyStrengths: LearningMemoryTopicDto[];
+  plannerWarnings: string[];
+  needsMoreEvidence: boolean;
+  suggestedDiagnosticFocus: string[];
+}
+
+export interface LearningMemoryLiteDto {
+  summary: string;
+  confidenceStatus: string;
+  strongTopics: LearningMemoryTopicDto[];
+  weakTopics: LearningMemoryTopicDto[];
+  weakConcepts: LearningMemoryConceptDto[];
+  recentMisconceptions: LearningMemoryConceptDto[];
+  remediationReadyItems: LearningMemoryConceptDto[];
+  confidenceSummary: LearningMemoryConfidenceSummaryDto;
+  sourceReadiness: string;
+  recentProgressSignals: string[];
+  goalReadiness: GoalReadinessDto;
+  lastUpdatedAt: string;
+  hasEnoughSignals: boolean;
+}
+
 export interface SourceQualityReportDto {
   id: string;
   userId: string;

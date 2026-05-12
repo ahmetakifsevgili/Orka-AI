@@ -1,4 +1,5 @@
 using Orka.Core.DTOs;
+using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
@@ -152,6 +153,15 @@ public interface IKnowledgeTracingService
         Guid userId,
         Guid? topicId,
         int take = 12,
+        CancellationToken ct = default);
+}
+
+public interface ILearningMemoryService
+{
+    Task<LearningMemoryLiteDto> BuildAsync(
+        Guid userId,
+        IReadOnlyCollection<Guid> topicScopeIds,
+        EvidenceQualityDto? evidenceQuality = null,
         CancellationToken ct = default);
 }
 

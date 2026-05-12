@@ -92,6 +92,8 @@ addCheck("Tool capability context drives visibility", toolContext.includes("Tool
 
 const dashboard = read("src/components/DashboardPanel.tsx");
 addCheck("Learning signal book visible", dashboard.includes("Öğrenci Sinyal Defteri") && dashboard.includes("learningSignalBook"));
+addCheck("Learning memory profile summary is visible", dashboard.includes("Orka’nın öğrenci profili") && dashboard.includes("Güçlü ilerlediğin alanlar") && dashboard.includes("Tekrar gerektiren alanlar") && dashboard.includes("Henüz yeterli öğrenme sinyali yok. Quiz, chat ve Wiki kullandıkça profil oluşur."));
+addCheck("Learning memory stays status-only beside weak queue", dashboard.includes("StudentProfileSummary") && dashboard.includes("Önerilen telafi odağı") && !dashboard.includes("goalType") && !dashboard.includes("targetDate"));
 addCheck("Dashboard guidance and coordination visibility exist", dashboard.includes("Sıradaki en iyi adım") && dashboard.includes("Koordinasyon özeti") && dashboard.includes("coordinationHealth"));
 addCheck("Learning guidance pack surfaces are visible", dashboard.includes("Çalışma kuyruğu") && dashboard.includes("Eksiklerini tamamla") && dashboard.includes("Kaldığın dersten devam et") && dashboard.includes("buildWeakConceptActionQueue"));
 addCheck("Coordination health uses user-facing labels", dashboard.includes("Kaynaklar hazır") && dashboard.includes("Wiki eksik olabilir") && dashboard.includes("Quiz kanıtı zayıf") && dashboard.includes("RAG kaynak kalitesi iyi"));

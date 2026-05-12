@@ -14,6 +14,7 @@ public sealed class DashboardTodayDto
     public DashboardCoordinationScopeDto? CoordinationScope { get; set; }
     public DashboardCoordinationHealthDto? CoordinationHealth { get; set; }
     public DashboardEntryPointDto RecommendedEntryPoint { get; set; } = new();
+    public LearningMemoryLiteDto? LearningMemory { get; set; }
     public bool HasRealLearningData { get; set; }
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }

@@ -22,6 +22,7 @@ public class DashboardController : ControllerBase
     private readonly OrkaDbContext _dbContext;
     private readonly IRedisMemoryService _redis;
     private readonly ITopicScopeResolver _topicScopeResolver;
+    private readonly ILearningMemoryService _learningMemory;
     private readonly IAiProviderTelemetryService _aiProviderTelemetry;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
@@ -30,6 +31,7 @@ public class DashboardController : ControllerBase
         OrkaDbContext dbContext,
         IRedisMemoryService redis,
         ITopicScopeResolver topicScopeResolver,
+        ILearningMemoryService learningMemory,
         IAiProviderTelemetryService aiProviderTelemetry,
         IConfiguration configuration,
         IWebHostEnvironment environment)
@@ -37,6 +39,7 @@ public class DashboardController : ControllerBase
         _dbContext = dbContext;
         _redis = redis;
         _topicScopeResolver = topicScopeResolver;
+        _learningMemory = learningMemory;
         _aiProviderTelemetry = aiProviderTelemetry;
         _configuration = configuration;
         _environment = environment;
@@ -212,6 +215,7 @@ public class DashboardController : ControllerBase
                     EvidenceQuality = EvidenceQualityEvaluator.Build(scopedSourceCount, scopedReadySourceCount, 0, 0m, 0, 0, "unverified", "unverified")
                 }
                 : BuildSourceHealth(null);
+        var learningMemory = await _learningMemory.BuildAsync(userId, activeScopeTopicIds, sourceHealth.EvidenceQuality, ct);
         var hasRealData = activeTopic is not null ||
             weakConcepts.Count > 0 ||
             dueReviews > 0 ||
@@ -261,6 +265,7 @@ public class DashboardController : ControllerBase
                 : null,
             CoordinationHealth = coordinationHealth,
             RecommendedEntryPoint = entry,
+            LearningMemory = learningMemory,
             HasRealLearningData = hasRealData,
             NextAction = new DashboardNextActionDto
             {

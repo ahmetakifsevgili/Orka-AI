@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, EvidenceQualityDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, ProductionReadiness, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, EvidenceQualityDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, ProductionReadiness, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -382,6 +382,7 @@ export interface DashboardTodayDto {
     label: string;
     reason: string;
   };
+  learningMemory?: LearningMemoryLiteDto | null;
   hasRealLearningData: boolean;
   generatedAt: string;
 }

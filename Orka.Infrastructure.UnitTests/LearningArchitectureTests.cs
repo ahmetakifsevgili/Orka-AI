@@ -680,6 +680,131 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task LearningMemoryService_BuildsUserScopedConfidenceGatedProfile()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var otherUserId = Guid.NewGuid();
+        db.Users.Add(new User { Id = otherUserId, Email = $"{otherUserId:N}@example.com", CreatedAt = DateTime.UtcNow });
+        db.KnowledgeTracingStates.AddRange(
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "indexes",
+                Label = "Indexes",
+                MasteryProbability = 0.30m,
+                Confidence = 0.72m,
+                EvidenceCount = 3,
+                IncorrectCount = 2,
+                RemediationNeed = "high",
+                UpdatedAt = DateTime.UtcNow
+            },
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "joins",
+                Label = "Joins",
+                MasteryProbability = 0.86m,
+                Confidence = 0.70m,
+                EvidenceCount = 4,
+                CorrectCount = 4,
+                RemediationNeed = "none",
+                UpdatedAt = DateTime.UtcNow
+            },
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = otherUserId,
+                TopicId = topicId,
+                ConceptKey = "foreign",
+                Label = "Foreign Concept",
+                MasteryProbability = 0.10m,
+                Confidence = 0.90m,
+                EvidenceCount = 3,
+                IncorrectCount = 3,
+                UpdatedAt = DateTime.UtcNow
+            });
+        db.LearningSignals.Add(new LearningSignal
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SignalType = "MisconceptionDetected",
+            SkillTag = "indexes",
+            IsPositive = false,
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                misconceptionSignal = new MisconceptionSignalDto
+                {
+                    Category = "concept_confusion",
+                    UserSafeLabel = "Kavram karışıklığı olabilir",
+                    Confidence = 0.82m,
+                    ConfidenceStatus = "usable",
+                    TopicId = topicId,
+                    ConceptKey = "indexes",
+                    Label = "Indexes",
+                    SafeHint = "Kavramı kısa örnekle yeniden kurmak iyi olur.",
+                    EvidenceBasis = new[] { "wrong_quiz_attempt", "knowledge_tracing" }
+                },
+                learningSignalConfidence = new LearningSignalConfidenceDto
+                {
+                    Status = "usable",
+                    Confidence = 0.82m,
+                    Reasons = new[] { "concept_mapped" }
+                },
+                remediationSeed = new RemediationSeedDto
+                {
+                    ConceptKey = "indexes",
+                    Label = "Indexes",
+                    TopicId = topicId,
+                    Reason = "Kavramı kısa örnekle yeniden kurmak iyi olur.",
+                    Confidence = 0.82m,
+                    ConfidenceStatus = "usable",
+                    FirstAction = "tutor_explain",
+                    EvidenceBasis = new[] { "wrong_quiz_attempt" }
+                }
+            }),
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = new LearningMemoryService(db);
+        var memory = await service.BuildAsync(
+            userId,
+            [topicId],
+            new EvidenceQualityDto { Status = "weak", UserSafeLabel = "Kaynak zayıf" });
+
+        Assert.True(memory.HasEnoughSignals);
+        Assert.Equal("usable", memory.ConfidenceStatus);
+        Assert.Contains(memory.WeakConcepts, c => c.ConceptKey == "indexes" && c.ConfidenceStatus == "usable");
+        Assert.Contains(memory.StrongTopics, t => t.Label == "Learning Architecture");
+        Assert.Contains(memory.RemediationReadyItems, c => c.ConceptKey == "indexes");
+        Assert.Equal("weak", memory.SourceReadiness);
+        Assert.Contains("source_evidence_limited", memory.GoalReadiness.PlannerWarnings);
+        Assert.DoesNotContain(memory.WeakConcepts, c => c.Label == "Foreign Concept");
+    }
+
+    [Fact]
+    public async Task LearningMemoryService_ReturnsSafeEmptyStateWithoutSignals()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var service = new LearningMemoryService(db);
+
+        var memory = await service.BuildAsync(userId, [topicId], null);
+
+        Assert.False(memory.HasEnoughSignals);
+        Assert.Empty(memory.StrongTopics);
+        Assert.Empty(memory.WeakConcepts);
+        Assert.Contains("Henüz yeterli öğrenme sinyali yok", memory.Summary);
+        Assert.True(memory.GoalReadiness.NeedsMoreEvidence);
+    }
+
+    [Fact]
     public async Task TutorReflectionService_LogsNoSourceViolationAndLearningEvent()
     {
         await using var db = CreateDb();
