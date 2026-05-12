@@ -1,12 +1,11 @@
 ﻿import { useState, useEffect } from "react";
 import {
   BookOpen,
-  Brain,
-  Target,
-  Flame,
-  TrendingUp,
+  AlertTriangle,
   ArrowRight,
   ChevronRight,
+  CheckCircle2,
+  CircleDashed,
   Activity,
   Award,
   Code2,
@@ -17,6 +16,7 @@ import {
   Lightbulb,
   MessageSquareText,
   Repeat2,
+  ShieldCheck,
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage, type DashboardTodayDto } from "@/services/api";
@@ -94,6 +94,399 @@ const STUDY_FOCUS_OPTIONS = [
   { id: "math", labelKey: "focus_math", hintKey: "focus_math_hint" },
 ];
 
+type CoordinationMetric = NonNullable<DashboardTodayDto["coordinationHealth"]>["metrics"][number];
+type WeakSkillSignal = NonNullable<ApiDashboardStats["learningSignalBook"]>["weakSkills"][number];
+type WeakConceptSignal = DashboardTodayDto["weakConcepts"][number];
+type HealthTone = "ok" | "warning" | "missing";
+type GuidanceActionView = "chat" | "wiki" | "practice" | "sources" | "learning" | "dashboard";
+
+interface WeakConceptQueueItem {
+  id: string;
+  title: string;
+  detail: string;
+  reason: string;
+  actionLabel: string;
+  actionView: GuidanceActionView;
+  tone: "weak" | "source" | "practice";
+}
+
+const COORDINATION_METRIC_ORDER = [
+  "sourceCoverage",
+  "wikiReadiness",
+  "quizCoverage",
+  "learningProfileCoverage",
+  "ragScopeCoverage",
+  "sourceQuality",
+];
+
+function metricTone(status?: string): HealthTone {
+  switch ((status ?? "").toLowerCase()) {
+    case "healthy":
+      return "ok";
+    case "watch":
+    case "degraded":
+    case "critical":
+      return "warning";
+    default:
+      return "missing";
+  }
+}
+
+function metricToneClass(tone: HealthTone): string {
+  switch (tone) {
+    case "ok":
+      return "border-[#8fb7a2]/35 bg-[#f2faf5]/72 text-[#47725d]";
+    case "warning":
+      return "border-[#e8c46f]/35 bg-[#fff8ee]/78 text-[#8a641f]";
+    default:
+      return "border-[#526d82]/12 bg-white/58 text-[#667085]";
+  }
+}
+
+function metricIcon(tone: HealthTone) {
+  if (tone === "ok") return <CheckCircle2 className="h-3.5 w-3.5" />;
+  if (tone === "warning") return <AlertTriangle className="h-3.5 w-3.5" />;
+  return <CircleDashed className="h-3.5 w-3.5" />;
+}
+
+function coordinationLabel(metric: CoordinationMetric): string {
+  const key = metric.key;
+  const status = (metric.status ?? "").toLowerCase();
+  if (key === "sourceCoverage") {
+    if (metric.total <= 0) return "Kaynak yok";
+    return metric.count >= metric.total ? "Kaynaklar hazır" : "Kaynaklar hazırlanıyor";
+  }
+  if (key === "wikiReadiness") return status === "healthy" ? "Wiki içeriği var" : "Wiki eksik olabilir";
+  if (key === "quizCoverage") return metric.count > 0 ? "Quiz kanıtı var" : "Quiz kanıtı zayıf";
+  if (key === "learningProfileCoverage") return metric.count > 0 ? "Öğrenme sinyali oluşuyor" : "Öğrenme sinyali bekleniyor";
+  if (key === "ragScopeCoverage") {
+    if (status === "healthy") return "RAG kaynak kalitesi iyi";
+    if (status === "idle") return "RAG henüz çalışmadı";
+    return "RAG kanıtı izlenmeli";
+  }
+  if (key === "sourceQuality") {
+    if (status === "healthy") return "Kaynak kalitesi iyi";
+    if (status === "idle") return "Kaynak kalite raporu yok";
+    return "Kaynak kalitesi zayıf";
+  }
+  return metric.userSafeLabel || "Durum izleniyor";
+}
+
+function coordinationDetail(metric: CoordinationMetric): string {
+  if (metric.userSafeDetail) return metric.userSafeDetail;
+  if (metric.total > 0) return `${metric.count}/${metric.total} kanıt görünüyor.`;
+  return "Bu alanda henüz yeterli öğrenme verisi yok.";
+}
+
+function pickCoordinationMetrics(metrics?: CoordinationMetric[]): CoordinationMetric[] {
+  if (!metrics?.length) return [];
+  const byKey = new Map(metrics.map((metric) => [metric.key, metric]));
+  return COORDINATION_METRIC_ORDER
+    .map((key) => byKey.get(key))
+    .filter(Boolean) as CoordinationMetric[];
+}
+
+function buildWeakConceptActionQueue(input: {
+  weakConcepts?: WeakConceptSignal[] | null;
+  weakSkills: WeakSkillSignal[];
+  sourceHealth?: DashboardTodayDto["sourceHealth"] | null;
+  hasStudyData: boolean;
+  totalQuizzes: number;
+}): WeakConceptQueueItem[] {
+  const items: WeakConceptQueueItem[] = [];
+
+  for (const concept of (input.weakConcepts ?? []).slice(0, 2)) {
+    items.push({
+      id: `concept-${concept.conceptKey || concept.label}`,
+      title: concept.label || "Zayıf kavram",
+      detail: concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor.",
+      reason: concept.masteryProbability != null
+        ? `Mastery tahmini %${Math.round(concept.masteryProbability * 100)}.`
+        : "Son öğrenme sinyallerinde telafi ihtiyacı görünüyor.",
+      actionLabel: "Tutor’da telafi et",
+      actionView: "chat",
+      tone: "weak",
+    });
+  }
+
+  for (const skill of input.weakSkills.slice(0, Math.max(0, 3 - items.length))) {
+    items.push({
+      id: `skill-${skill.skillTag}-${skill.topicPath}`,
+      title: skill.skillTag || "Zayıf beceri",
+      detail: skill.topicPath || "Konu yolu henüz netleşmedi.",
+      reason: `${skill.wrongCount}/${skill.totalCount} cevapta zorlanma var; doğruluk %${Math.round(skill.accuracy)}.`,
+      actionLabel: "Wiki’den tekrar et",
+      actionView: "wiki",
+      tone: "weak",
+    });
+  }
+
+  const sourceStatus = input.sourceHealth?.status?.toLowerCase();
+  if (items.length < 4 && (sourceStatus === "unknown" || sourceStatus === "source_retrieval_empty")) {
+    items.push({
+      id: "source-health",
+      title: "Kaynak kanıtını güçlendir",
+      detail: input.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Tutor ve Wiki cevapları daha güvenilir olur.",
+      reason: input.sourceHealth?.userSafeLabel || "Kaynak durumu eksik görünüyor.",
+      actionLabel: "Kaynakları kontrol et",
+      actionView: "sources",
+      tone: "source",
+    });
+  }
+
+  if (items.length < 4 && input.hasStudyData && input.totalQuizzes === 0) {
+    items.push({
+      id: "quiz-evidence",
+      title: "İlk quiz/pratik kanıtını oluştur",
+      detail: "Quiz çözdükçe Orka zayıf kavramları daha net yakalar.",
+      reason: "Henüz quiz kanıtı yok.",
+      actionLabel: "Quiz/pratik çöz",
+      actionView: "practice",
+      tone: "practice",
+    });
+  }
+
+  return items;
+}
+
+function deriveGuidance(today: DashboardTodayDto | null, fallback: {
+  title: string;
+  reason: string;
+  actionLabel: string;
+  actionView: string;
+  hasStudyData: boolean;
+  weakSkill?: string | null;
+  activeLessonTitle?: string | null;
+  totalQuizzes: number;
+}) {
+  if (!today && !fallback.hasStudyData) {
+    return {
+      title: "İlk dersi başlat",
+      reason: "Henüz yeterli veri yok. Bir derse başlayarak Orka'nın öneri üretmesini sağlayabilirsin.",
+      actionLabel: "Derse başla",
+      actionView: "chat",
+      evidence: "Veri bekleniyor",
+    };
+  }
+
+  if ((today?.dueReviewCount ?? 0) > 0) {
+    return {
+      title: "Bekleyen tekrarları kapat",
+      reason: `${today?.dueReviewCount} tekrar hazır. Önce bunları bitirmek yeni konudan daha verimli olur.`,
+      actionLabel: "Tekrarları aç",
+      actionView: "learning",
+      evidence: "SRS kuyruğu",
+    };
+  }
+
+  if (fallback.weakSkill) {
+    return {
+      title: "Zayıf kavramı toparla",
+      reason: `${fallback.weakSkill} için son cevaplarda zayıf sinyal var. Tutor ile kısa telafi iyi olur.`,
+      actionLabel: "Tutor ile toparla",
+      actionView: "chat",
+      evidence: "Quiz ve sinyal kanıtı",
+    };
+  }
+
+  if (fallback.activeLessonTitle) {
+    return {
+      title: "Kaldığın dersten devam et",
+      reason: `${fallback.activeLessonTitle} aktif plan içinde sıradaki güvenli dönüş noktası görünüyor.`,
+      actionLabel: "Derse dön",
+      actionView: "chat",
+      evidence: "Aktif ders",
+    };
+  }
+
+  if (fallback.hasStudyData && fallback.totalQuizzes === 0) {
+    return {
+      title: "Kısa quiz/pratik çöz",
+      reason: "Henüz quiz kanıtı yok. Kısa bir pratik Orka'nın zayıf kavramları daha net yakalamasını sağlar.",
+      actionLabel: "Pratiğe geç",
+      actionView: "practice",
+      evidence: "Quiz kanıtı bekleniyor",
+    };
+  }
+
+  const sourceStatus = today?.sourceHealth?.status?.toLowerCase();
+  if (sourceStatus === "unknown" || sourceStatus === "source_retrieval_empty") {
+    return {
+      title: "Kaynakları güçlendir",
+      reason: today?.sourceHealth?.userSafeDetail || "Kaynak eklemek Wiki ve Tutor cevaplarını daha güvenli hale getirir.",
+      actionLabel: "Kaynakları aç",
+      actionView: "sources",
+      evidence: "Kaynak sağlığı",
+    };
+  }
+
+  if (today?.coordinationHealth?.overallStatus === "critical") {
+    return {
+      title: "Eksik kanıtları tamamla",
+      reason: today.coordinationHealth.userSafeSummary || "Plan çalışıyor ama bazı kanıtlar eksik görünüyor.",
+      actionLabel: today.nextAction?.label || "Devam et",
+      actionView: today.nextAction?.view || "dashboard",
+      evidence: "Koordinasyon özeti",
+    };
+  }
+
+  return {
+    title: today?.nextAction?.label || fallback.title,
+    reason: today?.nextAction?.reason || today?.dailyFocusReason || fallback.reason,
+    actionLabel: today?.nextAction?.label || fallback.actionLabel,
+    actionView: today?.nextAction?.view || fallback.actionView,
+    evidence: today?.nextAction?.userSafeStatus || "Hazır",
+  };
+}
+
+function CoordinationHealthPanel({ health }: { health?: DashboardTodayDto["coordinationHealth"] | null }) {
+  const metrics = pickCoordinationMetrics(health?.metrics);
+  const empty = !health || metrics.length === 0 || health.overallStatus === "no_plan";
+
+  return (
+    <section className="mb-8 rounded-[1.5rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Koordinasyon özeti
+          </p>
+          <h2 className="mt-1 text-base font-black text-[#172033]">
+            {empty ? "Henüz yeterli öğrenme verisi yok" : health?.userSafeSummary || "Plan kanıtları izleniyor."}
+          </h2>
+        </div>
+        {health?.windowDays ? (
+          <span className="rounded-full bg-white/70 px-3 py-1 text-[10px] font-bold text-[#667085]">
+            Son {health.windowDays} gun
+          </span>
+        ) : null}
+      </div>
+
+      {empty ? (
+        <p className="rounded-2xl border border-dashed border-[#526d82]/16 bg-white/55 px-4 py-3 text-xs leading-6 text-[#667085]">
+          Bir derse başlayıp kaynak, quiz veya Wiki kanıtı oluştukça Orka burada planın hangi kısımlarının hazır olduğunu gösterecek.
+        </p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {metrics.map((metric) => {
+            const tone = metricTone(metric.status);
+            return (
+              <div key={metric.key} className={`rounded-2xl border px-4 py-3 ${metricToneClass(tone)}`}>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-black">
+                    {metricIcon(tone)}
+                    {coordinationLabel(metric)}
+                  </span>
+                  {metric.total > 0 && (
+                    <span className="rounded-full bg-white/58 px-2 py-0.5 text-[10px] font-bold">
+                      {metric.count}/{metric.total}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] leading-5 opacity-85">{coordinationDetail(metric)}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WeakConceptActionQueue({
+  items,
+  onViewChange,
+}: {
+  items: WeakConceptQueueItem[];
+  onViewChange: (view: string) => void;
+}) {
+  const toneClasses = {
+    weak: "border-[#e8c46f]/24 bg-[#fff8ee]/78",
+    source: "border-[#9ec7d9]/28 bg-[#dcecf3]/52",
+    practice: "border-[#8fb7a2]/26 bg-[#f2faf5]/78",
+  } satisfies Record<WeakConceptQueueItem["tone"], string>;
+
+  return (
+    <div className="mb-5 rounded-2xl border border-[#526d82]/12 bg-white/52 p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+            Çalışma kuyruğu
+          </p>
+          <h3 className="mt-1 text-sm font-black text-[#172033]">Eksiklerini tamamla</h3>
+        </div>
+        <span className="rounded-full bg-[#eef1f3]/85 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+          {items.length > 0 ? `${items.length} aksiyon` : "Veri bekleniyor"}
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-[#526d82]/16 bg-[#f7f9fa]/58 px-3 py-3 text-xs leading-6 text-[#667085]">
+          Henüz zayıf kavram tespit edilmedi. Biraz daha quiz/chat kullandıkça Orka çalışma kuyruğunu oluşturur.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          {items.map((item) => (
+            <div key={item.id} className={`rounded-xl border px-3 py-3 ${toneClasses[item.tone]}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black text-[#172033]">{item.title}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#667085]">{item.detail}</p>
+                  <p className="mt-1 text-[10px] font-bold text-[#8a641f]">{item.reason}</p>
+                </div>
+                <button
+                  onClick={() => onViewChange(item.actionView)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-white/70 px-3 py-2 text-[11px] font-black text-[#172033] shadow-sm transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                >
+                  {item.actionLabel}
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActiveLessonResumeCard({
+  lessonTitle,
+  parentTitle,
+  onViewChange,
+}: {
+  lessonTitle?: string | null;
+  parentTitle?: string | null;
+  onViewChange: (view: string) => void;
+}) {
+  return (
+    <div className="mt-4 rounded-xl border border-[#8fb7a2]/24 bg-[#f2faf5]/72 px-3 py-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#47725d]">
+        Kaldığın dersten devam et
+      </p>
+      {lessonTitle ? (
+        <>
+          <h3 className="mt-1 text-sm font-black text-[#172033]">{lessonTitle}</h3>
+          <p className="mt-1 text-[11px] leading-5 text-[#667085]">
+            {parentTitle ? `${parentTitle} içinde son çalıştığın ders.` : "Son çalıştığın ders burada hazır."}
+          </p>
+          <button
+            onClick={() => onViewChange("chat")}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#172033] px-3 py-2 text-[11px] font-black text-white transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+          >
+            Derse dön
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        </>
+      ) : (
+        <p className="mt-1 text-[11px] leading-5 text-[#667085]">
+          Aktif ders kanıtı oluşunca burada güvenli dönüş yolu görünecek.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPanel({ topics, onViewChange, mode = "today" }: DashboardPanelProps) {
   const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
@@ -161,7 +554,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const studyFocusReason = strongestSignal
     ? `${strongestSignal.topicPath || "Bu konuda"} son denemelerde daha fazla tekrar istiyor.`
     : nextTopic
-      ? `${nextTopic.title} kaldigin yerden devam etmeye hazir.`
+      ? `${nextTopic.title} kaldığın yerden devam etmeye hazır.`
       : t("no_fake_progress");
   const nextSmallStep = strongestSignal
     ? t("small_step_weak")
@@ -175,6 +568,34 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const todayActionLabel = today?.nextAction?.label || t("continue_with_tutor");
   const sourceHealthLabel = today?.sourceHealth?.userSafeLabel || "Kaynak durumu ölçülüyor";
   const sourceHealthDetail = today?.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Wiki ve Tutor daha güvenli cevap verir.";
+  const activeLessonTopicId =
+    today?.coordinationScope?.activeLessonTopicId ??
+    today?.coordinationHealth?.activeLessonTopicId ??
+    today?.nextAction?.topicId ??
+    null;
+  const activeLessonTopic = activeLessonTopicId ? topics.find((topic) => topic.id === activeLessonTopicId) : null;
+  const activeLessonParent = activeLessonTopic?.parentTopicId
+    ? topics.find((topic) => topic.id === activeLessonTopic.parentTopicId)
+    : null;
+  const activeLessonTitle = activeLessonTopic?.title ?? (activeLessonTopicId ? today?.activePlan?.title : null) ?? null;
+  const activeLessonParentTitle = activeLessonParent?.title ?? today?.activePlan?.title ?? null;
+  const weakConceptQueue = buildWeakConceptActionQueue({
+    weakConcepts: today?.weakConcepts,
+    weakSkills,
+    sourceHealth: today?.sourceHealth,
+    hasStudyData,
+    totalQuizzes,
+  });
+  const todayGuidance = deriveGuidance(today, {
+    title: todayFocusTitle,
+    reason: todayFocusReason,
+    actionLabel: todayActionLabel,
+    actionView: todayActionView,
+    hasStudyData,
+    weakSkill: strongestSignal?.skillTag,
+    activeLessonTitle,
+    totalQuizzes,
+  });
 
   const handleStudyFocusChange = (focusId: string) => {
     setStudyFocusPreference(focusId);
@@ -249,6 +670,8 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
             label={sourceHealthLabel}
             detail={sourceHealthDetail}
             status={today?.sourceHealth?.status}
+            citationCoverage={today?.sourceHealth?.citationCoverage}
+            unsupportedCitationCount={today?.sourceHealth?.unsupportedCitationCount}
           />
 
           <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl">
@@ -260,18 +683,35 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                 </div>
                 <h2 className="text-xl font-black tracking-tight text-[#172033]">{todayFocusTitle}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f6f7b]">{todayFocusReason}</p>
+                <div className="mt-4 rounded-2xl border border-[#526d82]/12 bg-white/58 px-4 py-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+                      Sıradaki en iyi adım
+                    </p>
+                    <span className="rounded-full bg-[#eef1f3]/82 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+                      {todayGuidance.evidence}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-black text-[#172033]">{todayGuidance.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#667085]">{todayGuidance.reason}</p>
+                  {today?.activePlan?.title && (
+                    <p className="mt-2 text-[11px] font-bold text-[#52768a]">
+                      Plan: {today.activePlan.title}
+                    </p>
+                  )}
+                </div>
                 {!hasStudyData && (
                   <p className="mt-3 rounded-2xl border border-dashed border-[#526d82]/16 bg-white/48 px-4 py-3 text-xs leading-6 text-[#667085]">
-                    {t("no_fake_progress")}
+                    Henüz yeterli veri yok. Bir derse başlayarak Orka'nın öneri üretmesini sağlayabilirsin.
                   </p>
                 )}
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
-                    onClick={() => onViewChange(todayActionView)}
+                    onClick={() => onViewChange(todayGuidance.actionView)}
                     className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
                   >
                     <MessageSquareText className="h-4 w-4" />
-                    {todayActionLabel}
+                    {todayGuidance.actionLabel}
                   </button>
                   <button
                     onClick={() => onViewChange("learning")}
@@ -293,6 +733,11 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                   <p className="mt-1 text-xs font-bold text-[#172033]">{sourceHealthLabel}</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#667085]">{sourceHealthDetail}</p>
                 </div>
+                <ActiveLessonResumeCard
+                  lessonTitle={activeLessonTitle}
+                  parentTitle={activeLessonParentTitle}
+                  onViewChange={onViewChange}
+                />
                 <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
                   <div className="rounded-xl bg-[#dcecf3]/55 px-3 py-2">
                     <span className="block text-base font-black text-[#172033]">{weakSkills.length}</span>
@@ -338,6 +783,8 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
             </div>
           </section>
 
+          <CoordinationHealthPanel health={today?.coordinationHealth} />
+
           {/* Core Stats Grid */}
           <div className="mb-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <WorkspaceMetric label="Toplam XP" value={loading ? "—" : totalXP} detail={gamification ? `${gamification.levelLabel} · Seviye ${gamification.level}` : "kanıt puanı"} />
@@ -360,6 +807,8 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                 {learningSignalBook?.totalRecentAttempts ?? 0} son deneme
               </span>
             </div>
+
+            <WeakConceptActionQueue items={weakConceptQueue} onViewChange={onViewChange} />
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl bg-[#eef1f3]/70 p-4">

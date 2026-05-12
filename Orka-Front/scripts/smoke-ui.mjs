@@ -90,6 +90,8 @@ addCheck("Tool capability context drives visibility", toolContext.includes("Tool
 
 const dashboard = read("src/components/DashboardPanel.tsx");
 addCheck("Learning signal book visible", dashboard.includes("Öğrenci Sinyal Defteri") && dashboard.includes("learningSignalBook"));
+addCheck("Dashboard guidance and coordination visibility exist", dashboard.includes("Sıradaki en iyi adım") && dashboard.includes("Koordinasyon özeti") && dashboard.includes("coordinationHealth"));
+addCheck("Learning guidance pack surfaces are visible", dashboard.includes("Çalışma kuyruğu") && dashboard.includes("Eksiklerini tamamla") && dashboard.includes("Kaldığın dersten devam et") && dashboard.includes("buildWeakConceptActionQueue"));
 
 const healthHud = read("src/components/SystemHealthHUD.tsx");
 addCheck("Admin HUD shows learning bridges", healthHud.includes("learningBridge") && healthHud.includes("Agent bridge monitor"));
@@ -101,6 +103,10 @@ addCheck("Notebook tools refresh after source activity", wiki.includes("notebook
 addCheck("Wiki source graph visible", wiki.includes("Kaynak graf") && wiki.includes("sourceGraph"));
 addCheck("Wiki source evidence panel visible", wiki.includes("Kaynak Kan") && wiki.includes("sourceCitations") && wiki.includes("handleSourcePageNav"));
 addCheck("Wiki source evidence trust strip visible", wiki.includes("source-evidence-trust-strip") && wiki.includes("Citation trail") && wiki.includes("Kaynak güveni"));
+addCheck("Wiki citation chips expose scope summaries", wiki.includes("citationScopeSummary") && wiki.includes("citationDisplayTitle") && wiki.includes("citationPrimaryLabel"));
+
+const citationDisplay = read("src/lib/citationDisplay.ts");
+addCheck("Citation scope metadata has user-facing labels", citationDisplay.includes("Bu ders") && citationDisplay.includes("Üst konu") && citationDisplay.includes("Alt ders") && citationDisplay.includes("Wiki ağacı"));
 
 const richMarkdown = read("src/components/RichMarkdown.tsx");
 addCheck("Citation clicks are observable", richMarkdown.includes("onCitationClick") && richMarkdown.includes("citationKind") === false);
@@ -117,6 +123,7 @@ addCheck("Adaptive practice is wired into learning panel", learningPanel.include
 const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
+addCheck("Chat citation chips expose scope summaries", chatMessage.includes("citationScopeSummary") && chatMessage.includes("citationDisplayTitle") && chatMessage.includes("citationPrimaryLabel"));
 addCheck("Live tutor trace timeline is rendered", chatMessage.includes("LiveTutorTrace") && chatMessage.includes("TutorAPI.getSessionTimeline") && chatMessage.includes("Tutor izi"));
 addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve araştır") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
@@ -145,6 +152,7 @@ const quizParser = read("src/lib/quizParser.ts");
 addCheck("Quiz raw JSON leak guard", !quiz.includes("JSON.stringify(quiz") && !quiz.includes("{JSON.stringify"));
 addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && !quiz.includes("[SKIP_QUIZ]") && !quiz.includes("crypto.randomUUID") && quiz.includes("Quiz akışı tamamlandı"));
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
+addCheck("Quiz wrong answer recovery CTA is visible", quiz.includes("Toparlanma adımı") && quiz.includes("Tutor’a sor") && quiz.includes("Wiki’de tekrar et") && quiz.includes("Benzer pratik çöz"));
 addCheck("Quiz parser strips correctness labels from options", quizParser.includes("dogru") && quizParser.includes("yanlis") && quizParser.includes("incorrect"));
 addCheck("Mermaid error SVG falls back safely", chatMessage.includes("looksLikeMermaidFailure") && chatMessage.includes("Mermaid returned an error SVG."));
 addCheck("Favicon is present for runtime browser noise", fs.existsSync(path.join(root, "public", "favicon.ico")) && fs.statSync(path.join(root, "public", "favicon.ico")).size > 0);

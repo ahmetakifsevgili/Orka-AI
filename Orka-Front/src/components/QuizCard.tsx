@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2 } from "lucide-react";
+import { BookOpen, CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2, MessageSquareText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
@@ -24,6 +24,7 @@ interface QuizCardProps {
     skipped?: boolean;
   }) => void;
   isBaseline?: boolean;
+  onOpenWiki?: (topicId: string) => void;
   onOpenIDE?: (question?: string) => void;
   adaptiveAssessment?: {
     sessionId: string;
@@ -75,6 +76,7 @@ export default function QuizCard({
   sessionId,
   planDiagnostic,
   onPlanComplete,
+  onOpenWiki,
   onOpenIDE,
   adaptiveAssessment,
   isBaseline = false,
@@ -91,6 +93,7 @@ export default function QuizCard({
   const [submitState, setSubmitState] = useState<"idle" | "evaluating" | "done">("idle");
   const [recordError, setRecordError] = useState<string | null>(null);
   const [completionNote, setCompletionNote] = useState<string | null>(null);
+  const [recoveryHint, setRecoveryHint] = useState<string | null>(null);
   const [confirmingZeroStart, setConfirmingZeroStart] = useState(false);
   const [answers, setAnswers] = useState<Array<{ isCorrect: boolean; skill?: string }>>([]);
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
@@ -101,6 +104,8 @@ export default function QuizCard({
   const selectedOption = activeQuiz.options.find((option) => option.id === selectedId);
   const isCorrectAnswer = selectedOption?.isCorrect ?? false;
   const isLastQuestion = currentQuestionIdx >= totalQuestions - 1;
+  const recoveryTopicId = planDiagnostic?.topicId ?? topicId;
+  const recoveryTopicTitle = activeQuiz.topicPath ?? activeQuiz.topic ?? activeQuiz.skillTag ?? "bu konu";
 
   useEffect(() => {
     setQuestionStartedAt(Date.now());
@@ -207,6 +212,7 @@ export default function QuizCard({
     if (!attempt) return;
 
     setRecordError(null);
+    setRecoveryHint(null);
     setSubmitState("evaluating");
     await wait(350);
 
@@ -238,6 +244,7 @@ export default function QuizCard({
       setSubmitState("idle");
       setRecordError(null);
       setCompletionNote(null);
+      setRecoveryHint(null);
     }
   };
 
@@ -361,6 +368,65 @@ export default function QuizCard({
             {activeQuiz.explanation && (
               <div className="mt-3 text-sm leading-relaxed text-[#344054] prose prose-sm max-w-none prose-p:my-1">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>{activeQuiz.explanation}</ReactMarkdown>
+              </div>
+            )}
+            {!isCorrectAnswer && (
+              <div className="mt-4 rounded-xl border border-[#e8c46f]/28 bg-white/58 p-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#8a641f]">
+                  Toparlanma adımı
+                </p>
+                <p className="mt-1 text-xs leading-5 text-[#667085]">
+                  Yanlış cevap kaydedildi; ilerleme davranışı değişmeden buradan kısa bir telafi adımı seçebilirsin.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRecoveryHint(
+                        `${recoveryTopicTitle} konusunda şu quiz sorusunu anlamadım: "${activeQuiz.question}". Cevabımı ve doğru mantığı kısa adımlarla açıklar mısın?`
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#172033] px-3 py-2 text-[11px] font-black text-white transition hover:bg-[#243044] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                  >
+                    <MessageSquareText className="h-3.5 w-3.5" />
+                    Tutor’a sor
+                  </button>
+                  {recoveryTopicId && onOpenWiki ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenWiki(recoveryTopicId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-white/75 px-3 py-2 text-[11px] font-black text-[#172033] transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                    >
+                      <BookOpen className="h-3.5 w-3.5" />
+                      Wiki’de tekrar et
+                    </button>
+                  ) : null}
+                  {onOpenIDE ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenIDE(activeQuiz.question)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/14 bg-white/75 px-3 py-2 text-[11px] font-black text-[#172033] transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                    >
+                      <Code2 className="h-3.5 w-3.5" />
+                      Benzer pratik çöz
+                    </button>
+                  ) : null}
+                  {!isLastQuestion ? (
+                    <button
+                      type="button"
+                      onClick={handleNextQuestion}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#8fb7a2]/28 bg-[#f2faf5]/85 px-3 py-2 text-[11px] font-black text-[#47725d] transition hover:bg-[#e7f4ec] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                    >
+                      Sıradaki soruya geç
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+                {recoveryHint ? (
+                  <p className="mt-3 rounded-lg border border-[#526d82]/12 bg-[#f7f9fa]/72 px-3 py-2 text-[11px] leading-5 text-[#667085]">
+                    Tutor’a şu notu sor: “{recoveryHint}”
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

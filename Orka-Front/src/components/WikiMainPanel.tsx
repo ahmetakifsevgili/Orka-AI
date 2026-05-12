@@ -33,6 +33,7 @@ import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import type { ChatResponseMetadata, CitationDto, SourceQualityReportDto, TeachingArtifact } from "@/lib/types";
+import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary } from "@/lib/citationDisplay";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
 
@@ -1627,17 +1628,25 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                     />
                     {msg.role === "assistant" && (msg.citations?.length ?? 0) > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#526d82]/10 pt-2">
-                        {msg.citations?.slice(0, 8).map((citation, idx) => (
+                        {msg.citations?.slice(0, 8).map((citation, idx) => {
+                          const scopeSummary = citationScopeSummary(citation);
+                          return (
                           <button
                             key={`${citation.citationId ?? citation.label ?? idx}-${idx}`}
                             type="button"
                             onClick={() => void handleCitationChipClick(citation)}
-                            className="rounded-full border border-[#526d82]/16 bg-white/70 px-2 py-1 text-[10px] font-semibold text-[#526d82] hover:border-[#2d5870]/30 hover:text-[#2d5870]"
-                            title={citation.label ?? citation.citationId ?? undefined}
+                            className="rounded-xl border border-[#526d82]/16 bg-white/70 px-2.5 py-1.5 text-left text-[10px] font-semibold text-[#526d82] hover:border-[#2d5870]/30 hover:text-[#2d5870]"
+                            title={citationDisplayTitle(citation)}
                           >
-                            {citation.label ?? citation.citationId ?? "Kaynak"}
+                            <span className="block leading-4">{citationPrimaryLabel(citation)}</span>
+                            {scopeSummary && (
+                              <span className="block text-[9px] font-bold leading-4 text-[#8a6a33]">
+                                {scopeSummary}
+                              </span>
+                            )}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                     {msg.role === "assistant" && (msg.artifacts?.length ?? 0) > 0 && (

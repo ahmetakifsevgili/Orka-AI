@@ -14,10 +14,11 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
 import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Link2, Image as ImageIcon } from "lucide-react";
-import type { ChatMessage as ChatMessageType, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
+import type { ChatMessage as ChatMessageType, CitationDto, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
 import { TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { userSafeStatus } from "@/lib/userSafeStatus";
+import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary } from "@/lib/citationDisplay";
 import {
   BlockedImagePlaceholder,
   displayHost,
@@ -475,6 +476,20 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
           {citations.length} kaynak
         </span>
       )}
+      {citations.slice(0, 3).map((citation: CitationDto, index) => {
+        const summary = citationScopeSummary(citation);
+        if (!summary) return null;
+        return (
+          <span
+            key={`${citation.citationId ?? citation.label ?? "citation"}-${index}-scope`}
+            title={citationDisplayTitle(citation)}
+            className="inline-flex items-center gap-1 rounded-full border border-[#9ec7d9]/45 bg-white/75 px-2 py-1 text-[10px] font-bold text-[#2d5870]"
+          >
+            <Link2 className="h-3 w-3" />
+            {citationPrimaryLabel(citation)} · {summary}
+          </span>
+        );
+      })}
       {(metadata?.fallbackReason || warnings.length > 0) && (
         <span
           title={[metadata?.fallbackReason, ...warnings].filter(Boolean).map(formatTechnicalLabel).join(" · ")}
@@ -841,6 +856,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                 sessionId={sessionId}
                 planDiagnostic={message.metadata?.planDiagnostic}
                 onPlanComplete={onPlanComplete}
+                onOpenWiki={onOpenWiki}
                 onOpenIDE={onOpenIDE}
                 isBaseline={
                     message.content.includes("akademik") ||
