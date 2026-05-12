@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.API.Services;
 using Orka.Core.Constants;
 using Orka.Core.DTOs.Code;
 using Orka.Core.Interfaces;
@@ -17,6 +18,7 @@ public class CodeController : ControllerBase
     private readonly IRedisMemoryService _redis;
     private readonly ILearningSignalService _signals;
     private readonly IMistakeClassifierService? _mistakeClassifier;
+    private readonly ResourceOwnershipGuard? _ownership;
     private readonly ILogger<CodeController> _logger;
 
     public CodeController(
@@ -24,12 +26,14 @@ public class CodeController : ControllerBase
         IRedisMemoryService redis,
         ILearningSignalService signals,
         ILogger<CodeController> logger,
+        ResourceOwnershipGuard? ownership = null,
         IMistakeClassifierService? mistakeClassifier = null)
     {
         _piston = piston;
         _redis = redis;
         _signals = signals;
         _logger = logger;
+        _ownership = ownership;
         _mistakeClassifier = mistakeClassifier;
     }
 
@@ -46,8 +50,11 @@ public class CodeController : ControllerBase
 
     [HttpPost("run")]
     [HttpPost("execute")]
-    public async Task<IActionResult> RunCode([FromBody] CodeRunRequest request)
+    public async Task<IActionResult> RunCode([FromBody] CodeRunRequest? request)
     {
+        if (request == null)
+            return BadRequest(new { error = "Kod calistirma istegi zorunlu." });
+
         if (string.IsNullOrWhiteSpace(request.Code))
             return BadRequest(new { error = "Kod boş olamaz." });
 
@@ -57,15 +64,31 @@ public class CodeController : ControllerBase
         if ((request.Stdin?.Length ?? 0) > 10_000)
             return BadRequest(new { error = "stdin 10.000 karakteri gecemez." });
 
+        var language = string.IsNullOrWhiteSpace(request.Language)
+            ? "csharp"
+            : request.Language.Trim().ToLowerInvariant();
+        if (!IsSafeLanguage(language))
+            return BadRequest(new { error = "Dil degeri gecersiz." });
+
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            return Unauthorized();
+
+        if (_ownership != null &&
+            (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+             !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted)))
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
+
         _logger.LogInformation(
             "Kod calistirma istegi - dil: {Language}, boyut: {Size} karakter, stdin: {HasStdin}",
-            request.Language,
+            language,
             request.Code.Length,
             request.Stdin is not null);
 
         var result = await _piston.ExecuteAsync(
             request.Code,
-            request.Language ?? "csharp",
+            language,
             request.Stdin);
 
         if (request.SessionId.HasValue)
@@ -75,7 +98,7 @@ public class CodeController : ControllerBase
                 request.Code,
                 result.Stdout,
                 result.Stderr,
-                request.Language ?? "csharp",
+                language,
                 result.Phase,
                 result.CompileError,
                 result.RuntimeError,
@@ -85,57 +108,54 @@ public class CodeController : ControllerBase
             _logger.LogInformation(
                 "Piston sonucu Redis'e yazildi. Session={SessionId} Dil={Language} Phase={Phase} Success={Success}",
                 request.SessionId.Value,
-                request.Language,
+                language,
                 result.Phase,
                 result.Success);
         }
 
-        if (Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+        await _signals.RecordSignalAsync(
+            userId,
+            request.TopicId,
+            request.SessionId,
+            ResolveIdeSignalType(result),
+            skillTag: language,
+            topicPath: request.TopicId.HasValue ? "IDE > Kod calistirma" : null,
+            score: result.Success ? 100 : 0,
+            isPositive: result.Success,
+            payloadJson: JsonSerializer.Serialize(new
+            {
+                language,
+                success = result.Success,
+                phase = result.Phase,
+                compileError = result.CompileError,
+                runtimeError = result.RuntimeError,
+                exitCode = result.ExitCode,
+                durationMs = result.DurationMs,
+                truncated = result.Truncated,
+                safeTutorSummary = result.SafeTutorSummary,
+                stdoutLength = result.Stdout?.Length ?? 0,
+                stderrLength = result.Stderr?.Length ?? 0
+            }),
+            ct: HttpContext.RequestAborted);
+
+        if (!result.Success && _mistakeClassifier != null)
         {
-            await _signals.RecordSignalAsync(
+            await _mistakeClassifier.ClassifyAndRecordAsync(
                 userId,
                 request.TopicId,
                 request.SessionId,
-                ResolveIdeSignalType(result),
-                skillTag: request.Language ?? "code",
-                topicPath: request.TopicId.HasValue ? "IDE > Kod calistirma" : null,
-                score: result.Success ? 100 : 0,
-                isPositive: result.Success,
-                payloadJson: JsonSerializer.Serialize(new
-                {
-                    language = request.Language ?? "csharp",
-                    success = result.Success,
-                    phase = result.Phase,
-                    compileError = result.CompileError,
-                    runtimeError = result.RuntimeError,
-                    exitCode = result.ExitCode,
-                    durationMs = result.DurationMs,
-                    truncated = result.Truncated,
-                    safeTutorSummary = result.SafeTutorSummary,
-                    stdoutLength = result.Stdout?.Length ?? 0,
-                    stderrLength = result.Stderr?.Length ?? 0
-                }),
-                ct: HttpContext.RequestAborted);
-
-            if (!result.Success && _mistakeClassifier != null)
-            {
-                await _mistakeClassifier.ClassifyAndRecordAsync(
-                    userId,
-                    request.TopicId,
-                    request.SessionId,
-                    new Orka.Core.DTOs.MistakeClassificationRequest(
-                        Question: "IDE code execution",
-                        ExpectedAnswer: "Code compiles and runs successfully",
-                        StudentAnswer: request.Code,
-                        Explanation: result.SafeTutorSummary,
-                        TopicId: request.TopicId,
-                        SkillTag: request.Language ?? "code",
-                        ConceptTag: result.Phase,
-                        CodePhase: result.Phase,
-                        CompileError: result.CompileError,
-                        RuntimeError: result.RuntimeError),
-                    HttpContext.RequestAborted);
-            }
+                new Orka.Core.DTOs.MistakeClassificationRequest(
+                    Question: "IDE code execution",
+                    ExpectedAnswer: "Code compiles and runs successfully",
+                    StudentAnswer: request.Code,
+                    Explanation: result.SafeTutorSummary,
+                    TopicId: request.TopicId,
+                    SkillTag: language,
+                    ConceptTag: result.Phase,
+                    CodePhase: result.Phase,
+                    CompileError: result.CompileError,
+                    RuntimeError: result.RuntimeError),
+                HttpContext.RequestAborted);
         }
 
         return Ok(new CodeRunResponse(
@@ -162,5 +182,11 @@ public class CodeController : ControllerBase
             "provider_missing" => LearningSignalTypes.IdeProviderUnavailable,
             _ => LearningSignalTypes.IdeRuntimeError
         };
+    }
+
+    private static bool IsSafeLanguage(string language)
+    {
+        if (language.Length is < 1 or > 40) return false;
+        return language.All(c => char.IsLetterOrDigit(c) || c is '#' or '+' or '-' or '_' or '.');
     }
 }

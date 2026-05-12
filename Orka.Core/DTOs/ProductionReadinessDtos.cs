@@ -27,6 +27,9 @@ public sealed class ProviderGovernanceSummaryDto
     public int HealthyProviderCount { get; set; }
     public int RecentFailureCount { get; set; }
     public decimal EstimatedCostUsdToday { get; set; }
+    public int FallbackCount24h { get; set; }
+    public int QuotaHitCount24h { get; set; }
+    public IReadOnlyDictionary<string, int> FailureKinds24h { get; set; } = new Dictionary<string, int>();
     public IReadOnlyList<ProviderGovernanceItemDto> Providers { get; set; } = Array.Empty<ProviderGovernanceItemDto>();
 }
 
@@ -38,6 +41,9 @@ public sealed class ProviderGovernanceItemDto
     public int Failures24h { get; set; }
     public long AverageLatencyMs { get; set; }
     public decimal EstimatedCostUsdToday { get; set; }
+    public int FallbackCount24h { get; set; }
+    public int QuotaHitCount24h { get; set; }
+    public string CircuitState { get; set; } = "unknown";
     public string UserSafeMessage { get; set; } = string.Empty;
 }
 

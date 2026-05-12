@@ -6,7 +6,7 @@ using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/dev/text-health")]
 public sealed class TextHealthController : ControllerBase

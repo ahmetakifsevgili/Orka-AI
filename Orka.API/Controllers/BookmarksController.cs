@@ -95,7 +95,7 @@ public class BookmarksController : ControllerBase
             .FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId && b.Status == "active", ct);
 
         if (bookmark == null)
-            return NotFound(new { message = "Bookmark bulunamadi." });
+            return NotFound(new { message = "Bookmark bulunamadı." });
 
         if (request.Title != null)
             bookmark.Title = NormalizeTitle(request.Title, bookmark.Title);
@@ -119,7 +119,7 @@ public class BookmarksController : ControllerBase
             .FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId && b.Status == "active", ct);
 
         if (bookmark == null)
-            return NotFound(new { message = "Bookmark bulunamadi." });
+            return NotFound(new { message = "Bookmark bulunamadı." });
 
         bookmark.Status = "deleted";
         bookmark.DeletedAt = DateTime.UtcNow;
@@ -150,7 +150,7 @@ public class BookmarksController : ControllerBase
         {
             var topic = await _db.Topics.AsNoTracking()
                 .FirstOrDefaultAsync(t => t.Id == request.TopicId && t.UserId == userId, ct);
-            if (topic == null) return (false, true, "Konu bulunamadi.", null, null, title, null);
+            if (topic == null) return (false, true, "Konu bulunamadı.", null, null, title, null);
             title = topic.Title;
         }
 
@@ -159,7 +159,7 @@ public class BookmarksController : ControllerBase
             var message = await _db.Messages.AsNoTracking()
                 .Include(m => m.Session)
                 .FirstOrDefaultAsync(m => m.Id == request.MessageId && m.UserId == userId, ct);
-            if (message == null) return (false, true, "Mesaj bulunamadi.", null, null, title, null);
+            if (message == null) return (false, true, "Mesaj bulunamadı.", null, null, title, null);
             sessionId = message.SessionId;
             topicId ??= message.Session.TopicId;
             title = string.IsNullOrWhiteSpace(message.TopicTitle) ? "Chat bookmark" : message.TopicTitle;
@@ -170,7 +170,7 @@ public class BookmarksController : ControllerBase
         {
             var source = await _db.LearningSources.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.Id == request.LearningSourceId && s.UserId == userId && !s.IsDeleted, ct);
-            if (source == null) return (false, true, "Kaynak bulunamadi.", null, null, title, null);
+            if (source == null) return (false, true, "Kaynak bulunamadı.", null, null, title, null);
             topicId ??= source.TopicId;
             sessionId ??= source.SessionId;
             title = source.Title;
@@ -180,7 +180,7 @@ public class BookmarksController : ControllerBase
         {
             var wiki = await _db.WikiPages.AsNoTracking()
                 .FirstOrDefaultAsync(w => w.Id == request.WikiPageId && w.UserId == userId, ct);
-            if (wiki == null) return (false, true, "Wiki sayfasi bulunamadi.", null, null, title, null);
+            if (wiki == null) return (false, true, "Wiki sayfası bulunamadı.", null, null, title, null);
             topicId ??= wiki.TopicId;
             title = wiki.Title;
         }
@@ -189,7 +189,7 @@ public class BookmarksController : ControllerBase
         {
             var review = await _db.ReviewItems.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Id == request.ReviewItemId && r.UserId == userId, ct);
-            if (review == null) return (false, true, "Review item bulunamadi.", null, null, title, null);
+            if (review == null) return (false, true, "Review item bulunamadı.", null, null, title, null);
             topicId ??= review.TopicId;
             title = review.ConceptTag ?? review.SkillTag ?? review.LearningObjective ?? review.ReviewKey;
         }
@@ -198,7 +198,7 @@ public class BookmarksController : ControllerBase
         {
             var flashcard = await _db.Flashcards.AsNoTracking()
                 .FirstOrDefaultAsync(f => f.Id == request.FlashcardId && f.UserId == userId && f.Status != "deleted", ct);
-            if (flashcard == null) return (false, true, "Flashcard bulunamadi.", null, null, title, null);
+            if (flashcard == null) return (false, true, "Flashcard bulunamadı.", null, null, title, null);
             topicId ??= flashcard.TopicId;
             title = Snippet(flashcard.Front, 80);
             quote ??= Snippet(flashcard.Back, 500);

@@ -1,7 +1,9 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Orka.API.Services;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
@@ -14,15 +16,26 @@ namespace Orka.API.Controllers;
 [Route("api/learning")]
 public class LearningController : ControllerBase
 {
+    private const int MaxSignalTypeLength = 80;
+    private const int MaxSkillLength = 160;
+    private const int MaxTopicPathLength = 500;
+    private const int MaxPayloadJsonLength = 8_000;
+
     private readonly ILearningSignalService _signals;
     private readonly OrkaDbContext _db;
     private readonly IReviewSrsService _reviews;
+    private readonly ResourceOwnershipGuard _ownership;
 
-    public LearningController(ILearningSignalService signals, OrkaDbContext db, IReviewSrsService reviews)
+    public LearningController(
+        ILearningSignalService signals,
+        OrkaDbContext db,
+        IReviewSrsService reviews,
+        ResourceOwnershipGuard ownership)
     {
         _signals = signals;
         _db = db;
         _reviews = reviews;
+        _ownership = ownership;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -30,7 +43,11 @@ public class LearningController : ControllerBase
     [HttpGet("topic/{topicId:guid}/summary")]
     public async Task<IActionResult> GetTopicSummary(Guid topicId)
     {
-        var summary = await _signals.GetTopicSummaryAsync(GetUserId(), topicId, HttpContext.RequestAborted);
+        var userId = GetUserId();
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId, HttpContext.RequestAborted))
+            return NotFound(new { message = "Konu bulunamadi." });
+
+        var summary = await _signals.GetTopicSummaryAsync(userId, topicId, HttpContext.RequestAborted);
         return Ok(summary);
     }
 
@@ -38,14 +55,24 @@ public class LearningController : ControllerBase
     [HttpGet("topic/{topicId:guid}/review/due")]
     public async Task<IActionResult> GetDueReview(Guid topicId)
     {
-        var recommendations = await _signals.GetRecommendationsAsync(GetUserId(), topicId, HttpContext.RequestAborted);
-        var durable = await _reviews.GetDueAsync(GetUserId(), topicId, HttpContext.RequestAborted);
+        var userId = GetUserId();
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId, HttpContext.RequestAborted))
+            return NotFound(new { message = "Konu bulunamadi." });
+
+        var recommendations = await _signals.GetRecommendationsAsync(userId, topicId, HttpContext.RequestAborted);
+        var durable = await _reviews.GetDueAsync(userId, topicId, HttpContext.RequestAborted);
         return Ok(new ReviewDueResponse(durable, recommendations));
     }
 
     [HttpPost("review/{recommendationId:guid}/complete")]
-    public async Task<IActionResult> CompleteReview(Guid recommendationId, [FromBody] CompleteReviewRequest request)
+    public async Task<IActionResult> CompleteReview(Guid recommendationId, [FromBody] CompleteReviewRequest? request)
     {
+        if (request == null)
+            return BadRequest(new { message = "Review istegi zorunlu." });
+
+        if (request.Quality is < 0 or > 5)
+            return BadRequest(new { message = "Quality 0 ile 5 arasinda olmalidir." });
+
         var userId = GetUserId();
         var durable = await _reviews.CompleteAsync(
             userId,
@@ -53,7 +80,7 @@ public class LearningController : ControllerBase
             request.Quality,
             responseMode: "legacy-learning-endpoint",
             notes: null,
-            HttpContext.RequestAborted);
+            ct: HttpContext.RequestAborted);
         if (durable != null)
             return Ok(new { completed = true, recommendationId = durable.Id, durable.SkillTag, request.Quality, durable });
 
@@ -77,8 +104,8 @@ public class LearningController : ControllerBase
                 recommendation.SkillTag,
                 score: Math.Clamp(request.Quality, 0, 5) * 20,
                 isPositive: request.Quality >= 3,
-                payloadJson: System.Text.Json.JsonSerializer.Serialize(new { recommendationId, request.Quality }),
-                HttpContext.RequestAborted);
+                payloadJson: JsonSerializer.Serialize(new { recommendationId, request.Quality }),
+                ct: HttpContext.RequestAborted);
         }
 
         await _db.SaveChangesAsync(HttpContext.RequestAborted);
@@ -86,15 +113,40 @@ public class LearningController : ControllerBase
     }
 
     [HttpPost("signal")]
-    public async Task<IActionResult> RecordSignal([FromBody] RecordLearningSignalRequest request)
+    public async Task<IActionResult> RecordSignal([FromBody] RecordLearningSignalRequest? request)
     {
+        if (request == null)
+            return BadRequest(new { message = "Signal istegi zorunlu." });
+
         if (string.IsNullOrWhiteSpace(request.SignalType))
             return BadRequest(new { message = "SignalType zorunlu." });
+
+        if (request.SignalType.Length > MaxSignalTypeLength)
+            return BadRequest(new { message = "SignalType cok uzun." });
+
+        if (request.SkillTag is { Length: > MaxSkillLength } ||
+            request.TopicPath is { Length: > MaxTopicPathLength })
+        {
+            return BadRequest(new { message = "Signal alani cok uzun." });
+        }
+
+        if (request.Score is < 0 or > 100)
+            return BadRequest(new { message = "Score 0 ile 100 arasinda olmalidir." });
+
+        if (!IsValidPayloadJson(request.PayloadJson))
+            return BadRequest(new { message = "PayloadJson gecersiz." });
+
+        var userId = GetUserId();
+        if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
 
         var signalType = LearningSignalTypes.Normalize(request.SignalType);
 
         await _signals.RecordSignalAsync(
-            GetUserId(),
+            userId,
             request.TopicId,
             request.SessionId,
             signalType,
@@ -106,5 +158,24 @@ public class LearningController : ControllerBase
             HttpContext.RequestAborted);
 
         return Ok(new { recorded = true, signalType });
+    }
+
+    private static bool IsValidPayloadJson(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return true;
+
+        if (payloadJson.Length > MaxPayloadJsonLength)
+            return false;
+
+        try
+        {
+            using var _ = JsonDocument.Parse(payloadJson);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }

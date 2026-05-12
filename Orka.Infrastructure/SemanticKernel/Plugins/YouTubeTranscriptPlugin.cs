@@ -43,7 +43,7 @@ public partial class YouTubeTranscriptPlugin
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
         {
-            _logger.LogWarning("[YouTube] API key bulunamadi. YouTube aramasi atlandi.");
+            _logger.LogWarning("[YouTube] API key bulunamadı. YouTube araması atlandı.");
             return "[youtube:disabled] YouTube aramasi devre disi: API key yapilandirilmamis.";
         }
 
@@ -63,7 +63,7 @@ public partial class YouTubeTranscriptPlugin
                 var errorBody = await response.Content.ReadAsStringAsync();
                 _logger.LogWarning("[YouTube] API hata: {Status} - {Body}",
                     response.StatusCode, errorBody.Length > 200 ? errorBody[..200] : errorBody);
-                return $"[youtube:degraded] YouTube aramasi gecici olarak kullanilamiyor. Status={(int)response.StatusCode}.";
+                return $"[youtube:degraded] YouTube araması geçici olarak kullanılamıyor. Status={(int)response.StatusCode}.";
             }
 
             var json = await response.Content.ReadAsStringAsync();
@@ -72,7 +72,7 @@ public partial class YouTubeTranscriptPlugin
             var items = doc.RootElement.GetProperty("items");
             if (items.GetArrayLength() == 0)
             {
-                return "[youtube:degraded] YouTube'da bu konuda video bulunamadi.";
+                return "[youtube:degraded] YouTube'da bu konuda video bulunamadı.";
             }
 
             var videoInfos = new List<(string Id, string Title, string Channel, string Description)>();
@@ -120,7 +120,7 @@ public partial class YouTubeTranscriptPlugin
         catch (Exception ex)
         {
             _logger.LogError(ex, "[YouTube] Arama sirasinda hata.");
-            return "[youtube:degraded] YouTube aramasi gecici olarak kullanilamiyor.";
+            return "[youtube:degraded] YouTube araması geçici olarak kullanılamıyor.";
         }
     }
 
@@ -159,7 +159,7 @@ public partial class YouTubeTranscriptPlugin
                        transcript;
             }
 
-            _logger.LogInformation("[YouTube] Transcript bulunamadi, meta bilgi fallback kullaniliyor.");
+            _logger.LogInformation("[YouTube] Transcript bulunamadı, meta bilgi fallback kullanılıyor.");
             return await FetchVideoMetadataFallbackAsync(videoId);
         }
         catch (Exception ex)
@@ -174,7 +174,7 @@ public partial class YouTubeTranscriptPlugin
         "Bu cikti factual kanit degil; anlatim akisi, ornek, benzetme, yaygin hata ve pratik fikri icindir.")]
     public async Task<string> BuildTeachingReference(
         [Description("YouTube video ID, ornek: dQw4w9WgXcQ")] string videoId,
-        [Description("Ders konusu veya ogrenme hedefi")] string topic = "",
+        [Description("Ders konusu veya öğrenme hedefi")] string topic = "",
         [Description("Tercih edilen transcript dili: tr veya en. Varsayilan: tr")] string lang = "tr")
     {
         if (string.IsNullOrWhiteSpace(videoId))
@@ -192,7 +192,7 @@ public partial class YouTubeTranscriptPlugin
 
         if (!reference.Status.Equals("ready", StringComparison.OrdinalIgnoreCase))
         {
-            return $"[youtube:{reference.Status}] YouTube ogretim referansi hazir degil. " +
+            return $"[youtube:{reference.Status}] YouTube öğretim referansı hazır değil. " +
                    $"Bu bilgi pedagojik referanstir, factual kaynak degildir. Kaynak: https://youtube.com/watch?v={videoId}";
         }
 
@@ -317,7 +317,7 @@ public partial class YouTubeTranscriptPlugin
     {
         if (string.IsNullOrWhiteSpace(_apiKey))
         {
-            return $"[youtube:{videoId}] Transcript bulunamadi; YouTube API devre disi. Kaynak: https://youtube.com/watch?v={videoId}";
+            return $"[youtube:{videoId}] Transcript bulunamadı; YouTube API devre dışı. Kaynak: https://youtube.com/watch?v={videoId}";
         }
 
         try
@@ -337,7 +337,7 @@ public partial class YouTubeTranscriptPlugin
             var items = doc.RootElement.GetProperty("items");
             if (items.GetArrayLength() == 0)
             {
-                return $"[youtube:degraded] Video bulunamadi. VideoId={videoId}.";
+                return $"[youtube:degraded] Video bulunamadı. VideoId={videoId}.";
             }
 
             var snippet = items[0].GetProperty("snippet");

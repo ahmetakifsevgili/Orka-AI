@@ -116,7 +116,7 @@ public class WikipediaPlugin
         }
         catch (Exception)
         {
-            return "[wikipedia:degraded] Wikipedia gecici olarak kullanilamiyor.";
+            return "[wikipedia:degraded] Wikipedia geçici olarak kullanılamıyor.";
         }
     }
 

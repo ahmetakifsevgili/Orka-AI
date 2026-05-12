@@ -50,7 +50,7 @@ public class AudioOverviewService : IAudioOverviewService
                 .AsNoTracking()
                 .AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
             if (!topicExists)
-                throw new NotFoundException("Audio overview topic bulunamadi.");
+                throw new NotFoundException("Audio overview topic bulunamadı.");
         }
 
         if (sessionId.HasValue)
@@ -59,7 +59,7 @@ public class AudioOverviewService : IAudioOverviewService
                 .AsNoTracking()
                 .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
             if (!sessionExists)
-                throw new NotFoundException("Audio overview session bulunamadi.");
+                throw new NotFoundException("Audio overview session bulunamadı.");
         }
 
         var job = new AudioOverviewJob

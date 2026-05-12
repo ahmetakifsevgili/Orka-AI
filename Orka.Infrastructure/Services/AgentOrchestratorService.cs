@@ -33,6 +33,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISupervisorAgent _supervisor;
     private readonly ICorrelationContext _correlationContext;
+    private readonly IAiRequestContextAccessor _aiRequestContext;
     private readonly ISkillMasteryService _skillMastery;
     private readonly ITokenCostEstimator _tokenEstimator;
     private readonly IAIAgentFactory _agentFactory;
@@ -53,6 +54,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IServiceScopeFactory scopeFactory,
         ISupervisorAgent supervisor,
         ICorrelationContext correlationContext,
+        IAiRequestContextAccessor aiRequestContext,
         ISkillMasteryService skillMastery,
         ITokenCostEstimator tokenEstimator,
         IAIAgentFactory agentFactory,
@@ -72,6 +74,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _scopeFactory = scopeFactory;
         _supervisor = supervisor;
         _correlationContext = correlationContext;
+        _aiRequestContext = aiRequestContext;
         _skillMastery = skillMastery;
         _tokenEstimator = tokenEstimator;
         _agentFactory = agentFactory;
@@ -135,6 +138,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
             yield break;
         }
 
+        using var aiContext = _aiRequestContext.Push(new AiRequestContext(
+            UserId: userId,
+            SessionId: session.Id,
+            TopicId: session.TopicId,
+            CorrelationId: _correlationContext.CorrelationId,
+            Source: nameof(ProcessMessageStreamAsync)));
+
         var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
 
         // Kullanıcı mesajını kaydet (duplike önleme: son mesaj aynı değilse)
@@ -194,18 +204,18 @@ public class AgentOrchestratorService : IAgentOrchestrator
             string thinkingHint;
             bool isBaselineMode = session.CurrentState == SessionState.BaselineQuizMode;
             if (isBaselineMode)
-                thinkingHint = "[THINKING: Quiz cevabi degerlendiriliyor ve kisisel mufredat olusturuluyor...]";
+                thinkingHint = "[THINKING: Quiz cevabı değerlendiriliyor ve kişisel müfredat oluşturuluyor...]";
             else if (session.CurrentState == SessionState.QuizMode)
-                thinkingHint = "[THINKING: Cevabin analiz ediliyor...]";
+                thinkingHint = "[THINKING: Cevabın analiz ediliyor...]";
             else if (isPlanMode || content.Contains("/plan", StringComparison.OrdinalIgnoreCase))
-                thinkingHint = "[THINKING: Konu arastiriliyor ve seviye tespiti baslatiliyor...]";
+                thinkingHint = "[THINKING: Konu araştırılıyor ve seviye tespiti başlatılıyor...]";
             else
-                thinkingHint = "[THINKING: Yanit hazirlaniyor...]";
+                thinkingHint = "[THINKING: Yanıt hazırlanıyor...]";
 
             yield return thinkingHint;
 
             if (isBaselineMode)
-                yield return "[THINKING: Kisisel ogrenme plani derleniyor...]";
+                yield return "[THINKING: Kişisel öğrenme planı derleniyor...]";
 
             // State handler içinde değişir - Evaluator etiketlemesi için entry state'i yakala
             var entryState = session.CurrentState;
@@ -584,13 +594,14 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += cost;
 
         await _db.SaveChangesAsync();
-        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", model, tokens, cost);
+        await RecordCostSafeAsync(userId, session.Id, session.TopicId, aiMsg.Id, "Tutor", "AIAgentFactory", model, tokens, cost);
         return aiMsg.Id;
     }
 
     private async Task RecordCostSafeAsync(
         Guid userId,
         Guid sessionId,
+        Guid? topicId,
         Guid messageId,
         string agentRole,
         string provider,
@@ -601,6 +612,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         await _runtimeTelemetry.RecordCostAsync(new CostRecordRequest(
             UserId: userId,
             SessionId: sessionId,
+            TopicId: topicId,
             MessageId: messageId,
             AgentRole: agentRole,
             Provider: provider,
@@ -617,11 +629,24 @@ public class AgentOrchestratorService : IAgentOrchestrator
         // -- DEEP PLAN MODE - bypass normal agent routing ----
         if (isPlanMode)
         {
+            using var planAiContext = _aiRequestContext.Push(new AiRequestContext(
+                UserId: userId,
+                SessionId: sessionId,
+                TopicId: topicId,
+                CorrelationId: _correlationContext.CorrelationId,
+                Source: "ProcessMessageAsync.PlanMode"));
             return await HandleDeepPlanModeAsync(userId, content, topicId, sessionId);
         }
 
         Session? session = await GetOrCreateSessionAsync(userId, topicId, sessionId, content);
         if (session == null) throw new Exception("Oturum oluşturulamadı veya SmallTalk.");
+
+        using var aiContext = _aiRequestContext.Push(new AiRequestContext(
+            UserId: userId,
+            SessionId: session.Id,
+            TopicId: session.TopicId,
+            CorrelationId: _correlationContext.CorrelationId,
+            Source: nameof(ProcessMessageAsync)));
 
         bool isNewTopic = !session.Messages.Any();
         var tutorContent = await BuildFocusedTutorContentAsync(content, focusTopicId, focusTopicPath, focusSourceRef);
@@ -756,7 +781,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.TotalCostUSD    += aiCost;
 
         await _db.SaveChangesAsync();
-        await RecordCostSafeAsync(userId, session.Id, aiMsg.Id, "Tutor", "AIAgentFactory", tutorModel, aiTokens, aiCost);
+        await RecordCostSafeAsync(userId, session.Id, session.TopicId, aiMsg.Id, "Tutor", "AIAgentFactory", tutorModel, aiTokens, aiCost);
 
         // AUTO-WIKI: Mesaj başına wiki üretimi YAPILMAZ (CLAUDE.md kuralı).
         // Wiki yalnızca (a) alt konu quiz'i geçildiğinde veya (b) AnalyzerAgent konu tamamlandı
@@ -1146,7 +1171,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     session.PendingQuiz = null;
                     await _db.SaveChangesAsync();
 
-                    return ($"Skorun **{score}/{total}**. Bu konuyu henuz tamamlandi saymiyorum; asagidaki kisa telafi dersi zayif becerilerine odaklaniyor.\n\n{remedialLesson}", false);
+                    return ($"Skorun **{score}/{total}**. Bu konuyu henüz tamamlandı saymıyorum; aşağıdaki kısa telafi dersi zayıf becerilerine odaklanıyor.\n\n{remedialLesson}", false);
                 }
                 activeSubTopic.ProgressPercentage = 100; // Alt konu her halükarda tamamlandı
 

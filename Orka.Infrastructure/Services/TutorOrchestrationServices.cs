@@ -1502,7 +1502,7 @@ public sealed class TeachingArtifactService : ITeachingArtifactService
         var status = cards.Count == 0 ? "degraded" : "ready";
         var renderError = cards.Count == 0 ? "evidence_unavailable" : null;
         var content = cards.Count == 0
-            ? $"**Kanit karti hazirlanamadi.** {concept} icin guvenli public API sonucu bulunamadi; Tutor veri uydurmadan genel benzetmeyle devam etmeli."
+            ? $"**Kanıt kartı hazırlanamadı.** {concept} için güvenli public API sonucu bulunamadı; Tutor veri uydurmadan genel benzetmeyle devam etmeli."
             : BuildEvidenceMarkdown(artifactType, cards);
 
         return new TeachingArtifactDto

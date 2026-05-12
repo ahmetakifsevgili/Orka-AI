@@ -110,7 +110,7 @@ public class AcademicSearchPlugin
         }
         catch (Exception)
         {
-            return "[semantic-scholar:degraded] Akademik arama gecici olarak kullanilamiyor.";
+            return "[semantic-scholar:degraded] Akademik arama geçici olarak kullanılamıyor.";
         }
     }
 
@@ -159,7 +159,7 @@ public class AcademicSearchPlugin
         }
         catch (Exception)
         {
-            return "[arxiv:degraded] ArXiv aramasi gecici olarak kullanilamiyor.";
+            return "[arxiv:degraded] ArXiv araması geçici olarak kullanılamıyor.";
         }
     }
 

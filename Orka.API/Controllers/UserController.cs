@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orka.Core.Enums;
+using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using System.Linq;
 
@@ -17,7 +18,6 @@ public class UpdateProfileRequest
     public string? LastName { get; set; }
     public string? Email { get; set; }
 }
-
 public class UpdateSettingsRequest
 {
     public string? Theme { get; set; }
@@ -36,11 +36,13 @@ public class UserController : ControllerBase
 {
     private readonly OrkaDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly IDataLifecycleService _dataLifecycle;
 
-    public UserController(OrkaDbContext dbContext, IConfiguration configuration)
+    public UserController(OrkaDbContext dbContext, IConfiguration configuration, IDataLifecycleService dataLifecycle)
     {
         _dbContext = dbContext;
         _configuration = configuration;
+        _dataLifecycle = dataLifecycle;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -181,40 +183,9 @@ public class UserController : ControllerBase
     public async Task<IActionResult> DeleteAccount()
     {
         var userId = GetUserId();
-        
-        // Hiyerarşik Silme (Hata-6 ve Cascade Önlemi)
-        // 1. Refresh Tokenlar
-        var tokens = await _dbContext.RefreshTokens.Where(rt => rt.UserId == userId).ToListAsync();
-        _dbContext.RefreshTokens.RemoveRange(tokens);
+        var deleted = await _dataLifecycle.DeleteAccountAsync(userId, HttpContext.RequestAborted);
+        if (!deleted) return NotFound();
 
-        // 2. Quiz Denemeleri
-        var attempts = await _dbContext.QuizAttempts.Where(qa => qa.UserId == userId).ToListAsync();
-        _dbContext.QuizAttempts.RemoveRange(attempts);
-
-        // 3. Mesajlar ve Sessionlar
-        var sessions = await _dbContext.Sessions.Include(s => s.Messages).Where(s => s.UserId == userId).ToListAsync();
-        foreach(var session in sessions)
-        {
-            _dbContext.Messages.RemoveRange(session.Messages);
-        }
-        _dbContext.Sessions.RemoveRange(sessions);
-
-        // 4. Wiki Blokları ve Sayfaları
-        var wikis = await _dbContext.WikiPages.Include(w => w.Blocks).Where(w => w.UserId == userId).ToListAsync();
-        foreach(var wiki in wikis)
-        {
-            _dbContext.WikiBlocks.RemoveRange(wiki.Blocks);
-        }
-        _dbContext.WikiPages.RemoveRange(wikis);
-
-        // 5. Konular ve Kullanıcı (Kök)
-        var user = await _dbContext.Users.Include(u => u.Topics).FirstOrDefaultAsync(u => u.Id == userId);
-        if (user == null) return NotFound();
-
-        _dbContext.Topics.RemoveRange(user.Topics);
-        _dbContext.Users.Remove(user);
-        
-        await _dbContext.SaveChangesAsync();
         return Ok(new { Message = "Hesap ve tüm ilişkili veriler kalıcı olarak silindi." });
     }
 }

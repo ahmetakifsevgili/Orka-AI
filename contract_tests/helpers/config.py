@@ -1,7 +1,7 @@
 import os
 
-# Base URL from environment or default to QA port 5101
-BASE_URL = os.getenv("ORKA_API_URL", "http://localhost:5101").rstrip("/")
+# Base URL from environment or the canonical local dev API port.
+BASE_URL = os.getenv("ORKA_API_URL", "http://localhost:5065").rstrip("/")
 
 # Global request timeout
 TIMEOUT = 30

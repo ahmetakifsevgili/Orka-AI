@@ -597,6 +597,71 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task StandardsValidation_FlagsBrokenCaseQtiAndEventProfiles()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var snapshotId = await SeedConceptSnapshotAsync(db, userId, topicId);
+        db.LearningConcepts.Add(new LearningConcept
+        {
+            Id = Guid.NewGuid(),
+            ConceptGraphSnapshotId = snapshotId,
+            StableKey = "",
+            Label = "",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.LearningOutcomes.Add(new LearningOutcome
+        {
+            Id = Guid.NewGuid(),
+            ConceptGraphSnapshotId = snapshotId,
+            StableKey = "",
+            Label = "",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.AssessmentItems.Add(new AssessmentItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ConceptGraphSnapshotId = snapshotId,
+            AssessmentItemKey = "broken:item",
+            ConceptKey = "",
+            CognitiveSkill = "",
+            Difficulty = "",
+            ScoringRuleJson = "{}",
+            LearningOutcomeKeysJson = "[]",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.LearningEvents.Add(new LearningEvent
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            EventType = "assessment.item.answered",
+            Actor = "",
+            Verb = "",
+            ObjectType = "",
+            PayloadJson = "{}",
+            CreatedAt = DateTime.UtcNow,
+            OccurredAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var alignment = new StandardsAlignmentService(db);
+        var validation = new StandardsValidationService(db, alignment);
+
+        var run = await validation.ValidateAsync(userId, topicId);
+
+        Assert.Equal("degraded", run.Status);
+        Assert.Equal(4, run.IssueCount);
+        Assert.Contains(run.Issues, i => i.IssueCode == "missing_concept_identity" && i.StandardFamily == "case");
+        Assert.Contains(run.Issues, i => i.IssueCode == "missing_outcome_identity" && i.StandardFamily == "case");
+        Assert.Contains(run.Issues, i => i.IssueCode == "missing_assessment_metadata" && i.StandardFamily == "qti");
+        Assert.Contains(run.Issues, i => i.IssueCode == "missing_event_profile" && i.StandardFamily == "caliper_xapi");
+        Assert.Equal(4, await db.StandardsValidationItems.CountAsync());
+    }
+
+    [Fact]
     public async Task RetentionCleanupService_PurgesAudioBytesButKeepsLearningRecords()
     {
         await using var db = CreateDb();
@@ -643,6 +708,53 @@ public sealed class LearningArchitectureTests
         Assert.Equal("[HOCA]: Kalıcı script.", storedJob.Script);
         Assert.Equal("[HOCA]: Tekrar anlatalım.", storedInteraction.AnswerScript);
         Assert.Equal(2, summary.PurgedAudioCount);
+    }
+
+    [Fact]
+    public async Task RetentionCleanupService_DoesNotPurgeUnexpiredAudioBytes()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var future = DateTime.UtcNow.AddDays(2);
+        db.AudioOverviewJobs.Add(new AudioOverviewJob
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            Status = "ready",
+            Script = "[HOCA]: Saklanacak script.",
+            AudioBytes = [1, 2, 3],
+            AudioByteLength = 3,
+            AudioExpiresAt = future,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        db.ClassroomInteractions.Add(new ClassroomInteraction
+        {
+            Id = Guid.NewGuid(),
+            ClassroomSessionId = Guid.NewGuid(),
+            Question = "Bir daha anlatır mısın?",
+            AnswerScript = "[HOCA]: Saklanacak sınıf cevabı.",
+            AudioBytes = [4, 5],
+            AudioByteLength = 2,
+            AudioExpiresAt = future,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:AudioBytesDays"] = "7" })
+            .Build();
+        var service = new RetentionCleanupService(db, config);
+
+        var summary = await service.PurgeExpiredAudioAsync();
+
+        var storedJob = await db.AudioOverviewJobs.SingleAsync();
+        var storedInteraction = await db.ClassroomInteractions.SingleAsync();
+        Assert.NotNull(storedJob.AudioBytes);
+        Assert.NotNull(storedInteraction.AudioBytes);
+        Assert.Null(storedJob.AudioPurgedAt);
+        Assert.Null(storedInteraction.AudioPurgedAt);
+        Assert.Equal(0, summary.PurgedAudioCount);
     }
 
     private static OrkaDbContext CreateDb() =>

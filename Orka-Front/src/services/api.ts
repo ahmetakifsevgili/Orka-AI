@@ -92,7 +92,7 @@ export const storage = {
 
 // ---------------------------------------------------------------------------
 // Axios instance
-// Requests go to /api/... — Vite proxy forwards them to localhost:5101/api/...
+// Requests go to /api/... — Vite proxy forwards them to localhost:5065/api/... by default.
 // ---------------------------------------------------------------------------
 
 const api: AxiosInstance = axios.create({

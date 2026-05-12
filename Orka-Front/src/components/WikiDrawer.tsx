@@ -24,6 +24,7 @@ import {
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
 import { WikiAPI, KorteksAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
@@ -395,7 +396,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                             "
                               >
                                 {textWithoutJson.trim() && (
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>
                                     {textWithoutJson}
                                   </ReactMarkdown>
                                 )}
@@ -424,7 +425,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                   prose-pre:bg-[#0a0a0a] prose-pre:border prose-pre:border-zinc-800/80 prose-pre:rounded-xl
                 "
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>
                   {pageContent}
                 </ReactMarkdown>
               </div>
@@ -537,7 +538,7 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
                       }`}
                     >
                       <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-p:text-[13px] prose-headings:text-sm prose-headings:mb-1 prose-headings:mt-2 prose-li:text-[13px] prose-code:text-sky-400 prose-code:text-xs">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>
                           {msg.content || "…"}
                         </ReactMarkdown>
                       </div>

@@ -1,23 +1,21 @@
-/**
- * RichMarkdown - V4 zengin içerik render katmanı.
- *
- * Destekler:
- *   1. GFM (tablolar, checkbox, strikethrough)
- *   2. LaTeX -> $...$ ve $...$ (KaTeX)
- *   3. Mermaid -> ```mermaid blokları
- *   4. Inline citation hover -> [text](url) link'leri 24x24 favicon + URL preview
- *   5. Pollinations görselleri normal markdown image olarak akar (img tag).
- *
- * Kullanım: <RichMarkdown content={...} className="prose prose-invert" />
- */import { useEffect, useRef, useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import {
+  BlockedImagePlaceholder,
+  displayHost,
+  isAllowedRemoteImage,
+  isMermaidTooLarge,
+  isSafeMarkdownUrl,
+  safeMarkdownUrlTransform,
+  sanitizeMermaidSvg,
+} from "@/lib/contentSafety";
 
-// Mermaid yalnızca gerçekten diagram render edileceğinde lazy yüklenir
 let mermaidInitialized = false;
+
 async function getMermaid() {
   const mermaid = (await import("mermaid")).default;
   if (mermaidInitialized) return mermaid;
@@ -25,7 +23,8 @@ async function getMermaid() {
   mermaid.initialize({
     startOnLoad: false,
     theme: "dark",
-    securityLevel: "loose",
+    securityLevel: "strict",
+    htmlLabels: false,
     fontFamily: "ui-sans-serif, system-ui, sans-serif",
     themeVariables: {
       primaryColor: "#10b981",
@@ -50,44 +49,50 @@ function sanitizeMermaid(code: string) {
   });
 }
 
-function mermaidFallbackHtml(code: string) {
-  const safeCode = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `
-    <div class="rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
-      <div class="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
-      <div class="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
-      <pre class="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">${safeCode}</pre>
+function MermaidFallback({ code }: { code: string }) {
+  return (
+    <div className="my-4 rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
+      <div className="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
+      <div className="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
+      <pre className="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">{code}</pre>
     </div>
-  `;
+  );
 }
 
-interface MermaidBlockProps {
-  code: string;
-}
-
-function MermaidBlock({ code }: MermaidBlockProps) {
+function MermaidBlock({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const id = useId().replace(/:/g, "_");
+  const [fallback, setFallback] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
+        if (isMermaidTooLarge(code)) {
+          setFallback(true);
+          return;
+        }
+
         const mermaid = await getMermaid();
         let svg: string;
         try {
           const rendered = await mermaid.render(`m_${id}`, code.trim());
-          svg = rendered.svg;
+          svg = sanitizeMermaidSvg(rendered.svg);
         } catch {
           const rendered = await mermaid.render(`m_${id}_safe`, sanitizeMermaid(code.trim()));
-          svg = rendered.svg;
+          svg = sanitizeMermaidSvg(rendered.svg);
         }
-        if (!cancelled && ref.current) ref.current.innerHTML = svg;
-      } catch (err) {
+
+        if (!svg) throw new Error("Mermaid SVG did not pass sanitization.");
         if (!cancelled && ref.current) {
+          ref.current.innerHTML = svg;
+          setFallback(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
           console.warn("Mermaid render fallback:", err);
-          ref.current.innerHTML = mermaidFallbackHtml(code);
+          setFallback(true);
         }
       }
     })();
@@ -97,10 +102,12 @@ function MermaidBlock({ code }: MermaidBlockProps) {
     };
   }, [code, id]);
 
-  return (
+  return fallback ? (
+    <MermaidFallback code={code} />
+  ) : (
     <div
       ref={ref}
-      className="my-4 p-4 rounded-xl bg-zinc-950 border border-zinc-800/60 overflow-x-auto"
+      className="my-4 rounded-xl border border-zinc-800/60 bg-zinc-950 p-4 overflow-x-auto"
     />
   );
 }
@@ -112,10 +119,6 @@ interface CitationLinkProps {
   onCitationClick?: (kind: "doc" | "wiki" | "web" | "external", ref: string) => void;
 }
 
-/**
- * Inline citation hover - http(s) link'leri tooltip'le sarar.
- * Eğer link bir resim (Pollinations vs.) değilse hostname'i favicon ile gösterir.
- */
 function CitationLink({ href, children, onSourceClick, onCitationClick }: CitationLinkProps) {
   if (href?.startsWith("orka-source://")) {
     const match = href.match(/^orka-source:\/\/([^/]+)\/page\/(\d+)/);
@@ -154,24 +157,19 @@ function CitationLink({ href, children, onSourceClick, onCitationClick }: Citati
     );
   }
 
-  if (!href || !/^https?:\/\//i.test(href)) {
-    return <a href={href}>{children}</a>;
+  if (!isSafeMarkdownUrl(href)) {
+    return <span>{children}</span>;
   }
 
-  let host = "";
-  try {
-    host = new URL(href).hostname.replace(/^www\./, "");
-  } catch {
-    host = href;
-  }
-
+  const safeHref = href ?? "";
+  const host = displayHost(safeHref);
   return (
     <a
-      href={href}
+      href={safeHref}
       target="_blank"
-      rel="noopener noreferrer"
-      onClick={() => onCitationClick?.("external", href)}
-      title={href}
+      rel="noopener noreferrer nofollow"
+      onClick={() => onCitationClick?.("external", safeHref)}
+      title={safeHref}
       className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline decoration-emerald-500/40 decoration-dotted underline-offset-2 transition"
     >
       {children}
@@ -179,12 +177,6 @@ function CitationLink({ href, children, onSourceClick, onCitationClick }: Citati
         className="inline-flex items-center gap-1 ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-300/80 align-text-bottom"
         aria-hidden="true"
       >
-        <img
-          src={`https://www.google.com/s2/favicons?domain=${host}&sz=16`}
-          alt=""
-          className="w-3 h-3 rounded-sm"
-          loading="lazy"
-        />
         {host}
       </span>
     </a>
@@ -213,6 +205,7 @@ export default function RichMarkdown({ content, className, onSourceClick, onCita
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
+        urlTransform={safeMarkdownUrlTransform}
         components={{
           code({ className: codeCls, children, ...props }) {
             const match = /language-(\w+)/.exec(codeCls || "");
@@ -223,7 +216,6 @@ export default function RichMarkdown({ content, className, onSourceClick, onCita
               return <MermaidBlock code={text} />;
             }
 
-            // inline kod
             if (!lang) {
               return (
                 <code className={codeCls} {...props}>
@@ -232,7 +224,6 @@ export default function RichMarkdown({ content, className, onSourceClick, onCita
               );
             }
 
-            // Dil-tagged kod bloğu: varsayılan prose stilini koruruz
             return (
               <code className={codeCls} {...props}>
                 {children}
@@ -243,7 +234,10 @@ export default function RichMarkdown({ content, className, onSourceClick, onCita
             return <CitationLink href={href} onSourceClick={onSourceClick} onCitationClick={onCitationClick}>{children}</CitationLink>;
           },
           img({ src, alt }) {
-            // Pollinations ve diğer external imajları sarma
+            if (!isAllowedRemoteImage(src)) {
+              return <BlockedImagePlaceholder alt={alt} />;
+            }
+
             return (
               <img
                 src={src}

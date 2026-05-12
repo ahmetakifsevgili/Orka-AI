@@ -17,6 +17,24 @@
 
 ---
 
+## Local Dev Contract
+
+- Backend API: `http://localhost:5065`
+- Frontend dev server: `http://localhost:3000`
+- Runtime/API smoke env var: `ORKA_API_URL`
+- Frontend proxy env var: `VITE_API_PROXY_TARGET`
+
+```powershell
+cd D:/Orka
+powershell -ExecutionPolicy Bypass -File scripts\start-api.ps1
+powershell -ExecutionPolicy Bypass -File scripts\start-front.ps1
+powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
+```
+
+See `docs/dev-contract.md` for the canonical smoke/regression matrix. Deployment, migration, CORS, CSP, secret, Redis, and provider gates are tracked in `docs/deployment/migration-policy.md` and `scripts/CHECKLIST.md`.
+
+---
+
 ## 1. Orka Nedir?
 
 Orka AI, kullanıcının **doğal dilde söylediği herhangi bir konuyu** anlayıp kendisine özel bir müfredat hazırlayan, dersleri akıcı biçimde anlatan, sınav yapan, kod çalıştıran ve öğrendikçe bir **kişisel wiki** dolduran çok-ajanlı (multi-agent) bir AI öğrenme platformudur.
@@ -312,7 +330,7 @@ graph LR
 
         PS["orka:piston:{sessionId}:last<br/>🔑 STRING · TTL 30m<br/>{code, stdout, stderr, lang}"]
 
-        RLK["orka:rateLimit:{clientIp}<br/>🔢 COUNTER · TTL=window<br/>(INCR + EXPIRE; fail-open)"]
+        RLK["orka:rateLimit:{clientIp}<br/>🔢 COUNTER · TTL=window<br/>(INCR + EXPIRE; auth fail-closed outside dev)"]
     end
 
     subgraph Readers["👁️ Okuyan Servisler"]
@@ -357,7 +375,7 @@ graph LR
 **Tasarım Prensipleri:**
 - **Key namespace'i** her zaman `orka:<amaç>:<scope-id>` — hem pattern taraması hem silme için.
 - **Hiçbir anahtar kalıcı değil** (globalPolicy hariç) — TTL her yazımda yenilenir.
-- **Fail-open rate limit** — Redis düşerse sistem kilitlenmez, limit devre dışı kalır.
+- **Auth rate limit guardrail** — Development local fallback kullanabilir; Staging/Production Redis-backed auth limiter fail-closed davranır.
 - **LPUSH + LTRIM** pattern'i — listelerde sonsuz büyüme önlenir, en yeni en üstte.
 
 ---
@@ -607,7 +625,7 @@ erDiagram
 - **State Machine** — `SessionState` + `TopicPhase` enum driven
 - **CQRS-lite** — okuma/yazma servis ayrımı
 - **Plugin Pattern** — Semantic Kernel plugin'leri dinamik yüklenebilir
-- **Rate Limiting & Fail-Open Security** — Redis çökerse sistem kilitlenmez, limit devre dışı kalır.
+- **Rate Limiting & Auth Guardrails** — Development in-memory, Staging/Production Redis-backed auth limit policy.
 
 ---
 
@@ -628,8 +646,8 @@ cd Orka.API
 dotnet user-secrets set "AI:GitHubModels:Token" "ghp_..."
 dotnet user-secrets set "AI:Groq:ApiKey" "gsk_..."
 
-# Vite proxy (5101) ile uyumlu başlat
-dotnet run --urls "http://localhost:5101"
+# Canonical local API port
+dotnet run --urls "http://localhost:5065"
 ```
 
 ### Frontend'i Çalıştırma

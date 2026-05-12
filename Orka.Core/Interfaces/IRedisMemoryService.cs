@@ -119,6 +119,9 @@ public interface IRedisMemoryService
 
     Task InvalidateLearningCachesAsync(Guid userId, Guid topicId, string reason);
 
+    Task PurgeUserCachesAsync(Guid userId, IEnumerable<Guid> topicIds, string reason, int maxKeysPerPattern = 100)
+        => Task.CompletedTask;
+
     Task RecordCacheMetricAsync(string area, bool hit, string? tool = null, double? latencyMs = null);
 
     Task<IEnumerable<CacheMetricSummary>> GetCacheMetricsAsync();

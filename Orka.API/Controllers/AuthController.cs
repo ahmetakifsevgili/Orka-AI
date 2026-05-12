@@ -1,11 +1,16 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Orka.API.Services;
 using Orka.Core.DTOs.Auth;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
+using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
 
@@ -18,25 +23,60 @@ public class AuthController : ControllerBase
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
+    private readonly IAuthAttemptLimiter _rateLimiter;
 
     public AuthController(
         IAuthService authService,
         IConfiguration configuration,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IAuthAttemptLimiter rateLimiter)
     {
         _authService = authService;
         _configuration = configuration;
         _logger = logger;
+        _rateLimiter = rateLimiter;
     }
 
     [HttpPost("register")]
     [HttpPost("/api/register")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    [AllowAnonymous]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest? request)
     {
-        _logger.LogInformation("[Auth] Register attempt Email={Email}", request.Email);
+        if (request == null)
+            return BadRequest(new { message = "Üyelik bilgileri zorunlu." });
 
-        var result = await _authService.RegisterAsync(
-            request.FirstName, request.LastName, request.Email, request.Password);
+        var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
+        var password = request.Password ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email))
+            return BadRequest(new { message = "E-posta zorunlu." });
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            return BadRequest(new { message = "Şifre en az 8 karakter olmalı." });
+
+        var firstName = request.FirstName?.Trim() ?? string.Empty;
+        var lastName = request.LastName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(request.Name))
+        {
+            var parts = request.Name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            firstName = parts.FirstOrDefault() ?? string.Empty;
+            lastName = parts.Length > 1 ? string.Join(' ', parts.Skip(1)) : lastName;
+        }
+
+        var registerLimit = await EnforceAuthAttemptAsync("register", GetClientPartition(), "Register");
+        if (registerLimit != null)
+            return registerLimit;
+
+        _logger.LogInformation("[Auth] Register attempt");
+
+        (string Token, string RefreshToken, User User) result;
+        try
+        {
+            result = await _authService.RegisterAsync(
+                firstName, lastName, email, password);
+        }
+        catch (ConflictException)
+        {
+            return StatusCode(409, new { message = "Kayıt işlemi tamamlanamadı.", statusCode = 409 });
+        }
 
         return StatusCode(201, new AuthResponse
         {
@@ -49,11 +89,36 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [HttpPost("/api/login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    [AllowAnonymous]
+    public async Task<IActionResult> Login([FromBody] LoginRequest? request)
     {
-        _logger.LogInformation("[Auth] Login attempt Email={Email}", request.Email);
+        if (request == null)
+            return BadRequest(new { message = "Giriş bilgileri zorunlu." });
 
-        var result = await _authService.LoginAsync(request.Email, request.Password);
+        var email = (request.Email ?? string.Empty).Trim().ToLowerInvariant();
+        var password = request.Password ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            return BadRequest(new { message = "E-posta ve şifre zorunlu." });
+
+        var loginLimit = await EnforceAuthAttemptAsync("login", $"{GetClientPartition()}:{HashPartition(email)}", "Login");
+        if (loginLimit != null)
+            return loginLimit;
+
+        _logger.LogInformation("[Auth] Login attempt");
+
+        (string Token, string RefreshToken, User User) result;
+        try
+        {
+            result = await _authService.LoginAsync(email, password);
+        }
+        catch (NotFoundException)
+        {
+            return InvalidLogin();
+        }
+        catch (UnauthorizedException)
+        {
+            return InvalidLogin();
+        }
 
         return Ok(new AuthResponse
         {
@@ -65,8 +130,16 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
+    [AllowAnonymous]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
+            return BadRequest(new { message = "Refresh token zorunlu." });
+
+        var refreshLimit = await EnforceAuthAttemptAsync("refresh", GetClientPartition(), "Refresh");
+        if (refreshLimit != null)
+            return refreshLimit;
+
         var result = await _authService.RefreshAsync(request.RefreshToken);
         return Ok(new
         {
@@ -79,8 +152,11 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
+            return BadRequest(new { message = "Refresh token zorunlu." });
+
         await _authService.RevokeAsync(request.RefreshToken);
         return Ok();
     }
@@ -113,4 +189,69 @@ public class AuthController : ControllerBase
             ? _configuration.GetValue("Limits:ProUserDailyMessages", 500)
             : _configuration.GetValue("Limits:FreeUserDailyMessages", 50);
     }
+
+    private async Task<IActionResult?> EnforceAuthAttemptAsync(string purpose, string partition, string configName)
+    {
+        var permitLimit = _configuration.GetValue($"RateLimits:Auth:{configName}:PermitLimit", DefaultPermitLimit(configName));
+        var windowMinutes = _configuration.GetValue($"RateLimits:Auth:{configName}:WindowMinutes", DefaultWindowMinutes(configName));
+        var result = await _rateLimiter.TryConsumeAsync(
+            $"auth:{purpose}:{partition}",
+            permitLimit,
+            TimeSpan.FromMinutes(windowMinutes),
+            HttpContext.RequestAborted);
+
+        if (result.Allowed)
+            return null;
+
+        return result.LimiterUnavailable
+            ? AuthProtectionUnavailable()
+            : TooManyAuthAttempts();
+    }
+
+    private string GetClientPartition()
+    {
+        var forwardedFor = Request.Headers["X-Forwarded-For"].ToString();
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+            return HashPartition(forwardedFor.Split(',')[0].Trim());
+
+        var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        return HashPartition(string.IsNullOrWhiteSpace(remoteIp) ? "unknown" : remoteIp);
+    }
+
+    private static int DefaultPermitLimit(string configName) => configName switch
+    {
+        "Register" => 3,
+        "Refresh" => 20,
+        _ => 5
+    };
+
+    private static int DefaultWindowMinutes(string configName) => configName switch
+    {
+        "Register" => 15,
+        _ => 5
+    };
+
+    private static string HashPartition(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static IActionResult InvalidLogin() =>
+        new ObjectResult(new { message = "E-posta veya şifre hatalı.", statusCode = 401 })
+        {
+            StatusCode = 401
+        };
+
+    private static IActionResult TooManyAuthAttempts() =>
+        new ObjectResult(new { message = "Çok fazla deneme. Lütfen biraz sonra tekrar deneyin.", statusCode = 429 })
+        {
+            StatusCode = 429
+        };
+
+    private static IActionResult AuthProtectionUnavailable() =>
+        new ObjectResult(new { message = "Kimlik dogrulama korumasi gecici olarak kullanilamiyor.", statusCode = 503 })
+        {
+            StatusCode = 503
+        };
 }

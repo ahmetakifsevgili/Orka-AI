@@ -23,6 +23,7 @@ import { QuizAPI, DashboardAPI, UserAPI, storage, type DashboardTodayDto } from 
 import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { WorkspaceHeader, SourceHealthStrip, WorkspaceMetric } from "./AgenticWorkspace";
 
 interface DashboardPanelProps {
   topics: ApiTopic[];
@@ -221,17 +222,19 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
         <SystemHealthHUD />
       ) : (
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto w-full px-8 py-10">
+        <div className="mx-auto w-full max-w-5xl px-8 py-10">
           
           {/* Header & Mastery Card */}
-          <div className="flex items-center justify-between mb-10">
-            <div>
-              <h1 className="text-2xl font-bold text-[#172033] mb-1.5 tracking-tight">{mode === "progress" ? "İlerleme" : "Bugün"}</h1>
-              <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-[#8fb7a2] animate-pulse"></span>
-                <p className="text-[11px] font-medium text-[#667085] uppercase tracking-widest">{mode === "progress" ? "Öğrenme kanıtı" : "Sıradaki en iyi adım"}</p>
-              </div>
-            </div>
+          <div className="mb-10 flex items-center justify-between gap-6">
+            <WorkspaceHeader
+              eyebrow={mode === "progress" ? "Evidence & Progress Workspace" : "Agent Command Center"}
+              title={mode === "progress" ? "İlerleme" : "Bugün"}
+              description={
+                mode === "progress"
+                  ? "Kavram kanıtı, kaynak sağlığı ve Tutor kararları sade bir ilerleme raporunda toplanır."
+                  : "Orka bugün hangi adımı önerdiğini, nedenini ve hangi kanıta dayandığını burada gösterir."
+              }
+            />
             
             <div id="tour-global-stats" className="hidden sm:flex items-center gap-6 bg-[#f7f9fa]/68 border border-[#526d82]/14 backdrop-blur-xl px-6 py-4 rounded-2xl">
                <div className="text-right">
@@ -241,6 +244,12 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                {stats && <SuccessRateSparkline data={stats.dailyProgress} />}
             </div>
           </div>
+
+          <SourceHealthStrip
+            label={sourceHealthLabel}
+            detail={sourceHealthDetail}
+            status={today?.sourceHealth?.status}
+          />
 
           <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl">
             <div className="grid gap-5 lg:grid-cols-[1.35fr_0.9fr]">
@@ -330,51 +339,11 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
           </section>
 
           {/* Core Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-            {/* Stat Item: XP */}
-            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
-                <TrendingUp className="w-4 h-4 text-[#667085]" />
-              </div>
-              <p className="text-2xl font-bold text-[#172033]">{loading ? "—" : totalXP}</p>
-              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Toplam XP</p>
-              {gamification && (
-                <p className="text-[10px] text-[#98a2b3] mt-1">
-                  {gamification.levelLabel} · Seviye {gamification.level}
-                </p>
-              )}
-            </div>
-
-            {/* Stat Item: Lessons */}
-            <div className="p-5 rounded-2xl bg-[#f7f9fa]/70 border border-[#526d82]/14 backdrop-blur-xl hover:border-[#526d82]/18/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#dcecf3]/70 flex items-center justify-center mb-4 group-hover:bg-[#dcecf3]/70 transition-colors">
-                <Brain className="w-4 h-4 text-[#667085]" />
-              </div>
-              <p className="text-2xl font-bold text-[#172033]">
-                {loading ? "—" : (totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length)}
-              </p>
-              <p className="text-[11px] font-medium text-[#667085] uppercase mt-1">Tamamlanan Ders</p>
-            </div>
-
-            {/* Stat Item: Accuracy */}
-            <div className="p-5 rounded-2xl bg-[#8fb7a2]/5 border border-emerald-500/10 hover:border-emerald-500/20 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#8fb7a2]/10 flex items-center justify-center mb-4">
-                <Target className="w-4 h-4 text-[#47725d]/70" />
-              </div>
-              <p className="text-2xl font-bold text-[#47725d]">{loading ? "—" : `%${accuracy}`}</p>
-              <p className="text-[11px] font-medium text-emerald-600/80 uppercase mt-1">Doğruluk Oranı</p>
-            </div>
-
-            {/* Stat Item: Streak (gerçek DB verisi) */}
-            <div className="p-5 rounded-2xl bg-[#fff8ee]/85 border border-[#e8c46f]/28 hover:border-[#e8c46f]/45 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-[#fff8ee] flex items-center justify-center mb-4">
-                <Flame className="w-4 h-4 text-[#9a6b24]" />
-              </div>
-              <p className="text-2xl font-bold text-[#9a6b24]">{loading ? "—" : activeStreak}</p>
-              <p className="text-[11px] font-medium text-[#a8783d] uppercase mt-1">
-                {activeStreak > 1 ? `${activeStreak} Günlük Seri` : "Öğrenme Serisi"}
-              </p>
-            </div>
+          <div className="mb-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <WorkspaceMetric label="Toplam XP" value={loading ? "—" : totalXP} detail={gamification ? `${gamification.levelLabel} · Seviye ${gamification.level}` : "kanıt puanı"} />
+            <WorkspaceMetric label="Tamamlanan ders" value={loading ? "—" : (totalLessons > 0 ? `${completedLessons}/${totalLessons}` : topics.length)} detail="gerçek ilerleme" />
+            <WorkspaceMetric label="Doğruluk oranı" value={loading ? "—" : `%${accuracy}`} detail={`${correctCount}/${totalQuizzes} cevap`} />
+            <WorkspaceMetric label="Öğrenme serisi" value={loading ? "—" : activeStreak} detail={activeStreak > 1 ? `${activeStreak} günlük seri` : "devam sinyali"} />
           </div>
 
           <div className="mb-10 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">

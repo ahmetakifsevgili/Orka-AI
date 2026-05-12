@@ -403,7 +403,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
     public async IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        yield return BuildStreamEvent("thinking", new { message = "Tutor state hazirlaniyor" });
+        yield return BuildStreamEvent("thinking", new { message = "Tutor state hazırlanıyor" });
 
         // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
@@ -697,12 +697,12 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 return string.Empty;
 
             var weakSkills = summary.WeakSkills.Count == 0
-                ? "Kayitli zayif beceri yok."
+                ? "Kayıtlı zayıf beceri yok."
                 : string.Join("\n", summary.WeakSkills.Take(5).Select(skill =>
                     $"- {skill.SkillTag} ({skill.TopicPath}): {skill.WrongCount}/{skill.TotalCount} zorlanma, dogruluk %{Math.Round(skill.Accuracy * 100)}"));
 
             var recentSignals = summary.RecentSignals.Count == 0
-                ? "Yakin zamanda ogrenme sinyali yok."
+                ? "Yakın zamanda öğrenme sinyali yok."
                 : string.Join("\n", summary.RecentSignals.Take(5).Select(signal => $"- {signal}"));
 
             return $"""
@@ -715,7 +715,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
                 Son sinyaller:
                 {recentSignals}
 
-                [EYLEM]: Cevabi bu zayif becerilere gore kur. Ogrenci takildiysa ilgili alt beceriye don,
+                [EYLEM]: Cevabı bu zayıf becerilere göre kur. Öğrenci takıldıysa ilgili alt beceriye dön,
                 kisa bir ornek ver, gerekirse mini tablo/diyagram kullan ve sonraki en iyi adimi oner.
                 """;
         }

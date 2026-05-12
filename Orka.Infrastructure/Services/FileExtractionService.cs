@@ -1,5 +1,6 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.Extensions.Logging;
+using Orka.Core.Exceptions;
 using UglyToad.PdfPig;
 
 namespace Orka.Infrastructure.Services;
@@ -19,12 +20,14 @@ public record ExtractedDocument(IReadOnlyList<ExtractedPage> Pages, string? Erro
 public class FileExtractionService
 {
     private readonly ILogger<FileExtractionService> _logger;
+    private readonly UploadContentSafetyGuard _guard;
 
     private const int MaxExtractChars = 8000;
 
-    public FileExtractionService(ILogger<FileExtractionService> logger)
+    public FileExtractionService(ILogger<FileExtractionService> logger, UploadContentSafetyGuard guard)
     {
         _logger = logger;
+        _guard = guard;
     }
 
     /// <summary>
@@ -47,16 +50,24 @@ public class FileExtractionService
     public ExtractedDocument ExtractWithPages(string fileName, byte[] fileBytes)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        _guard.ValidateBytes(fileName, null, fileBytes);
 
         try
         {
-            return ext switch
+            var document = ext switch
             {
                 ".pdf" => ExtractPdfPages(fileBytes),
                 ".txt" => ExtractTextPages(fileBytes),
                 ".md" => ExtractTextPages(fileBytes),
                 _ => new ExtractedDocument([], $"[Desteklenmeyen dosya formatı: {ext}. PDF, TXT veya MD yükleyin.]")
             };
+
+            _guard.ValidateExtractedDocument(document.Pages);
+            return document;
+        }
+        catch (ContentSafetyException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -65,14 +76,22 @@ public class FileExtractionService
         }
     }
 
-    private static ExtractedDocument ExtractPdfPages(byte[] bytes)
+    private ExtractedDocument ExtractPdfPages(byte[] bytes)
     {
         using var doc = PdfDocument.Open(bytes);
+        if (doc.NumberOfPages > _guard.Options.MaxPdfPages)
+            throw ContentSafetyException.PayloadTooLarge("PDF sayfa limitini asiyor.");
+
         var pages = new List<ExtractedPage>();
+        var totalChars = 0;
 
         foreach (var page in doc.GetPages())
         {
             var text = page.Text?.Trim() ?? string.Empty;
+            totalChars += text.Length;
+            if (totalChars > _guard.Options.MaxExtractedChars)
+                throw ContentSafetyException.PayloadTooLarge("Kaynak metni isleme limitini asiyor.");
+
             if (!string.IsNullOrWhiteSpace(text))
                 pages.Add(new ExtractedPage(page.Number, text));
         }

@@ -7,6 +7,7 @@
 //
 // Kullanım:
 //   node scripts/healthcheck.mjs
+//   ORKA_API_URL=http://localhost:5065 node scripts/healthcheck.mjs
 //   node scripts/healthcheck.mjs --base-url=http://stage:5065
 //   node scripts/healthcheck.mjs --quick        # LLM çağrısı yok
 //   node scripts/healthcheck.mjs --admin-email=me@example.com
@@ -34,7 +35,7 @@ const args = Object.fromEntries(
   })
 );
 
-const BASE_URL = (args["base-url"] ?? "http://localhost:5065").replace(/\/$/, "");
+const BASE_URL = (args["base-url"] ?? process.env.ORKA_API_URL ?? "http://localhost:5065").replace(/\/$/, "");
 const QUICK = args["quick"] === "true";
 const ADMIN_EMAIL = args["admin-email"] ?? null;
 const ADMIN_PASSWORD = args["admin-password"] ?? null;

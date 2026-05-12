@@ -33,7 +33,7 @@ const slide = (x: number, delay = 0) => ({
   transition: { duration: 0.62, delay, ease: "easeOut" as const },
 });
 
-const modules = ["Adaptif Plan", "Otonom Wiki", "Dinamik Quiz", "NotebookLM/RAG", "Korteks", "Sesli Sınıf", "Sandbox IDE"];
+const modules = ["Plan", "Wiki", "Quiz", "NotebookLM/OrkaLM", "Tutor", "Sesli Sınıf", "IDE"];
 
 const featureCards = [
   {
@@ -136,21 +136,22 @@ export default function Landing() {
       </nav>
 
       <main className="relative z-10">
-        <section className="mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-32 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:pt-40">
+        <section className="mx-auto grid w-full max-w-6xl overflow-hidden px-5 pb-20 pt-32 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-12 lg:pt-40">
           <motion.div
             initial={{ opacity: 0, y: 26 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.72, ease: "easeOut" }}
+            className="min-w-0"
           >
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1.5 text-xs font-bold text-[#2d5870] shadow-sm backdrop-blur">
               <Sparkles className="h-3.5 w-3.5" />
               {t("landing_badge")}
             </div>
-            <h1 className="font-display max-w-4xl text-5xl font-bold leading-[0.98] tracking-[-0.055em] text-[#172033] sm:text-6xl lg:text-7xl">
+            <h1 className="font-display max-w-[calc(100vw-2.5rem)] text-4xl font-bold leading-[1.02] tracking-[-0.03em] text-[#172033] sm:max-w-4xl sm:text-6xl sm:tracking-[-0.055em] lg:text-7xl">
               {t("landing_title_a")}
               <span className="block text-[#4f7485]">{t("landing_title_b")}</span>
             </h1>
-            <p className="mt-6 max-w-xl text-base leading-8 text-[#5f6f7b] sm:text-lg">
+            <p className="mt-6 max-w-[calc(100vw-2.5rem)] break-words text-base leading-8 text-[#5f6f7b] sm:max-w-xl sm:text-lg">
               {t("landing_body")}
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
@@ -168,7 +169,7 @@ export default function Landing() {
                 {t("landing_secondary")}
               </a>
             </div>
-            <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
+            <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-3">
               {[
                 ["20", "tanı sorusu"],
                 ["24s", "Wiki cache"],
@@ -186,11 +187,11 @@ export default function Landing() {
             initial={{ opacity: 0, x: 34, rotate: 1.5 }}
             animate={{ opacity: 1, x: 0, rotate: 0 }}
             transition={{ duration: 0.78, delay: 0.12, ease: "easeOut" }}
-            className="relative"
+            className="relative min-w-0"
           >
             <div className="absolute -left-10 top-14 h-36 w-36 rounded-full bg-[#b8d4df]/25 blur-2xl" />
             <div className="absolute -right-8 bottom-10 h-40 w-40 rounded-full bg-[#bfd8c8]/22 blur-2xl" />
-            <div className="orka-glass relative overflow-hidden rounded-[2rem] p-4 sm:p-5">
+            <div className="orka-glass relative w-full min-w-0 overflow-hidden rounded-[2rem] p-4 sm:p-5">
               <div className="mb-4 flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full bg-[#d9a9a0]" />
                 <span className="h-3 w-3 rounded-full bg-[#d9bd79]" />
@@ -201,14 +202,14 @@ export default function Landing() {
                 <div className="rounded-3xl bg-[#172033] p-4 text-white shadow-lg shadow-slate-900/10">
                   <div className="mb-4 flex items-center gap-2">
                     <OrcaLogo className="h-4 w-4" />
-                    <span className="text-xs font-bold">Agent Studio</span>
+                    <span className="text-xs font-bold">Learning Agent Loop</span>
                   </div>
                   {[
-                    ["Plan", "Adaptif Bilişsel Harita"],
-                    ["Tutor", "Derin Bağlam Analizi"],
-                    ["Quiz", "Algoritmik Zayıflık Testi"],
-                    ["Wiki", "Otonom Hafıza İndeksi"],
-                    ["Sınıf", "Çoklu-Ajan Senkronizasyonu"],
+                    ["Hedef", "Çalışma niyeti netleşti"],
+                    ["Kaynak", "Kanıt ve citation kontrol edildi"],
+                    ["Tutor", "Seviyeye göre anlatım seçildi"],
+                    ["Canvas", "Diagram ve mikro görev hazırlandı"],
+                    ["Kanıt", "Mastery iddiası ölçüme bağlandı"],
                   ].map(([item, detail], index) => (
                     <motion.div
                       key={item}
@@ -230,24 +231,24 @@ export default function Landing() {
                     <BrainCircuit className="mt-1 h-5 w-5 text-[#52768a]" />
                     <div>
                       <p className="text-sm font-extrabold text-[#172033]">Öğrenci sinyali yakalandı</p>
-                      <p className="mt-1 text-xs leading-5 text-[#667085]">Mikro-davranış analizi: "Optimizasyon" kavramında yapısal boşluk saptandı. Öğrenme düğümü zayıf olarak işaretlendi ve telafi döngüsü başlatıldı.</p>
+                      <p className="mt-1 text-xs leading-5 text-[#667085]">Orka, kaynak cevabı, quiz sonucu ve Tutor konuşmasını aynı döngüde okur. Kanıt düşükse cevap vermekle yetinmez; ipucu, örnek ve mikro kontrol seçer.</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-[#f4ecdc]/82 p-3">
                       <BookOpen className="h-4 w-4 text-[#906c36]" />
-                      <p className="mt-3 text-xs font-bold text-[#172033]">Dinamik Telafi Entegre</p>
-                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Zihinsel modele uygun 3 yeni senaryo üretildi.</p>
+                      <p className="mt-3 text-xs font-bold text-[#172033]">Artifact Canvas</p>
+                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Tablo, diagram ve örnekler konuşmada kaybolmaz.</p>
                     </div>
                     <div className="rounded-2xl bg-[#d9e7de]/72 p-3">
                       <CheckCircle2 className="h-4 w-4 text-[#547c61]" />
-                      <p className="mt-3 text-xs font-bold text-[#172033]">Nöral Hafıza Eklendi</p>
-                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">"Optimizasyon Açığı" kavramı kişisel Wiki'ye işlendi.</p>
+                      <p className="mt-3 text-xs font-bold text-[#172033]">Canlı iz</p>
+                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Tutor'un neden böyle anlattığı okunur hale gelir.</p>
                     </div>
                   </div>
                   <div className="rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/64 p-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#52768a]">Çoklu-Ajan Sentezi</p>
-                    <p className="mt-2 text-xs leading-5 text-[#344054]">Modelinizin zayıf noktasını hedef alarak web ve kişisel dokümanlarınızdan sentezlenmiş hibrit açıklama. <span className="font-bold text-[#2d5870]">[wiki:optimizasyon] [web:derin-öğrenme]</span></p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#52768a]">Ajan-native öğrenme</p>
+                    <p className="mt-2 text-xs leading-5 text-[#344054]">Hedef, kaynak, araç, artifact ve mastery kanıtı tek çalışma alanında birleşir; QA ve sistem güveni ise bu döngünün arkasında sessizce çalışır. <span className="font-bold text-[#2d5870]">[kaynak] [tutor] [kanıt]</span></p>
                   </div>
                 </div>
               </div>

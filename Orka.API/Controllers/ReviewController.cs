@@ -38,6 +38,6 @@ public class ReviewController : ControllerBase
             request.Notes,
             HttpContext.RequestAborted);
 
-        return result == null ? NotFound(new { message = "Review item bulunamadi." }) : Ok(result);
+        return result == null ? NotFound(new { message = "Review item bulunamadı." }) : Ok(result);
     }
 }

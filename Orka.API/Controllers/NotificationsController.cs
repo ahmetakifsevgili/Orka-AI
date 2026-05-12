@@ -31,7 +31,7 @@ public class NotificationsController : ControllerBase
     public async Task<IActionResult> MarkRead(Guid id)
     {
         var result = await _notifications.MarkReadAsync(GetUserId(), id, HttpContext.RequestAborted);
-        return result == null ? NotFound(new { message = "Notification bulunamadi." }) : Ok(result);
+        return result == null ? NotFound(new { message = "Notification bulunamadı." }) : Ok(result);
     }
 
     [HttpPost("read-all")]

@@ -12,21 +12,72 @@ namespace Orka.API.Tests;
 
 public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 {
+    private static readonly object ChaosTrackingGate = new();
+    private static readonly List<string> ChaosTrackingProviders = [];
+
     private readonly string _databaseName = $"OrkaSmoke_{Guid.NewGuid():N}";
+    private readonly string _environmentName;
+    private readonly IReadOnlyDictionary<string, string?> _configurationOverrides;
+    private readonly Action<IServiceCollection>? _configureServices;
+
+    public ApiSmokeFactory()
+        : this("Development")
+    {
+    }
+
+    internal ApiSmokeFactory(
+        string environmentName,
+        IReadOnlyDictionary<string, string?>? configurationOverrides = null,
+        Action<IServiceCollection>? configureServices = null)
+    {
+        _environmentName = environmentName;
+        _configurationOverrides = configurationOverrides ?? new Dictionary<string, string?>();
+        _configureServices = configureServices;
+    }
+
+    public static void ResetChaosTracking()
+    {
+        lock (ChaosTrackingGate)
+        {
+            ChaosTrackingProviders.Clear();
+        }
+    }
+
+    public static IReadOnlyList<string> GetChaosTrackingProviders()
+    {
+        lock (ChaosTrackingGate)
+        {
+            return ChaosTrackingProviders.ToArray();
+        }
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment(_environmentName);
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var values = new Dictionary<string, string?>
             {
                 ["JWT:Issuer"] = "orka-api",
                 ["JWT:Audience"] = "orka-client",
+                ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01",
                 ["Database:AutoMigrateOnStartup"] = "false",
-                ["ConnectionStrings:Redis"] = "127.0.0.1:6399,abortConnect=false"
-            });
+                ["ConnectionStrings:Redis"] = "127.0.0.1:6399,abortConnect=false",
+                ["Cors:AllowedOrigins:0"] = "http://localhost:3000",
+                ["RateLimits:Auth:Backend"] = "InMemory",
+                ["RateLimits:Auth:AllowInMemoryFallback"] = "true",
+                ["RateLimits:Auth:Login:PermitLimit"] = "1000",
+                ["RateLimits:Auth:Register:PermitLimit"] = "1000",
+                ["RateLimits:Auth:Refresh:PermitLimit"] = "1000"
+            };
+
+            foreach (var (key, value) in _configurationOverrides)
+            {
+                values[key] = value;
+            }
+
+            config.AddInMemoryCollection(values);
         });
 
         builder.ConfigureServices(services =>
@@ -52,7 +103,18 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             }
 
-            services.AddSingleton<IAIAgentFactory, SmokeAgentFactory>();
+            services.AddScoped<IAIAgentFactory, SmokeAgentFactory>();
+
+            var groqDescriptors = services
+                .Where(d => d.ServiceType == typeof(IGroqService))
+                .ToList();
+
+            foreach (var descriptor in groqDescriptors)
+            {
+                services.Remove(descriptor);
+            }
+
+            services.AddScoped<IGroqService, SmokeGroqService>();
 
             var embeddingDescriptors = services
                 .Where(d => d.ServiceType == typeof(IEmbeddingService))
@@ -98,6 +160,19 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IRedisMemoryService, SmokeRedisMemoryService>();
 
+            var chaosDescriptors = services
+                .Where(d => d.ServiceType == typeof(IChaosContext))
+                .ToList();
+
+            foreach (var descriptor in chaosDescriptors)
+            {
+                services.Remove(descriptor);
+            }
+
+            services.AddScoped<IChaosContext, SmokeChaosContext>();
+
+            _configureServices?.Invoke(services);
+
             using var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
@@ -107,6 +182,13 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
     private sealed class SmokeAgentFactory : IAIAgentFactory
     {
+        private readonly IChaosContext _chaos;
+
+        public SmokeAgentFactory(IChaosContext chaos)
+        {
+            _chaos = chaos;
+        }
+
         public string GetModel(AgentRole role) => "smoke-model";
 
         public string GetProvider(AgentRole role) => "smoke-provider";
@@ -135,6 +217,27 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             CompleteChatAsync(role, systemPrompt, string.Join("\n", messages.Select(m => m.Content)), ct);
     }
 
+    private sealed class SmokeChaosContext : IChaosContext
+    {
+        private string? _failingProvider;
+
+        public bool IsProviderFailing(string providerName) =>
+            !string.IsNullOrEmpty(_failingProvider) &&
+            string.Equals(_failingProvider, providerName, StringComparison.OrdinalIgnoreCase);
+
+        public void SetFailingProvider(string providerName)
+        {
+            _failingProvider = providerName?.Trim();
+            if (string.IsNullOrWhiteSpace(_failingProvider))
+                return;
+
+            lock (ChaosTrackingGate)
+            {
+                ChaosTrackingProviders.Add(_failingProvider);
+            }
+        }
+    }
+
     private sealed class SmokePistonService : IPistonService
     {
         public Task<PistonResult> ExecuteAsync(string code, string language = "csharp", string? stdin = null)
@@ -153,6 +256,55 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
                 new("csharp", "smoke", []),
                 new("python", "smoke", [])
             ]);
+    }
+
+    private sealed class SmokeGroqService : IGroqService
+    {
+        private readonly IChaosContext _chaos;
+
+        public SmokeGroqService(IChaosContext chaos)
+        {
+            _chaos = chaos;
+        }
+
+        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default) =>
+            GetResponseAsync([], systemPrompt, ct);
+
+        public async IAsyncEnumerable<string> GenerateResponseStreamAsync(
+            string systemPrompt,
+            string userMessage,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return await GetResponseAsync([], systemPrompt, ct);
+        }
+
+        public Task<string> GetResponseAsync(IEnumerable<Core.Entities.Message> context, string systemPrompt, CancellationToken ct = default)
+        {
+            if (_chaos.IsProviderFailing("Groq"))
+                throw new HttpRequestException("Smoke chaos Groq failure.");
+
+            return Task.FromResult("OK");
+        }
+
+        public async IAsyncEnumerable<string> GetResponseStreamAsync(
+            IEnumerable<Core.Entities.Message> context,
+            string systemPrompt,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return await GetResponseAsync(context, systemPrompt, ct);
+        }
+
+        public Task<string> SummarizeSessionAsync(IEnumerable<Core.Entities.Message> messages) =>
+            Task.FromResult("Smoke summary");
+
+        public Task<RoutingResult> SemanticRouteAsync(string message, string? currentPhase = "Discovery") =>
+            Task.FromResult(new RoutingResult { Intent = "general", Method = "smoke" });
+
+        public Task<string> ResearchAsync(string topic, string depth = "normal") =>
+            Task.FromResult("Smoke research");
+
+        public Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel öğrenme", string level = "orta") =>
+            Task.FromResult("Smoke plan");
     }
 
     private sealed class SmokeEmbeddingService : IEmbeddingService

@@ -31,9 +31,11 @@ public sealed class RuntimeTelemetryHardeningTests
             CorrelationId: "corr-test",
             MetadataJson: new string('x', 5000)));
 
+        var topicId = Guid.NewGuid();
         await service.RecordCostAsync(new CostRecordRequest(
             UserId: Guid.NewGuid(),
             SessionId: Guid.NewGuid(),
+            TopicId: topicId,
             MessageId: Guid.NewGuid(),
             AgentRole: "Tutor",
             Provider: "AIAgentFactory",
@@ -52,6 +54,7 @@ public sealed class RuntimeTelemetryHardeningTests
 
         var cost = await db.CostRecords.SingleAsync();
         Assert.Equal("Tutor", cost.AgentRole);
+        Assert.Equal(topicId, cost.TopicId);
         Assert.Equal(0, cost.EstimatedTokens);
         Assert.Equal(0m, cost.EstimatedCostUsd);
     }
@@ -70,7 +73,9 @@ public sealed class RuntimeTelemetryHardeningTests
     [Fact]
     public async Task BackgroundQueue_RejectsMissingJobType()
     {
-        var queue = new BackgroundTaskQueue(NullLogger<BackgroundTaskQueue>.Instance);
+        var queue = new BackgroundTaskQueue(
+            new AsyncLocalAiRequestContextAccessor(),
+            NullLogger<BackgroundTaskQueue>.Instance);
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
             await queue.QueueAsync(new BackgroundTaskItem(
@@ -78,6 +83,42 @@ public sealed class RuntimeTelemetryHardeningTests
                 null,
                 null,
                 _ => Task.CompletedTask)));
+    }
+
+    [Fact]
+    public async Task BackgroundQueue_PushesAiRequestContextForJob()
+    {
+        var accessor = new AsyncLocalAiRequestContextAccessor();
+        var queue = new BackgroundTaskQueue(accessor, NullLogger<BackgroundTaskQueue>.Instance);
+        var userId = Guid.NewGuid();
+        var observed = new TaskCompletionSource<AiRequestContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await queue.StartAsync(CancellationToken.None);
+        try
+        {
+            await queue.QueueAsync(new BackgroundTaskItem(
+                "ai-context-test",
+                userId,
+                "corr-test",
+                _ =>
+                {
+                    observed.SetResult(accessor.Current);
+                    return Task.CompletedTask;
+                }));
+
+            var completed = await Task.WhenAny(observed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(observed.Task, completed);
+
+            var context = await observed.Task;
+            Assert.Equal(userId, context.UserId);
+            Assert.Equal("corr-test", context.CorrelationId);
+            Assert.Equal("ai-context-test", context.Source);
+            Assert.True(context.IsBackground);
+        }
+        finally
+        {
+            await queue.StopAsync(CancellationToken.None);
+        }
     }
 
     private static OrkaDbContext CreateDb()

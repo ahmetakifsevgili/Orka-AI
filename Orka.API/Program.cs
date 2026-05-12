@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.IdentityModel.Tokens;
@@ -8,6 +9,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Orka.API.Middleware;
+using Orka.API.Services;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
@@ -20,6 +22,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 var builder = WebApplication.CreateBuilder(args);
 var databaseProvider = builder.Configuration["Database:Provider"] ?? "SqlServer";
 var useInMemoryDatabase = databaseProvider.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
+RefreshTokenHashSecretResolver.Resolve(builder.Configuration, builder.Environment);
 
 // Windows EventLog provider local dev'de yetki hatasıyla request'i düşürebiliyor.
 // API'nin hata döndürmesini log yazma yetkisine bağımlı bırakmıyoruz.
@@ -54,8 +57,39 @@ builder.Services.AddOpenTelemetry()
     });
 
 builder.Services.AddControllers();
+builder.Services.Configure<ContentSafetyOptions>(builder.Configuration.GetSection("ContentSafety"));
+builder.Services.Configure<FormOptions>(options =>
+{
+    var uploadOptions = builder.Configuration
+        .GetSection("ContentSafety:Uploads")
+        .Get<UploadContentSafetyOptions>() ?? new UploadContentSafetyOptions();
+
+    options.MultipartBodyLengthLimit = uploadOptions.EffectiveMaxMultipartBodyBytes();
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpContextAccessor(); // Chaos Monkey & request-scoped context
+builder.Services.AddSingleton<AuthAttemptRateLimiter>();
+builder.Services.AddSingleton<IRedisAuthAttemptStore, RedisAuthAttemptStore>();
+builder.Services.AddSingleton<IAuthAttemptLimiter>(sp =>
+{
+    var policy = AuthRateLimitStartupPolicy.Resolve(
+        sp.GetRequiredService<IConfiguration>(),
+        sp.GetRequiredService<IHostEnvironment>());
+
+    var inMemoryLimiter = sp.GetRequiredService<AuthAttemptRateLimiter>();
+    if (policy.Backend.Equals(AuthRateLimitStartupPolicy.BackendInMemory, StringComparison.OrdinalIgnoreCase))
+        return inMemoryLimiter;
+
+    return new RedisAuthAttemptLimiter(
+        sp.GetRequiredService<IRedisAuthAttemptStore>(),
+        inMemoryLimiter,
+        sp.GetRequiredService<ILogger<RedisAuthAttemptLimiter>>(),
+        sp.GetRequiredService<IHostEnvironment>(),
+        policy.AllowInMemoryFallback);
+});
+builder.Services.AddScoped<ResourceOwnershipGuard>();
+builder.Services.AddScoped<IPendingEfMigrationsReader, EfCorePendingMigrationsReader>();
+builder.Services.AddSingleton<UploadContentSafetyGuard>();
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -107,12 +141,14 @@ builder.Services.AddScoped<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks()
     .AddRedis(redisConnection, name: "redis", tags: new[] { "ready" },
               timeout: TimeSpan.FromSeconds(3))
-    .AddDbContextCheck<OrkaDbContext>(name: useInMemoryDatabase ? "in-memory-db" : "sql-server", tags: new[] { "ready" });
+    .AddDbContextCheck<OrkaDbContext>(name: useInMemoryDatabase ? "in-memory-db" : "sql-server", tags: new[] { "ready" })
+    .AddCheck<EfPendingMigrationsHealthCheck>("ef-migrations", tags: new[] { "ready" });
 
 // Services
 builder.Services.AddScoped<IRedisMemoryService, RedisMemoryService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IDataLifecycleService, DataLifecycleService>();
 builder.Services.AddScoped<IContextBuilder, ContextBuilder>();
 builder.Services.AddScoped<IWikiService, WikiService>();
 builder.Services.AddScoped<ITopicDetectorService, TopicDetectorService>();
@@ -199,6 +235,10 @@ builder.Services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerSer
 builder.Services.AddScoped<IChatMetadataService, ChatMetadataService>();
 builder.Services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
 builder.Services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
+builder.Services.AddScoped<IAiProviderTelemetryService, AiProviderTelemetryService>();
+builder.Services.AddScoped<IAiUsageBudgetService, AiUsageBudgetService>();
+builder.Services.AddSingleton<IAiProviderCircuitBreaker, AiProviderCircuitBreaker>();
+builder.Services.AddSingleton<IAiRequestContextAccessor, AsyncLocalAiRequestContextAccessor>();
 builder.Services.AddScoped<IStandardsAlignmentService, StandardsAlignmentService>();
 builder.Services.AddScoped<IStandardsValidationService, StandardsValidationService>();
 builder.Services.AddScoped<IStandardsExportService, StandardsExportService>();
@@ -550,11 +590,20 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+var corsPolicy = CorsStartupPolicyResolver.Resolve(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("OrkaCors", policy =>
     {
-        policy.AllowAnyOrigin()
+        if (corsPolicy.AllowAnyOrigin)
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+            return;
+        }
+
+        policy.WithOrigins(corsPolicy.AllowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -562,11 +611,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Migration hatasi Swagger/health'i dusurmesin. Local dev'de gerekirse
-// Database:AutoMigrateOnStartup=true yapilarak eski davranis acilabilir.
-var autoMigrateOnStartup = builder.Configuration.GetValue(
-    "Database:AutoMigrateOnStartup",
-    builder.Environment.IsProduction());
+var autoMigrateOnStartup = DatabaseMigrationStartupPolicy.ShouldRunStartupMigration(
+    builder.Configuration,
+    builder.Environment,
+    useInMemoryDatabase);
 
 if (autoMigrateOnStartup && !useInMemoryDatabase)
 {
@@ -586,6 +634,8 @@ if (autoMigrateOnStartup && !useInMemoryDatabase)
 // CorrelationId ilk sıraya gelmeli — tüm sonraki middleware'ler ID'yi kullanabilsin
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<MultipartBodyLimitMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {

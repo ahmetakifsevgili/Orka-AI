@@ -671,7 +671,7 @@ public class DashboardController : ControllerBase
                 status = countSignal(LearningSignalTypes.IdeRunCompleted) + countSignal(LearningSignalTypes.IdeSentToTutor) > 0
                     ? "healthy"
                     : "idle",
-                detail = "Kod calistirma ve hocaya gonderme akisi topic/session ogrenme hafizasina bagli.",
+                detail = "Kod çalıştırma ve hocaya gönderme akışı topic/session öğrenme hafızasına bağlı.",
                 signals = new[] { LearningSignalTypes.IdeRunCompleted, LearningSignalTypes.IdeSentToTutor }
                     .Select(signalType => new { signalType, count = countSignal(signalType) })
                     .ToList()

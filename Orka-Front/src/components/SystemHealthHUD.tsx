@@ -289,7 +289,7 @@ export default function SystemHealthHUD() {
       items.push({ title: "Redis offline", detail: data.redis.lastError ?? "Cache ve realtime metrikler fallback modunda.", tone: "red", icon: WifiOff });
     }
     if (data.endpointHealth && !data.endpointHealth.health.database.canConnect) {
-      items.push({ title: "DB readiness", detail: data.endpointHealth.health.database.error ?? "SQL baglantisi hazir degil; auth ve user endpointleri etkilenir.", tone: "red", icon: Database });
+      items.push({ title: "DB readiness", detail: data.endpointHealth.health.database.error ?? "SQL bağlantısı hazır değil; auth ve user endpointleri etkilenir.", tone: "red", icon: Database });
     }
     if (data.endpointHealth && !data.endpointHealth.swagger.enabled) {
       items.push({ title: "Swagger kapali", detail: "Swagger yalnizca Development ortaminda acik.", tone: "amber", icon: Server });
@@ -298,7 +298,7 @@ export default function SystemHealthHUD() {
       items.push({ title: "Ajan sagligi", detail: `${criticalAgents} kritik, ${degradedAgents} degraded ajan var.`, tone: criticalAgents > 0 ? "red" : "amber", icon: Cpu });
     }
     if (data.learningOps.unknownSkillRatePct >= 20) {
-      items.push({ title: "Skill metadata zayif", detail: `Quiz cevaplarinin %${data.learningOps.unknownSkillRatePct} kadari skill etiketsiz.`, tone: "amber", icon: Target });
+      items.push({ title: "Skill metadata zayıf", detail: `Quiz cevaplarının %${data.learningOps.unknownSkillRatePct} kadarı skill etiketsiz.`, tone: "amber", icon: Target });
     }
     if (data.learningOps.repeatedQuestionRatePct >= 10) {
       items.push({ title: "Quiz tekrar riski", detail: `Soru hash tekrar orani %${data.learningOps.repeatedQuestionRatePct}.`, tone: "amber", icon: RotateCcw });
@@ -364,7 +364,7 @@ export default function SystemHealthHUD() {
               </div>
               <h1 className="text-3xl font-black tracking-tight text-zinc-50">Sistem cockpit</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">
-                Redis cache, NotebookLM araclari, agent kalp atislari ve ogrenme sinyalleri tek yerde. Amac ham veri degil, neye mudahale edecegimizi hizli gostermek.
+                Redis cache, NotebookLM araçları, agent kalp atışları ve öğrenme sinyalleri tek yerde. Amaç ham veri değil, neye müdahale edeceğimizi hızlı göstermek.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -458,7 +458,7 @@ export default function SystemHealthHUD() {
                     <div className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Zayif skill radar</div>
                     <div className="space-y-3">
                       {data.learningOps.topWeakSkills.length === 0 ? (
-                        <p className="text-xs text-[#98a2b3]">Henuz zayif skill sinyali yok.</p>
+                        <p className="text-xs text-[#98a2b3]">Henüz zayıf skill sinyali yok.</p>
                       ) : data.learningOps.topWeakSkills.map((skill) => (
                         <div key={skill.skillTag}>
                           <div className="mb-1 flex items-center justify-between gap-3 text-xs">

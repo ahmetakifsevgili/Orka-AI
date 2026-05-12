@@ -5,14 +5,17 @@ import type { AdaptiveAssessmentNextItem, ApiTopic } from "@/lib/types";
 import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuizAPI, ReviewAPI } from "@/services/api";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import QuizCard from "./QuizCard";
+import { NextActionCard, WorkspaceHeader, WorkspaceMetric } from "./AgenticWorkspace";
 
 type PanelProps = {
   topic: ApiTopic | null;
   sessionId?: string;
   onOpenChat: () => void;
+  onOpenIDE?: () => void;
+  mode?: "practice" | "review";
 };
 
-export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelProps) {
+export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE, mode = "review" }: PanelProps) {
   const [loading, setLoading] = useState(false);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -27,6 +30,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
 
   const topicId = topic?.id;
   const title = topic?.title ?? "Genel çalışma alanı";
+  const isPractice = mode === "practice";
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -119,11 +123,15 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent">
       <div className="flex-shrink-0 border-b border-[#526d82]/10 px-6 py-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">Pratik ve Hafıza</p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#172033]">{title}</h1>
-            <p className="mt-1 text-sm text-[#667085]">Flashcard, SRS tekrar, günlük görev ve bookmark akışı backend ile canlı çalışır.</p>
-          </div>
+          <WorkspaceHeader
+            eyebrow={isPractice ? "Adaptive Practice Workspace" : "Memory / Review Workspace"}
+            title={isPractice ? "Pratik" : "Tekrar"}
+            description={
+              isPractice
+                ? `${title} için sıradaki soru, kavram kanıtı ve IDE görevi aynı çalışma yüzeyinde tutulur.`
+                : `${title} için tekrar, flashcard, bookmark ve telafi hafızası tek akışta görünür.`
+            }
+          />
           <div className="flex flex-col items-start gap-2 lg:items-end">
             <ToolCapabilityStrip />
             <button
@@ -139,34 +147,33 @@ export default function LearningPanel({ topic, sessionId, onOpenChat }: PanelPro
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        <section className="mb-5 rounded-[1.5rem] border border-[#526d82]/12 bg-[#f7f4ec]/72 p-5 shadow-sm">
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">Ogrenme dongusu</p>
-              <h2 className="mt-1 text-lg font-black text-[#172033]">Orka yanlis cevabi, kod hatasini ve kaydedilen notu bosa harcamaz.</h2>
-              <p className="mt-2 text-sm leading-6 text-[#667085]">
-                Buradaki her kart, tekrar, challenge ve bookmark sahte skor degil; backend'den gelen gercek calisma yuzeyidir. Veri yoksa Orka bunu bos durum olarak gosterir.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-2xl bg-white/58 px-4 py-3">
-                <span className="block text-lg font-black text-[#172033]">{flashcards.length}</span>
-                <span className="text-[#667085]">hafiza karti</span>
-              </div>
-              <div className="rounded-2xl bg-white/58 px-4 py-3">
-                <span className="block text-lg font-black text-[#172033]">{reviews.length}</span>
-                <span className="text-[#667085]">bekleyen tekrar</span>
-              </div>
-              <div className="rounded-2xl bg-white/58 px-4 py-3">
-                <span className="block text-lg font-black text-[#172033]">{challenge ? "hazir" : "yok"}</span>
-                <span className="text-[#667085]">gunluk gorev</span>
-              </div>
-              <div className="rounded-2xl bg-white/58 px-4 py-3">
-                <span className="block text-lg font-black text-[#172033]">{bookmarks.length}</span>
-                <span className="text-[#667085]">kaydedilen not</span>
-              </div>
-            </div>
-          </div>
+        <section className="mb-5">
+          <NextActionCard
+            title={isPractice ? "Adaptif pratiği başlat ve kanıt topla" : reviews.length > 0 ? "Bekleyen tekrarları kapat" : "Hafızanı güçlendirecek bir kart ekle"}
+            reason={
+              isPractice
+                ? "Orka soru seçimini zayıf veya kararsız kavramlardan yapar; doğru/yanlış cevap mastery kanıtına dönüşür."
+                : reviews.length > 0
+                  ? "Zamanı gelen tekrarlar unutmayı azaltır ve Tutor'un sonraki anlatımını daha iyi ayarlar."
+                  : "Henüz bekleyen tekrar yok; önemli bir notu flashcard veya bookmark olarak kaydetmek hafızayı besler."
+            }
+            primaryLabel={isPractice ? "Adaptif pratiği başlat" : reviews.length > 0 ? "Tekrarları göster" : "Flashcard ekle"}
+            onPrimary={isPractice ? () => void startAdaptivePractice() : () => undefined}
+            secondary={
+              <button
+                onClick={isPractice ? onOpenIDE : onOpenChat}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/65 px-4 py-3 text-xs font-black text-[#172033] transition hover:bg-[#f7f9fa]"
+              >
+                {isPractice ? "IDE laboratuvarı" : "Tutor'a sor"}
+              </button>
+            }
+          />
+        </section>
+        <section className="mb-5 grid gap-3 md:grid-cols-4">
+          <WorkspaceMetric label="Hafıza kartı" value={flashcards.length} detail="özet kanıt" />
+          <WorkspaceMetric label="Bekleyen tekrar" value={reviews.length} detail="SRS kuyruğu" />
+          <WorkspaceMetric label="Günlük görev" value={challenge ? "hazır" : "yok"} detail="mikro pratik" />
+          <WorkspaceMetric label="Kaydedilen not" value={bookmarks.length} detail="bookmark" />
         </section>
         <section className="mb-5 rounded-[1.5rem] border border-[#8fb7a2]/28 bg-[#f2faf5]/76 p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

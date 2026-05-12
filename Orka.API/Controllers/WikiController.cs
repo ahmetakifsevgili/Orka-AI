@@ -95,7 +95,7 @@ public class WikiController : ControllerBase
         }
         catch (Exception)
         {
-            return BadRequest(new { message = "Istek islenemedi." });
+            return BadRequest(new { message = "İstek işlenemedi." });
         }
     }
 
@@ -234,8 +234,16 @@ public class WikiController : ControllerBase
     /// Wiki içeriğinden soru cevaplama (mevcut ajan).
     /// </summary>
     [HttpPost("{topicId}/chat")]
-    public async Task AskWikiQuestion(Guid topicId, [FromBody] WikiChatRequest request)
+    public async Task AskWikiQuestion(Guid topicId, [FromBody] WikiChatRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Question))
+        {
+            Response.StatusCode = 400;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = "Soru boş olamaz." });
+            return;
+        }
+
         var userId = GetUserId();
         var ct = HttpContext.RequestAborted;
 
@@ -279,8 +287,16 @@ public class WikiController : ControllerBase
     /// Frontend'e SSE stream olarak adım adım bilgi akar.
     /// </summary>
     [HttpPost("{topicId}/research")]
-    public async Task KorteksResearch(Guid topicId, [FromBody] WikiChatRequest request, [FromServices] IKorteksAgent korteks)
+    public async Task KorteksResearch(Guid topicId, [FromBody] WikiChatRequest? request, [FromServices] IKorteksAgent korteks)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Question))
+        {
+            Response.StatusCode = 400;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = "Araştırma sorusu boş olamaz." });
+            return;
+        }
+
         var userId = GetUserId();
 
         Response.ContentType = "text/event-stream";

@@ -190,6 +190,73 @@ public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
         Assert.DoesNotContain("IWikiAgent", sse);
     }
 
+    [Fact]
+    public async Task V1GovernanceEndpoints_AreAuthorizedAndReturnActionableContracts()
+    {
+        _client.DefaultRequestHeaders.Authorization = null;
+        var unauthorized = await _client.GetAsync("/api/production-readiness/v1");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        var token = await RegisterAndLoginAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var topicId = await CreateTopicAsync();
+
+        var readiness = await _client.GetAsync("/api/production-readiness/v1");
+        readiness.EnsureSuccessStatusCode();
+        using var readinessJson = await JsonDocument.ParseAsync(await readiness.Content.ReadAsStreamAsync());
+        var root = readinessJson.RootElement;
+        Assert.True(root.TryGetProperty("status", out var status));
+        Assert.False(string.IsNullOrWhiteSpace(status.GetString()));
+        var sections = root.GetProperty("sections").EnumerateArray().ToArray();
+        Assert.Contains(sections, s => s.GetProperty("key").GetString() == "standards");
+        Assert.Contains(sections, s => s.GetProperty("key").GetString() == "db_indexes");
+        Assert.Contains(sections, s => s.GetProperty("key").GetString() == "regression");
+
+        var standardsSummary = await _client.GetAsync($"/api/standards/topic/{topicId}/summary");
+        standardsSummary.EnsureSuccessStatusCode();
+        using var summaryJson = await JsonDocument.ParseAsync(await standardsSummary.Content.ReadAsStreamAsync());
+        Assert.Equal(topicId, summaryJson.RootElement.GetProperty("topicId").GetGuid());
+        Assert.True(summaryJson.RootElement.TryGetProperty("standardsAlignmentStatus", out _));
+
+        var validation = await _client.PostAsync($"/api/standards/topic/{topicId}/validate", null);
+        validation.EnsureSuccessStatusCode();
+        using var validationJson = await JsonDocument.ParseAsync(await validation.Content.ReadAsStreamAsync());
+        Assert.True(validationJson.RootElement.TryGetProperty("status", out _));
+        Assert.True(validationJson.RootElement.TryGetProperty("issueCount", out _));
+
+        var export = await _client.PostAsync($"/api/standards/topic/{topicId}/export", null);
+        export.EnsureSuccessStatusCode();
+        using var exportJson = await JsonDocument.ParseAsync(await export.Content.ReadAsStreamAsync());
+        Assert.Equal("combined", exportJson.RootElement.GetProperty("exportType").GetString());
+        Assert.Contains("caseLike", exportJson.RootElement.GetProperty("payloadJson").GetString());
+        Assert.Contains("qtiLike", exportJson.RootElement.GetProperty("payloadJson").GetString());
+        Assert.Contains("caliperXapiLike", exportJson.RootElement.GetProperty("payloadJson").GetString());
+
+        var textHealth = await _client.GetAsync("/api/dev/text-health");
+        Assert.Equal(HttpStatusCode.Forbidden, textHealth.StatusCode);
+
+        var audioPurge = await _client.PostAsync("/api/production-readiness/retention/audio/purge", null);
+        Assert.Equal(HttpStatusCode.Forbidden, audioPurge.StatusCode);
+
+        var redisTrim = await _client.PostAsync("/api/production-readiness/redis/tutor-events/trim", null);
+        Assert.Equal(HttpStatusCode.Forbidden, redisTrim.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChatController_RejectsEmptyMessageBeforeAgentPipeline()
+    {
+        var token = await RegisterAndLoginAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.PostAsJsonAsync("/api/chat/message", new
+        {
+            content = "",
+            sessionId = Guid.NewGuid()
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private async Task<string> RegisterAndLoginAsync()
     {
         var email = $"bridge-{Guid.NewGuid():N}@orka.local";

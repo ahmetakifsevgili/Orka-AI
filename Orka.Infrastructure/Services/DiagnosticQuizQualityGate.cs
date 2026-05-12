@@ -416,9 +416,9 @@ public static class DiagnosticQuizQualityGate
         {
             stem = skill switch
             {
-                "analysis" => $"{concept} icin asagidaki ornekte sonuc veya risk nasil okunmalidir?",
-                "misconception_probe" => $"{concept} icin asagidaki ornekte hangi yanilgiye dikkat edilmelidir?",
-                _ => $"{concept} icin asagidaki ornek hangi akil yurutmeyi gerektirir?"
+                "analysis" => $"{concept} için aşağıdaki örnekte sonuç veya risk nasıl okunmalıdır?",
+                "misconception_probe" => $"{concept} için aşağıdaki örnekte hangi yanılgıya dikkat edilmelidir?",
+                _ => $"{concept} için aşağıdaki örnek hangi akıl yürütmeyi gerektirir?"
             };
         }
 

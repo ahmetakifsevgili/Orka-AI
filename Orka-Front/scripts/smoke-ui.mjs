@@ -54,7 +54,7 @@ addCheck("Mist Comfort utilities exist", css.includes(".orka-surface") && css.in
 
 const viteConfig = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
 addCheck("Vite production build warnings are bounded", viteConfig.includes("chunkSizeWarningLimit") && !viteConfig.includes("manualChunks"));
-addCheck("Vite proxy targets frozen backend port", viteConfig.includes("localhost:5101") && viteConfig.includes("VITE_API_PROXY_TARGET"));
+addCheck("Vite proxy targets active backend port", viteConfig.includes("localhost:5065") && viteConfig.includes("VITE_API_PROXY_TARGET"));
 
 const ide = read("src/components/InteractiveIDE.tsx");
 addCheck("IDE Turkish action copy", ide.includes("Kodu Çalıştır") && ide.includes("Hocaya Gönder"));
@@ -113,9 +113,9 @@ const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Live tutor trace timeline is rendered", chatMessage.includes("LiveTutorTrace") && chatMessage.includes("TutorAPI.getSessionTimeline") && chatMessage.includes("Tutor izi"));
-addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve arastir") && chatPanel.includes("approvedResearchIntent"));
+addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve araştır") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
-addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayriliyor") && chatPanel.includes("Baglam taraniyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Ogrenme yolu uretiliyor"));
+addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayrılıyor") && chatPanel.includes("Bağlam taranıyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Öğrenme yolu üretiliyor"));
 
 const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");

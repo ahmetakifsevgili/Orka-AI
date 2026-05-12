@@ -25,6 +25,64 @@ public sealed class SourceRegressionGuardTests
         Assert.True(dirtyFiles.Length == 0, "Mojibake markers found in: " + string.Join(", ", dirtyFiles));
     }
 
+    [Fact]
+    public void UserFacingTurkishCopy_DoesNotRegressToAsciiPlaceholders()
+    {
+        var guarded = new Dictionary<string, string[]>
+        {
+            ["Orka-Front/src/components/ChatPanel.tsx"] =
+            [
+                "Onayla ve arastir",
+                "Niyet ayriliyor",
+                "Baglam taraniyor",
+                "Ogrenme yolu uretiliyor",
+                "Yanit akisinda"
+            ],
+            ["Orka-Front/src/components/InteractiveIDE.tsx"] =
+            [
+                "Kod calistirma saglayicisi hazir degil",
+                "Bu hata bir ogrenme sinyali olabilir",
+                "Ogrenme notu"
+            ],
+            ["Orka-Front/src/components/WikiMainPanel.tsx"] =
+            [
+                "kaynaklarini yukle",
+                "kaynak grafigi",
+                "Kisisel Pekistirme"
+            ],
+            ["Orka.API/Controllers/ChatController.cs"] =
+            [
+                "Gunluk mesaj limitine ulasildi",
+                "Istek islenemedi",
+                "Oturum baslatilamadi"
+            ],
+            ["Orka.Infrastructure/Services/AgentOrchestratorService.cs"] =
+            [
+                "henuz tamamlandi",
+                "asagidaki kisa telafi",
+                "zayif becerilerine"
+            ],
+            ["Orka.Infrastructure/Services/DiagnosticQuizQualityGate.cs"] =
+            [
+                "asagidaki ornek",
+                "hangi yanilgiye",
+                "akil yurutmeyi"
+            ]
+        };
+
+        var failures = guarded
+            .SelectMany(entry =>
+            {
+                var text = ReadRepoText(entry.Key);
+                return entry.Value
+                    .Where(phrase => text.Contains(phrase, StringComparison.Ordinal))
+                    .Select(phrase => $"{entry.Key}: {phrase}");
+            })
+            .ToArray();
+
+        Assert.True(failures.Length == 0, "User-facing ASCII Turkish copy regressed: " + string.Join(" | ", failures));
+    }
+
     [Theory]
     [InlineData("T\u00c3\u00bcrk\u00c3\u00a7e")]
     [InlineData("Ba\u00c5\u017flang\u00c4\u00b1\u00c3\u00a7")]
@@ -404,6 +462,9 @@ public sealed class SourceRegressionGuardTests
         var devSettings = ReadRepoText("Orka.API/appsettings.Development.json");
         var resetScript = ReadRepoText("scripts/reset-dev-db.ps1");
         var diagnostics = ReadRepoText("Orka.API/Controllers/DiagnosticsController.cs");
+        var quickBackend = ReadRepoText("scripts/quick-backend.ps1");
+        var devContract = ReadRepoText("docs/dev-contract.md");
+        var checklist = ReadRepoText("scripts/CHECKLIST.md");
 
         Assert.Contains("OrkaLocalDB", devSettings);
         Assert.Contains("TrustServerCertificate=True", devSettings);
@@ -414,6 +475,28 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("Invoke-NativeChecked \"sqllocaldb\"", resetScript);
         Assert.Contains("\"start\"", resetScript);
         Assert.Contains("Database readiness check returned false", diagnostics);
+        Assert.Contains("Assert-LifecycleSqlServerProvisioned", quickBackend);
+        Assert.Contains("ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION", quickBackend);
+        Assert.Contains("DataLifecycleTests require", quickBackend);
+        Assert.Contains("ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION", devContract);
+        Assert.Contains("sessizce skip edilmemeli", checklist);
+    }
+
+    [Fact]
+    public void ProductionCorsDeploymentDocs_KeepExplicitAllowlistContract()
+    {
+        var migrationPolicy = ReadRepoText("docs/deployment/migration-policy.md");
+        var checklist = ReadRepoText("scripts/CHECKLIST.md");
+        var productionSettings = ReadRepoText("Orka.API/appsettings.Production.json");
+        var stagingSettings = ReadRepoText("Orka.API/appsettings.Staging.json");
+
+        Assert.Contains("Cors:AllowedOrigins", migrationPolicy);
+        Assert.Contains("Empty values and `*` are rejected at startup", migrationPolicy);
+        Assert.Contains("Cors__AllowedOrigins__0", migrationPolicy);
+        Assert.Contains("Cors:AllowedOrigins", checklist);
+        Assert.Contains("fail-fast", checklist);
+        Assert.Contains("\"AllowedOrigins\": []", productionSettings);
+        Assert.Contains("\"AllowedOrigins\": []", stagingSettings);
     }
 
     [Fact]
@@ -437,6 +520,76 @@ public sealed class SourceRegressionGuardTests
 
         Assert.True(leakingControllers.Length == 0,
             "Raw exception messages leak through controller responses or diagnostics: " + string.Join(", ", leakingControllers));
+    }
+
+    [Fact]
+    public void ContentSafety_RenderersUseStrictMermaidAndSafeRemoteMediaPolicy()
+    {
+        var chat = ReadRepoText("Orka-Front/src/components/ChatMessage.tsx");
+        var rich = ReadRepoText("Orka-Front/src/components/RichMarkdown.tsx");
+        var helper = ReadRepoText("Orka-Front/src/lib/contentSafety.tsx");
+
+        Assert.DoesNotContain("securityLevel: \"loose\"", chat, StringComparison.Ordinal);
+        Assert.DoesNotContain("securityLevel: \"loose\"", rich, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/s2/favicons", chat, StringComparison.Ordinal);
+        Assert.DoesNotContain("google.com/s2/favicons", rich, StringComparison.Ordinal);
+
+        Assert.Contains("securityLevel: \"strict\"", chat);
+        Assert.Contains("securityLevel: \"strict\"", rich);
+        Assert.Contains("htmlLabels: false", chat);
+        Assert.Contains("htmlLabels: false", rich);
+        Assert.Contains("sanitizeMermaidSvg", chat);
+        Assert.Contains("sanitizeMermaidSvg", rich);
+        Assert.Contains("isAllowedRemoteImage", chat);
+        Assert.Contains("BlockedImagePlaceholder", rich);
+
+        Assert.Contains("image.pollinations.ai", helper);
+        Assert.Contains("foreignObject", helper);
+        Assert.Contains("SafeMarkdownLink", helper);
+        Assert.Contains("SafeMarkdownImage", helper);
+        Assert.Contains("safeMarkdownComponents", helper);
+        Assert.Contains("rel=\"noopener noreferrer nofollow\"", helper);
+        Assert.Contains("return value.startsWith(\"#\")", helper);
+        var svgReferencePolicy = helper[helper.IndexOf("function isSafeSvgReference", StringComparison.Ordinal)..];
+        Assert.DoesNotContain("parsed.protocol === \"http:\"", svgReferencePolicy);
+        Assert.DoesNotContain("parsed.protocol === \"https:\"", svgReferencePolicy);
+        Assert.DoesNotContain("gÃ", helper);
+        Assert.DoesNotContain("Ä", helper);
+
+        string[] markdownSurfaces =
+        [
+            "Orka-Front/src/components/AgenticWorkspace.tsx",
+            "Orka-Front/src/components/QuizCard.tsx",
+            "Orka-Front/src/components/WikiDrawer.tsx"
+        ];
+
+        foreach (var surfacePath in markdownSurfaces)
+        {
+            var source = ReadRepoText(surfacePath);
+            Assert.Contains("safeMarkdownComponents", source);
+            Assert.Equal(
+                CountOccurrences(source, "<ReactMarkdown"),
+                CountOccurrences(source, "components={safeMarkdownComponents}"));
+        }
+
+        var wikiMainPanel = ReadRepoText("Orka-Front/src/components/WikiMainPanel.tsx");
+        Assert.DoesNotContain("ReactMarkdown", wikiMainPanel);
+        Assert.Contains("<RichMarkdown", wikiMainPanel);
+
+        Assert.Contains("...safeMarkdownComponents", chat);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private static string ReadRepoText(string relativePath)

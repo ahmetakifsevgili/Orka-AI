@@ -18,7 +18,7 @@ public static class KorteksGroundingClassifier
         "[error]",
         "degraded",
         "devre disi",
-        "gecici olarak kullanilamiyor"
+        "geçici olarak kullanılamıyor"
     ];
 
     public static GroundingMode Classify(string? report, IReadOnlyCollection<SourceEvidenceDto> sources, IReadOnlyCollection<ToolCallEvidenceDto> calls)

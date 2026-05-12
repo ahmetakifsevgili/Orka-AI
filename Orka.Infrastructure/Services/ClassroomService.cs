@@ -59,7 +59,7 @@ public class ClassroomService : IClassroomService
                 .AsNoTracking()
                 .AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
             if (!topicExists)
-                throw new NotFoundException("Classroom topic bulunamadi.");
+                throw new NotFoundException("Classroom topic bulunamadı.");
         }
 
         if (sessionId.HasValue)
@@ -68,7 +68,7 @@ public class ClassroomService : IClassroomService
                 .AsNoTracking()
                 .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
             if (!sessionExists)
-                throw new NotFoundException("Classroom session bulunamadi.");
+                throw new NotFoundException("Classroom session bulunamadı.");
         }
 
         if (audioOverviewJobId.HasValue)
@@ -77,7 +77,7 @@ public class ClassroomService : IClassroomService
                 .AsNoTracking()
                 .AnyAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
             if (!jobExists)
-                throw new NotFoundException("Classroom audio overview job bulunamadi.");
+                throw new NotFoundException("Classroom audio overview job bulunamadı.");
         }
 
         var preparedTranscript = await BuildClassroomContextAsync(
@@ -128,7 +128,7 @@ public class ClassroomService : IClassroomService
 
         var classroom = await _db.ClassroomSessions
             .FirstOrDefaultAsync(c => c.Id == classroomSessionId && c.UserId == userId, ct);
-        if (classroom == null) throw new NotFoundException("Classroom session bulunamadi.");
+        if (classroom == null) throw new NotFoundException("Classroom session bulunamadı.");
 
         var segment = string.IsNullOrWhiteSpace(activeSegment) ? classroom.LastSegment : activeSegment.Trim();
         var systemPrompt = """
@@ -211,7 +211,7 @@ public class ClassroomService : IClassroomService
         var safeQuestion = Trim(question ?? string.Empty, 220);
         var safeSegment = Trim(segment ?? string.Empty, 280);
         return NormalizeDialogue($"""
-            [HOCA]: Canli AI saglayicisi su an yavas yanit verdi. Sinif akisi bozulmasin diye guvenli kisa tekrar moduna geciyorum.
+            [HOCA]: Canlı AI sağlayıcısı şu an yavaş yanıt verdi. Sınıf akışı bozulmasın diye güvenli kısa tekrar moduna geçiyorum.
             [ASISTAN]: Ogrencinin sorusu: {safeQuestion}
             [HOCA]: Takildigin aktif bolum su kisimla ilgili: {safeSegment}
             [KONUK]: Devam etmek icin once bu bolumu kendi cumlenle tekrar et, sonra hocadan tek bir adimi orneklemesini iste.

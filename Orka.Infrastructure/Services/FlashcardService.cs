@@ -23,10 +23,10 @@ public sealed class FlashcardService : IFlashcardService
             throw new InvalidOperationException("Flashcard front/back zorunlu.");
 
         if (request.TopicId.HasValue && !await _db.Topics.AnyAsync(t => t.Id == request.TopicId && t.UserId == userId, ct))
-            throw new KeyNotFoundException("Topic bulunamadi.");
+            throw new KeyNotFoundException("Topic bulunamadı.");
 
         if (request.LearningSourceId.HasValue && !await _db.LearningSources.AnyAsync(s => s.Id == request.LearningSourceId && s.UserId == userId && !s.IsDeleted, ct))
-            throw new KeyNotFoundException("Source bulunamadi.");
+            throw new KeyNotFoundException("Source bulunamadı.");
 
         var now = DateTime.UtcNow;
         var flashcard = new Flashcard

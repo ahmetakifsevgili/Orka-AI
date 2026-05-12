@@ -18,6 +18,7 @@ public sealed record ToolTelemetryEventRequest(
 public sealed record CostRecordRequest(
     Guid? UserId,
     Guid? SessionId,
+    Guid? TopicId,
     Guid? MessageId,
     string AgentRole,
     string? Provider,

@@ -15,11 +15,13 @@ public class TopicService : ITopicService
 {
     private readonly OrkaDbContext _dbContext;
     private readonly IGroqService _groqService;
+    private readonly IDataLifecycleService _dataLifecycle;
 
-    public TopicService(OrkaDbContext dbContext, IGroqService groqService)
+    public TopicService(OrkaDbContext dbContext, IGroqService groqService, IDataLifecycleService dataLifecycle)
     {
         _dbContext = dbContext;
         _groqService = groqService;
+        _dataLifecycle = dataLifecycle;
     }
 
     public async Task<IEnumerable<Topic>> GetUserTopicsAsync(Guid userId)
@@ -148,31 +150,8 @@ public class TopicService : ITopicService
 
     public async Task DeleteTopicAsync(Guid topicId, Guid userId)
     {
-        var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId && t.UserId == userId);
-        if (topic == null) return;
-
-        // 1. Alt konuları sil (self-referencing, NO_ACTION FK)
-        var subTopics = await _dbContext.Topics.Where(t => t.ParentTopicId == topicId).ToListAsync();
-        _dbContext.Topics.RemoveRange(subTopics);
-
-        // 2. Session'ların mesajlarını sil (NO_ACTION FK — manuel cascade)
-        var sessions = await _dbContext.Sessions
-            .Include(s => s.Messages)
-            .Where(s => s.TopicId == topicId)
-            .ToListAsync();
-        foreach (var session in sessions)
-            _dbContext.Messages.RemoveRange(session.Messages);
-        _dbContext.Sessions.RemoveRange(sessions);
-
-        // 3. QuizAttempts sil (NO_ACTION FK — manuel cascade)
-        var quizAttempts = await _dbContext.QuizAttempts.Where(q => q.TopicId == topicId).ToListAsync();
-        _dbContext.QuizAttempts.RemoveRange(quizAttempts);
-
-        // 4. Konuyu sil (WikiPages + WikiBlocks DB CASCADE ile silinir)
-        _dbContext.Topics.Remove(topic);
-        await _dbContext.SaveChangesAsync();
+        await _dataLifecycle.DeleteTopicTreeAsync(userId, topicId);
     }
-
     public async Task UpdateLastAccessedAsync(Guid topicId)
     {
         var topic = await _dbContext.Topics.FindAsync(topicId);
@@ -212,10 +191,8 @@ public class TopicService : ITopicService
     {
         var topic = await _dbContext.Topics.FindAsync(topicId);
         if (topic == null) return;
-        _dbContext.Topics.Remove(topic);
-        await _dbContext.SaveChangesAsync();
+        await _dataLifecycle.DeleteTopicTreeAsync(topic.UserId, topicId);
     }
-
     public async Task<List<Topic>> GetSubTopicsAsync(Guid parentTopicId)
     {
         return await _dbContext.Topics

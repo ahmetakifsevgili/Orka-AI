@@ -199,7 +199,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("asagidaki ornek", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("aşağıdaki örnek", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.DoesNotContain("Kod parcasinda veri akisini ve karar noktasini tespit eder", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Bu parcada seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Islem siralamasini kurar", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("asagidaki ornek", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("aşağıdaki örnek", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

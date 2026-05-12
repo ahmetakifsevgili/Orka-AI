@@ -62,3 +62,16 @@ Orka.API/dotnet_log.txt
 # Python test cache
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# V1 closure local artifacts
+.tmp-artifacts/
+temp/
+brain/
+testsprite_tests/tmp/
+TestResults/
+coverage/
+coverage.json
+*.trx
+*.binlog
+*.coverage

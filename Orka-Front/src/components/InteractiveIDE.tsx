@@ -118,13 +118,13 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
   const outputText = formatRunOutput(stdout, stderr);
   const ideLearningNote = (() => {
     if (!hasOutput) return null;
-    if (runSucceeded) return "Kod calisti. Ciktiyi Tutor'a gondererek cozum mantigini kontrol ettirebilirsin.";
-    if (phase === "compile") return "Bu bir uygulama arizasi degil; derleme hatasi dil kurali veya eksik sembol sinyali verir.";
-    if (phase === "timeout") return "Kod zaman sinirina takildi. Dongu, girdi boyutu veya bitis kosulunu kontrol etmek iyi bir ilk adim.";
-    if (phase === "blocked") return "Sandbox guvenlik siniri devrede. Orka host shell calistirmaz ve bunu basarili sonuc gibi gostermez.";
-    if (phase === "provider_missing") return "Kod calistirma saglayicisi hazir degil. Orka bu durumda sonuc uydurmaz.";
-    if (phase === "network_error") return "Kod servisine ulasilamadi. Kodun kaybolmadi; biraz sonra tekrar deneyebilirsin.";
-    return "Bu hata bir ogrenme sinyali olabilir. Tutor'a gonderirsen neyin kirildigini adim adim aciklar.";
+    if (runSucceeded) return "Kod çalıştı. Çıktıyı Tutor'a göndererek çözüm mantığını kontrol ettirebilirsin.";
+    if (phase === "compile") return "Bu bir uygulama arızası değil; derleme hatası dil kuralı veya eksik sembol sinyali verir.";
+    if (phase === "timeout") return "Kod zaman sınırına takıldı. Döngü, girdi boyutu veya bitiş koşulunu kontrol etmek iyi bir ilk adım.";
+    if (phase === "blocked") return "Sandbox güvenlik sınırı devrede. Orka host shell çalıştırmaz ve bunu başarılı sonuç gibi göstermez.";
+    if (phase === "provider_missing") return "Kod çalıştırma sağlayıcısı hazır değil. Orka bu durumda sonuç uydurmaz.";
+    if (phase === "network_error") return "Kod servisine ulaşılamadı. Kodun kaybolmadı; biraz sonra tekrar deneyebilirsin.";
+    return "Bu hata bir öğrenme sinyali olabilir. Tutor'a gönderirsen neyin kırıldığını adım adım açıklar.";
   })();
 
   const resetOutput = useCallback(() => {
@@ -434,7 +434,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
                           ? "border-[#8fb7a2]/25 bg-[#d9e7de]/62 text-[#456f55]"
                           : "border-[#e8c46f]/30 bg-[#fff8ee]/82 text-[#8a641f]"
                       }`}>
-                        <span className="font-black text-[#172033]">Ogrenme notu: </span>
+                        <span className="font-black text-[#172033]">Öğrenme notu: </span>
                         {ideLearningNote}
                       </div>
                     </div>

@@ -629,6 +629,49 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
+    public async Task PurgeUserCachesAsync(Guid userId, IEnumerable<Guid> topicIds, string reason, int maxKeysPerPattern = 100)
+    {
+        var boundedTake = Math.Clamp(maxKeysPerPattern, 1, 1000);
+        var scopedTopicIds = topicIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        var patterns = new List<string>
+        {
+            $"orka:*:{userId:D}*",
+            $"orka:*:{userId:N}*"
+        };
+
+        foreach (var topicId in scopedTopicIds)
+        {
+            patterns.Add($"orka:*:{topicId:D}*");
+            patterns.Add($"orka:*:{topicId:N}*");
+        }
+
+        var deleted = 0;
+        foreach (var pattern in patterns.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var keys = await ScanKeysAsync(pattern, boundedTake);
+            foreach (var key in keys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                    continue;
+
+                await DeleteKeyAsync(key);
+                deleted++;
+            }
+        }
+
+        await RecordCacheMetricAsync("broad-purge", hit: false, tool: reason);
+        _logger.LogInformation(
+            "[Redis] User/topic cache purge tamamlandi. User={UserId} TopicCount={TopicCount} Deleted={Deleted} Reason={Reason}",
+            userId,
+            scopedTopicIds.Length,
+            deleted,
+            reason);
+    }
+
     public async Task RecordCacheMetricAsync(string area, bool hit, string? tool = null, double? latencyMs = null)
     {
         try

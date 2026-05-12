@@ -150,7 +150,7 @@ public class TavilySearchPlugin
         }
         catch (Exception)
         {
-            return "[web:degraded] Arama servisi gecici olarak kullanilamiyor.";
+            return "[web:degraded] Arama servisi geçici olarak kullanılamıyor.";
         }
     }
 }

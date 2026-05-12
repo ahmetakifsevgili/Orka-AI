@@ -24,15 +24,15 @@ function authErrorMessage(err: unknown, mode: AuthTab) {
   const suffix = correlationId ? ` Destek kodu: ${correlationId}` : "";
 
   if (!apiError.response) {
-    const base = API_ORIGIN || "http://localhost:5101";
-    return `Backend'e ulasilamiyor. API'nin ${base} uzerinde calistigini ve Swagger'in acildigini kontrol et.`;
+    const base = API_ORIGIN || "http://localhost:5065";
+    return `Backend'e ulaşılamıyor. API'nin ${base} üzerinde çalıştığını ve Swagger'ın açıldığını kontrol et.`;
   }
 
-  if (status === 401) return "E-posta veya sifre hatali. Bilgileri kontrol edip tekrar dene.";
-  if (status === 404) return "Bu e-posta ile kayitli kullanici bulunamadi.";
-  if (status === 400) return `${serverMessage ?? (mode === "signup" ? "Uyelik bilgilerini kontrol et." : "Giris bilgilerini kontrol et.")}${suffix}`;
-  if (status && status >= 500) return `Sunucu tarafinda bir sorun var. Health/Swagger durumunu kontrol edecegiz.${suffix}`;
-  return `${serverMessage ?? "Islem tamamlanamadi. Lutfen tekrar dene."}${suffix}`;
+  if (status === 401) return "E-posta veya şifre hatalı. Bilgileri kontrol edip tekrar dene.";
+  if (status === 404) return "Bu e-posta ile kayıtlı kullanıcı bulunamadı.";
+  if (status === 400) return `${serverMessage ?? (mode === "signup" ? "Üyelik bilgilerini kontrol et." : "Giriş bilgilerini kontrol et.")}${suffix}`;
+  if (status && status >= 500) return `Sunucu tarafında bir sorun var. Health/Swagger durumunu kontrol edeceğiz.${suffix}`;
+  return `${serverMessage ?? "İşlem tamamlanamadı. Lütfen tekrar dene."}${suffix}`;
 }
 
 const previewRows = [
@@ -57,11 +57,11 @@ export default function Login() {
     setError(null);
 
     if (!email || !password) {
-      setError("Lutfen e-posta ve sifre alanlarini doldur.");
+      setError("Lütfen e-posta ve şifre alanlarını doldur.");
       return;
     }
     if (tab === "signup" && !name.trim()) {
-      setError("Uyelik icin ad soyad bilgisi gerekiyor.");
+      setError("Üyelik için ad soyad bilgisi gerekiyor.");
       return;
     }
 

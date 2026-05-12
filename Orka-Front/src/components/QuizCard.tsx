@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
 import type { AdaptiveAssessmentNextItem, PlanDiagnosticMeta, QuizAttempt, QuizData } from "@/lib/types";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI } from "@/services/api";
@@ -291,7 +292,7 @@ export default function QuizCard({
 
       <div className="px-6 py-5">
         <div className="mb-5 max-w-none text-sm leading-relaxed text-[#172033] prose prose-sm prose-p:my-1 prose-strong:text-[#172033] prose-code:rounded prose-code:bg-[#eaf4f7] prose-code:px-1 prose-code:text-[#2d5870]">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeQuiz.question ?? ""}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>{activeQuiz.question ?? ""}</ReactMarkdown>
         </div>
 
         {activeQuiz.type === "coding" ? (
@@ -359,7 +360,7 @@ export default function QuizCard({
             </p>
             {activeQuiz.explanation && (
               <div className="mt-3 text-sm leading-relaxed text-[#344054] prose prose-sm max-w-none prose-p:my-1">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeQuiz.explanation}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>{activeQuiz.explanation}</ReactMarkdown>
               </div>
             )}
           </div>

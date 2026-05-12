@@ -90,6 +90,7 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
                 OccurredAt = DateTime.UtcNow,
                 UserId = request.UserId,
                 SessionId = request.SessionId,
+                TopicId = request.TopicId,
                 MessageId = request.MessageId,
                 AgentRole = Truncate(request.AgentRole, 128) ?? "unknown",
                 Provider = Truncate(request.Provider, 128),

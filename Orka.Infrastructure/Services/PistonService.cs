@@ -129,7 +129,7 @@ public class PistonService : IPistonService
 
                 var message = status == 429
                     ? "Cok fazla istek gonderildi. Lutfen birkac saniye bekleyip tekrar deneyin."
-                    : $"Kod calistirma servisi hata dondurdu ({status}). Lutfen tekrar deneyin.";
+                    : $"Kod çalıştırma servisi hata döndürdü ({status}). Lütfen tekrar deneyin.";
 
                 return new PistonResult(
                     "",
@@ -137,7 +137,7 @@ public class PistonService : IPistonService
                     false,
                     Phase: "provider_missing",
                     DurationMs: sw.ElapsedMilliseconds,
-                    SafeTutorSummary: "Kod calistirma saglayicisi kullanilamadi; sonucu uydurma.");
+                    SafeTutorSummary: "Kod çalıştırma sağlayıcısı kullanılamadı; sonucu uydurma.");
             }
 
             var json = await response.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
@@ -149,7 +149,7 @@ public class PistonService : IPistonService
             _logger.LogWarning("Judge0 request timed out.");
             return new PistonResult(
                 "",
-                "Kod calistirma zaman asimina ugradi. Kodunuz cok uzun veya sonsuz dongu iceriyor olabilir.",
+                "Kod çalıştırma zaman aşımına uğradı. Kodunuz çok uzun veya sonsuz döngü içeriyor olabilir.",
                 false,
                 Phase: "timeout",
                 DurationMs: sw.ElapsedMilliseconds,
@@ -161,11 +161,11 @@ public class PistonService : IPistonService
             _logger.LogError(ex, "Judge0 network error.");
             return new PistonResult(
                 "",
-                "Kod calistirma servisine baglanilamadi. Internet baglantinizi kontrol edin.",
+                "Kod çalıştırma servisine bağlanılamadı. İnternet bağlantınızı kontrol edin.",
                 false,
                 Phase: "provider_missing",
                 DurationMs: sw.ElapsedMilliseconds,
-                SafeTutorSummary: "Kod calistirma saglayicisi kullanilamadi; sonucu uydurma.");
+                SafeTutorSummary: "Kod çalıştırma sağlayıcısı kullanılamadı; sonucu uydurma.");
         }
         catch (Exception ex)
         {
@@ -173,11 +173,11 @@ public class PistonService : IPistonService
             _logger.LogError(ex, "Judge0 unexpected error.");
             return new PistonResult(
                 "",
-                "Kod calistirma servisinde beklenmeyen bir hata olustu. Lutfen tekrar deneyin.",
+                "Kod çalıştırma servisinde beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.",
                 false,
                 Phase: "provider_missing",
                 DurationMs: sw.ElapsedMilliseconds,
-                SafeTutorSummary: "Kod calistirma saglayicisinda hata olustu; sonucu uydurma.");
+                SafeTutorSummary: "Kod çalıştırma sağlayıcısında hata oluştu; sonucu uydurma.");
         }
     }
 
@@ -259,7 +259,7 @@ public class PistonService : IPistonService
                 ExitCode: exitCode,
                 DurationMs: durationMs,
                 Truncated: truncated,
-                SafeTutorSummary: "Kod calistirma servisi ic hata verdi; sonucu uydurma.",
+                SafeTutorSummary: "Kod çalıştırma servisi iç hata verdi; sonucu uydurma.",
                 Runtime: language);
         }
 

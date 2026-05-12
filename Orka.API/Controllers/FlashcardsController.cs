@@ -44,7 +44,7 @@ public class FlashcardsController : ControllerBase
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new { message = "Flashcard baglami bulunamadi." });
+            return NotFound(new { message = "Flashcard bağlamı bulunamadı." });
         }
         catch (InvalidOperationException ex)
         {
@@ -93,7 +93,7 @@ public class FlashcardsController : ControllerBase
             }
             catch (KeyNotFoundException)
             {
-                return NotFound(new { message = "Flashcard baglami bulunamadi." });
+                return NotFound(new { message = "Flashcard bağlamı bulunamadı." });
             }
             catch (InvalidOperationException ex)
             {
@@ -108,13 +108,13 @@ public class FlashcardsController : ControllerBase
     public async Task<IActionResult> Review(Guid id, [FromBody] ReviewFlashcardRequest request)
     {
         var result = await _flashcards.ReviewAsync(GetUserId(), id, request.Quality, request.Notes, HttpContext.RequestAborted);
-        return result == null ? NotFound(new { message = "Flashcard bulunamadi." }) : Ok(result);
+        return result == null ? NotFound(new { message = "Flashcard bulunamadı." }) : Ok(result);
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var deleted = await _flashcards.DeleteAsync(GetUserId(), id, HttpContext.RequestAborted);
-        return deleted ? Ok(new { deleted = true, id }) : NotFound(new { message = "Flashcard bulunamadi." });
+        return deleted ? Ok(new { deleted = true, id }) : NotFound(new { message = "Flashcard bulunamadı." });
     }
 }

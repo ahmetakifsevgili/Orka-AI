@@ -40,7 +40,7 @@ public class AudioController : ControllerBase
     public async Task<IActionResult> GetOverview(Guid jobId)
     {
         var job = await _audio.GetOverviewAsync(GetUserId(), jobId, HttpContext.RequestAborted);
-        if (job == null) return NotFound(new { message = "Audio overview job bulunamadi." });
+        if (job == null) return NotFound(new { message = "Audio overview job bulunamadı." });
 
         return Ok(job);
     }

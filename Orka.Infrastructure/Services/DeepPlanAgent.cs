@@ -364,7 +364,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             {
                 new("Kavram bazli final kontrol", "mastery-check", "Assessment"),
                 new("Eksik kalan kavramlar", "weakness-review", "QuickReview"),
-                new("Kisisel pratik plani", "adaptive-plan", "Core"),
+                new("Kişisel pratik planı", "adaptive-plan", "Core"),
                 new("Sonraki konu baglantisi", "next-step", "Core")
             })
         ];
@@ -637,7 +637,7 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         if (tracedModules.Count == 0)
         {
-            tracedModules.Add(new("Kisisel Telafi ve Pratik", "target", []));
+            tracedModules.Add(new("Kişisel Telafi ve Pratik", "target", []));
         }
 
         for (var i = 0; i < diagnosticLessons.Count; i++)
@@ -1008,7 +1008,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 "skillTag": "beceri-etiketi",
                 "difficulty": "kolay|orta|zor",
                 "conceptTag": "kavram-etiketi",
-                "learningObjective": "Olculen ogrenme hedefi",
+                "learningObjective": "Ölçülen öğrenme hedefi",
                 "questionType": "conceptual|procedural|application|analysis|misconception_probe",
                 "expectedMisconceptionCategory": "Conceptual|Procedural|Calculation|Reading|Application|MisreadQuestion|Careless",
                 "topic": "{{topicTitle}}"

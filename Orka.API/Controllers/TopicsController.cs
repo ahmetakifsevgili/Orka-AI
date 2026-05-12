@@ -16,13 +16,18 @@ namespace Orka.API.Controllers;
 [Route("api/topics")]
 public class TopicsController : ControllerBase
 {
+    private const int MaxTopicTitleLength = 200;
+    private const int MaxTopicMetadataLength = 200;
+
     private readonly ITopicService _topicService;
+    private readonly IDataLifecycleService _dataLifecycle;
     private readonly SessionService _sessionService;
     private readonly OrkaDbContext _db;
 
-    public TopicsController(ITopicService topicService, SessionService sessionService, OrkaDbContext db)
+    public TopicsController(ITopicService topicService, IDataLifecycleService dataLifecycle, SessionService sessionService, OrkaDbContext db)
     {
         _topicService = topicService;
+        _dataLifecycle = dataLifecycle;
         _sessionService = sessionService;
         _db = db;
     }
@@ -99,8 +104,20 @@ public class TopicsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateTopic([FromBody] CreateTopicBody request)
+    public async Task<IActionResult> CreateTopic([FromBody] CreateTopicBody? request)
     {
+        if (request == null)
+            return BadRequest(new { message = "Konu istegi zorunlu." });
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(new { message = "Baslik zorunlu." });
+        if (request.Title.Length > MaxTopicTitleLength ||
+            request.Emoji is { Length: > MaxTopicMetadataLength } ||
+            request.Category is { Length: > MaxTopicMetadataLength } ||
+            request.PlanIntent is { Length: > MaxTopicMetadataLength })
+        {
+            return BadRequest(new { message = "Konu alani cok uzun." });
+        }
+
         var userId = GetUserId();
         var result = await _topicService.CreateDiscoveryTopicAsync(userId, request.Title);
         
@@ -123,8 +140,18 @@ public class TopicsController : ControllerBase
     }
 
     [HttpPatch("{id}")]
-    public async Task<IActionResult> UpdateTopic(Guid id, [FromBody] UpdateTopicBody request)
+    public async Task<IActionResult> UpdateTopic(Guid id, [FromBody] UpdateTopicBody? request)
     {
+        if (request == null)
+            return BadRequest(new { message = "Guncelleme istegi zorunlu." });
+        if (request.Title is { Length: > MaxTopicTitleLength } ||
+            request.Emoji is { Length: > MaxTopicMetadataLength })
+        {
+            return BadRequest(new { message = "Konu alani cok uzun." });
+        }
+        if (request.Title != null && string.IsNullOrWhiteSpace(request.Title))
+            return BadRequest(new { message = "Baslik bos olamaz." });
+
         var userId = GetUserId();
         await _topicService.UpdateTopicAsync(id, userId, request.Title, request.Emoji, request.IsArchived);
         return Ok();
@@ -136,7 +163,7 @@ public class TopicsController : ControllerBase
         var userId = GetUserId();
         var topic = await _topicService.GetTopicByIdAsync(id, userId);
         if (topic == null) return NotFound(new { message = "Konu bulunamadı." });
-        await _topicService.DeleteTopicAsync(id, userId);
+        await _dataLifecycle.DeleteTopicTreeAsync(userId, id, HttpContext.RequestAborted);
         return Ok();
     }
 

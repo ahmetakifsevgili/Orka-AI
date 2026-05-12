@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Orka AI emblem badge variant</title>
+  <desc id="desc">Orka learning path emblem with a small AI signal badge.</desc>
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#172033" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#f7f9fa"/>
+  <g filter="url(#softShadow)">
+    <path d="M18 46c4-16 8-25 14-31 6 6 10 15 14 31" fill="none" stroke="#172033" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 44c3-9 5-14 8-18 3 4 5 9 8 18" fill="none" stroke="#52768a" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M20 49h24" stroke="#9ec7d9" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g aria-label="AI signal badge">
+    <circle cx="48" cy="16" r="9" fill="#172033"/>
+    <circle cx="48" cy="16" r="6.8" fill="none" stroke="#9ec7d9" stroke-width="1"/>
+    <path d="M48 10.8v10.4M42.8 16h10.4M44.35 12.35l7.3 7.3M51.65 12.35l-7.3 7.3" stroke="#f7f9fa" stroke-width="1.35" stroke-linecap="round"/>
+    <circle cx="48" cy="16" r="1.7" fill="#9ec7d9"/>
+  </g>
+</svg>

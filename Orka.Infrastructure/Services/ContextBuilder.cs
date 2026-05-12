@@ -43,7 +43,7 @@ public class ContextBuilder : IContextBuilder
         // 50 mesaji asiyorsa ozet olustur ve budanmis baglamla devam et.
         if (totalMessageCount > SemanticTruncationThreshold)
         {
-            _logger.LogInformation("[SEMANTIC TRUNCATION] {Count} mesaj > 50 esigi. Baglam ozetleniyor.", totalMessageCount);
+            _logger.LogInformation("[SEMANTIC TRUNCATION] {Count} mesaj > 50 eşiği. Bağlam özetleniyor.", totalMessageCount);
             return await BuildTruncatedContextAsync(topicId, sessionId);
         }
 

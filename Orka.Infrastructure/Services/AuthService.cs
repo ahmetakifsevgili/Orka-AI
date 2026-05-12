@@ -2,15 +2,14 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Orka.Core.Exceptions;
 using Microsoft.IdentityModel.Tokens;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
+using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
@@ -19,25 +18,29 @@ namespace Orka.Infrastructure.Services;
 
 public class AuthService : IAuthService
 {
+    private const string RevokedReasonRotated = "Rotated";
+    private const string RevokedReasonReplayDetected = "ReplayDetected";
+    private const string RevokedReasonLogout = "Logout";
+
     private readonly OrkaDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
+    private readonly byte[] _refreshTokenHashSecret;
 
     public AuthService(OrkaDbContext dbContext, IConfiguration configuration, IHostEnvironment environment)
     {
         _dbContext = dbContext;
         _configuration = configuration;
         _environment = environment;
+        _refreshTokenHashSecret = RefreshTokenHashSecretResolver.Resolve(configuration, environment);
     }
 
     public async Task<(string Token, string RefreshToken, User User)> RegisterAsync(string firstName, string lastName, string email, string password)
     {
-        var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
+        var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
+        var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
         if (existingUser != null)
         {
-            // Testlerde çakışma kontrolü (TC001) için 409 bekliyor.
-            // Ama diğer testlerin (TC004 vb.) devam edebilmesi için opsiyonel idempotency gerekebilir.
-            // Şimdilik standart 409 dönelim, mesajda 'email exists' olsun.
             throw new ConflictException("Email exists. Bu email adresi zaten kullanımda.");
         }
 
@@ -48,11 +51,11 @@ public class AuthService : IAuthService
             Id = Guid.NewGuid(),
             FirstName = string.IsNullOrWhiteSpace(firstName) ? "Yeni" : firstName,
             LastName = string.IsNullOrWhiteSpace(lastName) ? "Kullanıcı" : lastName,
-            Email = email,
+            Email = normalizedEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             Plan = UserPlan.Free,
             StorageLimitMB = freeStorageMb,
-            DailyMessageCount = 0, // Eksik olan başlatma
+            DailyMessageCount = 0,
             CreatedAt = DateTime.UtcNow,
             DailyMessageResetAt = DateTime.UtcNow,
             LastLoginAt = DateTime.UtcNow
@@ -66,7 +69,8 @@ public class AuthService : IAuthService
 
     public async Task<(string Token, string RefreshToken, User User)> LoginAsync(string email, string password)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
+        var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
 
         if (user == null)
             throw new NotFoundException("Bu email adresiyle kayıtlı kullanıcı bulunamadı.");
@@ -76,7 +80,6 @@ public class AuthService : IAuthService
 
         user.LastLoginAt = DateTime.UtcNow;
 
-        // Günlük sıfırlama
         if (user.DailyMessageResetAt.Date < DateTime.UtcNow.Date)
         {
             user.DailyMessageCount = 0;
@@ -90,32 +93,93 @@ public class AuthService : IAuthService
 
     public async Task<(string Token, string RefreshToken)> RefreshAsync(string refreshToken)
     {
-        var storedToken = await _dbContext.RefreshTokens
-            .Include(rt => rt.User)
-            .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+        var tokenHash = HashRefreshToken(refreshToken);
+        var now = DateTime.UtcNow;
+        var useTransaction = !_dbContext.Database.IsInMemory();
+        await using var transaction = useTransaction
+            ? await _dbContext.Database.BeginTransactionAsync()
+            : null;
 
-        if (storedToken == null || storedToken.IsRevoked || storedToken.ExpiresAt <= DateTime.UtcNow)
+        try
+        {
+            var storedToken = await _dbContext.RefreshTokens
+                .Include(rt => rt.User)
+                .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
+
+            if (storedToken == null)
+                throw new UnauthorizedException("Geçersiz veya süresi dolmuş refresh token.");
+
+            if (storedToken.IsRevoked || storedToken.ExpiresAt <= now)
+            {
+                if (IsRotatedTokenReplay(storedToken))
+                {
+                    await RevokeActiveTokenFamilyAsync(
+                        storedToken.TokenFamilyId,
+                        now,
+                        RevokedReasonReplayDetected);
+                    await _dbContext.SaveChangesAsync();
+
+                    if (transaction != null)
+                        await transaction.CommitAsync();
+                }
+
+                throw new UnauthorizedException("Geçersiz veya süresi dolmuş refresh token.");
+            }
+
+            var accessToken = GenerateAccessToken(storedToken.User);
+            var (newRefreshToken, newRefreshTokenEntity) =
+                CreateRefreshToken(storedToken.User, storedToken.TokenFamilyId);
+
+            storedToken.IsRevoked = true;
+            storedToken.RevokedAt = now;
+            storedToken.RevokedReason = RevokedReasonRotated;
+            storedToken.ReplacedByTokenHash = newRefreshTokenEntity.TokenHash;
+            storedToken.RowVersion = NewConcurrencyToken();
+
+            _dbContext.RefreshTokens.Add(newRefreshTokenEntity);
+            await _dbContext.SaveChangesAsync();
+
+            if (transaction != null)
+                await transaction.CommitAsync();
+
+            return (accessToken, newRefreshToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync();
+
             throw new UnauthorizedException("Geçersiz veya süresi dolmuş refresh token.");
-
-        storedToken.IsRevoked = true;
-        _dbContext.RefreshTokens.Update(storedToken);
-
-        var (newToken, newRefreshToken, _) = await GenerateTokensAsync(storedToken.User);
-        return (newToken, newRefreshToken);
+        }
     }
 
     public async Task RevokeAsync(string refreshToken)
     {
-        var storedToken = await _dbContext.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+        var tokenHash = HashRefreshToken(refreshToken);
+        var storedToken = await _dbContext.RefreshTokens.FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash);
         if (storedToken != null)
         {
             storedToken.IsRevoked = true;
+            storedToken.RevokedAt = DateTime.UtcNow;
+            storedToken.RevokedReason = RevokedReasonLogout;
+            storedToken.RowVersion = NewConcurrencyToken();
             _dbContext.RefreshTokens.Update(storedToken);
             await _dbContext.SaveChangesAsync();
         }
     }
 
     private async Task<(string Token, string RefreshToken, User User)> GenerateTokensAsync(User user)
+    {
+        var accessToken = GenerateAccessToken(user);
+        var (refreshToken, tokenEntity) = CreateRefreshToken(user, Guid.NewGuid());
+
+        _dbContext.RefreshTokens.Add(tokenEntity);
+        await _dbContext.SaveChangesAsync();
+
+        return (accessToken, refreshToken, user);
+    }
+
+    private string GenerateAccessToken(User user)
     {
         var key = JwtKeyResolver.Resolve(_configuration, _environment.IsDevelopment());
         var creds = new SigningCredentials(key.SigningKey, SecurityAlgorithms.HmacSha256);
@@ -138,8 +202,11 @@ public class AuthService : IAuthService
             signingCredentials: creds
         );
 
-        var accessToken = new JwtSecurityTokenHandler().WriteToken(token);
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
 
+    private (string RawToken, RefreshToken Entity) CreateRefreshToken(User user, Guid tokenFamilyId)
+    {
         var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
         var expiryDays = double.Parse(_configuration["JWT:RefreshTokenExpiryDays"] ?? "30");
 
@@ -147,15 +214,39 @@ public class AuthService : IAuthService
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
-            Token = refreshToken,
+            TokenHash = HashRefreshToken(refreshToken),
+            TokenFamilyId = tokenFamilyId,
             ExpiresAt = DateTime.UtcNow.AddDays(expiryDays),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            RowVersion = NewConcurrencyToken()
         };
 
-        _dbContext.RefreshTokens.Add(tokenEntity);
-        await _dbContext.SaveChangesAsync();
+        return (refreshToken, tokenEntity);
+    }
 
-        return (accessToken, refreshToken, user);
+    private string HashRefreshToken(string refreshToken) =>
+        RefreshTokenHashSecretResolver.HashToken(refreshToken, _refreshTokenHashSecret);
+
+    private static byte[] NewConcurrencyToken() => RandomNumberGenerator.GetBytes(16);
+
+    private static bool IsRotatedTokenReplay(RefreshToken token) =>
+        token.IsRevoked &&
+        string.Equals(token.RevokedReason, RevokedReasonRotated, StringComparison.Ordinal) &&
+        !string.IsNullOrWhiteSpace(token.ReplacedByTokenHash);
+
+    private async Task RevokeActiveTokenFamilyAsync(Guid tokenFamilyId, DateTime now, string reason)
+    {
+        var activeTokens = await _dbContext.RefreshTokens
+            .Where(rt => rt.TokenFamilyId == tokenFamilyId && !rt.IsRevoked && rt.ExpiresAt > now)
+            .ToListAsync();
+
+        foreach (var token in activeTokens)
+        {
+            token.IsRevoked = true;
+            token.RevokedAt = now;
+            token.RevokedReason = reason;
+            token.RowVersion = NewConcurrencyToken();
+        }
     }
 }
 

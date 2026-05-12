@@ -221,8 +221,9 @@ public sealed class StandardsAlignmentService : IStandardsAlignmentService
 
     internal static string Status(decimal caseCoverage, decimal qtiCoverage, decimal eventCoverage, int issueCount)
     {
+        if (issueCount > 20 || (issueCount > 0 && (caseCoverage < 0.60m || qtiCoverage < 0.60m || eventCoverage < 0.60m))) return "degraded";
         if (caseCoverage == 0m && qtiCoverage == 0m && eventCoverage == 0m) return "unknown";
-        if (issueCount > 20 || caseCoverage < 0.60m || qtiCoverage < 0.60m || eventCoverage < 0.60m) return "degraded";
+        if (caseCoverage < 0.60m || qtiCoverage < 0.60m || eventCoverage < 0.60m) return "degraded";
         if (issueCount > 0 || caseCoverage < 0.80m || qtiCoverage < 0.80m || eventCoverage < 0.80m) return "watch";
         return "healthy";
     }
@@ -450,10 +451,12 @@ public sealed class StandardsExportService : IStandardsExportService
 public sealed class ProviderGovernanceService : IProviderGovernanceService
 {
     private readonly OrkaDbContext _db;
+    private readonly IAiProviderTelemetryService _aiTelemetry;
 
-    public ProviderGovernanceService(OrkaDbContext db)
+    public ProviderGovernanceService(OrkaDbContext db, IAiProviderTelemetryService aiTelemetry)
     {
         _db = db;
+        _aiTelemetry = aiTelemetry;
     }
 
     public async Task<ProviderGovernanceSummaryDto> GetSummaryAsync(Guid? userId = null, CancellationToken ct = default)
@@ -467,6 +470,7 @@ public sealed class ProviderGovernanceService : IProviderGovernanceService
             .AsNoTracking()
             .Where(c => c.OccurredAt >= DateTime.UtcNow.Date && (!userId.HasValue || c.UserId == userId.Value))
             .ToListAsync(ct);
+        var aiTelemetry = await _aiTelemetry.GetSummaryAsync(ct);
         var items = toolEvents
             .GroupBy(e => string.IsNullOrWhiteSpace(e.Provider) ? e.ToolId : e.Provider!)
             .Select(g =>
@@ -482,6 +486,9 @@ public sealed class ProviderGovernanceService : IProviderGovernanceService
                     Failures24h = failures,
                     AverageLatencyMs = calls == 0 ? 0 : (long)g.Average(e => e.LatencyMs),
                     EstimatedCostUsdToday = costs.Where(c => string.Equals(c.Provider, g.Key, StringComparison.OrdinalIgnoreCase)).Sum(c => c.EstimatedCostUsd),
+                    FallbackCount24h = aiTelemetry.CircuitStates.Where(kv => kv.Key.StartsWith(g.Key + ":", StringComparison.OrdinalIgnoreCase)).Sum(kv => kv.Value),
+                    QuotaHitCount24h = 0,
+                    CircuitState = aiTelemetry.CircuitStates.Keys.Any(k => k.StartsWith(g.Key + ":open", StringComparison.OrdinalIgnoreCase)) ? "open" : "closed",
                     UserSafeMessage = status switch
                     {
                         "healthy" => "Sağlayıcı sağlıklı çalışıyor.",
@@ -502,6 +509,9 @@ public sealed class ProviderGovernanceService : IProviderGovernanceService
             HealthyProviderCount = items.Count(i => i.Status == "healthy"),
             RecentFailureCount = recentFailures,
             EstimatedCostUsdToday = costs.Sum(c => c.EstimatedCostUsd),
+            FallbackCount24h = aiTelemetry.FallbackCount24h,
+            QuotaHitCount24h = aiTelemetry.QuotaHitCount24h,
+            FailureKinds24h = aiTelemetry.FailureKinds24h,
             Providers = items
         };
     }

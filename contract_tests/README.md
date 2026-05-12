@@ -4,7 +4,7 @@ Permanent core contract test suite for the Orka API.
 
 ## Design Principles
 - **Strict Contracts:** Exact status codes and schema validation.
-- **Port Governance:** Uses port 5101 by default via `ORKA_API_URL`.
+- **Port Governance:** Uses the canonical local API port `5065` by default via `ORKA_API_URL`.
 - **Deterministic:** No AI/heavy dependencies.
 - **Independent Setup:** Unique test data (emails/topics) per run.
 
@@ -15,11 +15,11 @@ pip install pytest requests
 
 ## Running Tests
 ```bash
-# Default (http://localhost:5101)
+# Default (http://localhost:5065)
 pytest contract_tests/
 
 # Custom URL
-$env:ORKA_API_URL="http://localhost:5101"
+$env:ORKA_API_URL="http://localhost:5065"
 pytest contract_tests/
 ```
 

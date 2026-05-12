@@ -17,6 +17,17 @@ import { Check, Copy, BookOpen, CheckCircle, Volume2, Wrench, AlertTriangle, Lin
 import type { ChatMessage as ChatMessageType, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
 import { TutorAPI } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
+import { userSafeStatus } from "@/lib/userSafeStatus";
+import {
+  BlockedImagePlaceholder,
+  displayHost,
+  isAllowedRemoteImage,
+  isMermaidTooLarge,
+  isSafeMarkdownUrl,
+  safeMarkdownComponents,
+  safeMarkdownUrlTransform,
+  sanitizeMermaidSvg,
+} from "@/lib/contentSafety";
 import QuizCard from "./QuizCard";
 import OrcaLogo from "./OrcaLogo";
 import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
@@ -133,7 +144,8 @@ async function getMermaid() {
     m.initialize({
       startOnLoad: false,
       theme: "dark",
-      securityLevel: "loose",
+      securityLevel: "strict",
+      htmlLabels: false,
       fontFamily: "ui-sans-serif, system-ui, sans-serif",
       themeVariables: {
         primaryColor: "#10b981",
@@ -164,39 +176,41 @@ function sanitizeMermaid(code: string) {
     });
 }
 
-function mermaidFallbackHtml(code: string) {
-  const safeCode = code
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return `
-    <div class="rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
-      <div class="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
-      <div class="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
-      <pre class="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">${safeCode}</pre>
-    </div>
-  `;
-}
-
 function looksLikeMermaidFailure(svg: string) {
   return /syntax error|parse error|mermaid version|error-icon|flowchart-v2-pointEnd/i.test(svg);
+}
+
+function MermaidFallback({ code }: { code: string }) {
+  return (
+    <div className="my-4 rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
+      <div className="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
+      <div className="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
+      <pre className="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">{code}</pre>
+    </div>
+  );
 }
 
 function MermaidBlock({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const idRef = useRef("m_" + Math.random().toString(36).slice(2, 9));
+  const [fallback, setFallback] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        if (isMermaidTooLarge(code)) {
+          setFallback(true);
+          return;
+        }
+
         const m = await getMermaid();
         const renderOrThrow = async (id: string, source: string) => {
           const rendered = await m.render(id, source);
           if (looksLikeMermaidFailure(rendered.svg)) {
             throw new Error("Mermaid returned an error SVG.");
           }
-          return rendered.svg;
+          return sanitizeMermaidSvg(rendered.svg);
         };
         let svg: string;
         try {
@@ -204,11 +218,15 @@ function MermaidBlock({ code }: { code: string }) {
         } catch {
           svg = await renderOrThrow(`${idRef.current}_safe`, sanitizeMermaid(code.trim()));
         }
-        if (!cancelled && ref.current) ref.current.innerHTML = svg;
-      } catch (err) {
+        if (!svg) throw new Error("Mermaid SVG did not pass sanitization.");
         if (!cancelled && ref.current) {
+          ref.current.innerHTML = svg;
+          setFallback(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
           console.warn("Mermaid render fallback:", err);
-          ref.current.innerHTML = mermaidFallbackHtml(code);
+          setFallback(true);
         }
       }
     })();
@@ -217,7 +235,9 @@ function MermaidBlock({ code }: { code: string }) {
     };
   }, [code]);
 
-  return (
+  return fallback ? (
+    <MermaidFallback code={code} />
+  ) : (
     <div
       ref={ref}
       className="my-4 p-4 rounded-xl bg-[#f7f9fa] border border-[#dcecf3] overflow-x-auto shadow-sm"
@@ -241,20 +261,15 @@ function CitationAnchor({ href, children }: { href?: string; children: React.Rea
       </span>
     );
   }
-  if (!href || !/^https?:\/\//i.test(href)) {
-    return <a href={href}>{children}</a>;
+  if (!isSafeMarkdownUrl(href)) {
+    return <span>{children}</span>;
   }
-  let host = "";
-  try {
-    host = new URL(href).hostname.replace(/^www\./, "");
-  } catch {
-    host = href;
-  }
+  const host = displayHost(href);
   return (
     <a
       href={href}
       target="_blank"
-      rel="noopener noreferrer"
+      rel="noopener noreferrer nofollow"
       title={href}
       className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 underline decoration-emerald-500/40 decoration-dotted underline-offset-2 transition"
     >
@@ -263,12 +278,6 @@ function CitationAnchor({ href, children }: { href?: string; children: React.Rea
         className="inline-flex items-center gap-1 ml-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-300/80 align-text-bottom"
         aria-hidden="true"
       >
-        <img
-          src={`https://www.google.com/s2/favicons?domain=${host}&sz=16`}
-          alt=""
-          className="w-3 h-3 rounded-sm"
-          loading="lazy"
-        />
         {host}
       </span>
     </a>
@@ -329,14 +338,7 @@ const TECHNICAL_LABELS: Record<string, string> = {
 };
 
 function formatTechnicalLabel(value?: string | null) {
-  if (!value) return "";
-  const normalized = value.toLowerCase().trim();
-  if (TECHNICAL_LABELS[normalized]) return TECHNICAL_LABELS[normalized];
-
-  const matched = Object.entries(TECHNICAL_LABELS).find(([key]) => normalized.includes(key));
-  if (matched) return matched[1];
-
-  return value.replace(/[_-]+/g, " ");
+  return userSafeStatus(value);
 }
 
 function TeachingArtifactRenderer({ artifacts }: { artifacts?: TeachingArtifact[] }) {
@@ -375,7 +377,9 @@ function TeachingArtifactRenderer({ artifacts }: { artifacts?: TeachingArtifact[
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
+                urlTransform={safeMarkdownUrlTransform}
                 components={{
+                  ...safeMarkdownComponents,
                   code({ className, children }) {
                     const lang = /language-(\w+)/.exec(className || "")?.[1];
                     if (lang === "mermaid") return <MermaidBlock code={String(children)} />;
@@ -774,6 +778,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
                       rehypePlugins={[rehypeKatex]}
+                      urlTransform={safeMarkdownUrlTransform}
                       components={{
                         code({ className, children }) {
                           const langMatch = /language-(\w+)/.exec(className || "");
@@ -800,6 +805,10 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                           return <CitationAnchor href={href}>{children}</CitationAnchor>;
                         },
                         img({ src, alt }) {
+                          if (!isAllowedRemoteImage(src)) {
+                            return <BlockedImagePlaceholder alt={alt} />;
+                          }
+
                           // Pollinations + diğer görselleri sar — yüklenmezse fallback göster
                           return (
                             <img
@@ -807,15 +816,6 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                               alt={alt || ""}
                               loading="lazy"
                               className="my-4 rounded-xl border border-[#dcecf3] max-w-full bg-[#f7f9fa]"
-                              onError={(e) => {
-                                const target = e.currentTarget;
-                                target.onerror = null;
-                                target.style.display = "none";
-                                const fallback = document.createElement("div");
-                                fallback.className = "my-4 rounded-xl border border-[#dcecf3] bg-[#f7f9fa] px-4 py-3 text-xs text-[#98a2b3] flex items-center gap-2";
-                                fallback.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg> Görsel yüklenemedi`;
-                                target.parentNode?.insertBefore(fallback, target.nextSibling);
-                              }}
                             />
                           );
                         },

@@ -30,8 +30,6 @@ import {
   Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import type { ChatResponseMetadata, CitationDto, SourceQualityReportDto, TeachingArtifact } from "@/lib/types";
@@ -690,7 +688,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const surfaceBreadcrumb = isOrkaLm ? "OrkaLM Notebook" : "Mufredat Haritasi";
   const surfaceTitle = isOrkaLm ? "OrkaLM" : (activePage?.title || "Wiki");
   const surfaceSubtitle = isOrkaLm
-    ? "PDF, TXT ve MD kaynaklarini yukle; kaynak grafigi, kanit paneli, ozet, terimler, zihin haritasi ve sesli ders akisini ayni kaynak merkezinde calistir."
+    ? "PDF, TXT ve MD kaynaklarını yükle; kaynak grafiği, kanıt paneli, özet, terimler, zihin haritası ve sesli ders akışını aynı kaynak merkezinde çalıştır."
     : null;
 
   return (
@@ -842,7 +840,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-sky-400" />
                       <span className="text-xs font-semibold uppercase tracking-widest text-sky-300">
-                        Kisisel Pekistirme
+                        Kişisel Pekiştirme
                       </span>
                     </div>
                     {learningCache && (
@@ -857,7 +855,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         Zorlandigin Yerler
                       </div>
                       {weakSkills.length === 0 ? (
-                        <p className="text-sm text-[#667085]">Henuz konu bazli zayiflik sinyali yok.</p>
+                        <p className="text-sm text-[#667085]">Henüz konu bazlı zayıflık sinyali yok.</p>
                       ) : (
                         <div className="space-y-2">
                           {weakSkills.slice(0, 4).map((skill) => (

@@ -337,7 +337,9 @@ export default function Home() {
       case "settings":
         return <SettingsPanel />;
       case "learning":
-        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} onOpenChat={() => setActiveView("chat")} />;
+        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="review" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
+      case "practice":
+        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="practice" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
       case "wiki":
         return wikiTopicId ? (
           <WikiMainPanel topicId={wikiTopicId} onClose={() => handleViewChange("chat")} />
@@ -355,8 +357,7 @@ export default function Home() {
             Kaynaklar için önce bir konu seç.
           </div>
         );
-      case "ide":
-      case "practice": {
+      case "ide": {
         return (
           <SplitPane
             left={

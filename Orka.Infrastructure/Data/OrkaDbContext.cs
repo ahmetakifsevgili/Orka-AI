@@ -124,8 +124,28 @@ public class OrkaDbContext : DbContext
             .IsUnique();
             
         modelBuilder.Entity<RefreshToken>()
-            .HasIndex(rt => rt.Token)
+            .Property(rt => rt.TokenHash)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<RefreshToken>()
+            .Property(rt => rt.ReplacedByTokenHash)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<RefreshToken>()
+            .Property(rt => rt.RevokedReason)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<RefreshToken>()
+            .Property(rt => rt.RowVersion)
+            .HasMaxLength(16)
+            .IsConcurrencyToken();
+
+        modelBuilder.Entity<RefreshToken>()
+            .HasIndex(rt => rt.TokenHash)
             .IsUnique();
+
+        modelBuilder.Entity<RefreshToken>()
+            .HasIndex(rt => new { rt.UserId, rt.TokenFamilyId });
 
         modelBuilder.Entity<ToolTelemetryEvent>()
             .Property(t => t.ToolId)
@@ -187,6 +207,9 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<CostRecord>()
             .HasIndex(c => new { c.UserId, c.OccurredAt });
+
+        modelBuilder.Entity<CostRecord>()
+            .HasIndex(c => new { c.TopicId, c.OccurredAt });
 
         modelBuilder.Entity<CostRecord>()
             .HasIndex(c => new { c.Provider, c.Model, c.OccurredAt });
@@ -1657,6 +1680,10 @@ public class OrkaDbContext : DbContext
             .HasForeignKey(s => s.SessionId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningSource>()
+            .Property(s => s.FileSizeBytes)
+            .HasDefaultValue(0L);
 
         modelBuilder.Entity<LearningSource>()
             .HasIndex(s => new { s.UserId, s.TopicId });

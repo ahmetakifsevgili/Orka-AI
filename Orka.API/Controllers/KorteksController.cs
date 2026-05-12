@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.API.Services;
+using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace Orka.API.Controllers;
@@ -14,25 +18,37 @@ public class KorteksController : ControllerBase
 {
     private readonly IKorteksAgent _korteks;
     private readonly FileExtractionService _fileExtractor;
+    private readonly UploadContentSafetyGuard _contentSafety;
+    private readonly IAuthAttemptLimiter _rateLimiter;
     private readonly ILogger<KorteksController> _logger;
-
-    private const int MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
     public KorteksController(
         IKorteksAgent korteks,
         FileExtractionService fileExtractor,
+        UploadContentSafetyGuard contentSafety,
+        IAuthAttemptLimiter rateLimiter,
         ILogger<KorteksController> logger)
     {
         _korteks = korteks;
         _fileExtractor = fileExtractor;
+        _contentSafety = contentSafety;
+        _rateLimiter = rateLimiter;
         _logger = logger;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpPost("research-stream")]
-    public async Task Research([FromBody] KorteksResearchRequest request)
+    public async Task Research([FromBody] KorteksResearchRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Topic))
+        {
+            Response.StatusCode = 400;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = "Araştırma konusu boş olamaz." });
+            return;
+        }
+
         var userId = GetUserId();
         _logger.LogInformation("[KorteksController] Arastirma: {Topic} | URL: {Url}", request.Topic, request.SourceUrl);
 
@@ -48,26 +64,49 @@ public class KorteksController : ControllerBase
 
     [HttpPost("research-file")]
     [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task ResearchFile([FromForm] KorteksFileRequest request)
+    public async Task ResearchFile([FromForm] KorteksFileRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Topic))
+        {
+            Response.StatusCode = 400;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = "Araştırma konusu boş olamaz." });
+            return;
+        }
+
         var userId = GetUserId();
         _logger.LogInformation("[KorteksController] Dosyali arastirma: {Topic} | Dosya: {File}",
             request.Topic, request.File?.FileName);
 
+        var ct = HttpContext.RequestAborted;
+        string? fileContext;
+        try
+        {
+            await EnforceFileResearchBackpressureAsync(userId, ct);
+            fileContext = await ExtractFileContextAsync(request.File, ct);
+        }
+        catch (ContentSafetyException ex)
+        {
+            Response.StatusCode = ex.StatusCode;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = ex.PublicMessage }, ct);
+            return;
+        }
+
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
-
-        var ct = HttpContext.RequestAborted;
-        var fileContext = await ExtractFileContextAsync(request.File);
 
         await StreamResearchAsync(request.Topic, userId, request.TopicId, fileContext, ct);
     }
 
     [HttpPost("research")]
     [HttpPost("research-sync")]
-    public async Task<IActionResult> ResearchSync([FromBody] KorteksResearchRequest request)
+    public async Task<IActionResult> ResearchSync([FromBody] KorteksResearchRequest? request)
     {
+        if (request == null || string.IsNullOrWhiteSpace(request.Topic))
+            return BadRequest(new { message = "Araştırma konusu boş olamaz." });
+
         var userId = GetUserId();
         _logger.LogInformation("[KorteksController] Senkron arastirma: {Topic}", request.Topic);
 
@@ -140,16 +179,41 @@ public class KorteksController : ControllerBase
         }
     }
 
-    private async Task<string?> ExtractFileContextAsync(IFormFile? file)
+    private async Task<string?> ExtractFileContextAsync(IFormFile? file, CancellationToken ct)
     {
         if (file == null || file.Length == 0) return null;
 
-        if (file.Length > MaxFileSizeBytes)
-            return $"[Dosya cok buyuk: {file.Length / 1024 / 1024} MB - maksimum 10 MB]";
+        _contentSafety.ValidateMetadata(file.FileName, file.ContentType, file.Length);
 
         using var ms = new MemoryStream();
-        await file.CopyToAsync(ms);
-        return _fileExtractor.Extract(file.FileName, ms.ToArray());
+        await file.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+        _contentSafety.ValidateBytes(file.FileName, file.ContentType, bytes);
+        return _fileExtractor.Extract(file.FileName, bytes);
+    }
+
+    private async Task EnforceFileResearchBackpressureAsync(Guid userId, CancellationToken ct)
+    {
+        var limit = _contentSafety.Options.MaxKorteksFileResearchPerUserPerHour;
+        var result = await _rateLimiter.TryConsumeAsync(
+            $"korteks:file:{HashPartition(userId.ToString("N"))}",
+            limit,
+            TimeSpan.FromHours(1),
+            ct);
+
+        if (!result.Allowed)
+        {
+            var message = result.LimiterUnavailable
+                ? "Korteks dosya arastirma korumasi gecici olarak kullanilamiyor."
+                : "Korteks dosya arastirma limiti asildi.";
+            throw ContentSafetyException.TooManyRequests(message);
+        }
+    }
+
+    private static string HashPartition(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static string? BuildUrlContext(string? url)

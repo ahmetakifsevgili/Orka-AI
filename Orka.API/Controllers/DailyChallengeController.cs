@@ -31,7 +31,7 @@ public class DailyChallengeController : ControllerBase
     public async Task<IActionResult> Submit(Guid challengeId, [FromBody] DailyChallengeSubmitRequest request)
     {
         var result = await _dailyChallenges.SubmitAsync(GetUserId(), challengeId, request.Answer, request.Quality, HttpContext.RequestAborted);
-        return result == null ? NotFound(new { message = "Daily challenge bulunamadi." }) : Ok(result);
+        return result == null ? NotFound(new { message = "Daily challenge bulunamadı." }) : Ok(result);
     }
 }
 

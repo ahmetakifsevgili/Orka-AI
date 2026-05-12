@@ -81,7 +81,7 @@ public class PushSubscriptionsController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId && p.Status == "active", ct);
 
         if (item == null)
-            return NotFound(new { message = "Push subscription bulunamadi." });
+            return NotFound(new { message = "Push subscription bulunamadı." });
 
         item.Status = "deleted";
         item.DeletedAt = DateTime.UtcNow;

@@ -191,8 +191,8 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             : BuildMainTopic(raw, normalized, focus);
 
         var studyGoal = ContainsAny(normalized, "pratik", "practice", "problem", "soru", "uygulama", "exercise")
-            ? "ogrenme ve pratik"
-            : "ogrenme ve temel uygulama";
+            ? "öğrenme ve pratik"
+            : "öğrenme ve temel uygulama";
 
         var researchIntent = EnsureEnglishResearchIntent(string.Empty, mainTopic, focus);
         if (ContainsAny(normalized, "karistiriyorum", "karisiyor", "dikkat", "hata", "yanlis"))

@@ -26,6 +26,7 @@ import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
+import { AgentStatusRail, ArtifactCanvas } from "./AgenticWorkspace";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
@@ -457,7 +458,7 @@ export default function ChatPanel({
                 const data = line.substring(6).replace(/\r$/, "");
                 if (data === "[DONE]") break;
                 if (data.startsWith("[ERROR]:")) {
-                  const errMsg = data.replace("[ERROR]:", "").trim() || "Yanit akisinda bir hata olustu.";
+                  const errMsg = data.replace("[ERROR]:", "").trim() || "Yanıt akışında bir hata oluştu.";
                   toast.error(errMsg, { duration: 6000 });
                   setIsThinking(false);
                   setMessages((prev) =>
@@ -482,7 +483,7 @@ export default function ChatPanel({
                 if (tutorEvent) {
                   const type = tutorEvent.type;
                   if (type === "thinking") {
-                    const message = eventValue<string>(tutorEvent, "message") ?? "Tutor state hazirlaniyor";
+                    const message = eventValue<string>(tutorEvent, "message") ?? "Tutor state hazırlanıyor";
                     setThinkingState(message);
                     setIsThinking(true);
                     continue;
@@ -490,7 +491,7 @@ export default function ChatPanel({
 
                   if (type === "tool_started" || type === "tool_finished") {
                     const toolId = eventValue<string>(tutorEvent, "toolId") ?? "tool";
-                    const status = eventValue<string>(tutorEvent, "status") ?? (type === "tool_started" ? "basladi" : "hazir");
+                    const status = eventValue<string>(tutorEvent, "status") ?? (type === "tool_started" ? "başladı" : "hazır");
                     const toolCallId = eventValue<string>(tutorEvent, "toolCallId");
                     const success = eventValue<boolean>(tutorEvent, "success") ?? status === "ready";
                     const provider = eventValue<string>(tutorEvent, "provider");
@@ -677,7 +678,7 @@ export default function ChatPanel({
         }
       } catch (err) {
         console.error("Streaming error:", err);
-        toast.error("Yanit akisinda bir sorun olustu.");
+        toast.error("Yanıt akışında bir sorun oluştu.");
         setMessages((prev) =>
           prev.map(m => m.id === assistantId ? { ...m, content: "Baglanti tarafinda bir sorun olustu. Backend durumunu kontrol edip tekrar deneyelim." } : m)
         );
@@ -809,14 +810,14 @@ export default function ChatPanel({
       if (!completion.planGenerated) return;
 
       setPlanFlowStage("done");
-      setPlanFlowDetail("Plan hazir. Sol menudeki ogrenme yolundan ilk derse gecebilirsin.");
+      setPlanFlowDetail("Plan hazır. Sol menüdeki öğrenme yolundan ilk derse geçebilirsin.");
       onTopicsRefresh();
 
       const scoreLine = completion.skipped
-        ? "Seviye testi atlandi; Orka sifirdan baslayan guvenli bir plan uretti."
+        ? "Seviye testi atlandı; Orka sıfırdan başlayan güvenli bir plan üretti."
         : typeof completion.score === "number" && typeof completion.total === "number"
-          ? `Seviye testi tamamlandi: ${completion.score}/${completion.total}.`
-          : "Seviye testi tamamlandi.";
+          ? `Seviye testi tamamlandı: ${completion.score}/${completion.total}.`
+          : "Seviye testi tamamlandı.";
 
       setMessages((prev) => [
         ...prev,
@@ -825,7 +826,7 @@ export default function ChatPanel({
           role: "ai",
           type: "text",
           content:
-            `${scoreLine}\n\nPlan olustu. Simdi sol menudeki ogrenme yolundan ilk derse gecebilir veya Tutor'a \"ilk derse basla\" yazabilirsin. Quiz cevabin chat mesaji olarak gonderilmedi.`,
+            `${scoreLine}\n\nPlan oluştu. Şimdi sol menüdeki öğrenme yolundan ilk derse geçebilir veya Tutor'a \"ilk derse başla\" yazabilirsin. Quiz cevabın chat mesajı olarak gönderilmedi.`,
           timestamp: new Date(),
         },
       ]);
@@ -863,6 +864,15 @@ export default function ChatPanel({
       </div>
     );
   }
+
+  const assistantMessages = messages.filter((message) => message.role === "ai");
+  const latestAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : null;
+  const latestMetadata = latestAssistantMessage?.metadata ?? null;
+  const canvasArtifacts = assistantMessages.flatMap((message) => message.artifacts ?? []).slice(-4);
+  const setCommandPrompt = (prompt: string) => {
+    setInput(prompt);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-[#f7f9fa] h-full overflow-hidden">
@@ -947,63 +957,65 @@ export default function ChatPanel({
         )}
       </AnimatePresence>
 
-      {/* Messages */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
-        <div className="max-w-3xl mx-auto w-full px-6 py-8">
-          {messages.length === 0 ? (
-            <WelcomeState onPromptClick={(p) => handleSend(p)} />
-          ) : (
-            <div className="space-y-1">
-              {messages.map((msg) => (
-                <ChatMessageComponent
-                  key={msg.id}
-                  message={msg}
-                  topicId={activeTopic?.id}
-                  sessionId={sessionId ?? undefined}
-                  onPlanComplete={handleQuizFlowComplete}
-                  onOpenWiki={onOpenWiki}
-                  onOpenIDE={onOpenIDE}
-                />
-              ))}
-              {pendingPlanIntent && (
-                <PlanIntentConfirmationCard
-                  intent={pendingPlanIntent}
-                  isBusy={isThinking}
-                  onConfirm={confirmPlanIntent}
-                  onRevise={revisePlanIntent}
-                  onReset={resetPlanIntent}
-                />
-              )}
-            </div>
-          )}
-
-          <AnimatePresence>
-            {isThinking && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-center gap-3 mt-4"
-              >
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#eef1f3] border border-[#526d82]/10 flex items-center justify-center">
-                  <OrcaLogo className="w-4 h-4 text-[#344054]" animated={true} />
-                </div>
-                <div className="pt-0">
-                  {planFlowStage !== "idle" ? (
-                    <PlanFlowIndicator stage={planFlowStage} detail={planFlowDetail} />
-                  ) : (
-                    <ThinkingIndicator state={thinkingState} />
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Messages */}
+          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto relative">
+            <div className="max-w-3xl mx-auto w-full px-6 py-8">
+              {messages.length === 0 ? (
+                <WelcomeState onPromptClick={(p) => handleSend(p)} />
+              ) : (
+                <div className="space-y-1">
+                  {messages.map((msg) => (
+                    <ChatMessageComponent
+                      key={msg.id}
+                      message={msg}
+                      topicId={activeTopic?.id}
+                      sessionId={sessionId ?? undefined}
+                      onPlanComplete={handleQuizFlowComplete}
+                      onOpenWiki={onOpenWiki}
+                      onOpenIDE={onOpenIDE}
+                    />
+                  ))}
+                  {pendingPlanIntent && (
+                    <PlanIntentConfirmationCard
+                      intent={pendingPlanIntent}
+                      isBusy={isThinking}
+                      onConfirm={confirmPlanIntent}
+                      onRevise={revisePlanIntent}
+                      onReset={resetPlanIntent}
+                    />
                   )}
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+              )}
 
-      {/* Floating Input Frame — Claude/Gemini Style */}
-      <div className="flex-shrink-0 relative pointer-events-none">
-        <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
+              <AnimatePresence>
+                {isThinking && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-3 mt-4"
+                  >
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#eef1f3] border border-[#526d82]/10 flex items-center justify-center">
+                      <OrcaLogo className="w-4 h-4 text-[#344054]" animated={true} />
+                    </div>
+                    <div className="pt-0">
+                      {planFlowStage !== "idle" ? (
+                        <PlanFlowIndicator stage={planFlowStage} detail={planFlowDetail} />
+                      ) : (
+                        <ThinkingIndicator state={thinkingState} />
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Floating Input Frame — agent command bar */}
+          <div className="flex-shrink-0 relative pointer-events-none">
+            <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
           <motion.div
             layout
             initial={false}
@@ -1092,12 +1104,40 @@ export default function ChatPanel({
                   </button>
                 </div>
               </div>
+              <div className="hidden flex-wrap gap-2 border-t border-[#526d82]/10 pb-3 pt-2 md:flex">
+                {[
+                  { label: "Kaynağa göre sor", prompt: "Bu konuyu kaynaklarıma dayanarak açıkla ve kaynakta yoksa net söyle." },
+                  { label: "Örnekle anlat", prompt: "Bunu gerçek hayattan bir örnekle, sonra kısa bir kontrol sorusuyla anlat." },
+                  { label: "Görselleştir", prompt: "Bunu bir diagram, tablo veya zaman çizelgesiyle görselleştir." },
+                  { label: "Pratik üret", prompt: "Bu kavram için seviyeme uygun kısa bir pratik sorusu üret." },
+                ].map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onClick={() => setCommandPrompt(action.prompt)}
+                    className="rounded-full border border-[#526d82]/12 bg-white/72 px-3 py-1 text-[10px] font-black text-[#52768a] transition hover:border-[#9ec7d9] hover:text-[#172033]"
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </motion.div>
           <p className="text-[9px] text-[#8ba8b5] mt-3 text-center tracking-wide uppercase opacity-50 font-medium">
-            Orka AI · SOLID Planning Engine v4.2 · Streaming Enabled
+            Orka AI · canlı öğrenme ajanı · kaynak, araç ve kanıt izlenir
           </p>
+            </div>
+          </div>
         </div>
+
+        <aside className="hidden min-h-0 w-[360px] shrink-0 border-l border-[#526d82]/10 bg-[#fbfcfd] 2xl:flex">
+          <ArtifactCanvas artifacts={canvasArtifacts} />
+        </aside>
+        <AgentStatusRail
+          metadata={latestMetadata}
+          sessionId={sessionId ?? undefined}
+          topicTitle={activeTopic?.title}
+        />
       </div>
     </div>
   );
@@ -1168,7 +1208,7 @@ function PlanIntentConfirmationCard({
           ["1", "Niyet onayi"],
           ["2", "Korteks arastirmasi"],
           ["3", "15-25 soru seviye testi"],
-          ["4", "Kisisel plan"],
+          ["4", "Kişisel plan"],
         ].map(([step, label]) => (
           <div key={step} className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dcecf3] text-[11px] font-black text-[#2d5870]">
@@ -1200,7 +1240,7 @@ function PlanIntentConfirmationCard({
           className="inline-flex items-center gap-2 rounded-full bg-[#172033] px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-[#2d5870] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CheckCircle2 className="h-4 w-4" />
-          Onayla ve arastir
+          Onayla ve araştır
         </button>
         <button
           onClick={() => (isEditing ? onRevise(draft) : setIsEditing(true))}
@@ -1235,11 +1275,11 @@ function IntentField({ label, value, mono = false }: { label: string; value: str
 }
 function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: string | null }) {
   const steps: Array<{ id: PlanFlowStage; label: string; body: string }> = [
-    { id: "intent", label: "Niyet ayriliyor", body: "Ham istek konu, odak ve arastirma niyetine cevrilir; onay olmadan Korteks calismaz." },
+    { id: "intent", label: "Niyet ayrılıyor", body: "Ham istek konu, odak ve araştırma niyetine çevrilir; onay olmadan Korteks çalışmaz." },
     { id: "topic", label: "Hedef okunuyor", body: "Konu, hedef ve baslangic niyeti ayriliyor." },
-    { id: "research", label: "Baglam taraniyor", body: "Kaynak, wiki, YouTube pedagojisi ve guvenli arac sinyalleri kontrol ediliyor." },
-    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yuzeyinde acilir; chat'e sistem komutu dusmez." },
-    { id: "plan", label: "Ogrenme yolu uretiliyor", body: "Cevaplar, zayif kavramlar, IDE pratikleri ve tekrar baskisi plana cevrilir." },
+    { id: "research", label: "Bağlam taranıyor", body: "Kaynak, wiki, YouTube pedagojisi ve güvenli araç sinyalleri kontrol ediliyor." },
+    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yüzeyinde açılır; chat'e sistem komutu düşmez." },
+    { id: "plan", label: "Öğrenme yolu üretiliyor", body: "Cevaplar, zayıf kavramlar, IDE pratikleri ve tekrar baskısı plana çevrilir." },
   ];
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === stage));
 
@@ -1337,4 +1377,3 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
     </div>
   );
 }
-

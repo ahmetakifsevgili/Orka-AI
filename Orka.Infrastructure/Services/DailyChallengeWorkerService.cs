@@ -78,7 +78,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
                     challenge.UserId,
                     new CreateNotificationRequest(
                         "daily-challenge",
-                        "Gunluk pratik hazir",
+                        "Günlük pratik hazır",
                         $"{label} icin bugunku kisa alistirma seni bekliyor.",
                         "info",
                         "DailyChallenge",

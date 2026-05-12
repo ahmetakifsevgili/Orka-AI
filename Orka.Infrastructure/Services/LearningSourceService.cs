@@ -10,6 +10,7 @@ using Orka.Core.Enums;
 using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Security;
 
 namespace Orka.Infrastructure.Services;
 
@@ -18,6 +19,7 @@ public class LearningSourceService : ILearningSourceService
     private static readonly Regex DocCitationRegex = new(@"\[doc:(?<sourceId>[^:\]]+):p(?<page>\d+)(?::c(?<chunk>\d+))?\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private readonly OrkaDbContext _db;
     private readonly FileExtractionService _extractor;
+    private readonly UploadContentSafetyGuard _contentSafety;
     private readonly IEmbeddingService _embedding;
     private readonly IAIAgentFactory _factory;
     private readonly IWikiService _wikiService;
@@ -38,6 +40,7 @@ public class LearningSourceService : ILearningSourceService
     public LearningSourceService(
         OrkaDbContext db,
         FileExtractionService extractor,
+        UploadContentSafetyGuard contentSafety,
         IEmbeddingService embedding,
         IAIAgentFactory factory,
         IWikiService wikiService,
@@ -48,6 +51,7 @@ public class LearningSourceService : ILearningSourceService
     {
         _db = db;
         _extractor = extractor;
+        _contentSafety = contentSafety;
         _embedding = embedding;
         _factory = factory;
         _wikiService = wikiService;
@@ -80,14 +84,17 @@ public class LearningSourceService : ILearningSourceService
         using var ms = new MemoryStream();
         await content.CopyToAsync(ms, ct);
         var bytes = ms.ToArray();
-        var uploadMb = bytes.Length / 1024d / 1024d;
+        _contentSafety.ValidateBytes(fileName, contentType, bytes);
+        var uploadMb = BytesToMegabytes(bytes.LongLength);
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
-                   ?? throw new InvalidOperationException("Kullanici bulunamadi.");
+                   ?? throw new InvalidOperationException("Kullanıcı bulunamadı.");
         if (user.StorageLimitMB > 0 && user.StorageUsedMB + uploadMb > user.StorageLimitMB)
         {
             throw new StorageQuotaExceededException();
         }
+
+        await ValidateUploadBackpressureAsync(userId, topicId, ct);
 
         var extracted = _extractor.ExtractWithPages(fileName, bytes);
         var source = new LearningSource
@@ -100,6 +107,7 @@ public class LearningSourceService : ILearningSourceService
             Title = Path.GetFileNameWithoutExtension(fileName),
             FileName = fileName,
             ContentType = contentType,
+            FileSizeBytes = bytes.LongLength,
             PageCount = extracted.PageCount,
             Status = string.IsNullOrWhiteSpace(extracted.ErrorMessage) ? "ready" : "error",
             ErrorMessage = extracted.ErrorMessage,
@@ -110,6 +118,8 @@ public class LearningSourceService : ILearningSourceService
         var chunks = string.IsNullOrWhiteSpace(extracted.ErrorMessage)
             ? BuildChunks(source.Id, extracted.Pages).ToList()
             : new List<SourceChunk>();
+        _contentSafety.ValidateChunkCount(chunks.Count);
+        await ValidateEmbeddingQuotaAsync(userId, chunks.Count, ct);
 
         if (chunks.Count > 0)
         {
@@ -121,7 +131,7 @@ public class LearningSourceService : ILearningSourceService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[NotebookLM] Embedding üretilemedi, lexical fallback kullanılacak. File={File}", fileName);
+                _logger.LogWarning(ex, "[NotebookLM] Embedding üretilemedi, lexical fallback kullanılacak. File={File}", SensitiveDataRedactor.MaskFileName(fileName));
             }
         }
 
@@ -223,6 +233,8 @@ public class LearningSourceService : ILearningSourceService
         foreach (var chunk in source.Chunks)
             chunk.IsDeleted = true;
 
+        await _db.SaveChangesAsync(ct);
+        await RecalculateStorageUsedAsync(userId, ct);
         await _db.SaveChangesAsync(ct);
         if (source.TopicId.HasValue)
         {
@@ -591,6 +603,39 @@ public class LearningSourceService : ILearningSourceService
             .ToList();
     }
 
+    private async Task ValidateUploadBackpressureAsync(Guid userId, Guid? topicId, CancellationToken ct)
+    {
+        var since = DateTime.UtcNow.AddHours(-1);
+        var recentUploads = await _db.LearningSources
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && !s.IsDeleted && s.CreatedAt >= since, ct);
+        if (recentUploads >= _contentSafety.Options.MaxUploadsPerUserPerHour)
+            throw Core.Exceptions.ContentSafetyException.TooManyRequests("Kaynak yukleme limiti asildi.");
+
+        if (topicId.HasValue)
+        {
+            var topicSources = await _db.LearningSources
+                .AsNoTracking()
+                .CountAsync(s => s.UserId == userId && s.TopicId == topicId.Value && !s.IsDeleted, ct);
+            if (topicSources >= _contentSafety.Options.MaxSourcesPerTopic)
+                throw Core.Exceptions.ContentSafetyException.TooManyRequests("Konu kaynak limiti asildi.");
+        }
+    }
+
+    private async Task ValidateEmbeddingQuotaAsync(Guid userId, int newChunkCount, CancellationToken ct)
+    {
+        if (newChunkCount <= 0) return;
+
+        var today = DateTime.UtcNow.Date;
+        var usedChunks = await _db.LearningSources
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && !s.IsDeleted && s.CreatedAt >= today)
+            .SumAsync(s => s.ChunkCount, ct);
+
+        if (usedChunks + newChunkCount > _contentSafety.Options.MaxEmbeddingChunksPerUserPerDay)
+            throw Core.Exceptions.ContentSafetyException.TooManyRequests("Gunluk embedding kotasi asildi.");
+    }
+
     private RankedSourceChunk ScoreChunk(SourceChunk chunk, string question, float[]? qEmbedding)
     {
         var lexical = (decimal)Math.Round(NotebookSourceContextFormatter.ScoreLexical(chunk, question), 4);
@@ -901,6 +946,22 @@ public class LearningSourceService : ILearningSourceService
 
     private static string NormalizeWhitespace(string text) =>
         string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private async Task RecalculateStorageUsedAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null)
+            return;
+
+        var usedBytes = await _db.LearningSources
+            .Where(s => s.UserId == userId && !s.IsDeleted && s.Status == "ready")
+            .SumAsync(s => (long?)s.FileSizeBytes, ct) ?? 0L;
+
+        user.StorageUsedMB = Math.Max(0d, BytesToMegabytes(usedBytes));
+    }
+
+    private static double BytesToMegabytes(long bytes) =>
+        bytes <= 0 ? 0d : bytes / 1024d / 1024d;
 
     private static string TrimForPrompt(string? value, int maxChars)
     {

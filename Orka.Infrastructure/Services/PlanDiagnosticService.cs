@@ -90,7 +90,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
         var approvedMainTopic = CleanOrDefault(request.ApprovedMainTopic, topic.Title);
         var approvedFocusArea = CleanOrDefault(request.ApprovedFocusArea, "genel kapsam");
-        var approvedStudyGoal = CleanOrDefault(request.ApprovedStudyGoal, "ogrenme ve pratik");
+        var approvedStudyGoal = CleanOrDefault(request.ApprovedStudyGoal, "öğrenme ve pratik");
         var topicTitle = BuildApprovedTopicTitle(request.TopicTitle, approvedMainTopic, approvedFocusArea, topic.Title);
         var requestedQuestionCount = DetermineDiagnosticQuestionCount(approvedMainTopic, approvedFocusArea, approvedResearchIntent);
         var planRequestId = Guid.NewGuid();

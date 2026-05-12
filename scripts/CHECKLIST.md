@@ -166,3 +166,100 @@ cd D:/Orka/Orka.Infrastructure && dotnet ef migrations add <İsim> --startup-pro
 - `scripts/llm-eval/package.json`
 - `scripts/llm-eval/README.md`
 - `scripts/llm-eval/.gitignore`
+
+## Production/Staging Migration Policy
+
+```bash
+# Staging/Production migration script uret
+cd D:/Orka
+dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup-project Orka.API -o artifacts/migrations/<name>.sql
+```
+
+- `Database:AutoMigrateOnStartup=true` sadece local Development override olarak kullanilir.
+- Staging ve Production'da startup auto-migration yasaktir; yanlislikla acilirsa API fail-fast eder.
+- Deploy oncesi migration script'i review edilir.
+- Destructive migration (`DROP COLUMN`, `DROP TABLE`, geri alinamaz data rewrite) varsa DB backup/snapshot zorunludur.
+- Rollback destructive migrationlarda sadece kod revert degildir; DB restore veya explicit rollback script gerekir.
+- Migration apply sonrasi `/health/ready` kontrol edilir; `ef-migrations` check'i pending migration birakmamalidir.
+
+## Production/Staging CORS ve Environment Gates
+
+- Staging/Production'da `Cors:AllowedOrigins` bos birakilamaz ve `*` kullanilamaz; API fail-fast eder.
+- `Cors:AllowAnyOriginInDevelopment=true` sadece local Development override icindir.
+- Env ornegi:
+  ```powershell
+  $env:Cors__AllowedOrigins__0 = "https://staging.orka.example"
+  $env:Cors__AllowedOrigins__1 = "https://app.orka.example"
+  ```
+- Deploy checklist'te JWT signing secret, `JWT:RefreshTokenHashSecret`, Redis connection, AI provider secrets ve CORS originleri birlikte dogrulanir.
+- Staging/Production CSP enforced gelir; gerekiyorsa sadece `SecurityHeaders:Csp:AdditionalConnectSrc` ile gerekli origin eklenir.
+- `SecurityHeaders:Csp:Enabled=false` Production/Staging icin kabul edilmez; acil durumda once security owner onayi gerekir.
+
+## Content Safety Transport Limits
+
+- `ContentSafety:Uploads:MaxFileBytes` dosya limitidir.
+- `ContentSafety:Uploads:MaxMultipartBodyBytes` multipart/form overhead limitidir; normalde `MaxFileBytes + 1MiB` olarak tutulur.
+- Sources ve Korteks upload davranisi bu iki limit ile birlikte dogrulanir; transport limiti runtime guard'dan daha genis ve kontrollu olmalidir.
+
+## Storage / Cost Context Migrations
+
+- Additive cleanup migration `LearningSources.FileSizeBytes` ve `CostRecords.TopicId` ekler.
+- Upload storage accounting source delete/recalculate testleriyle korunur.
+- Topic/account delete `CostRecords.TopicId` ve scoped `MetadataJson` alanlarini anonymize eder.
+- Migration script review komutu:
+  ```powershell
+  dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup-project Orka.API -o artifacts/migrations/v1-cleanup.sql
+  ```
+
+## CI Relational Lifecycle Smoke
+
+- `DataLifecycleTests` SQL Server relational smoke calistirir; EF InMemory tek basina yeterli kabul edilmez.
+- Windows CI/local icin `(localdb)\OrkaLocalDB` instance'i gerekir. Hazirlamak icin:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\reset-dev-db.ps1
+  ```
+- Linux/container CI icin `ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION` verilebilir. Test disposable database adini kendisi ekler.
+- SQL Server yoksa `quick-backend.ps1` bilincli fail eder; bu testler sessizce skip edilmemeli.
+
+## Optional External Provider Smoke
+
+- Default regression'a dahil degildir; sadece env gate ile calisir.
+- Calistirma:
+  ```powershell
+  $env:ORKA_RUN_EXTERNAL_PROVIDER_TESTS="true"
+  $env:ORKA_EXTERNAL_GITHUB_MODELS_TOKEN="<token>"
+  dotnet test Orka.API.Tests\Orka.API.Tests.csproj --filter ExternalProviderIntegrationTests --no-restore --verbosity minimal
+  ```
+- Env gate veya token yoksa test acik skip nedeni yazar ve provider cagrisi yapmaz.
+
+## Paket 3 Dev Contract
+
+Canonical local URLs:
+
+- Backend API: `http://localhost:5065`
+- Frontend dev server: `http://localhost:3000`
+- Runtime/API smoke env var: `ORKA_API_URL`
+- Frontend proxy env var: `VITE_API_PROXY_TARGET`
+
+Quick regression:
+
+```powershell
+cd D:/Orka
+powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
+```
+
+Full local quick line when frontend dependencies are available:
+
+```powershell
+cd D:/Orka
+powershell -ExecutionPolicy Bypass -File scripts\quick-all.ps1
+```
+
+Runtime smoke when API is already running:
+
+```powershell
+node scripts/healthcheck.mjs --base-url=http://localhost:5065 --quick
+$env:ORKA_API_URL="http://localhost:5065"; pytest contract_tests/
+```
+
+`5101` is legacy audit history only; do not use it as a new active default.

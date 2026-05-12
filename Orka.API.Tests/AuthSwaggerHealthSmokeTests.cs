@@ -51,7 +51,8 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
     [Fact]
     public async Task RegisterLoginAndMe_RoundTripsWithBearerToken()
     {
-        var email = $"smoke-{Guid.NewGuid():N}@orka.local";
+        var email = $"Smoke-{Guid.NewGuid():N}@Orka.Local";
+        var normalizedEmail = email.ToLowerInvariant();
         var password = "SmokePass123!";
 
         var register = await _client.PostAsJsonAsync("/api/auth/register", new
@@ -71,7 +72,7 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new
         {
-            email,
+            email = normalizedEmail,
             password
         });
         login.EnsureSuccessStatusCode();
@@ -86,9 +87,41 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         me.EnsureSuccessStatusCode();
 
         var meBody = await me.Content.ReadFromJsonAsync<UserBody>();
-        Assert.Equal(email, meBody?.Email);
+        Assert.Equal(normalizedEmail, meBody?.Email);
         Assert.Equal("Smoke", meBody?.FirstName);
         Assert.False(string.IsNullOrWhiteSpace(meBody?.Plan));
+    }
+
+    [Fact]
+    public async Task AuthController_RejectsInvalidInputAndSupportsLegacyName()
+    {
+        var badRegister = await _client.PostAsJsonAsync("/api/auth/register", new
+        {
+            email = "",
+            password = "short"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, badRegister.StatusCode);
+
+        var badLogin = await _client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = "",
+            password = ""
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, badLogin.StatusCode);
+
+        var email = $"legacy-{Guid.NewGuid():N}@orka.local";
+        var register = await _client.PostAsJsonAsync("/api/auth/register", new
+        {
+            name = "Legacy Person",
+            email,
+            password = "LegacyPass123!"
+        });
+        register.EnsureSuccessStatusCode();
+
+        var body = await register.Content.ReadFromJsonAsync<AuthBody>();
+        Assert.Equal("Legacy", body?.User.FirstName);
+        Assert.Equal("Person", body?.User.LastName);
+        Assert.Equal(email, body?.User.Email);
     }
 
     [Fact]

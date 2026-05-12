@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.Services;
@@ -9,10 +10,14 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
     private readonly Channel<BackgroundTaskItem> _queue;
+    private readonly IAiRequestContextAccessor _aiRequestContext;
     private readonly ILogger<BackgroundTaskQueue> _logger;
 
-    public BackgroundTaskQueue(ILogger<BackgroundTaskQueue> logger)
+    public BackgroundTaskQueue(
+        IAiRequestContextAccessor aiRequestContext,
+        ILogger<BackgroundTaskQueue> logger)
     {
+        _aiRequestContext = aiRequestContext;
         _logger = logger;
         _queue = Channel.CreateBounded<BackgroundTaskItem>(new BoundedChannelOptions(256)
         {
@@ -54,6 +59,12 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
                     attempts,
                     item.UserId,
                     item.CorrelationId);
+
+                using var aiContext = _aiRequestContext.Push(new AiRequestContext(
+                    UserId: item.UserId,
+                    CorrelationId: item.CorrelationId,
+                    Source: item.JobType,
+                    IsBackground: true));
 
                 await item.Work(timeout.Token);
 

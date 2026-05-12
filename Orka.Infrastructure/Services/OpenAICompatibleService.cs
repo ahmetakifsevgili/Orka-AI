@@ -73,6 +73,7 @@ public abstract class OpenAICompatibleService
 
             if (!response.IsSuccessStatusCode)
             {
+                if (!ReferenceEquals(response, null)) throw AiProviderFailureMapper.FromResponse(providerTag, Model, response, body);
                 Logger.LogError("[{Provider}] API Hatası: {Status} - {Body}", providerTag, response.StatusCode, body);
                 throw new HttpRequestException($"{providerTag} API hatası: {response.StatusCode} — {body}");
             }
@@ -88,6 +89,7 @@ public abstract class OpenAICompatibleService
         catch (Exception ex)
         {
             AiDebugLogger.LogError(providerTag, ex.Message);
+            if (!ReferenceEquals(ex, null)) throw AiProviderFailureMapper.FromException(providerTag, Model, ex);
             Logger.LogError(ex, "[{Provider}] İstek başarısız.", providerTag);
             throw new HttpRequestException($"{providerTag} isteği başarısız: {ex.Message}", ex);
         }
@@ -118,7 +120,7 @@ public abstract class OpenAICompatibleService
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
-            throw new HttpRequestException($"{providerTag} Stream error: {response.StatusCode} - {body}");
+            throw AiProviderFailureMapper.FromResponse(providerTag, Model, response, body);
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);

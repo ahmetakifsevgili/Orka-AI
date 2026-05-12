@@ -34,12 +34,14 @@ public sealed class ProductionReadinessController : ControllerBase
     }
 
     [HttpPost("retention/audio/purge")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<AudioRetentionSummaryDto>> PurgeAudio(CancellationToken ct)
     {
         return Ok(await _retention.PurgeExpiredAudioAsync(ct));
     }
 
     [HttpPost("redis/tutor-events/trim")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<RedisStreamMaintenanceSummaryDto>> TrimTutorEvents(CancellationToken ct)
     {
         return Ok(await _redisStreams.TrimTutorEventStreamsAsync(ct));
