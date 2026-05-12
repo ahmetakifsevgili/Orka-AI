@@ -124,6 +124,15 @@ const sourceQualityLabel = (status?: string | null) => {
 };
 
 type SourceCoverageCoachTone = "ready" | "watch" | "empty";
+type WikiStudySection = "briefing" | "reinforcement" | "sources" | "glossary" | "cards";
+
+interface WikiStudyPackItem {
+  id: string;
+  label: string;
+  detail: string;
+  section: WikiStudySection;
+  tone: "ready" | "watch" | "empty";
+}
 
 function buildWikiSourceCoverageCoach(input: {
   sourceCount: number;
@@ -217,6 +226,85 @@ function SourceCoverageCoach({
       </div>
     </div>
   );
+}
+
+function buildWikiStudyPackItems(input: {
+  hasBriefing: boolean;
+  isBriefingLoading: boolean;
+  glossaryCount: number;
+  studyCardCount: number;
+  recommendationCount: number;
+  weakSkillCount: number;
+  sourceCount: number;
+  readySources: number;
+  totalChunks: number;
+  hasSourceQualityConcern: boolean;
+}): WikiStudyPackItem[] {
+  const items: WikiStudyPackItem[] = [];
+
+  if (input.hasBriefing || input.isBriefingLoading) {
+    items.push({
+      id: "briefing",
+      label: "Özeti oku",
+      detail: input.isBriefingLoading ? "Hızlı Bakış hazırlanıyor." : "Konuya başlamadan önce kısa özeti ve ana çıkarımları gözden geçir.",
+      section: "briefing",
+      tone: input.hasBriefing ? "ready" : "empty",
+    });
+  }
+
+  if (input.weakSkillCount > 0) {
+    items.push({
+      id: "weak-skills",
+      label: "Zayıf kavramı Wiki’den tekrar et",
+      detail: "Çalışma kuyruğundaki zorlanma sinyalini Wiki üzerinden toparla.",
+      section: "reinforcement",
+      tone: "watch",
+    });
+  }
+
+  if (input.recommendationCount > 0) {
+    items.push({
+      id: "recommendations",
+      label: "Önerilen adımları izle",
+      detail: "Quiz ve öğrenme sinyallerinden gelen kişisel pekiştirme önerilerini aç.",
+      section: "reinforcement",
+      tone: "ready",
+    });
+  }
+
+  if (input.glossaryCount > 0) {
+    items.push({
+      id: "glossary",
+      label: "Kavramları gözden geçir",
+      detail: `${input.glossaryCount} terimi kısa açıklamalarıyla tekrar et.`,
+      section: "glossary",
+      tone: "ready",
+    });
+  }
+
+  if (input.studyCardCount > 0) {
+    items.push({
+      id: "study-cards",
+      label: "Kartlarla çalış",
+      detail: `${input.studyCardCount} pekiştirme kartıyla kendini yokla.`,
+      section: "cards",
+      tone: "ready",
+    });
+  }
+
+  if (input.sourceCount > 0) {
+    items.push({
+      id: "sources",
+      label: input.hasSourceQualityConcern || input.readySources === 0 || input.totalChunks === 0 ? "Kaynakları kontrol et" : "Kanıtları incele",
+      detail: input.hasSourceQualityConcern || input.readySources === 0 || input.totalChunks === 0
+        ? "Kaynak kapsaması zayıf olabilir; kaynak panelini ve kanıt durumunu kontrol et."
+        : `${input.readySources}/${input.sourceCount} kaynak hazır; kanıt panelinden dayanakları incele.`,
+      section: "sources",
+      tone: input.hasSourceQualityConcern || input.readySources === 0 || input.totalChunks === 0 ? "watch" : "ready",
+    });
+  }
+
+  return items;
 }
 
 function buildWikiLearningTraceSummary(metadata?: ChatResponseMetadata | null): Array<{ label: string; detail: string; tone: "grounded" | "learning" | "watch" }> {
@@ -766,6 +854,43 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     totalChunks: sourceGraph.totalChunks,
     quality: sourceQuality,
   });
+  const hasSourceQualityConcern =
+    sourceCoverageCoach.tone === "watch" ||
+    sourceQuality?.retrievalHealthStatus === "degraded" ||
+    sourceQuality?.citationCoverageStatus === "degraded" ||
+    (sourceQuality?.emptyRunCount ?? 0) > 0 ||
+    ((sourceQuality?.unsupportedCitationCount ?? 0) + (sourceQuality?.citationMissingCount ?? 0)) > 0;
+  const wikiStudyPackItems = useMemo(
+    () => buildWikiStudyPackItems({
+      hasBriefing: !!briefing,
+      isBriefingLoading: briefingLoading,
+      glossaryCount: glossary.length,
+      studyCardCount: studyCards.length,
+      recommendationCount: recommendations.length,
+      weakSkillCount: weakSkills.length,
+      sourceCount: sources.length,
+      readySources: sourceGraph.readySources,
+      totalChunks: sourceGraph.totalChunks,
+      hasSourceQualityConcern,
+    }),
+    [
+      briefing,
+      briefingLoading,
+      glossary.length,
+      hasSourceQualityConcern,
+      recommendations.length,
+      sourceGraph.readySources,
+      sourceGraph.totalChunks,
+      sources.length,
+      studyCards.length,
+      weakSkills.length,
+    ],
+  );
+  const scrollToStudySection = (section: WikiStudySection) => {
+    document
+      .getElementById(`wiki-study-${section}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // ─── Copilot Send ────────────────────────────────────────
   const handleSend = async () => {
@@ -957,9 +1082,60 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </h1>
               </div>
 
+              <div className="mb-8 rounded-2xl border border-[#526d82]/16 bg-[#f7f9fa]/72 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#667085]">
+                      <Sparkles className="h-4 w-4 text-[#47725d]" />
+                      Wiki Çalışma Paketi
+                    </div>
+                    <h2 className="mt-1 text-lg font-black text-[#172033]">Bu konuyu çalış</h2>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-[#667085]">
+                      Wiki özeti, kişisel pekiştirme, kaynak kanıtı ve kartları tek çalışma girişi olarak takip et.
+                    </p>
+                  </div>
+                  {weakSkills.length > 0 && (
+                    <div className="max-w-sm rounded-xl border border-sky-500/18 bg-sky-500/8 px-3 py-2 text-xs text-[#52768a]">
+                      <div className="font-black">Bu konuda çalışma kuyruğu sinyali var.</div>
+                      <div className="mt-1 leading-5">
+                        Zayıf kavramı Wiki’den tekrar edebilir veya Tutor’a kısa telafi sorusu açabilirsin.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {wikiStudyPackItems.length === 0 ? (
+                  <div className="mt-4 rounded-xl border border-[#526d82]/12 bg-white/62 px-3 py-3 text-sm text-[#667085]">
+                    Bu konu için çalışma paketi henüz oluşmadı. Wiki içeriği, kaynak veya quiz sinyali geldikçe burada adımlar belirecek.
+                  </div>
+                ) : (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {wikiStudyPackItems.map((item) => {
+                      const toneClass = item.tone === "ready"
+                        ? "border-emerald-500/20 bg-emerald-500/8 text-[#47725d]"
+                        : item.tone === "watch"
+                          ? "border-amber-500/24 bg-amber-500/8 text-[#8a6a33]"
+                          : "border-[#526d82]/14 bg-white/62 text-[#667085]";
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => scrollToStudySection(item.section)}
+                          className={`min-h-[92px] rounded-xl border px-3 py-3 text-left transition hover:-translate-y-0.5 hover:bg-white/78 focus:outline-none focus:ring-2 focus:ring-[#9ec7d9] ${toneClass}`}
+                        >
+                          <div className="text-sm font-black text-[#172033]">{item.label}</div>
+                          <div className="mt-1 text-[11px] leading-5 opacity-85">{item.detail}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* NotebookLM-tarzı Briefing Document — wiki üst kısmında "okumadan önce göz at" özet */}
               {(briefing || briefingLoading) && (
-                <div className="mb-8 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
+                <div id="wiki-study-briefing" className="mb-8 scroll-mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
                   <div className="px-5 py-3 flex items-center gap-2 border-b border-emerald-500/15">
                     <Lightbulb className="w-4 h-4 text-[#47725d]" />
                     <span className="text-xs font-semibold uppercase tracking-widest text-[#47725d]">
@@ -1022,7 +1198,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
               )}
 
               {(weakSkills.length > 0 || recommendations.length > 0) && (
-                <div className="mb-8 rounded-xl border border-sky-500/20 bg-sky-500/5 overflow-hidden">
+                <div id="wiki-study-reinforcement" className="mb-8 scroll-mt-6 rounded-xl border border-sky-500/20 bg-sky-500/5 overflow-hidden">
                   <div className="px-5 py-3 flex items-center justify-between gap-3 border-b border-sky-500/15">
                     <div className="flex items-center gap-2">
                       <Zap className="w-4 h-4 text-sky-400" />
@@ -1088,7 +1264,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </div>
               )}
 
-              <div className="mb-8 grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
+              <div id="wiki-study-sources" className="mb-8 scroll-mt-6 grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
                 <div className="rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 overflow-hidden">
                   <div className="px-5 py-3 border-b border-[#526d82]/15 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -1436,7 +1612,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </div>
 
                 <div className="space-y-4">
-                  <div className="rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 p-4">
+                  <div id="wiki-study-glossary" className="scroll-mt-6 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2">
                         <Headphones className="w-4 h-4 text-sky-400" />
@@ -1613,7 +1789,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                     )}
                   </div>
 
-                  <div className="rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/62 p-4">
+                  <div id="wiki-study-cards" className="scroll-mt-6 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/62 p-4">
                     <div className="flex items-center gap-2 mb-4">
                       <HelpCircle className="w-4 h-4 text-amber-400" />
                       <h4 className="text-sm font-semibold text-[#172033]">Flashcards / Quizlets</h4>

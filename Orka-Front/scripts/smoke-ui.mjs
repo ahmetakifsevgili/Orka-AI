@@ -108,6 +108,8 @@ addCheck("Wiki source evidence trust strip visible", wiki.includes("source-evide
 addCheck("Wiki citation chips expose scope summaries", wiki.includes("citationScopeSummary") && wiki.includes("citationDisplayTitle") && wiki.includes("citationPrimaryLabel"));
 addCheck("Wiki source coverage coach is visible", wiki.includes("Kaynak kapsaması") && wiki.includes("Bu konu için kaynaklar hazır.") && wiki.includes("RAG yanıtları için yeterli kaynak bulunamayabilir") && wiki.includes("buildWikiSourceCoverageCoach"));
 addCheck("Wiki learning trace summary is user-facing", wiki.includes("WikiLearningTraceSummary") && wiki.includes("Orka bu turda") && wiki.includes("Bu cevap kaynaklarla desteklendi.") && wiki.includes("Quiz/pratik kanıtı güncellendi."));
+addCheck("Wiki study pack entry is visible", wiki.includes("Wiki Çalışma Paketi") && wiki.includes("Bu konuyu çalış") && wiki.includes("Özeti oku") && wiki.includes("Kavramları gözden geçir") && wiki.includes("Kartlarla çalış"));
+addCheck("Wiki weak queue context is visible", wiki.includes("Bu konuda çalışma kuyruğu sinyali var.") && wiki.includes("Zayıf kavramı Wiki’den tekrar edebilir") && wiki.includes("wiki-study-reinforcement"));
 
 const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("Topic readiness badges are visible", sidebar.includes("TopicReadinessBadge") && sidebar.includes("Hazır") && sidebar.includes("Dikkat") && sidebar.includes("Yeni") && sidebar.includes("getTopicReadinessBadge"));
