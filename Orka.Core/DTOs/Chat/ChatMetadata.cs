@@ -27,6 +27,11 @@ public sealed class ChatResponseMetadata
     public int? PolicyViolationCount { get; set; }
     public string? RagQualityStatus { get; set; }
     public EvidenceQualityDto? EvidenceQuality { get; set; }
+    public string? TutorResponseMode { get; set; }
+    public string? EvidencePolicy { get; set; }
+    public string? PersonalizationMode { get; set; }
+    public string? MasteryBasis { get; set; }
+    public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
     public string? NextCheckPrompt { get; set; }
     public string? CognitiveLoad { get; set; }
     public string? AffectiveState { get; set; }

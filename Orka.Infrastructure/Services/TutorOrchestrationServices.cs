@@ -489,6 +489,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             CognitiveLoad = profile.CognitiveLoad,
             GroundingStatus = policyContext.GroundingStatus,
             SourceEvidenceCount = policyContext.SourceEvidenceCount + CountContextEvidence(notebookContext, wikiContext),
+            EvidenceQuality = policyContext.EvidenceQuality,
             DirectAnswerRisk = policyContext.DirectAnswerRisk || TutorSignalHeuristics.ContainsAny(TutorSignalHeuristics.Normalize(userMessage), "cevabı ver", "direkt cevap", "sonucu söyle", "çözümü ver"),
             HasIdeContext = !string.IsNullOrWhiteSpace(ideContext),
             HasNotebookContext = !string.IsNullOrWhiteSpace(notebookContext),
@@ -497,6 +498,13 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             SourceEvidence = policyContext.SourceEvidence.Take(8).ToList(),
             CreatedAt = DateTimeOffset.UtcNow
         };
+
+        var responsePolicy = TutorResponsePolicy.Decide(state);
+        state.TutorResponseMode = responsePolicy.TutorResponseMode;
+        state.EvidencePolicy = responsePolicy.EvidencePolicy;
+        state.PersonalizationMode = responsePolicy.PersonalizationMode;
+        state.MasteryBasis = responsePolicy.MasteryBasis;
+        state.WeakConceptHints = responsePolicy.WeakConceptHints;
 
         var snapshot = await _workingMemory.SaveTurnSnapshotAsync(state, ct);
         state.WorkingMemorySnapshotId = snapshot.Id;
@@ -561,12 +569,16 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             - cognitiveLoad: {state.CognitiveLoad}
             - groundingStatus: {state.GroundingStatus}
             - sourceEvidenceCount: {state.SourceEvidenceCount}
+            - evidenceQuality: {state.EvidenceQuality?.Status ?? "unknown"}
+            - tutorResponseMode: {state.TutorResponseMode ?? "standard"}
+            - evidencePolicy: {state.EvidencePolicy ?? "unknown_source_caution"}
+            - personalizationMode: {state.PersonalizationMode ?? "unknown"}; masteryBasis: {state.MasteryBasis ?? "default"}
             - directAnswerRisk: {state.DirectAnswerRisk}
             - recentMistakes: {(state.RecentMistakes.Count == 0 ? "none" : string.Join("; ", state.RecentMistakes))}
 
             [TUTOR STATE KURALI]
             Bu turda cevabi yukaridaki aktif kavram, mastery/confidence ve duygu-yuk sinyaline gore kur. 
-            Kaynak yoksa kaynak iddiasinda bulunma. Confidence dusukse "ogrendin" deme; kanit yetersiz modunda mikro kontrol sor.
+            Kaynak yoksa kaynak iddiasinda bulunma. Evidence limited ise temkinli ve kisa konus; confidence dusukse "ogrendin" deme; kanit yetersiz modunda mikro kontrol sor.
             """;
     }
 
@@ -622,13 +634,18 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         var sourceIntent = TutorSignalHeuristics.ContainsAny(normalized, "kaynak", "wiki", "doküman", "dokuman", "notebook", "belgeye göre", "kaynağa göre");
         var reviewIntent = TutorSignalHeuristics.ContainsAny(normalized, "tekrar", "review", "kart", "flashcard", "unut");
 
-        var teachingMode = SelectTeachingMode(turnState, lowMastery, codeIntent, wantsVisual, sourceIntent, reviewIntent);
+        var responsePolicy = TutorResponsePolicy.Decide(turnState);
+        turnState.TutorResponseMode = responsePolicy.TutorResponseMode;
+        turnState.EvidencePolicy = responsePolicy.EvidencePolicy;
+        turnState.PersonalizationMode = responsePolicy.PersonalizationMode;
+        turnState.MasteryBasis = responsePolicy.MasteryBasis;
+        turnState.WeakConceptHints = responsePolicy.WeakConceptHints;
+
+        var teachingMode = SelectTeachingMode(turnState, lowMastery, codeIntent, wantsVisual, sourceIntent, reviewIntent, responsePolicy);
         var directAnswerPolicy = turnState.DirectAnswerRisk && lowMastery
             ? "hint_first_then_scaffold"
             : turnState.DirectAnswerRisk ? "brief_answer_then_reasoning_check" : "scaffold";
-        var groundingPolicy = turnState.SourceEvidenceCount > 0
-            ? "cite_available_sources"
-            : "model_ok_no_source_claim";
+        var groundingPolicy = responsePolicy.EvidencePolicy;
 
         var toolPlans = BuildToolPlans(turnState, normalized, sourceIntent, reviewIntent, codeIntent, wantsVisual)
             .Concat(_evidenceRouter.Route(turnState, normalized))
@@ -643,7 +660,7 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             .Select(g => g.First())
             .Take(8)
             .ToList();
-        var nextCheck = BuildNextCheck(turnState, teachingMode);
+        var nextCheck = TutorResponsePolicy.NextCheckFor(turnState, teachingMode, responsePolicy);
 
         var trace = new TutorActionTrace
         {
@@ -679,10 +696,14 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             StyleMode = turnState.StyleMode,
             DirectAnswerPolicy = directAnswerPolicy,
             GroundingPolicy = groundingPolicy,
+            TutorResponseMode = responsePolicy.TutorResponseMode,
+            PersonalizationMode = responsePolicy.PersonalizationMode,
+            MasteryBasis = responsePolicy.MasteryBasis,
+            WeakConceptHints = responsePolicy.WeakConceptHints,
             ToolPlans = toolPlans,
             ArtifactPlans = artifactPlans,
             NextCheckPrompt = nextCheck,
-            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans)
+            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans, responsePolicy)
         };
 
         await _workingMemory.ApplyPatchAsync(turnState.UserId, turnState.TopicId, turnState.SessionId, "tutor_action_plan", new
@@ -693,6 +714,10 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             plan.StyleMode,
             plan.DirectAnswerPolicy,
             plan.GroundingPolicy,
+            plan.TutorResponseMode,
+            plan.PersonalizationMode,
+            plan.MasteryBasis,
+            plan.WeakConceptHints,
             plan.NextCheckPrompt
         }, ct);
 
@@ -711,8 +736,9 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         return plan;
     }
 
-    private static string SelectTeachingMode(TutorTurnStateDto state, bool lowMastery, bool codeIntent, bool wantsVisual, bool sourceIntent, bool reviewIntent)
+    private static string SelectTeachingMode(TutorTurnStateDto state, bool lowMastery, bool codeIntent, bool wantsVisual, bool sourceIntent, bool reviewIntent, TutorResponsePolicyDecision responsePolicy)
     {
+        if (responsePolicy.TutorResponseMode == "evidence_limited" && sourceIntent) return "source_grounded_answer";
         if (state.AffectiveState is "confused" or "frustrated" || state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase)) return "remediate";
         if (codeIntent || state.HasIdeContext) return "code_lab";
         if (sourceIntent && state.SourceEvidenceCount > 0) return "source_grounded_answer";
@@ -813,13 +839,16 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         };
     }
 
-    private static string BuildPromptBlock(TutorActionTrace trace, IReadOnlyList<TutorToolPlanDto> toolPlans, IReadOnlyList<TeachingArtifactPlanDto> artifacts) => $"""
+    private static string BuildPromptBlock(TutorActionTrace trace, IReadOnlyList<TutorToolPlanDto> toolPlans, IReadOnlyList<TeachingArtifactPlanDto> artifacts, TutorResponsePolicyDecision responsePolicy) => $"""
 
         [TUTOR ACTION PLAN v3]
         - tutorActionTraceId: {trace.Id}
         - teachingMode: {trace.TeachingMode}
+        - tutorResponseMode: {responsePolicy.TutorResponseMode}
         - activeConceptKey: {trace.ActiveConceptKey}
         - styleMode: {trace.StyleMode}
+        - personalizationMode: {responsePolicy.PersonalizationMode}; masteryBasis: {responsePolicy.MasteryBasis}
+        - weakConceptHints: {(responsePolicy.WeakConceptHints.Count == 0 ? "none" : string.Join("; ", responsePolicy.WeakConceptHints))}
         - directAnswerPolicy: {trace.DirectAnswerPolicy}
         - groundingPolicy: {trace.GroundingPolicy}
         - plannedTools: {(toolPlans.Count == 0 ? "none" : string.Join(", ", toolPlans.Select(t => $"{t.ToolId}:{t.RiskLevel}")))}
@@ -828,6 +857,7 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
 
         [ACTION KURALI]
         Cevap bu plana uymali. Direct-answer policy hint-first ise once ipucu ve scaffold ver; kaynak yoksa kaynak iddiasi kurma.
+        Response mode concise ise kisa tut; recovery ise adim adim telafi et; evidence_limited ise kesinlik iddiasi kurma ve kaynak kontrolunu onceliklendir.
         """;
 }
 

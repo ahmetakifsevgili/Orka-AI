@@ -136,6 +136,8 @@ addCheck("Adaptive practice is wired into learning panel", learningPanel.include
 const chatMessage = read("src/components/ChatMessage.tsx");
 const chatPanel = read("src/components/ChatPanel.tsx");
 addCheck("Chat learning trace shows evidence quality warnings", chatMessage.includes("evidenceQuality") && chatMessage.includes("evidenceQualityDetail") && chatMessage.includes("evidenceQualityLabel"));
+addCheck("Tutor intelligence metadata is user-facing", chatMessage.includes("tutorResponseMode") && chatMessage.includes("personalizationMode") && chatMessage.includes("Kaynak güveni sınırlı; cevabı kontrol ederek kullan.") && chatMessage.includes("Anlatım seviyesi mevcut ilerlemene göre ayarlandı."));
+addCheck("Tutor Socratic prompt stays visible", chatMessage.includes("Kendini kontrol et") && chatMessage.includes("nextCheckPrompt"));
 addCheck("Chat metadata chips render additively", chatMessage.includes("ChatMetadataChips") && chatMessage.includes("usedTools") && chatMessage.includes("fallbackReason"));
 addCheck("Chat citation chips expose scope summaries", chatMessage.includes("citationScopeSummary") && chatMessage.includes("citationDisplayTitle") && chatMessage.includes("citationPrimaryLabel"));
 addCheck("Chat learning trace summary is user-facing", chatMessage.includes("LearningTraceSummaryLite") && chatMessage.includes("Orka bu turda") && chatMessage.includes("Bu cevap kaynaklarla desteklendi.") && chatMessage.includes("Henüz öğrenme izi oluşmadı."));

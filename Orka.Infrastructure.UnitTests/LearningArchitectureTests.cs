@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orka.Core.DTOs;
+using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
@@ -483,6 +484,100 @@ public sealed class LearningArchitectureTests
         Assert.Contains(plan.ArtifactPlans, a => a.ArtifactType == "worked_example");
         Assert.Contains(plan.ArtifactPlans, a => a.ArtifactType == "micro_quiz");
         Assert.Equal(1, await db.TutorActionTraces.CountAsync());
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_MissingEvidenceUsesLimitedPolicyAndSourceCheck()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Bu konuyu kaynağa göre açıklar mısın?",
+            ActiveConceptKey = "http",
+            ActiveConceptLabel = "HTTP",
+            LearnerState = "unknown",
+            MasteryProbability = 0.62m,
+            Confidence = 0.60m,
+            SourceEvidenceCount = 0,
+            GroundingStatus = "model_only",
+            EvidenceQuality = new EvidenceQualityDto { Status = "missing" }
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("evidence_limited", plan.TutorResponseMode);
+        Assert.Equal("model_ok_no_source_claim", plan.GroundingPolicy);
+        Assert.Contains("kaynak", plan.NextCheckPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("evidence_limited", plan.PromptBlock);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_StrongEvidenceAndHighMasteryAllowsDeepAdvancedMode()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Bu konuyu derin ve nedenleriyle anlatır mısın?",
+            ActiveConceptKey = "transactions",
+            ActiveConceptLabel = "Transactions",
+            LearnerState = "ready",
+            MasteryProbability = 0.82m,
+            Confidence = 0.72m,
+            SourceEvidenceCount = 2,
+            GroundingStatus = "source_grounded",
+            EvidenceQuality = new EvidenceQualityDto { Status = "strong" }
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("deep", plan.TutorResponseMode);
+        Assert.Equal("advanced", plan.PersonalizationMode);
+        Assert.Equal("cite_available_sources", plan.GroundingPolicy);
+        Assert.Equal("mastery_probability", plan.MasteryBasis);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_LowMasteryAddsRecoveryPersonalizationHints()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Bunu anlayamadım, adım adım anlat.",
+            ActiveConceptKey = "auth",
+            ActiveConceptLabel = "Auth",
+            LearnerState = "needs_remediation",
+            MasteryProbability = 0.28m,
+            Confidence = 0.30m,
+            RecentMistakes = ["JWT refresh", "Cookie scope", "JWT refresh"],
+            SourceEvidenceCount = 1,
+            GroundingStatus = "source_grounded",
+            EvidenceQuality = new EvidenceQualityDto { Status = "strong" }
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("recovery", plan.TutorResponseMode);
+        Assert.Equal("beginner", plan.PersonalizationMode);
+        Assert.Equal("weak_concept_signals", plan.MasteryBasis);
+        Assert.Equal(2, plan.WeakConceptHints.Count);
     }
 
     [Fact]

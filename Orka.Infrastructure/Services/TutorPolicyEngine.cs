@@ -3,7 +3,9 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
+using Orka.Core.DTOs.Chat;
 using Orka.Core.Interfaces;
+using Orka.Core.Services;
 using Orka.Infrastructure.Data;
 
 namespace Orka.Infrastructure.Services;
@@ -65,6 +67,7 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
             var recentMistakes = await LoadRecentMistakesAsync(userId, topicId, ct);
             var sourceEvidence = BuildSourceEvidence(snapshot?.SourceConfidence, notebookContext, wikiContext, graph);
             var sourceEvidenceCount = CountReliableEvidence(sourceEvidence);
+            var evidenceQuality = await LoadEvidenceQualityAsync(userId, topicId, sourceEvidenceCount, snapshot?.SourceConfidence, ct);
             var groundingStatus = sourceEvidenceCount > 0
                 ? "source_grounded"
                 : string.Equals(snapshot?.SourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_source" : "model_only";
@@ -83,6 +86,7 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
                 NextPedagogicalMove = move,
                 GroundingStatus = groundingStatus,
                 SourceEvidenceCount = sourceEvidenceCount,
+                EvidenceQuality = evidenceQuality,
                 DirectAnswerRisk = directAnswerRisk,
                 SourceEvidence = sourceEvidence,
                 RecentMistakes = recentMistakes,
@@ -124,9 +128,15 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         sb.AppendLine($"LearnerState: {context.LearnerState}");
         sb.AppendLine($"NextPedagogicalMove: {context.NextPedagogicalMove}");
         sb.AppendLine($"GroundingStatus: {context.GroundingStatus}; SourceEvidenceCount: {context.SourceEvidenceCount}");
+        var evidencePolicy = TutorResponsePolicy.EvidencePolicyFor(context.EvidenceQuality, context.GroundingStatus, context.SourceEvidenceCount);
+        sb.AppendLine($"EvidenceQuality: {context.EvidenceQuality?.Status ?? "unknown"}; EvidencePolicy: {evidencePolicy}");
         if (context.DirectAnswerRisk)
         {
             sb.AppendLine("DirectAnswerRisk: High; prefer hint-first scaffolding before final answers.");
+        }
+        if (evidencePolicy is "evidence_limited_caution" or "evidence_weak_verify" or "model_ok_no_source_claim" or "unknown_source_caution")
+        {
+            sb.AppendLine("EvidencePolicyRule: Use cautious wording; do not claim source-backed certainty when evidence is limited, weak, missing, or unknown.");
         }
         if (context.SourceEvidence.Count > 0)
         {
@@ -173,6 +183,57 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
             .Take(5)
             .Select(a => $"{a.SkillTag ?? a.TopicPath ?? "unknown"}: {a.CognitiveType ?? "incorrect answer"}")
             .ToListAsync(ct);
+    }
+
+    private async Task<EvidenceQualityDto> LoadEvidenceQualityAsync(Guid userId, Guid? topicId, int sourceEvidenceCount, string? sourceConfidence, CancellationToken ct)
+    {
+        if (topicId.HasValue)
+        {
+            var latestReport = await _db.SourceQualityReports
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.TopicId == topicId.Value)
+                .OrderByDescending(r => r.GeneratedAt)
+                .Select(r => r.ReportJson)
+                .FirstOrDefaultAsync(ct);
+
+            if (TryReadEvidenceQuality(latestReport, out var cached))
+                return cached;
+        }
+
+        var retrievalHealth = sourceEvidenceCount <= 0
+            ? "no_source"
+            : string.Equals(sourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_confidence" : "healthy";
+        var citationStatus = sourceEvidenceCount > 0 ? "unverified" : "unknown";
+        return EvidenceQualityEvaluator.Build(
+            sourceEvidenceCount,
+            sourceEvidenceCount,
+            sourceEvidenceCount,
+            citationCoverage: 0m,
+            unsupportedCitationCount: 0,
+            citationMissingCount: 0,
+            retrievalHealthStatus: retrievalHealth,
+            citationCoverageStatus: citationStatus);
+    }
+
+    private static bool TryReadEvidenceQuality(string? reportJson, out EvidenceQualityDto evidenceQuality)
+    {
+        evidenceQuality = EvidenceQualityEvaluator.Unknown();
+        if (string.IsNullOrWhiteSpace(reportJson))
+            return false;
+
+        try
+        {
+            var report = JsonSerializer.Deserialize<SourceQualityReportDto>(reportJson, JsonOptions);
+            if (report?.EvidenceQuality == null)
+                return false;
+
+            evidenceQuality = report.EvidenceQuality;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static List<string> BuildSourceEvidence(string? sourceConfidence, string notebookContext, string wikiContext, ConceptGraphDto? graph)

@@ -161,6 +161,7 @@ public sealed class TutorPolicyContextDto
     public string NextPedagogicalMove { get; set; } = "ask a short diagnostic check before advancing";
     public string GroundingStatus { get; set; } = "model_only";
     public int SourceEvidenceCount { get; set; }
+    public Chat.EvidenceQualityDto? EvidenceQuality { get; set; }
     public bool DirectAnswerRisk { get; set; }
     public List<string> PolicyViolations { get; set; } = [];
     public List<string> SourceEvidence { get; set; } = [];

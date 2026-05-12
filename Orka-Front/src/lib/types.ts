@@ -250,6 +250,11 @@ export interface ChatResponseMetadata {
   policyViolationCount?: number | null;
   ragQualityStatus?: string | null;
   evidenceQuality?: EvidenceQualityDto | null;
+  tutorResponseMode?: string | null;
+  evidencePolicy?: string | null;
+  personalizationMode?: string | null;
+  masteryBasis?: string | null;
+  weakConceptHints?: string[];
   nextCheckPrompt?: string | null;
   cognitiveLoad?: string | null;
   affectiveState?: string | null;

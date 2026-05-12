@@ -1,3 +1,5 @@
+using Orka.Core.DTOs.Chat;
+
 namespace Orka.Core.DTOs;
 
 public sealed class TutorTurnStateDto
@@ -21,6 +23,12 @@ public sealed class TutorTurnStateDto
     public string CognitiveLoad { get; set; } = "normal";
     public string GroundingStatus { get; set; } = "model_only";
     public int SourceEvidenceCount { get; set; }
+    public EvidenceQualityDto? EvidenceQuality { get; set; }
+    public string? TutorResponseMode { get; set; }
+    public string? EvidencePolicy { get; set; }
+    public string? PersonalizationMode { get; set; }
+    public string? MasteryBasis { get; set; }
+    public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
     public bool DirectAnswerRisk { get; set; }
     public bool HasIdeContext { get; set; }
     public bool HasNotebookContext { get; set; }
@@ -45,6 +53,10 @@ public sealed class TutorActionPlanDto
     public string StyleMode { get; set; } = "step_by_step";
     public string DirectAnswerPolicy { get; set; } = "scaffold";
     public string GroundingPolicy { get; set; } = "model_ok_no_source_claim";
+    public string? TutorResponseMode { get; set; }
+    public string? PersonalizationMode { get; set; }
+    public string? MasteryBasis { get; set; }
+    public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
     public IReadOnlyList<TutorToolPlanDto> ToolPlans { get; set; } = Array.Empty<TutorToolPlanDto>();
     public IReadOnlyList<TeachingArtifactPlanDto> ArtifactPlans { get; set; } = Array.Empty<TeachingArtifactPlanDto>();
     public string NextCheckPrompt { get; set; } = "Bu adımı kendi cümlenle özetler misin?";

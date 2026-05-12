@@ -331,6 +331,21 @@ const TECHNICAL_LABELS: Record<string, string> = {
   code_lab: "kod pratiği",
   visualize: "görselleştirme",
   summarize: "özet",
+  concise: "kısa yanıt",
+  standard: "standart anlatım",
+  deep: "derin anlatım",
+  recovery: "telafi modu",
+  evidence_limited: "kanıt sınırlı",
+  evidence_limited_caution: "kaynak sınırlı",
+  evidence_weak_verify: "kaynağı kontrol et",
+  model_ok_no_source_claim: "kaynak iddiası yok",
+  unknown_source_caution: "kaynak durumu belirsiz",
+  beginner: "temel anlatım",
+  intermediate: "orta seviye",
+  advanced: "ileri seviye",
+  mastery_probability: "ilerleme sinyali",
+  weak_concept_signals: "zayıf kavram sinyali",
+  low_confidence: "düşük güven",
   step_by_step: "adım adım",
   example_first: "örnekle başla",
   visual: "görsel",
@@ -407,7 +422,7 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
   const tools = metadata?.usedTools ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
   if (!hasMeta) return null;
 
   return (
@@ -434,6 +449,24 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
         >
           <CheckCircle className="h-3 w-3" />
           {formatTechnicalLabel(metadata.styleMode)}
+        </span>
+      )}
+      {metadata?.tutorResponseMode && (
+        <span
+          title={metadata.evidencePolicy ? formatTechnicalLabel(metadata.evidencePolicy) : undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-[#e8c46f]/32 bg-[#fff8ee]/75 px-2 py-1 text-[10px] font-bold text-[#8a5f12]"
+        >
+          <CheckCircle className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.tutorResponseMode)}
+        </span>
+      )}
+      {metadata?.personalizationMode && metadata.personalizationMode !== "unknown" && (
+        <span
+          title={metadata.masteryBasis ? formatTechnicalLabel(metadata.masteryBasis) : undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-[#8fb7a2]/28 bg-[#f2faf5]/70 px-2 py-1 text-[10px] font-bold text-[#47725d]"
+        >
+          <BookOpen className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.personalizationMode)}
         </span>
       )}
       {typeof metadata?.masteryProbability === "number" && (
@@ -597,9 +630,12 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   const items: LearningTraceSummaryItem[] = [];
 
   if (evidenceQuality?.status && ["partial", "weak", "missing"].includes(evidenceQuality.status.toLowerCase())) {
+    const status = evidenceQuality.status.toLowerCase();
     items.push({
       label: evidenceQualityLabel(evidenceQuality),
-      detail: evidenceQualityDetail(evidenceQuality),
+      detail: status === "partial" || status === "weak"
+        ? "Kaynak güveni sınırlı; cevabı kontrol ederek kullan."
+        : evidenceQualityDetail(evidenceQuality),
       tone: "watch",
     });
   } else if (citations.length > 0 || (evidenceSummary?.sourceCount ?? 0) > 0 || mode.includes("source") || mode.includes("wiki")) {
@@ -642,6 +678,14 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
     items.push({
       label: "Bu turda öğrenme izi güncellendi.",
       detail: `Mastery tahmini %${Math.round(metadata.masteryProbability * 100)}; Orka bunu kesin öğrenildi iddiası olarak basmaz.`,
+      tone: "learning",
+    });
+  } else if (metadata?.personalizationMode && metadata.personalizationMode !== "unknown") {
+    items.push({
+      label: "Anlatım seviyesi mevcut ilerlemene göre ayarlandı.",
+      detail: metadata.masteryBasis
+        ? `Dayanak: ${formatTechnicalLabel(metadata.masteryBasis)}.`
+        : "Orka bu turda anlatım seviyesini güvenli varsayılanla tuttu.",
       tone: "learning",
     });
   } else if (metadata?.teachingMode || metadata?.nextCheckPrompt || metadata?.activeConceptKey) {
@@ -726,7 +770,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
   if (!hasMeta) return null;
   metadata = metadata ?? {};
 
@@ -791,7 +835,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
         </p>
         {metadata?.nextCheckPrompt && (
           <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
-            <span className="font-black text-[#172033]">Sonraki kontrol: </span>
+            <span className="font-black text-[#172033]">Kendini kontrol et: </span>
             {metadata.nextCheckPrompt}
           </p>
         )}

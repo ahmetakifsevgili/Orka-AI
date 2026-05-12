@@ -734,6 +734,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             metadata.NextCheckPrompt = actionTrace.NextCheckPrompt;
         }
 
+        TutorTurnStateDto? turnStateDto = null;
         var turnState = await _db.TutorTurnStates
             .AsNoTracking()
             .Where(t => t.UserId == userId && t.SessionId == session.Id)
@@ -751,9 +752,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
             try
             {
-                var dto = System.Text.Json.JsonSerializer.Deserialize<TutorTurnStateDto>(turnState.StateJson);
-                metadata.MasteryProbability = dto?.MasteryProbability;
-                metadata.Confidence = dto?.Confidence;
+                turnStateDto = System.Text.Json.JsonSerializer.Deserialize<TutorTurnStateDto>(turnState.StateJson);
+                metadata.MasteryProbability = turnStateDto?.MasteryProbability;
+                metadata.Confidence = turnStateDto?.Confidence;
             }
             catch
             {
@@ -838,7 +839,49 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         await EnrichEvidenceQualityAsync(metadata, userId, session.TopicId);
+        EnrichTutorResponsePolicy(metadata, turnStateDto, actionTrace);
         return metadata;
+    }
+
+    private static void EnrichTutorResponsePolicy(ChatResponseMetadata metadata, TutorTurnStateDto? turnState, TutorActionTrace? actionTrace)
+    {
+        if (turnState != null)
+        {
+            turnState.EvidenceQuality = metadata.EvidenceQuality ?? turnState.EvidenceQuality;
+            var decision = TutorResponsePolicy.Decide(turnState);
+            metadata.TutorResponseMode ??= decision.TutorResponseMode;
+            metadata.EvidencePolicy ??= decision.EvidencePolicy;
+            metadata.PersonalizationMode ??= decision.PersonalizationMode;
+            metadata.MasteryBasis ??= decision.MasteryBasis;
+            metadata.WeakConceptHints = metadata.WeakConceptHints.Count > 0 ? metadata.WeakConceptHints : decision.WeakConceptHints;
+        }
+        else
+        {
+            metadata.EvidencePolicy ??= TutorResponsePolicy.EvidencePolicyFor(
+                metadata.EvidenceQuality,
+                metadata.GroundingStatus ?? metadata.GroundingMode,
+                metadata.EvidenceSummary?.SourceCount ?? 0);
+            metadata.PersonalizationMode ??= TutorResponsePolicy.PersonalizationModeFor(metadata.MasteryProbability, metadata.Confidence);
+            metadata.MasteryBasis ??= metadata.Confidence < 0.45m ? "low_confidence" :
+                metadata.MasteryProbability.HasValue ? "mastery_probability" : "default";
+            metadata.TutorResponseMode ??= TutorResponsePolicy.ResponseModeFor(
+                string.Empty,
+                metadata.EvidenceQuality,
+                metadata.MasteryProbability,
+                metadata.Confidence,
+                metadata.EvidenceSummary?.LearnerEvidenceStatus,
+                directAnswerRisk: false);
+        }
+
+        var evidenceStatus = metadata.EvidenceQuality?.Status;
+        if (TutorResponsePolicy.ShouldSuppressNextCheck(metadata.ProviderWarnings, metadata.FallbackReason, metadata.TutorResponseMode, evidenceStatus))
+        {
+            metadata.NextCheckPrompt = null;
+        }
+        else if (actionTrace != null && string.IsNullOrWhiteSpace(metadata.NextCheckPrompt))
+        {
+            metadata.NextCheckPrompt = actionTrace.NextCheckPrompt;
+        }
     }
 
     private async Task EnrichEvidenceQualityAsync(ChatResponseMetadata metadata, Guid userId, Guid? topicId)
