@@ -12,7 +12,7 @@ import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentC
 
 export interface AuthTokens {
   token: string;
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export interface AuthUser {
@@ -75,7 +75,8 @@ export const storage = {
   },
   save: (data: AuthResponse) => {
     localStorage.setItem(TOKEN_KEY, data.token);
-    localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    else localStorage.removeItem(REFRESH_KEY);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   },
   clear: () => {
@@ -97,6 +98,7 @@ export const storage = {
 const api: AxiosInstance = axios.create({
   baseURL: buildApiUrl("/api"),
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
 type OrkaAxiosConfig = InternalAxiosRequestConfig & {
@@ -147,18 +149,17 @@ const refreshAccessToken = async () => {
   }
 
   const refresh = storage.getRefresh();
-  if (!refresh) {
-    handleAuthFailure();
-    throw new Error("Authentication required");
-  }
 
   isRefreshing = true;
   try {
-    const { data } = await axios.post<AuthTokens>(buildApiUrl("/api/auth/refresh"), {
-      refreshToken: refresh,
-    });
+    const { data } = await axios.post<AuthTokens>(
+      buildApiUrl("/api/auth/refresh"),
+      refresh ? { refreshToken: refresh } : {},
+      { withCredentials: true }
+    );
     localStorage.setItem(TOKEN_KEY, data.token);
     if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    else localStorage.removeItem(REFRESH_KEY);
     api.defaults.headers.common.Authorization = `Bearer ${data.token}`;
     flushQueue(null, data.token);
     return data.token;
@@ -175,7 +176,7 @@ export const authenticatedFetch = async (path: string, init: RequestInit = {}) =
   const run = (token: string) => {
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
-    return fetch(buildApiUrl(path), { ...init, headers });
+    return fetch(buildApiUrl(path), { ...init, headers, credentials: init.credentials ?? "include" });
   };
 
   let token = storage.getToken();
@@ -243,10 +244,10 @@ export const AuthAPI = {
     api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) =>
     api.post<AuthResponse>("/auth/register", data),
-  logout: (refreshToken: string) =>
-    api.post("/auth/logout", { refreshToken }),
-  refresh: (refreshToken: string) =>
-    api.post<AuthTokens>("/auth/refresh", { refreshToken }),
+  logout: (refreshToken?: string) =>
+    api.post("/auth/logout", refreshToken ? { refreshToken } : {}),
+  refresh: (refreshToken?: string) =>
+    api.post<AuthTokens>("/auth/refresh", refreshToken ? { refreshToken } : {}),
 };
 
 export const UserAPI = {

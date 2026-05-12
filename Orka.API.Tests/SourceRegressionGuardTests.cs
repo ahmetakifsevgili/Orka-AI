@@ -592,6 +592,8 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("authenticatedFetch(\"/api/chat/stream\"", api);
         Assert.Contains("authenticatedFetch(\"/api/korteks/research-stream\"", api);
         Assert.Contains("authenticatedFetch(\"/api/korteks/research-file\"", api);
+        Assert.Contains("withCredentials: true", api);
+        Assert.Contains("credentials: init.credentials ?? \"include\"", api);
         Assert.DoesNotContain("Bearer null", api, StringComparison.Ordinal);
         Assert.DoesNotContain("Bearer undefined", api, StringComparison.Ordinal);
 

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Orka.API.Services;
 using Orka.Core.Entities;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
@@ -47,6 +48,25 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refreshToken").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refresh_token").GetString()));
         Assert.Equal(credentials.Email, body.RootElement.GetProperty("user").GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task Login_WithValidCredentials_SetsHttpOnlyRefreshCookie()
+    {
+        var credentials = await RegisterUserAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = credentials.Email,
+            password = credentials.Password
+        });
+
+        response.EnsureSuccessStatusCode();
+        var cookie = ReadRefreshCookie(response);
+
+        Assert.False(string.IsNullOrWhiteSpace(cookie.Value));
+        Assert.Contains("httponly", cookie.Header, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"path={RefreshTokenCookie.DefaultPath}", cookie.Header, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -100,6 +120,36 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
     }
 
     [Fact]
+    public async Task Refresh_WithHttpOnlyCookie_ReturnsNewTokensAndRotatesCookie()
+    {
+        var credentials = await RegisterUserAsync();
+
+        var loginResponse = await _client.PostAsJsonAsync("/api/auth/login", new
+        {
+            email = credentials.Email,
+            password = credentials.Password
+        });
+        loginResponse.EnsureSuccessStatusCode();
+        var loginCookie = ReadRefreshCookie(loginResponse);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        {
+            Content = JsonContent.Create(new { })
+        };
+        request.Headers.Add("Cookie", $"{RefreshTokenCookie.DefaultName}={loginCookie.Value}");
+
+        var response = await _client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var rotatedCookie = ReadRefreshCookie(response);
+        using var body = await ParseJsonAsync(response);
+
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("token").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refreshToken").GetString()));
+        Assert.NotEqual(loginCookie.Value, rotatedCookie.Value);
+    }
+
+    [Fact]
     public async Task Refresh_ReusingOldRefreshToken_CurrentlyReturnsUnauthorized()
     {
         var credentials = await RegisterUserAsync();
@@ -133,6 +183,30 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
 
         var stored = await GetRefreshTokensForUserAsync(credentials.Email);
         Assert.Contains(stored, token => token.IsRevoked && token.RevokedReason == "Logout");
+    }
+
+    [Fact]
+    public async Task Logout_WithHttpOnlyCookie_ClearsRefreshCookieAndRevokesToken()
+    {
+        var credentials = await RegisterUserAsync();
+        var login = await LoginAsync(credentials);
+
+        using var logoutRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout")
+        {
+            Content = JsonContent.Create(new { })
+        };
+        logoutRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
+        logoutRequest.Headers.Add("Cookie", $"{RefreshTokenCookie.DefaultName}={login.RefreshToken}");
+
+        var logout = await _client.SendAsync(logoutRequest);
+
+        logout.EnsureSuccessStatusCode();
+        var setCookie = Assert.Single(logout.Headers.GetValues("Set-Cookie"), header =>
+            header.StartsWith($"{RefreshTokenCookie.DefaultName}=", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("expires=", setCookie, StringComparison.OrdinalIgnoreCase);
+
+        var refreshAfterLogout = await PostRefreshAsync(login.RefreshToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, refreshAfterLogout.StatusCode);
     }
 
     [Fact]
@@ -304,6 +378,15 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
 
         Assert.Equal((int)expectedStatusCode, body.RootElement.GetProperty("statusCode").GetInt32());
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("message").GetString()));
+    }
+
+    private static (string Header, string Value) ReadRefreshCookie(HttpResponseMessage response)
+    {
+        var header = Assert.Single(response.Headers.GetValues("Set-Cookie"), value =>
+            value.StartsWith($"{RefreshTokenCookie.DefaultName}=", StringComparison.OrdinalIgnoreCase));
+        var pair = header.Split(';', 2)[0];
+        var value = pair[(RefreshTokenCookie.DefaultName.Length + 1)..];
+        return (header, value);
     }
 
     private sealed record AuthCredentials(string Email, string Password);

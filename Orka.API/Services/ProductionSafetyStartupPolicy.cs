@@ -33,6 +33,7 @@ public static class ProductionSafetyStartupPolicy
         ValidateCors(configuration, environment, errors);
         ValidateAllowedHosts(configuration, errors);
         ValidateAuthRateLimit(configuration, environment, errors);
+        ValidateRefreshCookie(configuration, errors);
         ValidateAiCost(configuration, errors);
         ValidateAiProviders(configuration, errors);
 
@@ -122,6 +123,38 @@ public static class ProductionSafetyStartupPolicy
         catch (InvalidOperationException ex)
         {
             errors.Add(ex.Message);
+        }
+    }
+
+    private static void ValidateRefreshCookie(IConfiguration configuration, List<string> errors)
+    {
+        var name = configuration["Auth:RefreshCookie:Name"] ?? RefreshTokenCookie.DefaultName;
+        if (string.IsNullOrWhiteSpace(name))
+            errors.Add("Auth:RefreshCookie:Name is required");
+
+        var path = configuration["Auth:RefreshCookie:Path"] ?? RefreshTokenCookie.DefaultPath;
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/'))
+            errors.Add("Auth:RefreshCookie:Path must start with /");
+
+        var sameSite = configuration["Auth:RefreshCookie:SameSite"] ?? "Lax";
+        if (!RefreshTokenCookie.TryParseSameSite(sameSite, out var sameSiteMode))
+        {
+            errors.Add("Auth:RefreshCookie:SameSite must be Strict, Lax, None, or Unspecified");
+            sameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+        }
+
+        var secure = configuration.GetSection("Auth:RefreshCookie").GetValue<bool?>("Secure") ?? true;
+        if (!secure)
+            errors.Add("Auth:RefreshCookie:Secure must be true in Staging/Production");
+
+        if (sameSiteMode == Microsoft.AspNetCore.Http.SameSiteMode.None && !secure)
+            errors.Add("Auth:RefreshCookie:Secure must be true when SameSite=None");
+
+        var domain = configuration["Auth:RefreshCookie:Domain"];
+        if (!string.IsNullOrWhiteSpace(domain) &&
+            domain.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            errors.Add("Auth:RefreshCookie:Domain must not use localhost in Staging/Production");
         }
     }
 

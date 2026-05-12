@@ -81,7 +81,8 @@ addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes(
 addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
 addCheck("Stream APIs use authenticated fetch wrapper", api.includes("export const authenticatedFetch") && api.includes("ChatAPI") && api.includes('authenticatedFetch("/api/chat/stream"') && api.includes('authenticatedFetch("/api/korteks/research-stream"') && api.includes('authenticatedFetch("/api/korteks/research-file"'));
 addCheck("Stream APIs never send null bearer tokens", !api.includes("Bearer null") && !api.includes("Bearer undefined"));
-addCheck("Auth logout API and scoped cleanup are exposed", api.includes("logout: (refreshToken: string)") && api.includes("/auth/logout") && api.includes("storage.clear") && !api.includes("localStorage.clear()"));
+addCheck("Auth fetch and axios requests include refresh cookie credentials", api.includes("withCredentials: true") && api.includes('credentials: init.credentials ?? "include"'));
+addCheck("Auth logout API and scoped cleanup are exposed", api.includes("logout: (refreshToken?: string)") && api.includes("/auth/logout") && api.includes("storage.clear") && !api.includes("localStorage.clear()"));
 addCheck("Dashboard coordination contract is typed", api.includes("coordinationScope?:") && api.includes("coordinationHealth?:") && api.includes("activeLessonTopicId"));
 addCheck("Korteks sync and stream contracts are separate", api.includes("KorteksSyncResponseDto") && api.includes("researchSync") && api.includes("/api/korteks/research-stream"));
 addCheck("Auth cleanup is scoped to Orka keys", api.includes("storage.clear") && !api.includes("localStorage.clear()"));

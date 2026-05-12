@@ -115,6 +115,32 @@ public sealed class ProductionSafetyLiteTests
     }
 
     [Fact]
+    public void ProductionSafetyPolicy_FailsClosedWhenRefreshCookieIsNotSecure()
+    {
+        var values = ValidProtectedConfiguration();
+        values["Auth:RefreshCookie:Secure"] = "false";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ProductionSafetyStartupPolicy.Validate(Configuration(values), new TestEnvironment("Production"), useInMemoryDatabase: false));
+
+        Assert.Contains("Auth:RefreshCookie:Secure", exception.Message);
+        Assert.DoesNotContain("test-github-token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionSafetyPolicy_FailsClosedWhenRefreshCookieSameSiteIsInvalid()
+    {
+        var values = ValidProtectedConfiguration();
+        values["Auth:RefreshCookie:SameSite"] = "Sometimes";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ProductionSafetyStartupPolicy.Validate(Configuration(values), new TestEnvironment("Production"), useInMemoryDatabase: false));
+
+        Assert.Contains("Auth:RefreshCookie:SameSite", exception.Message);
+        Assert.DoesNotContain("test-github-token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ProductionSafetyPolicy_AllowsDevelopmentDefaults()
     {
         ProductionSafetyStartupPolicy.Validate(new ConfigurationBuilder().Build(), new TestEnvironment("Development"), useInMemoryDatabase: true);
@@ -229,6 +255,10 @@ public sealed class ProductionSafetyLiteTests
         ["Cors:AllowedOrigins:0"] = "https://app.example.com",
         ["RateLimits:Auth:Backend"] = "Redis",
         ["RateLimits:Auth:AllowInMemoryFallback"] = "false",
+        ["Auth:RefreshCookie:Name"] = "orka_refresh",
+        ["Auth:RefreshCookie:Path"] = "/api/auth",
+        ["Auth:RefreshCookie:SameSite"] = "Lax",
+        ["Auth:RefreshCookie:Secure"] = "true",
         ["AI:Cost:Enabled"] = "true",
         ["AI:Cost:GlobalDailyUsdLimit"] = "100",
         ["AI:Cost:UserDailyUsdLimit"] = "10",

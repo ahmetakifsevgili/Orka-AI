@@ -261,9 +261,7 @@ export default function Home() {
 
     try {
       const refreshToken = storage.getRefresh();
-      if (refreshToken) {
-        await AuthAPI.logout(refreshToken);
-      }
+      await AuthAPI.logout(refreshToken ?? undefined);
     } catch {
       revokeFailed = true;
     } finally {

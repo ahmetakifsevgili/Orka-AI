@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Orka.API.Services;
 using Orka.Core.DTOs.Auth;
@@ -22,17 +23,20 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
     private readonly ILogger<AuthController> _logger;
     private readonly IAuthAttemptLimiter _rateLimiter;
 
     public AuthController(
         IAuthService authService,
         IConfiguration configuration,
+        IHostEnvironment environment,
         ILogger<AuthController> logger,
         IAuthAttemptLimiter rateLimiter)
     {
         _authService = authService;
         _configuration = configuration;
+        _environment = environment;
         _logger = logger;
         _rateLimiter = rateLimiter;
     }
@@ -78,6 +82,8 @@ public class AuthController : ControllerBase
             return StatusCode(409, new { message = "Kayıt işlemi tamamlanamadı.", statusCode = 409 });
         }
 
+        SetRefreshCookie(result.RefreshToken);
+
         return StatusCode(201, new AuthResponse
         {
             Token = result.Token,
@@ -120,6 +126,8 @@ public class AuthController : ControllerBase
             return InvalidLogin();
         }
 
+        SetRefreshCookie(result.RefreshToken);
+
         return Ok(new AuthResponse
         {
             Token = result.Token,
@@ -133,14 +141,17 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest? request)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
+        var refreshToken = ResolveRefreshToken(request);
+        if (string.IsNullOrWhiteSpace(refreshToken))
             return BadRequest(new { message = "Refresh token zorunlu." });
 
         var refreshLimit = await EnforceAuthAttemptAsync("refresh", GetClientPartition(), "Refresh");
         if (refreshLimit != null)
             return refreshLimit;
 
-        var result = await _authService.RefreshAsync(request.RefreshToken);
+        var result = await _authService.RefreshAsync(refreshToken);
+        SetRefreshCookie(result.RefreshToken);
+
         return Ok(new
         {
             token = result.Token,
@@ -154,12 +165,28 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromBody] RefreshRequest? request)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
-            return BadRequest(new { message = "Refresh token zorunlu." });
+        var refreshToken = ResolveRefreshToken(request);
+        ClearRefreshCookie();
 
-        await _authService.RevokeAsync(request.RefreshToken);
+        if (!string.IsNullOrWhiteSpace(refreshToken))
+            await _authService.RevokeAsync(refreshToken);
+
         return Ok();
     }
+
+    private string? ResolveRefreshToken(RefreshRequest? request)
+    {
+        if (!string.IsNullOrWhiteSpace(request?.RefreshToken))
+            return request.RefreshToken.Trim();
+
+        return RefreshTokenCookie.Read(Request, _configuration);
+    }
+
+    private void SetRefreshCookie(string refreshToken) =>
+        RefreshTokenCookie.Set(Response, _configuration, _environment, refreshToken);
+
+    private void ClearRefreshCookie() =>
+        RefreshTokenCookie.Clear(Response, _configuration, _environment);
 
     private UserDto ToUserDto(User user) => new()
     {

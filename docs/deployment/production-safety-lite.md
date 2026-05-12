@@ -11,6 +11,10 @@ yalnizca eksik config key adlari raporlanir.
 
 - `JWT__Secret`: en az 32 byte.
 - `JWT__RefreshTokenHashSecret`: en az 32 byte.
+- `Auth__RefreshCookie__Name`: refresh cookie adi. Varsayilan `orka_refresh`.
+- `Auth__RefreshCookie__Path`: refresh cookie path'i. Varsayilan `/api/auth`.
+- `Auth__RefreshCookie__SameSite`: `Strict`, `Lax`, `None`, veya `Unspecified`.
+- `Auth__RefreshCookie__Secure=true`: Staging/Production icin zorunlu.
 - `ConnectionStrings__DefaultConnection`: gercek SQL Server connection string.
 - `ConnectionStrings__Redis`: Redis connection string.
 - `Cors__AllowedOrigins__0`: explicit frontend origin. Bos veya `*` kabul edilmez.

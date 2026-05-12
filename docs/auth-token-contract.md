@@ -5,6 +5,7 @@ This document records the current auth token contract after PR 2 refresh-token h
 ## Deployment Requirement
 
 - Production and Staging must provide a strong `JWT:RefreshTokenHashSecret` or equivalent `RefreshTokenHashSecret`.
+- Production and Staging must keep `Auth:RefreshCookie:Secure=true` with a valid `Auth:RefreshCookie:SameSite` value.
 - The hash secret must be at least 32 bytes.
 - Development may fall back to a derived local secret when no refresh-token hash secret is configured.
 - Secret values must never be logged or returned in API responses.
@@ -27,6 +28,7 @@ This document records the current auth token contract after PR 2 refresh-token h
   - `refresh_token`
   - `user`
 - Internally creates a refresh token family and stores only the HMAC-SHA256 token hash.
+- Also sets an HttpOnly refresh cookie. The JSON refresh token remains for backward-compatible clients.
 - Duplicate email currently returns `409`.
 
 ### `POST /api/auth/login`
@@ -36,6 +38,7 @@ This document records the current auth token contract after PR 2 refresh-token h
 - Normalizes email to lowercase before lookup.
 - On success, returns `200` with the same token aliases and `user` payload as register.
 - Internally starts a new refresh token family and stores only the token hash.
+- Also sets an HttpOnly refresh cookie. The JSON refresh token remains for backward-compatible clients.
 - Current wrong password behavior: returns `401`.
 - Current unknown email behavior: returns `404`.
 - Security note for a later PR: the different `401` and `404` responses still make account enumeration possible.
@@ -43,13 +46,14 @@ This document records the current auth token contract after PR 2 refresh-token h
 ### `POST /api/auth/refresh`
 
 - Anonymous endpoint.
-- Accepts `refreshToken`.
+- Accepts `refreshToken` in the body or reads the HttpOnly refresh cookie when the body token is absent.
 - The submitted raw token is HMAC-SHA256 hashed and matched against `RefreshTokens.TokenHash`.
 - Active token behavior:
   - old token is revoked with `RevokedReason = "Rotated"`;
   - old token stores `ReplacedByTokenHash`;
   - replacement token is inserted in the same `TokenFamilyId`;
-  - response shape remains `token`, `jwt`, `access_token`, `refreshToken`, `refresh_token`.
+  - response shape remains `token`, `jwt`, `access_token`, `refreshToken`, `refresh_token`;
+  - the HttpOnly refresh cookie is rotated to the replacement token.
 - Reuse/replay behavior:
   - missing, expired, revoked, or invalid tokens return `401`;
   - reusing a rotated token is treated as replay;
@@ -61,10 +65,11 @@ This document records the current auth token contract after PR 2 refresh-token h
 
 ### `POST /api/auth/logout`
 
-- Accepts `refreshToken`.
+- Accepts `refreshToken` in the body or reads the HttpOnly refresh cookie when the body token is absent.
 - The submitted raw token is hashed and looked up by `TokenHash`.
 - If the token exists, it is revoked with `RevokedReason = "Logout"`.
 - If the token does not exist, the endpoint still returns success.
+- The refresh cookie is cleared even when no body token is supplied.
 - Refreshing with a logged-out token returns `401`.
 
 ## Access Token Lifecycle
@@ -85,6 +90,7 @@ This document records the current auth token contract after PR 2 refresh-token h
 - Logout revokes the submitted refresh token when it exists.
 - Refresh token expiry is controlled by `JWT:RefreshTokenExpiryDays`, defaulting to 30 days.
 - DB storage contains only `TokenHash`; raw refresh tokens are returned to the client once and are not persisted.
+- Browser clients should prefer the HttpOnly refresh cookie; bearer access tokens remain the short-lived API authorization mechanism.
 
 ## Migration Behavior
 
@@ -99,6 +105,9 @@ This document records the current auth token contract after PR 2 refresh-token h
 - Wrong password currently returns `401`.
 - Unknown email currently returns `404`.
 - Valid refresh returns a new access token and a new refresh token.
+- Login sets an HttpOnly refresh cookie.
+- Cookie-only refresh returns new tokens and rotates the refresh cookie.
+- Cookie logout clears the refresh cookie and revokes the token.
 - Reusing a rotated refresh token returns `401` and revokes the token family.
 - Logout followed by refresh with the same token returns `401`.
 - DB storage is verified to contain only a 64-character SHA-256 refresh token hash, not the raw token.

@@ -258,6 +258,7 @@ git status --short
 - `/health/ready` ve `/health` Staging/Production'da check detail, exception veya connection bilgisi sizdirmaz.
 - Detailed system health yalnizca admin `/api/dashboard/system-health` uzerindedir.
 - Staging/Production `AllowedHosts`, explicit CORS origin, SQL Server, Redis, JWT secrets, Redis auth limiter ve AI global/user budget olmadan baslamaz.
+- Staging/Production refresh cookie config'i `Auth__RefreshCookie__Secure=true`, explicit SameSite ve `/api/auth` path guardlariyla dogrulanir.
 - Staging/Production `SecurityHeaders` HSTS, nosniff, Referrer-Policy, Permissions-Policy, X-Frame-Options ve enforced CSP set eder.
 - AI budget guard provider cagrisindan once user/global daily limitleri uygular; quota exceeded response user-safe kalir.
 - Full httpOnly cookie migration, Redis scale mimarisi ve enterprise SLO/observability bu gate'in kapsaminda degildir.
