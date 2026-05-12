@@ -60,6 +60,10 @@ export interface CitationDto {
   url?: string | null;
   confidence?: number | null;
   chunkId?: string | null;
+  sourceTopicId?: string | null;
+  sourceTopicTitle?: string | null;
+  scopeRelation?: string | null;
+  retrievalScope?: string | null;
 }
 
 export interface SourceRetrievalItemDto {
@@ -67,6 +71,10 @@ export interface SourceRetrievalItemDto {
   sourceRetrievalRunId: string;
   sourceId: string;
   sourceChunkId?: string | null;
+  sourceTopicId?: string | null;
+  sourceTopicTitle?: string | null;
+  scopeRelation?: string | null;
+  retrievalScope?: string | null;
   pageNumber: number;
   chunkIndex: number;
   rank: number;

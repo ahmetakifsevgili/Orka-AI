@@ -9,7 +9,7 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
-import { UserAPI, type AuthUser } from "../services/api";
+import { storage, UserAPI, type AuthUser } from "../services/api";
 import { useLocation } from "wouter";
 import { useLanguage, type Language } from "../contexts/LanguageContext";
 import { useTheme, type Theme } from "../contexts/ThemeContext";
@@ -207,7 +207,7 @@ export default function SettingsPanel() {
   const handleDeleteAccount = async () => {
     try {
       await UserAPI.deleteAccount();
-      localStorage.clear();
+      storage.clear();
       navigate("/login");
       toast.success("Hesabınız silindi.");
     } catch {

@@ -218,8 +218,70 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts\reset-dev-db.ps1
   ```
+
+## System Closure Gate
+
+Frontend baseline oncesi deterministic kapanis hatti:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\quick-coordination.ps1
+powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+cd ..
+git diff --check
+```
+
+- Mandatory quick hat external HTTP/provider bagimliligi tasimaz.
+- External provider smoke sadece acik env flag ile manuel calistirilir.
+- Stream/SSE client'lar `authenticatedFetch` kullanir; `Bearer null` gonderilmez.
+- Auth cleanup sadece Orka localStorage key'lerini temizler.
+- `dist`, `node_modules`, pasted image ve local report dosyalari commit'e alinmaz.
 - Linux/container CI icin `ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION` verilebilir. Test disposable database adini kendisi ekler.
 - SQL Server yoksa `quick-backend.ps1` bilincli fail eder; bu testler sessizce skip edilmemeli.
+
+## Production Safety Lite Gate
+
+Frontend baseline ve kucuk/orta ozelliklerden once protected environment guardlari:
+
+```powershell
+cd D:/Orka
+dotnet test Orka.API.Tests/Orka.API.Tests.csproj --filter ProductionSafetyLiteTests --no-restore --verbosity minimal
+powershell -ExecutionPolicy Bypass -File scripts\quick-coordination.ps1
+powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
+git diff --check
+git status --short
+```
+
+- `/health/live` public ve minimal kalir.
+- `/health/ready` ve `/health` Staging/Production'da check detail, exception veya connection bilgisi sizdirmaz.
+- Detailed system health yalnizca admin `/api/dashboard/system-health` uzerindedir.
+- Staging/Production `AllowedHosts`, explicit CORS origin, SQL Server, Redis, JWT secrets, Redis auth limiter ve AI global/user budget olmadan baslamaz.
+- Staging/Production `SecurityHeaders` HSTS, nosniff, Referrer-Policy, Permissions-Policy, X-Frame-Options ve enforced CSP set eder.
+- AI budget guard provider cagrisindan once user/global daily limitleri uygular; quota exceeded response user-safe kalir.
+- Full httpOnly cookie migration, Redis scale mimarisi ve enterprise SLO/observability bu gate'in kapsaminda degildir.
+
+## Codex Skills Gate
+
+Kucuk/orta feature isleri `docs/codex-skills/` anayasalarini takip eder.
+
+Before planning/coding:
+
+- `docs/project-state/current-roadmap.md` okunur.
+- `docs/codex-skills/README.md` okunur.
+- Her feature icin `testing-gate-constitution.md` okunur.
+- Backend/API/data degisiyorsa `backend-feature-constitution.md` okunur.
+- AI/RAG/Wiki/Chat/Korteks/source/citation degisiyorsa `ai-rag-feature-constitution.md` okunur.
+- Frontend API/types/stream/UI contract degisiyorsa `frontend-contract-constitution.md` okunur.
+- Yeni durable veri, Redis/cache/session veya delete/privacy etkisi varsa `data-lifecycle-constitution.md` okunur.
+
+Feature prompt/report:
+
+- Yeni feature prompt'u `feature-prompt-template.md` formatini takip eder.
+- Final rapor `feature-completion-report-template.md` formatini takip eder.
+- Test sonucunda calismayan veya atlanan gate varsa acikca yazilir.
+- Stage/commit sadece kullanici acikca isterse yapilir.
 
 ## Optional External Provider Smoke
 

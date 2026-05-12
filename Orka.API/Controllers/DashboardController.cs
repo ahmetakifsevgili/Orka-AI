@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
@@ -18,12 +19,24 @@ public class DashboardController : ControllerBase
 {
     private readonly OrkaDbContext _dbContext;
     private readonly IRedisMemoryService _redis;
+    private readonly ITopicScopeResolver _topicScopeResolver;
+    private readonly IAiProviderTelemetryService _aiProviderTelemetry;
+    private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
 
-    public DashboardController(OrkaDbContext dbContext, IRedisMemoryService redis, IWebHostEnvironment environment)
+    public DashboardController(
+        OrkaDbContext dbContext,
+        IRedisMemoryService redis,
+        ITopicScopeResolver topicScopeResolver,
+        IAiProviderTelemetryService aiProviderTelemetry,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         _dbContext = dbContext;
         _redis = redis;
+        _topicScopeResolver = topicScopeResolver;
+        _aiProviderTelemetry = aiProviderTelemetry;
+        _configuration = configuration;
         _environment = environment;
     }
 
@@ -37,7 +50,7 @@ public class DashboardController : ControllerBase
             {
                 Status = "unknown",
                 UserSafeLabel = "Kaynak yok",
-                UserSafeDetail = "Kaynak eklenirse Wiki ve Tutor cevapları daha güvenli olur."
+                UserSafeDetail = "Kaynak eklenirse Wiki ve Tutor cevaplari daha guvenli olur."
             };
         }
 
@@ -45,7 +58,7 @@ public class DashboardController : ControllerBase
         var label = status switch
         {
             "healthy" => "Kaynaklar destekli",
-            "degraded" => "Kaynaklar zayıf",
+            "degraded" => "Kaynaklar zayif",
             "source_retrieval_empty" => "Kaynakta cevap yok",
             "citation_missing" => "Citation eksik",
             "citation_unsupported" => "Citation desteklenmiyor",
@@ -56,14 +69,14 @@ public class DashboardController : ControllerBase
 
         var detail = status switch
         {
-            "healthy" => "Cevaplar kaynak parçalarıyla eşleşiyor.",
-            "degraded" => "Bazı cevaplar için kaynak kanıtı zayıf; dikkatli ilerle.",
-            "source_retrieval_empty" => "Soru için kaynaklarda net parça bulunamadı.",
-            "citation_missing" => "Bazı kaynaklı iddialarda citation yok.",
-            "citation_unsupported" => "Bazı citation etiketleri bulunan kaynak parçasıyla eşleşmiyor.",
-            _ when report.UnsupportedCitationCount > 0 => "Bazı citation etiketleri bulunan kaynak parçasıyla eşleşmiyor.",
-            _ when report.CitationMissingCount > 0 => "Bazı kaynaklı iddialarda citation yok.",
-            _ => "Kaynak kalitesi ölçülüyor."
+            "healthy" => "Cevaplar kaynak parcalariyla eslesiyor.",
+            "degraded" => "Bazi cevaplar icin kaynak kaniti zayif; dikkatli ilerle.",
+            "source_retrieval_empty" => "Soru icin kaynaklarda net parca bulunamadi.",
+            "citation_missing" => "Bazi kaynakli iddialarda citation yok.",
+            "citation_unsupported" => "Bazi citation etiketleri bulunan kaynak parcasiyla eslesmiyor.",
+            _ when report.UnsupportedCitationCount > 0 => "Bazi citation etiketleri bulunan kaynak parcasiyla eslesmiyor.",
+            _ when report.CitationMissingCount > 0 => "Bazi kaynakli iddialarda citation yok.",
+            _ => "Kaynak kalitesi olculuyor."
         };
 
         return new DashboardSourceHealthDto
@@ -96,10 +109,19 @@ public class DashboardController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         var activeTopicId = activeTopic?.TopicId;
+        var activeScopeTopicIds = Array.Empty<Guid>();
+        TopicScope? activeScope = null;
+        if (activeTopicId.HasValue)
+        {
+            activeScope = await _topicScopeResolver.ResolveAsync(userId, activeTopicId.Value, ct);
+            activeScopeTopicIds = activeScope.IsValid
+                ? activeScope.TreeTopicIds.ToArray()
+                : [activeTopicId.Value];
+        }
 
         var weakConcepts = await _dbContext.KnowledgeTracingStates
             .AsNoTracking()
-            .Where(k => k.UserId == userId && (!activeTopicId.HasValue || k.TopicId == activeTopicId.Value))
+            .Where(k => k.UserId == userId && (activeScopeTopicIds.Length == 0 || (k.TopicId.HasValue && activeScopeTopicIds.Contains(k.TopicId.Value))))
             .OrderBy(k => k.MasteryProbability)
             .ThenBy(k => k.Confidence)
             .Take(5)
@@ -110,7 +132,7 @@ public class DashboardController : ControllerBase
                 MasteryProbability = k.MasteryProbability,
                 Confidence = k.Confidence,
                 TopicId = k.TopicId,
-                UserSafeStatus = k.Confidence < 0.60m ? "Kanıt düşük" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "İzleniyor"
+                UserSafeStatus = k.Confidence < 0.60m ? "Kanit dusuk" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "Izleniyor"
             })
             .ToListAsync(ct);
 
@@ -120,31 +142,57 @@ public class DashboardController : ControllerBase
 
         var latestSourceQuality = await _dbContext.SourceQualityReports
             .AsNoTracking()
-            .Where(r => r.UserId == userId && (!activeTopicId.HasValue || r.TopicId == activeTopicId.Value))
+            .Where(r => r.UserId == userId && (activeScopeTopicIds.Length == 0 || (r.TopicId.HasValue && activeScopeTopicIds.Contains(r.TopicId.Value))))
             .OrderByDescending(r => r.GeneratedAt)
             .FirstOrDefaultAsync(ct);
 
-        var sourceHealth = BuildSourceHealth(latestSourceQuality);
-        var hasRealData = activeTopic is not null || weakConcepts.Count > 0 || dueReviews > 0 || latestSourceQuality is not null;
+        var scopedSourceCount = await _dbContext.LearningSources
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && !s.IsDeleted && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
+        var scopedQuizAttemptCount = await _dbContext.QuizAttempts
+            .AsNoTracking()
+            .CountAsync(a => a.UserId == userId && (activeScopeTopicIds.Length == 0 || (a.TopicId.HasValue && activeScopeTopicIds.Contains(a.TopicId.Value))), ct);
+        var scopedLearningSignalCount = await _dbContext.LearningSignals
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
+        var coordinationHealth = await BuildCoordinationHealthAsync(userId, activeTopicId, activeScope, activeScopeTopicIds, ct);
+
+        var sourceHealth = latestSourceQuality is not null
+            ? BuildSourceHealth(latestSourceQuality)
+            : scopedSourceCount > 0
+                ? new DashboardSourceHealthDto
+                {
+                    Status = "unverified",
+                    UserSafeLabel = "Kaynaklar hazir",
+                    UserSafeDetail = "Kaynaklar var; citation kalitesi ilk kullanimda olculecek."
+                }
+                : BuildSourceHealth(null);
+        var hasRealData = activeTopic is not null ||
+            weakConcepts.Count > 0 ||
+            dueReviews > 0 ||
+            latestSourceQuality is not null ||
+            scopedSourceCount > 0 ||
+            scopedQuizAttemptCount > 0 ||
+            scopedLearningSignalCount > 0;
         var entry = dueReviews > 0
-            ? new DashboardEntryPointDto { View = "learning", Label = "Tekrar", Reason = "Bugün zamanı gelen tekrarların var." }
+            ? new DashboardEntryPointDto { View = "learning", Label = "Tekrar", Reason = "Bugun zamani gelen tekrarlarin var." }
             : weakConcepts.Count > 0
-                ? new DashboardEntryPointDto { View = "chat", Label = "Öğren", Reason = "Zayıf kavramı Tutor ile toparla." }
+                ? new DashboardEntryPointDto { View = "chat", Label = "Ogren", Reason = "Zayif kavrami Tutor ile toparla." }
                 : sourceHealth.Status is "source_retrieval_empty" or "unknown"
-                    ? new DashboardEntryPointDto { View = "sources", Label = "Kaynaklar", Reason = "Kaynak eklemek cevap kalitesini artırır." }
-                    : new DashboardEntryPointDto { View = "chat", Label = "Öğren", Reason = "Tutor ile sıradaki adıma geç." };
+                    ? new DashboardEntryPointDto { View = "sources", Label = "Kaynaklar", Reason = "Kaynak eklemek cevap kalitesini artirir." }
+                    : new DashboardEntryPointDto { View = "chat", Label = "Ogren", Reason = "Tutor ile siradaki adima gec." };
 
         var focusTitle = weakConcepts.FirstOrDefault()?.Label
             ?? activeTopic?.Title
-            ?? "Bugün";
+            ?? "Bugun";
 
         var focusReason = weakConcepts.Count > 0
-            ? "Bu kavramda öğrenme kanıtı düşük; kısa bir açıklama ve mikro pratik iyi olur."
+            ? "Bu kavramda ogrenme kaniti dusuk; kisa bir aciklama ve mikro pratik iyi olur."
             : dueReviews > 0
-                ? "Tekrar zamanı gelen kartlar var; önce onları kapatmak hafızayı güçlendirir."
+                ? "Tekrar zamani gelen kartlar var; once onlari kapatmak hafizayi guclendirir."
                 : activeTopic is not null
-                    ? $"{activeTopic.Title} üzerinde kaldığın yerden devam edebilirsin."
-                    : "Henüz yeterli öğrenme izi yok; bir konu açıp Tutor ile başlayabilirsin.";
+                    ? $"{activeTopic.Title} uzerinde kaldigin yerden devam edebilirsin."
+                    : "Henuz yeterli ogrenme izi yok; bir konu acip Tutor ile baslayabilirsin.";
 
         return Ok(new DashboardTodayDto
         {
@@ -154,6 +202,19 @@ public class DashboardController : ControllerBase
             WeakConcepts = weakConcepts,
             SourceHealth = sourceHealth,
             ActivePlan = activeTopic,
+            CoordinationScope = activeTopicId.HasValue
+                ? new DashboardCoordinationScopeDto
+                {
+                    RootTopicId = activeScope?.IsValid == true ? activeScope.RootTopicId : activeTopicId,
+                    CurrentTopicId = activeTopicId,
+                    ActiveLessonTopicId = activeScope?.ActiveLessonTopicId,
+                    TreeTopicCount = activeScopeTopicIds.Length,
+                    SourceCount = scopedSourceCount,
+                    QuizAttemptCount = scopedQuizAttemptCount,
+                    LearningSignalCount = scopedLearningSignalCount
+                }
+                : null,
+            CoordinationHealth = coordinationHealth,
             RecommendedEntryPoint = entry,
             HasRealLearningData = hasRealData,
             NextAction = new DashboardNextActionDto
@@ -162,10 +223,286 @@ public class DashboardController : ControllerBase
                 Reason = entry.Reason,
                 View = entry.View,
                 TopicId = activeTopic?.TopicId,
-                UserSafeStatus = hasRealData ? "Hazır" : "Veri bekleniyor"
+                UserSafeStatus = hasRealData ? "Hazir" : "Veri bekleniyor"
             },
             GeneratedAt = DateTimeOffset.UtcNow
         });
+    }
+
+    private async Task<DashboardCoordinationHealthDto> BuildCoordinationHealthAsync(
+        Guid userId,
+        Guid? activeTopicId,
+        TopicScope? activeScope,
+        IReadOnlyCollection<Guid> scopedTopicIds,
+        CancellationToken ct)
+    {
+        const int windowDays = 7;
+        var generatedAt = DateTimeOffset.UtcNow;
+        if (!activeTopicId.HasValue || scopedTopicIds.Count == 0)
+        {
+            return new DashboardCoordinationHealthDto
+            {
+                OverallStatus = "no_plan",
+                UserSafeSummary = "Aktif plan yok; koordinasyon sagligi ilk planla birlikte olusur.",
+                WindowDays = windowDays,
+                Metrics =
+                [
+                    Metric("topicTreeCompleteness", "no_plan", 0, 0, "Plan yok", "Aktif root plan bulununca topic tree koordinasyonu izlenir.")
+                ],
+                GeneratedAt = generatedAt
+            };
+        }
+
+        var topicIds = scopedTopicIds.Distinct().ToArray();
+        var since = DateTime.UtcNow.AddDays(-windowDays);
+        var today = DateTime.UtcNow.Date;
+
+        var treeTopicCount = topicIds.Length;
+        var wikiPageCount = await _dbContext.WikiPages
+            .AsNoTracking()
+            .CountAsync(p => p.UserId == userId && topicIds.Contains(p.TopicId), ct);
+        var wikiBlockCount = await _dbContext.WikiBlocks
+            .AsNoTracking()
+            .CountAsync(b => b.WikiPage.UserId == userId && topicIds.Contains(b.WikiPage.TopicId), ct);
+
+        var sourceStats = await _dbContext.LearningSources
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && !s.IsDeleted && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value))
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                Ready = g.Count(s => s.Status == "ready")
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var quizAttemptCount = await _dbContext.QuizAttempts
+            .AsNoTracking()
+            .CountAsync(a => a.UserId == userId && a.TopicId.HasValue && topicIds.Contains(a.TopicId.Value), ct);
+        var learningSignalCount = await _dbContext.LearningSignals
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value), ct);
+        var knowledgeStateCount = await _dbContext.KnowledgeTracingStates
+            .AsNoTracking()
+            .CountAsync(k => k.UserId == userId && k.TopicId.HasValue && topicIds.Contains(k.TopicId.Value), ct);
+        var skillMasteryCount = await _dbContext.SkillMasteries
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && topicIds.Contains(s.TopicId), ct);
+
+        var recentAssistantMessages = await _dbContext.Messages
+            .AsNoTracking()
+            .CountAsync(m =>
+                m.UserId == userId &&
+                m.Role == "assistant" &&
+                m.CreatedAt >= since &&
+                m.Session.TopicId.HasValue &&
+                topicIds.Contains(m.Session.TopicId.Value), ct);
+        var recentEvaluations = await _dbContext.AgentEvaluations
+            .AsNoTracking()
+            .CountAsync(e =>
+                e.UserId == userId &&
+                e.CreatedAt >= since &&
+                e.Session.TopicId.HasValue &&
+                topicIds.Contains(e.Session.TopicId.Value), ct);
+
+        var retrievalRuns = await _dbContext.SourceRetrievalRuns
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && r.CreatedAt >= since && r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value))
+            .Select(r => new { r.IsEmpty, r.QualityStatus })
+            .ToListAsync(ct);
+        var healthyRetrievalRuns = retrievalRuns.Count(r =>
+            !r.IsEmpty &&
+            !string.Equals(r.QualityStatus, "source_retrieval_empty", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(r.QualityStatus, "low_confidence", StringComparison.OrdinalIgnoreCase));
+
+        var sourceQualityReports = await _dbContext.SourceQualityReports
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value))
+            .OrderByDescending(r => r.GeneratedAt)
+            .Take(30)
+            .Select(r => new { r.QualityStatus, r.CitationCoverage, r.UnsupportedCitationCount, r.CitationMissingCount })
+            .ToListAsync(ct);
+        var healthySourceQualityReports = sourceQualityReports.Count(r =>
+            string.Equals(r.QualityStatus, "healthy", StringComparison.OrdinalIgnoreCase) &&
+            r.UnsupportedCitationCount == 0 &&
+            r.CitationMissingCount == 0);
+
+        var userCostMetric = await BuildUserCostQuotaMetricAsync(userId, today, ct);
+        var sourceTotal = sourceStats?.Total ?? 0;
+        var readySources = sourceStats?.Ready ?? 0;
+        var learningProfileCount = learningSignalCount + knowledgeStateCount + skillMasteryCount;
+
+        var metrics = new List<DashboardCoordinationHealthMetricDto>
+        {
+            Metric(
+                "topicTreeCompleteness",
+                activeScope?.IsValid == true ? activeScope.ActiveLessonTopicId.HasValue ? "healthy" : "watch" : "watch",
+                treeTopicCount,
+                Math.Max(1, treeTopicCount),
+                "Plan agaci",
+                activeScope?.IsValid == true
+                    ? $"Root plan {treeTopicCount} topic ile izleniyor."
+                    : "Aktif plan agaci dogrulanamadi; dashboard root kapsam fallback kullanir."),
+            Metric(
+                "wikiReadiness",
+                wikiPageCount > 0 ? "healthy" : "idle",
+                wikiPageCount,
+                Math.Max(1, treeTopicCount),
+                "Wiki hazirligi",
+                wikiPageCount > 0
+                    ? $"{wikiPageCount} wiki sayfasi ve {wikiBlockCount} blok root plan altinda gorunuyor."
+                    : "Root plan altinda henuz wiki kaniti yok."),
+            Metric(
+                "sourceCoverage",
+                sourceTotal == 0 ? "idle" : readySources == sourceTotal ? "healthy" : "watch",
+                readySources,
+                sourceTotal,
+                "Kaynak kapsami",
+                sourceTotal == 0
+                    ? "Root plan altinda kaynak yok."
+                    : $"{readySources}/{sourceTotal} kaynak hazir durumda."),
+            Metric(
+                "quizCoverage",
+                quizAttemptCount > 0 ? "healthy" : "idle",
+                quizAttemptCount,
+                Math.Max(1, treeTopicCount),
+                "Quiz kaniti",
+                quizAttemptCount > 0
+                    ? $"{quizAttemptCount} quiz denemesi root plan altinda gorunuyor."
+                    : "Root plan altinda quiz denemesi yok."),
+            Metric(
+                "learningProfileCoverage",
+                learningProfileCount > 0 ? "healthy" : "idle",
+                learningProfileCount,
+                Math.Max(1, treeTopicCount),
+                "Ogrenme profili",
+                $"{learningSignalCount} sinyal, {knowledgeStateCount} bilgi izi, {skillMasteryCount} mastery kaydi root plan altinda gorunuyor."),
+            Metric(
+                "chatPostProcessingHealth",
+                recentAssistantMessages == 0 ? "idle" : recentEvaluations >= recentAssistantMessages ? "healthy" : recentEvaluations > 0 ? "watch" : "critical",
+                recentEvaluations,
+                recentAssistantMessages,
+                "Chat postprocess",
+                recentAssistantMessages == 0
+                    ? "Son 7 gunde postprocess bekleyen assistant mesaji yok."
+                    : $"{recentEvaluations}/{recentAssistantMessages} assistant mesaji evaluator/postprocess kaniti tasiyor."),
+            Metric(
+                "ragScopeCoverage",
+                retrievalRuns.Count == 0 ? "idle" : healthyRetrievalRuns == retrievalRuns.Count ? "healthy" : healthyRetrievalRuns > 0 ? "watch" : "critical",
+                healthyRetrievalRuns,
+                retrievalRuns.Count,
+                "RAG scope",
+                retrievalRuns.Count == 0
+                    ? "Son 7 gunde RAG retrieval kosmadi."
+                    : $"{healthyRetrievalRuns}/{retrievalRuns.Count} retrieval saglikli tamamlandi."),
+            Metric(
+                "sourceQuality",
+                sourceQualityReports.Count == 0 ? "idle" : healthySourceQualityReports == sourceQualityReports.Count ? "healthy" : healthySourceQualityReports > 0 ? "watch" : "critical",
+                healthySourceQualityReports,
+                sourceQualityReports.Count,
+                "Kaynak kalite raporu",
+                sourceQualityReports.Count == 0
+                    ? "Root plan altinda henuz kaynak kalite raporu yok."
+                    : $"{healthySourceQualityReports}/{sourceQualityReports.Count} son kaynak kalite raporu saglikli."),
+            userCostMetric
+        };
+
+        var overall = ResolveOverallStatus(metrics);
+        return new DashboardCoordinationHealthDto
+        {
+            OverallStatus = overall,
+            UserSafeSummary = overall switch
+            {
+                "healthy" => "Root plan koordinasyon kanitlari saglikli gorunuyor.",
+                "watch" => "Root plan koordinasyonu calisiyor; bazi kanitlar izlenmeli.",
+                "critical" => "Root plan koordinasyonunda dikkat isteyen eksikler var.",
+                _ => "Root plan koordinasyon kanitlari toplanmaya basladi."
+            },
+            WindowDays = windowDays,
+            RootTopicId = activeScope?.IsValid == true ? activeScope.RootTopicId : activeTopicId,
+            CurrentTopicId = activeTopicId,
+            ActiveLessonTopicId = activeScope?.ActiveLessonTopicId,
+            Metrics = metrics,
+            GeneratedAt = generatedAt
+        };
+    }
+
+    private async Task<DashboardCoordinationHealthMetricDto> BuildUserCostQuotaMetricAsync(
+        Guid userId,
+        DateTime today,
+        CancellationToken ct)
+    {
+        var userCosts = await _dbContext.CostRecords
+            .AsNoTracking()
+            .Where(c => c.UserId == userId && c.OccurredAt >= today)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Tokens = g.Sum(c => c.EstimatedTokens),
+                Cost = g.Sum(c => c.EstimatedCostUsd)
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var tokens = userCosts?.Tokens ?? 0;
+        var cost = userCosts?.Cost ?? 0m;
+        var tokenLimit = _configuration.GetValue<int?>("AI:Cost:UserDailyTokenLimit");
+        var costLimit = _configuration.GetValue<decimal?>("AI:Cost:UserDailyUsdLimit");
+        var tokenRatio = tokenLimit.HasValue && tokenLimit.Value > 0
+            ? Math.Clamp(tokens / (decimal)tokenLimit.Value, 0m, 1m)
+            : 0m;
+        var costRatio = costLimit.HasValue && costLimit.Value > 0m
+            ? Math.Clamp(cost / costLimit.Value, 0m, 1m)
+            : 0m;
+        var ratio = Math.Max(tokenRatio, costRatio);
+        var hasLimit = tokenLimit.HasValue || costLimit.HasValue;
+        var status = !hasLimit ? "healthy" :
+            ratio >= 0.95m ? "critical" :
+            ratio >= 0.80m ? "watch" :
+            "healthy";
+
+        return Metric(
+            "costQuotaState",
+            status,
+            tokens,
+            tokenLimit ?? 0,
+            "Maliyet kotasi",
+            hasLimit
+                ? $"Bugun {tokens} token ve {Math.Round(cost, 4)} USD tahmini kullanim var."
+                : $"Bugun {tokens} token ve {Math.Round(cost, 4)} USD tahmini kullanim var; kullanici kotasi tanimli degil.",
+            ratio);
+    }
+
+    private static DashboardCoordinationHealthMetricDto Metric(
+        string key,
+        string status,
+        int count,
+        int total,
+        string label,
+        string detail,
+        decimal? ratioOverride = null)
+    {
+        var ratio = ratioOverride ?? (total <= 0 ? 0m : Math.Clamp(count / (decimal)total, 0m, 1m));
+        return new DashboardCoordinationHealthMetricDto
+        {
+            Key = key,
+            Status = status,
+            Count = Math.Max(0, count),
+            Total = Math.Max(0, total),
+            Ratio = Math.Round(ratio, 4),
+            UserSafeLabel = label,
+            UserSafeDetail = detail
+        };
+    }
+
+    private static string ResolveOverallStatus(IReadOnlyCollection<DashboardCoordinationHealthMetricDto> metrics)
+    {
+        if (metrics.Any(m => m.Status == "critical"))
+            return "critical";
+        if (metrics.Any(m => m.Status == "watch"))
+            return "watch";
+        if (metrics.Any(m => m.Status == "healthy"))
+            return "healthy";
+        return "idle";
     }
 
     [HttpGet("stats")]
@@ -283,8 +620,8 @@ public class DashboardController : ControllerBase
                 recentSignals = recentLearningSignals,
                 totalRecentAttempts = recentQuizAttempts.Count,
                 summary = weakSkills.Count > 0
-                    ? $"{weakSkills[0].skillTag} becerisi öncelikli tekrar istiyor."
-                    : "Henüz belirgin zayıf beceri sinyali yok."
+                    ? $"{weakSkills[0].skillTag} becerisi oncelikli tekrar istiyor."
+                    : "Henuz belirgin zayif beceri sinyali yok."
             }
         });
     }
@@ -391,6 +728,7 @@ public class DashboardController : ControllerBase
         var cacheMetrics = (await _redis.GetCacheMetricsAsync()).ToList();
         var learningOps = await BuildLearningOpsAsync();
         var endpointHealth = await BuildEndpointHealthAsync(redisHealth);
+        var coordinationHealth = await BuildSystemCoordinationHealthAsync();
 
         var agentQualityMap = agentQuality.ToDictionary(a => a.agentRole, a => a);
         var enrichedAgents = agentMetrics.Select(a =>
@@ -468,7 +806,8 @@ public class DashboardController : ControllerBase
                 hitRatePct = notebookEvents == 0 ? 0 : Math.Round(notebookHits * 100.0 / notebookEvents, 1)
             },
             learningOps,
-            endpointHealth
+            endpointHealth,
+            coordinationHealth
         });
     }
 
@@ -540,6 +879,73 @@ public class DashboardController : ControllerBase
         path,
         status
     };
+
+    private async Task<object> BuildSystemCoordinationHealthAsync()
+    {
+        var providerSummary = await _aiProviderTelemetry.GetSummaryAsync(HttpContext.RequestAborted);
+        var today = DateTime.UtcNow.Date;
+        var globalCosts = await _dbContext.CostRecords
+            .AsNoTracking()
+            .Where(c => c.OccurredAt >= today)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Tokens = g.Sum(c => c.EstimatedTokens),
+                Cost = g.Sum(c => c.EstimatedCostUsd)
+            })
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
+
+        var tokens = globalCosts?.Tokens ?? 0;
+        var cost = globalCosts?.Cost ?? 0m;
+        var tokenLimit = _configuration.GetValue<int?>("AI:Cost:GlobalDailyTokenLimit");
+        var costLimit = _configuration.GetValue<decimal?>("AI:Cost:GlobalDailyUsdLimit");
+        var tokenRatio = tokenLimit.HasValue && tokenLimit.Value > 0
+            ? Math.Clamp(tokens / (decimal)tokenLimit.Value, 0m, 1m)
+            : 0m;
+        var costRatio = costLimit.HasValue && costLimit.Value > 0m
+            ? Math.Clamp(cost / costLimit.Value, 0m, 1m)
+            : 0m;
+        var quotaRatio = Math.Max(tokenRatio, costRatio);
+        var quotaStatus = !(tokenLimit.HasValue || costLimit.HasValue) ? "healthy" :
+            quotaRatio >= 0.95m ? "critical" :
+            quotaRatio >= 0.80m ? "watch" :
+            "healthy";
+        var providerStatus = providerSummary.QuotaHitCount24h > 0 ? "watch" :
+            providerSummary.FailureKinds24h.Values.Sum() > 0 || providerSummary.FallbackCount24h > 0 ? "watch" :
+            "healthy";
+
+        return new
+        {
+            korteksContractHealth = new
+            {
+                status = "regression_gated",
+                source = "quick-coordination",
+                mandatoryTests = new[]
+                {
+                    "KorteksContractTests",
+                    "RagScopeIntegrationTests",
+                    "TopicTreeScopeContractTests"
+                }
+            },
+            aiProviderHealth = new
+            {
+                status = providerStatus,
+                providerSummary.FallbackCount24h,
+                providerSummary.QuotaHitCount24h,
+                providerSummary.FailureKinds24h,
+                providerSummary.CircuitStates
+            },
+            costQuotaState = new
+            {
+                status = quotaStatus,
+                estimatedTokensToday = tokens,
+                estimatedCostUsdToday = Math.Round(cost, 4),
+                globalDailyTokenLimit = tokenLimit,
+                globalDailyUsdLimit = costLimit,
+                ratio = Math.Round(quotaRatio, 4)
+            }
+        };
+    }
 
     private async Task<object> BuildLearningOpsAsync()
     {
@@ -671,7 +1077,7 @@ public class DashboardController : ControllerBase
                 status = countSignal(LearningSignalTypes.IdeRunCompleted) + countSignal(LearningSignalTypes.IdeSentToTutor) > 0
                     ? "healthy"
                     : "idle",
-                detail = "Kod çalıştırma ve hocaya gönderme akışı topic/session öğrenme hafızasına bağlı.",
+                detail = "Kod calistirma ve hocaya gonderme akisi topic/session ogrenme hafizasina bagli.",
                 signals = new[] { LearningSignalTypes.IdeRunCompleted, LearningSignalTypes.IdeSentToTutor }
                     .Select(signalType => new { signalType, count = countSignal(signalType) })
                     .ToList()

@@ -20,6 +20,10 @@ public sealed class TopicSourceEvidenceDto
     public Guid SourceId { get; set; }
     public string SourceTitle { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
+    public Guid? SourceTopicId { get; set; }
+    public string? SourceTopicTitle { get; set; }
+    public string ScopeRelation { get; set; } = "unknown";
+    public string RetrievalScope { get; set; } = "unknown";
     public int PageNumber { get; set; }
     public int ChunkIndex { get; set; }
     public string Text { get; set; } = string.Empty;

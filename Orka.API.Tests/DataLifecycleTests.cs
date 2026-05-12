@@ -150,6 +150,7 @@ public sealed class DataLifecycleTests
             p.UserId == userA.Id &&
             p.Reason == "topic-deleted" &&
             ids.DeletedTopicIds.All(p.TopicIds.Contains));
+        AssertSessionRedisKeysDeleted(harness.Redis.DeletedKeys, ids.DeletedSessionIds);
     }
 
     [Fact]
@@ -184,6 +185,7 @@ public sealed class DataLifecycleTests
             p.UserId == userA.Id &&
             p.Reason == "account-deleted" &&
             ids.DeletedTopicIds.All(p.TopicIds.Contains));
+        AssertSessionRedisKeysDeleted(harness.Redis.DeletedKeys, ids.DeletedSessionIds);
     }
 
     [Fact]
@@ -650,6 +652,7 @@ public sealed class DataLifecycleTests
     private class LifecycleRedisMemoryService : IRedisMemoryService
     {
         public List<RedisPurgeCall> Purges { get; } = [];
+        public List<string> DeletedKeys { get; } = [];
 
         public Task RecordEvaluationAsync(Guid sessionId, int score, string feedback) => Task.CompletedTask;
         public Task<IEnumerable<string>> GetRecentFeedbackAsync(Guid sessionId, int count = 5) => Task.FromResult<IEnumerable<string>>([]);
@@ -673,7 +676,11 @@ public sealed class DataLifecycleTests
         public Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">") => Task.FromResult<IReadOnlyList<RedisStreamEventDto>>([]);
         public Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds) => Task.CompletedTask;
         public Task<bool> SupportsVectorSearchAsync() => Task.FromResult(false);
-        public Task DeleteKeyAsync(string key) => Task.CompletedTask;
+        public Task DeleteKeyAsync(string key)
+        {
+            DeletedKeys.Add(key);
+            return Task.CompletedTask;
+        }
         public Task<long> GetTopicVersionAsync(Guid topicId) => Task.FromResult(0L);
         public Task<long> BumpTopicVersionAsync(Guid topicId, string reason) => Task.FromResult(1L);
         public Task InvalidateLearningCachesAsync(Guid userId, Guid topicId, string reason) => Task.CompletedTask;
@@ -706,6 +713,19 @@ public sealed class DataLifecycleTests
     }
 
     private sealed record RedisPurgeCall(Guid UserId, IReadOnlyCollection<Guid> TopicIds, string Reason);
+
+    private static void AssertSessionRedisKeysDeleted(IReadOnlyCollection<string> deletedKeys, IReadOnlyCollection<Guid> sessionIds)
+    {
+        foreach (var sessionId in sessionIds)
+        {
+            Assert.Contains($"orka:piston:{sessionId}:last", deletedKeys);
+            Assert.Contains($"orka:lowquality:{sessionId}", deletedKeys);
+            Assert.Contains($"orka:v2:tutor-policy:{sessionId:N}", deletedKeys);
+            Assert.Contains($"orka:v3:tutor-session:{sessionId}", deletedKeys);
+            Assert.Contains($"orka:v3:pending-tool-plan:{sessionId}", deletedKeys);
+            Assert.Contains($"orka:v3:tutor-events:{sessionId}", deletedKeys);
+        }
+    }
 
     private sealed record TestUser(HttpClient Client, Guid UserId);
 

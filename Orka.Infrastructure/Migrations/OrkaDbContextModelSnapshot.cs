@@ -220,7 +220,8 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("AgentRole")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -248,6 +249,9 @@ namespace Orka.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MessageId");
+
+                    b.HasIndex("MessageId", "AgentRole")
+                        .IsUnique();
 
                     b.HasIndex("SessionId");
 

@@ -214,6 +214,14 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<CostRecord>()
             .HasIndex(c => new { c.Provider, c.Model, c.OccurredAt });
 
+        modelBuilder.Entity<AgentEvaluation>()
+            .Property(ae => ae.AgentRole)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<AgentEvaluation>()
+            .HasIndex(ae => new { ae.MessageId, ae.AgentRole })
+            .IsUnique();
+
         modelBuilder.Entity<Session>()
             .HasOne(s => s.User)
             .WithMany()

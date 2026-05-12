@@ -33,6 +33,12 @@ powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
 
 See `docs/dev-contract.md` for the canonical smoke/regression matrix. Deployment, migration, CORS, CSP, secret, Redis, and provider gates are tracked in `docs/deployment/migration-policy.md` and `scripts/CHECKLIST.md`.
 
+Feature work with Codex must start from `CODEX.md`, then follow the current
+roadmap in `docs/project-state/current-roadmap.md` and the Stage 4 Codex Skills
+Anayasasi in `docs/codex-skills/`. Start with `docs/codex-skills/README.md`, then read the
+backend, AI/RAG, frontend contract, data lifecycle, and testing gate constitution
+files that apply to the feature.
+
 ---
 
 ## 1. Orka Nedir?

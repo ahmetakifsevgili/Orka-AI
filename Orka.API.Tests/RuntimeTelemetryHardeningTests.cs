@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orka.Core.DTOs;
+using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
@@ -57,6 +58,54 @@ public sealed class RuntimeTelemetryHardeningTests
         Assert.Equal(topicId, cost.TopicId);
         Assert.Equal(0, cost.EstimatedTokens);
         Assert.Equal(0m, cost.EstimatedCostUsd);
+    }
+
+    [Theory]
+    [InlineData("TutorAgent", "Tutor")]
+    [InlineData("DeepPlanAgent", "DeepPlan")]
+    [InlineData("AIAgentFactory", "AIAgentFactory")]
+    public async Task RuntimeTelemetry_NormalizesKnownCostAgentRoles(string inputRole, string expectedRole)
+    {
+        await using var db = CreateDb();
+        var service = new RuntimeTelemetryService(db, NullLogger<RuntimeTelemetryService>.Instance);
+
+        await service.RecordCostAsync(new CostRecordRequest(
+            UserId: Guid.NewGuid(),
+            SessionId: null,
+            TopicId: null,
+            MessageId: null,
+            AgentRole: inputRole,
+            Provider: "test-provider",
+            Model: "test-model",
+            EstimatedTokens: 1,
+            EstimatedCostUsd: 0.01m,
+            Success: true,
+            ErrorCode: null,
+            MetadataJson: null));
+
+        var cost = await db.CostRecords.SingleAsync();
+        Assert.Equal(expectedRole, cost.AgentRole);
+    }
+
+    [Fact]
+    public void AgentEvaluation_UniqueGuard_IsModeledAndMigrationDedupes()
+    {
+        using var db = CreateDb();
+        var entity = db.Model.FindEntityType(typeof(AgentEvaluation))
+            ?? throw new InvalidOperationException("AgentEvaluation model missing.");
+
+        Assert.Equal(128, entity.FindProperty(nameof(AgentEvaluation.AgentRole))?.GetMaxLength());
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique &&
+            index.Properties.Select(p => p.Name).SequenceEqual([
+                nameof(AgentEvaluation.MessageId),
+                nameof(AgentEvaluation.AgentRole)
+            ]));
+
+        var migration = ReadRepoFile("Orka.Infrastructure/Migrations/20260512110000_AddAgentEvaluationUniqueGuard.cs");
+        Assert.Contains("ROW_NUMBER()", migration);
+        Assert.Contains("PARTITION BY [MessageId], [AgentRole]", migration);
+        Assert.Contains("IX_AgentEvaluations_MessageId_AgentRole", migration);
     }
 
     [Fact]
@@ -128,5 +177,23 @@ public sealed class RuntimeTelemetryHardeningTests
             .Options;
 
         return new OrkaDbContext(options);
+    }
+
+    private static string ReadRepoFile(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Orka.sln")))
+            {
+                return File.ReadAllText(Path.Combine(
+                    directory.FullName,
+                    relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Repository root could not be located.");
     }
 }

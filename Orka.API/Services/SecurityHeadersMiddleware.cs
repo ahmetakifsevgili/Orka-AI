@@ -23,11 +23,36 @@ public sealed class SecurityHeadersMiddleware
     {
         context.Response.OnStarting(() =>
         {
+            ApplyStandardHeaders(context);
             ApplyCspHeader(context);
             return Task.CompletedTask;
         });
 
         await _next(context);
+    }
+
+    private void ApplyStandardHeaders(HttpContext context)
+    {
+        SetHeaderIfMissing(context, "X-Content-Type-Options", "nosniff");
+        SetHeaderIfMissing(context, "Referrer-Policy", "strict-origin-when-cross-origin");
+        SetHeaderIfMissing(context, "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+        SetHeaderIfMissing(context, "X-Frame-Options", "DENY");
+
+        var hstsSection = _configuration.GetSection("SecurityHeaders:Hsts");
+        var hstsEnabled = hstsSection.GetValue<bool?>("Enabled") ?? !_environment.IsDevelopment();
+        if (!hstsEnabled)
+            return;
+
+        var maxAgeDays = Math.Max(1, hstsSection.GetValue("MaxAgeDays", 365));
+        var includeSubDomains = hstsSection.GetValue<bool?>("IncludeSubDomains") ?? true;
+        var preload = hstsSection.GetValue<bool>("Preload");
+        var value = $"max-age={(long)TimeSpan.FromDays(maxAgeDays).TotalSeconds}";
+        if (includeSubDomains)
+            value += "; includeSubDomains";
+        if (preload)
+            value += "; preload";
+
+        SetHeaderIfMissing(context, "Strict-Transport-Security", value);
     }
 
     private void ApplyCspHeader(HttpContext context)
@@ -77,5 +102,11 @@ public sealed class SecurityHeadersMiddleware
         builder.Append("media-src 'self' blob: data:; ");
         builder.Append("frame-src 'none'");
         return builder.ToString();
+    }
+
+    private static void SetHeaderIfMissing(HttpContext context, string name, string value)
+    {
+        if (!context.Response.Headers.ContainsKey(name))
+            context.Response.Headers[name] = value;
     }
 }

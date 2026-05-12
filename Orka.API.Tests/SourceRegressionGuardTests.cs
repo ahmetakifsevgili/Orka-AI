@@ -579,6 +579,65 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("...safeMarkdownComponents", chat);
     }
 
+    [Fact]
+    public void SystemClosureGuards_FrontendStreamAuthAndContractStayAligned()
+    {
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var types = ReadRepoText("Orka-Front/src/lib/types.ts");
+        var endpointSmoke = ReadRepoText("Orka-Front/scripts/smoke-endpoints.mjs");
+        var uiSmoke = ReadRepoText("Orka-Front/scripts/smoke-ui.mjs");
+
+        Assert.Contains("export const authenticatedFetch", api);
+        Assert.Contains("refreshAccessToken", api);
+        Assert.Contains("authenticatedFetch(\"/api/chat/stream\"", api);
+        Assert.Contains("authenticatedFetch(\"/api/korteks/research-stream\"", api);
+        Assert.Contains("authenticatedFetch(\"/api/korteks/research-file\"", api);
+        Assert.DoesNotContain("Bearer null", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer undefined", api, StringComparison.Ordinal);
+
+        Assert.Contains("coordinationScope?:", api);
+        Assert.Contains("coordinationHealth?:", api);
+        Assert.Contains("sourceTopicId?:", types);
+        Assert.Contains("sourceTopicTitle?:", types);
+        Assert.Contains("scopeRelation?:", types);
+        Assert.Contains("retrievalScope?:", types);
+        Assert.Contains("KorteksSyncResponseDto", api);
+
+        Assert.Contains("/api/korteks/research-stream", endpointSmoke);
+        Assert.Contains("/api/korteks/research-file", endpointSmoke);
+        Assert.Contains("Stream APIs use authenticated fetch wrapper", uiSmoke);
+        Assert.Contains("Dashboard coordination contract is typed", uiSmoke);
+    }
+
+    [Fact]
+    public void SystemClosureGuards_AuthCleanupIsScopedAndSecuritySmokeIsWired()
+    {
+        string[] productFiles =
+        [
+            "Orka-Front/src/services/api.ts",
+            "Orka-Front/src/components/SettingsPanel.tsx",
+            "Orka.API/wwwroot/app.html",
+            "Orka.API/wwwroot/js/api.js"
+        ];
+
+        var broadClearFiles = productFiles
+            .Where(relative => ReadRepoText(relative).Contains("localStorage.clear()", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(broadClearFiles.Length == 0,
+            "Auth/session cleanup must remove scoped Orka keys, not clear all localStorage: " + string.Join(", ", broadClearFiles));
+
+        var packageJson = ReadRepoText("Orka-Front/package.json");
+        var securitySmoke = ReadRepoText("Orka-Front/scripts/smoke-security.mjs");
+
+        Assert.Contains("smoke:security", packageJson);
+        Assert.Contains("smoke:security", packageJson[packageJson.IndexOf("\"quick:smoke\"", StringComparison.Ordinal)..]);
+        Assert.Contains("<script>alert(1)</script>", securitySmoke);
+        Assert.Contains("javascript:", securitySmoke);
+        Assert.Contains("xlink:href", securitySmoke);
+        Assert.Contains("image.pollinations.ai", securitySmoke);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;

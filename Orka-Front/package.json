@@ -9,11 +9,12 @@
     "preview": "vite preview",
     "smoke:ui": "node scripts/smoke-ui.mjs",
     "smoke:contracts": "node scripts/smoke-endpoints.mjs",
+    "smoke:security": "node scripts/smoke-security.mjs",
     "typecheck": "tsc --noEmit",
     "smoke:build": "vite build",
     "quick:build": "vite build",
     "quick:frontend": "npm run smoke:ui && npm run smoke:contracts && npm run smoke:build",
-    "quick:smoke": "npm run smoke:ui && npm run smoke:contracts"
+    "quick:smoke": "npm run smoke:ui && npm run smoke:contracts && npm run smoke:security"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

@@ -12,6 +12,9 @@ function clearTokens() {
     localStorage.removeItem('orka_token');
     localStorage.removeItem('orka_refresh');
     localStorage.removeItem('orka_user');
+    localStorage.removeItem('orka_active_topic_id');
+    localStorage.removeItem('orka_active_view');
+    localStorage.removeItem('orka_wiki_topic_id');
 }
 function getUser() {
     try { return JSON.parse(localStorage.getItem('orka_user') || 'null'); } catch { return null; }

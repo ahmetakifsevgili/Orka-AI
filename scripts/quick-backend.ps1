@@ -2,7 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
-$regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
+$regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|ProductionSafetyLiteTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
+$coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 
 function Assert-LifecycleSqlServerProvisioned {
     if (-not [string]::IsNullOrWhiteSpace($env:ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION)) {
@@ -49,3 +50,10 @@ Write-Host "[quick-backend] Running stabilization regression baseline..."
     -WorkingDirectory $root `
     -FilePath $dotnet `
     -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $regressionFilter, "--blame-hang", "--blame-hang-timeout", "30s")
+
+Write-Host "[quick-backend] Running coordination regression baseline..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 120 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $coordinationFilter, "--blame-hang", "--blame-hang-timeout", "30s")

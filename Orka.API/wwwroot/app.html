@@ -648,8 +648,19 @@ async function doLogout() {
       await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({refreshToken: refresh}) });
     }
   } catch(e) {}
-  localStorage.clear();
+  clearOrkaStorage();
   window.location.href = '/login.html';
+}
+
+function clearOrkaStorage() {
+  [
+    'orka_token',
+    'orka_refresh',
+    'orka_user',
+    'orka_active_topic_id',
+    'orka_active_view',
+    'orka_wiki_topic_id'
+  ].forEach(function(key) { localStorage.removeItem(key); });
 }
 
 // ────────────────────────────────────────────────

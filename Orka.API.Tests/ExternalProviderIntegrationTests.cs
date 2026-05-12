@@ -6,6 +6,7 @@ using Xunit.Abstractions;
 
 namespace Orka.API.Tests;
 
+[Trait("Category", "External")]
 public sealed class ExternalProviderIntegrationTests
 {
     private readonly ITestOutputHelper _output;

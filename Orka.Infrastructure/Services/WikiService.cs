@@ -20,14 +20,17 @@ public class WikiService : IWikiService
     // [HATA-6 DÜZELTMESİ]: IServiceScopeFactory — her metot kendi scope'unu açar (thread-safe)
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IGroqService _groq;
+    private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ILogger<WikiService> _logger;
 
     public WikiService(IServiceScopeFactory scopeFactory,
         IGroqService groq,
+        ITopicScopeResolver topicScopeResolver,
         ILogger<WikiService> logger)
     {
         _scopeFactory = scopeFactory;
         _groq = groq;
+        _topicScopeResolver = topicScopeResolver;
         _logger = logger;
     }
 
@@ -35,58 +38,33 @@ public class WikiService : IWikiService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        {
+            var topicScope = await _topicScopeResolver.ResolveAsync(userId, topicId);
+            if (!topicScope.IsValid) return [];
+
+            var readTopicIds = GetWikiReadTopicIds(topicScope);
+            var topicOrder = readTopicIds
+                .Select((id, index) => new { id, index })
+                .ToDictionary(x => x.id, x => x.index);
+
+            var scopedPages = await db.WikiPages
+                .Include(w => w.Blocks)
+                .Where(w => readTopicIds.Contains(w.TopicId) && w.UserId == userId)
+                .ToListAsync();
+
+            return scopedPages
+                .DistinctBy(w => w.Id)
+                .OrderBy(w => topicOrder.GetValueOrDefault(w.TopicId, int.MaxValue))
+                .ThenBy(w => w.OrderIndex)
+                .ThenBy(w => w.CreatedAt)
+                .ToList();
+        }
 
         // Önce kullanıcının kendi sayfalarını bul
-        var pages = await db.WikiPages
-            .Include(w => w.Blocks)
-            .Where(w => w.TopicId == topicId && w.UserId == userId)
-            .OrderBy(w => w.OrderIndex)
-            .ToListAsync();
 
         // Eğer parent topic ise, subtopic'lerin wiki sayfalarını da getir
-        var subtopicIds = await db.Topics
-            .Where(t => t.ParentTopicId == topicId)
-            .OrderBy(t => t.Order)
-            .Select(t => t.Id)
-            .ToListAsync();
-        
-        if (subtopicIds.Count > 0)
-        {
-            var subtopicPages = await db.WikiPages
-                .Include(w => w.Blocks)
-                .Where(w => subtopicIds.Contains(w.TopicId) && w.UserId == userId)
-                .OrderBy(w => w.OrderIndex)
-                .ToListAsync();
-            
-            pages = pages.Concat(subtopicPages).ToList();
-        }
-
-        if (pages.Count > 0) return pages;
 
         // Fallback: Topic sahibini kontrol et
-        var topic = await db.Topics.FindAsync(topicId);
-        if (topic != null && topic.UserId == userId)
-        {
-            pages = await db.WikiPages
-                .Include(w => w.Blocks)
-                .Where(w => w.TopicId == topicId)
-                .OrderBy(w => w.OrderIndex)
-                .ToListAsync();
-            
-            // Subtopic fallback da ekle
-            if (subtopicIds.Count > 0)
-            {
-                var subtopicPages = await db.WikiPages
-                    .Include(w => w.Blocks)
-                    .Where(w => subtopicIds.Contains(w.TopicId))
-                    .OrderBy(w => w.OrderIndex)
-                    .ToListAsync();
-                
-                pages = pages.Concat(subtopicPages).ToList();
-            }
-        }
-
-        return pages;
     }
 
     public async Task<WikiPage?> GetWikiPageAsync(Guid pageId, Guid userId)
@@ -323,12 +301,24 @@ Ders İçeriği:
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var topicScope = await _topicScopeResolver.ResolveAsync(userId, topicId);
+        if (!topicScope.IsValid) return string.Empty;
 
+        var readTopicIds = GetWikiReadTopicIds(topicScope);
+        var topicOrder = readTopicIds
+            .Select((id, index) => new { id, index })
+            .ToDictionary(x => x.id, x => x.index);
         var pages = await db.WikiPages
             .Include(p => p.Blocks)
-            .Where(p => p.TopicId == topicId && p.UserId == userId)
-            .OrderBy(p => p.OrderIndex)
+            .Where(p => readTopicIds.Contains(p.TopicId) && p.UserId == userId)
             .ToListAsync();
+
+        pages = pages
+            .DistinctBy(p => p.Id)
+            .OrderBy(p => topicOrder.GetValueOrDefault(p.TopicId, int.MaxValue))
+            .ThenBy(p => p.OrderIndex)
+            .ThenBy(p => p.CreatedAt)
+            .ToList();
 
         if (!pages.Any()) return string.Empty;
 
@@ -345,6 +335,17 @@ Ders İçeriği:
         }
 
         return fullText.ToString();
+    }
+
+    private static IReadOnlyList<Guid> GetWikiReadTopicIds(TopicScope topicScope)
+    {
+        if (!topicScope.HasDescendants)
+            return [topicScope.CurrentTopicId];
+
+        return new[] { topicScope.CurrentTopicId }
+            .Concat(topicScope.DescendantTopicIds)
+            .Distinct()
+            .ToArray();
     }
 
     private static string PreserveDocCitationTags(string summary, string source)

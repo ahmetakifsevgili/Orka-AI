@@ -9,6 +9,8 @@ public sealed class DashboardTodayDto
     public DashboardSourceHealthDto SourceHealth { get; set; } = new();
     public int DueReviewCount { get; set; }
     public DashboardActivePlanDto? ActivePlan { get; set; }
+    public DashboardCoordinationScopeDto? CoordinationScope { get; set; }
+    public DashboardCoordinationHealthDto? CoordinationHealth { get; set; }
     public DashboardEntryPointDto RecommendedEntryPoint { get; set; } = new();
     public bool HasRealLearningData { get; set; }
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -47,6 +49,40 @@ public sealed class DashboardActivePlanDto
     public Guid TopicId { get; set; }
     public string Title { get; set; } = string.Empty;
     public double ProgressPercentage { get; set; }
+}
+
+public sealed class DashboardCoordinationScopeDto
+{
+    public Guid? RootTopicId { get; set; }
+    public Guid? CurrentTopicId { get; set; }
+    public Guid? ActiveLessonTopicId { get; set; }
+    public int TreeTopicCount { get; set; }
+    public int SourceCount { get; set; }
+    public int QuizAttemptCount { get; set; }
+    public int LearningSignalCount { get; set; }
+}
+
+public sealed class DashboardCoordinationHealthDto
+{
+    public string OverallStatus { get; set; } = "unknown";
+    public string UserSafeSummary { get; set; } = "Coordination durumu izleniyor.";
+    public int WindowDays { get; set; } = 7;
+    public Guid? RootTopicId { get; set; }
+    public Guid? CurrentTopicId { get; set; }
+    public Guid? ActiveLessonTopicId { get; set; }
+    public IReadOnlyList<DashboardCoordinationHealthMetricDto> Metrics { get; set; } = Array.Empty<DashboardCoordinationHealthMetricDto>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class DashboardCoordinationHealthMetricDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Status { get; set; } = "unknown";
+    public int Count { get; set; }
+    public int Total { get; set; }
+    public decimal Ratio { get; set; }
+    public string UserSafeLabel { get; set; } = string.Empty;
+    public string UserSafeDetail { get; set; } = string.Empty;
 }
 
 public sealed class DashboardEntryPointDto

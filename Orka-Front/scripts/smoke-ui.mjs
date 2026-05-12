@@ -79,6 +79,11 @@ addCheck("Production readiness API exposed", api.includes("/production-readiness
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
 addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
+addCheck("Stream APIs use authenticated fetch wrapper", api.includes("export const authenticatedFetch") && api.includes("ChatAPI") && api.includes('authenticatedFetch("/api/chat/stream"') && api.includes('authenticatedFetch("/api/korteks/research-stream"') && api.includes('authenticatedFetch("/api/korteks/research-file"'));
+addCheck("Stream APIs never send null bearer tokens", !api.includes("Bearer null") && !api.includes("Bearer undefined"));
+addCheck("Dashboard coordination contract is typed", api.includes("coordinationScope?:") && api.includes("coordinationHealth?:") && api.includes("activeLessonTopicId"));
+addCheck("Korteks sync and stream contracts are separate", api.includes("KorteksSyncResponseDto") && api.includes("researchSync") && api.includes("/api/korteks/research-stream"));
+addCheck("Auth cleanup is scoped to Orka keys", api.includes("storage.clear") && !api.includes("localStorage.clear()"));
 
 const toolContext = read("src/contexts/ToolCapabilitiesContext.tsx");
 addCheck("Tool capability context drives visibility", toolContext.includes("ToolsAPI.getCapabilities") && toolContext.includes("isVisibleForUser"));

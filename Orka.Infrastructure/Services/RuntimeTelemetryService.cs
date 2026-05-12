@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
+using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
@@ -75,8 +76,9 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
     {
         try
         {
+            var agentRole = CanonicalAgentRoles.NormalizeForCost(request.AgentRole);
             using var activity = ActivitySource.StartActivity("orka.cost", ActivityKind.Internal);
-            activity?.SetTag("orka.agent.role", request.AgentRole);
+            activity?.SetTag("orka.agent.role", agentRole);
             activity?.SetTag("orka.provider", request.Provider);
             activity?.SetTag("orka.model", request.Model);
             activity?.SetTag("orka.estimated_tokens", request.EstimatedTokens);
@@ -92,7 +94,7 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
                 SessionId = request.SessionId,
                 TopicId = request.TopicId,
                 MessageId = request.MessageId,
-                AgentRole = Truncate(request.AgentRole, 128) ?? "unknown",
+                AgentRole = Truncate(agentRole, 128) ?? "Unknown",
                 Provider = Truncate(request.Provider, 128),
                 Model = Truncate(request.Model, 256),
                 EstimatedTokens = Math.Max(0, request.EstimatedTokens),
@@ -106,7 +108,7 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[RuntimeTelemetry] Cost record write failed. Agent={AgentRole} Model={Model}", request.AgentRole, request.Model);
+            _logger.LogWarning(ex, "[RuntimeTelemetry] Cost record write failed. Agent={AgentRole} Model={Model}", CanonicalAgentRoles.NormalizeForCost(request.AgentRole), request.Model);
         }
     }
 

@@ -26,6 +26,7 @@ public class LearningSourceService : ILearningSourceService
     private readonly IRedisMemoryService _redis;
     private readonly ISummarizerAgent _summarizer;
     private readonly ILearningSignalService _signals;
+    private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ILogger<LearningSourceService> _logger;
 
     private const int ApproxChunkChars = 2200;
@@ -34,9 +35,11 @@ public class LearningSourceService : ILearningSourceService
         decimal EmbeddingScore,
         decimal LexicalScore,
         decimal FusedScore,
+        decimal TopicScopeBoost,
         int Rank,
         string QualityStatus,
-        string Reason);
+        string Reason,
+        string ScopeRelation);
     public LearningSourceService(
         OrkaDbContext db,
         FileExtractionService extractor,
@@ -47,6 +50,7 @@ public class LearningSourceService : ILearningSourceService
         IRedisMemoryService redis,
         ISummarizerAgent summarizer,
         ILearningSignalService signals,
+        ITopicScopeResolver topicScopeResolver,
         ILogger<LearningSourceService> logger)
     {
         _db = db;
@@ -58,6 +62,7 @@ public class LearningSourceService : ILearningSourceService
         _redis = redis;
         _summarizer = summarizer;
         _signals = signals;
+        _topicScopeResolver = topicScopeResolver;
         _logger = logger;
     }
 
@@ -374,7 +379,19 @@ public class LearningSourceService : ILearningSourceService
             retrievalRun.QualityStatus;
 
         return new SourceAskResultDto(answer, citations, new SourceMetadataDto(
-            citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto($"[doc:{sourceId}:p{c.PageNumber}]", "document", sourceId, c.PageNumber, source.Title, null, supportedCount > 0 ? 1.0 : 0.65, c.Id)).ToList(),
+            citations.Select(c => new Orka.Core.DTOs.Chat.CitationDto(
+                $"[doc:{sourceId}:p{c.PageNumber}]",
+                "document",
+                sourceId,
+                c.PageNumber,
+                source.Title,
+                null,
+                supportedCount > 0 ? 1.0 : 0.65,
+                c.Id,
+                source.TopicId,
+                null,
+                "direct-source",
+                "source_direct")).ToList(),
             citations.Count > 0 ? "source_grounded" : "model_fallback",
             missingCount > 0 ? "citation_missing" : unsupportedCount > 0 ? "citation_unsupported" : null,
             citations.Count > 0 ? 1.0 : null,
@@ -393,6 +410,7 @@ public class LearningSourceService : ILearningSourceService
         CancellationToken ct = default)
     {
         var requestedTopK = Math.Clamp(take, 1, 20);
+        var retrievalScope = sourceId.HasValue ? "source_direct" : "wiki_topic_tree";
         var ranked = await FindRelevantChunksAsync(userId, topicId, sourceId, question, requestedTopK, ct);
         var run = await RecordRetrievalRunAsync(
             userId,
@@ -400,10 +418,24 @@ public class LearningSourceService : ILearningSourceService
             null,
             sourceId,
             question,
-            "wiki_topic_retrieval",
+            retrievalScope,
             requestedTopK,
             ranked,
             ct);
+
+        var sourceTopicIds = ranked
+            .Select(r => r.Chunk.LearningSource.TopicId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToArray();
+        var sourceTopicTitles = sourceTopicIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await _db.Topics
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && sourceTopicIds.Contains(t.Id))
+                .Select(t => new { t.Id, t.Title })
+                .ToDictionaryAsync(t => t.Id, t => t.Title, ct);
 
         return ranked.Select(r => new TopicSourceEvidenceDto
         {
@@ -412,6 +444,13 @@ public class LearningSourceService : ILearningSourceService
             SourceId = r.Chunk.LearningSourceId,
             SourceTitle = r.Chunk.LearningSource.Title,
             FileName = r.Chunk.LearningSource.FileName,
+            SourceTopicId = r.Chunk.LearningSource.TopicId,
+            SourceTopicTitle = r.Chunk.LearningSource.TopicId.HasValue &&
+                               sourceTopicTitles.TryGetValue(r.Chunk.LearningSource.TopicId.Value, out var title)
+                ? title
+                : null,
+            ScopeRelation = r.ScopeRelation,
+            RetrievalScope = run.RetrievalScope,
             PageNumber = r.Chunk.PageNumber,
             ChunkIndex = r.Chunk.ChunkIndex,
             Text = r.Chunk.Text,
@@ -440,7 +479,7 @@ public class LearningSourceService : ILearningSourceService
             null,
             null,
             question,
-            "topic_grounding_context",
+            "tutor_topic_tree",
             5,
             ranked,
             ct);
@@ -576,12 +615,34 @@ public class LearningSourceService : ILearningSourceService
             .Include(c => c.LearningSource)
             .Where(c => c.LearningSource.UserId == userId && !c.LearningSource.IsDeleted && !c.IsDeleted);
 
+        TopicScope? topicScope = null;
         if (sourceId.HasValue)
+        {
             query = query.Where(c => c.LearningSourceId == sourceId.Value);
+        }
         else if (topicId.HasValue)
-            query = query.Where(c => c.LearningSource.TopicId == topicId.Value);
+        {
+            topicScope = await _topicScopeResolver.ResolveAsync(userId, topicId.Value, ct);
+            if (!topicScope.IsValid) return [];
 
-        var chunks = await query.Take(400).ToListAsync(ct);
+            var scopedTopicIds = new[] { topicScope.CurrentTopicId }
+                .Concat(topicScope.AncestorTopicIds)
+                .Concat(topicScope.DescendantTopicIds)
+                .Distinct()
+                .ToArray();
+
+            query = query.Where(c => c.LearningSource.TopicId.HasValue && scopedTopicIds.Contains(c.LearningSource.TopicId.Value));
+        }
+
+        var chunks = await query
+            .OrderBy(c => c.LearningSource.TopicId)
+            .ThenBy(c => c.LearningSource.CreatedAt)
+            .ThenBy(c => c.LearningSourceId)
+            .ThenBy(c => c.PageNumber)
+            .ThenBy(c => c.ChunkIndex)
+            .ThenBy(c => c.Id)
+            .Take(400)
+            .ToListAsync(ct);
         if (chunks.Count == 0) return [];
 
         float[]? qEmbedding = null;
@@ -594,14 +655,97 @@ public class LearningSourceService : ILearningSourceService
             _logger.LogDebug(ex, "[NotebookLM] Query embedding üretilemedi, lexical scoring kullanılacak.");
         }
 
-        return chunks
-            .Select(c => ScoreChunk(c, question, qEmbedding))
-            .OrderByDescending(x => x.FusedScore)
-            .ThenBy(x => x.Chunk.PageNumber)
+        var scored = chunks
+            .Select(c => ScoreChunk(c, question, qEmbedding, topicScope, sourceId.HasValue))
+            .ToList();
+
+        var selected = sourceId.HasValue || topicScope is null
+            ? OrderByScoreStable(scored).Take(take)
+            : ApplyScopedQuota(scored, take);
+
+        return selected
             .Take(take)
             .Select((x, i) => x with { Rank = i + 1 })
             .ToList();
     }
+
+    private static IReadOnlyList<RankedSourceChunk> ApplyScopedQuota(
+        IReadOnlyCollection<RankedSourceChunk> candidates,
+        int take)
+    {
+        if (take <= 0 || candidates.Count == 0)
+            return [];
+
+        var selected = new List<RankedSourceChunk>(take);
+        var selectedIds = new HashSet<Guid>();
+
+        var current = OrderByScoreStable(candidates.Where(c => c.ScopeRelation == "current")).ToList();
+        var ancestors = OrderByScoreStable(candidates.Where(c => c.ScopeRelation == "ancestor")).ToList();
+        var descendants = OrderByScoreStable(candidates.Where(c => c.ScopeRelation == "descendant")).ToList();
+        var other = OrderByScoreStable(candidates.Where(c =>
+            c.ScopeRelation is not "current" and not "ancestor" and not "descendant")).ToList();
+
+        var currentQuota = current.Count == 0 ? 0 : Math.Min(current.Count, Math.Max(1, (int)Math.Ceiling(take * 0.40m)));
+        AddFrom(current, currentQuota);
+
+        var ancestorQuota = ancestors.Count == 0 || selected.Count >= take
+            ? 0
+            : Math.Min(ancestors.Count, Math.Min(take - selected.Count, Math.Max(1, (int)Math.Floor(take * 0.30m))));
+        AddFrom(ancestors, ancestorQuota);
+
+        if (selected.Count < take)
+        {
+            AddFrom(descendants, take - selected.Count);
+        }
+
+        if (selected.Count < take)
+        {
+            AddFrom(other, take - selected.Count);
+        }
+
+        if (selected.Count < take)
+        {
+            AddFrom(OrderByScoreStable(candidates).ToList(), take - selected.Count);
+        }
+
+        return selected;
+
+        void AddFrom(IEnumerable<RankedSourceChunk> source, int count)
+        {
+            var remaining = count;
+            foreach (var item in source)
+            {
+                if (selected.Count >= take || remaining <= 0)
+                    break;
+
+                if (!selectedIds.Add(item.Chunk.Id))
+                    continue;
+
+                selected.Add(item);
+                remaining--;
+            }
+        }
+    }
+
+    private static IOrderedEnumerable<RankedSourceChunk> OrderByScoreStable(IEnumerable<RankedSourceChunk> candidates) =>
+        candidates
+            .OrderByDescending(x => x.FusedScore + x.TopicScopeBoost)
+            .ThenBy(x => ScopeRelationPriority(x.ScopeRelation))
+            .ThenByDescending(x => x.FusedScore)
+            .ThenBy(x => x.Chunk.PageNumber)
+            .ThenBy(x => x.Chunk.ChunkIndex)
+            .ThenBy(x => x.Chunk.LearningSource.CreatedAt)
+            .ThenBy(x => x.Chunk.LearningSourceId)
+            .ThenBy(x => x.Chunk.Id);
+
+    private static int ScopeRelationPriority(string relation) => relation switch
+    {
+        "direct-source" => 0,
+        "current" => 0,
+        "ancestor" => 1,
+        "descendant" => 2,
+        _ => 3
+    };
 
     private async Task ValidateUploadBackpressureAsync(Guid userId, Guid? topicId, CancellationToken ct)
     {
@@ -636,7 +780,7 @@ public class LearningSourceService : ILearningSourceService
             throw Core.Exceptions.ContentSafetyException.TooManyRequests("Gunluk embedding kotasi asildi.");
     }
 
-    private RankedSourceChunk ScoreChunk(SourceChunk chunk, string question, float[]? qEmbedding)
+    private RankedSourceChunk ScoreChunk(SourceChunk chunk, string question, float[]? qEmbedding, TopicScope? topicScope, bool isDirectSource)
     {
         var lexical = (decimal)Math.Round(NotebookSourceContextFormatter.ScoreLexical(chunk, question), 4);
         var embedding = 0m;
@@ -661,7 +805,51 @@ public class LearningSourceService : ILearningSourceService
             fused >= 0.35m ? "degraded" :
             "low_confidence";
         var reason = embedding > 0m ? "embedding_lexical_fusion" : "lexical_fallback";
-        return new RankedSourceChunk(chunk, embedding, lexical, fused, 0, quality, reason);
+        return new RankedSourceChunk(
+            chunk,
+            embedding,
+            lexical,
+            fused,
+            CalculateTopicScopeBoost(chunk, topicScope),
+            0,
+            quality,
+            reason,
+            ResolveScopeRelation(chunk, topicScope, isDirectSource));
+    }
+
+    private static string ResolveScopeRelation(SourceChunk chunk, TopicScope? topicScope, bool isDirectSource)
+    {
+        if (isDirectSource)
+            return "direct-source";
+
+        if (topicScope is null || !chunk.LearningSource.TopicId.HasValue)
+            return "unknown";
+
+        var sourceTopicId = chunk.LearningSource.TopicId.Value;
+        if (sourceTopicId == topicScope.CurrentTopicId)
+            return "current";
+        if (topicScope.AncestorTopicIds.Contains(sourceTopicId))
+            return "ancestor";
+        if (topicScope.DescendantTopicIds.Contains(sourceTopicId))
+            return "descendant";
+
+        return "unknown";
+    }
+
+    private static decimal CalculateTopicScopeBoost(SourceChunk chunk, TopicScope? topicScope)
+    {
+        if (topicScope is null || !chunk.LearningSource.TopicId.HasValue)
+            return 0m;
+
+        var sourceTopicId = chunk.LearningSource.TopicId.Value;
+        if (sourceTopicId == topicScope.CurrentTopicId)
+            return 0.05m;
+        if (topicScope.AncestorTopicIds.Contains(sourceTopicId))
+            return 0.02m;
+        if (topicScope.DescendantTopicIds.Contains(sourceTopicId))
+            return 0.01m;
+
+        return 0m;
     }
 
     private async Task<SourceRetrievalRun> RecordRetrievalRunAsync(
@@ -705,7 +893,14 @@ public class LearningSourceService : ILearningSourceService
                 requestedTopK,
                 scoreModel = "embedding_lexical_fusion",
                 lowConfidenceThreshold = 0.35m,
-                healthyThreshold = 0.65m
+                healthyThreshold = 0.65m,
+                scopeRelations = ranked.Select(r => r.ScopeRelation).Distinct().ToArray(),
+                sourceTopicIds = ranked
+                    .Select(r => r.Chunk.LearningSource.TopicId)
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
+                    .Distinct()
+                    .ToArray()
             }),
             CreatedAt = DateTime.UtcNow,
             CompletedAt = DateTime.UtcNow

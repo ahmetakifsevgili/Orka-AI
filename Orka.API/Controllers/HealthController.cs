@@ -1,14 +1,15 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Orka.API.Controllers;
 
 /// <summary>
-/// Sistem sağlık durumu endpoint'leri.
-/// /health/live  — process ayakta mı? (Kubernetes liveness probe)
-/// /health/ready — dış bağımlılıklar (Redis + SQL) hazır mı? (readiness probe)
-/// /health       — tüm check'lerin detaylı özeti
+/// System health endpoints.
+/// /health/live  - process liveness
+/// /health/ready - dependency readiness
+/// /health       - detailed only outside protected environments
 /// </summary>
 [AllowAnonymous]
 [ApiController]
@@ -17,21 +18,25 @@ namespace Orka.API.Controllers;
 public class HealthController : ControllerBase
 {
     private readonly HealthCheckService _healthCheckService;
+    private readonly IWebHostEnvironment _environment;
 
-    public HealthController(HealthCheckService healthCheckService)
+    public HealthController(
+        HealthCheckService healthCheckService,
+        IWebHostEnvironment environment)
     {
         _healthCheckService = healthCheckService;
+        _environment = environment;
     }
 
     /// <summary>
-    /// Liveness probe — process ayakta olduğu sürece 200 döner.
+    /// Liveness probe.
     /// GET /health/live
     /// </summary>
     [HttpGet("live")]
     public IActionResult Live() => Ok(new { status = "alive", timestamp = DateTime.UtcNow });
 
     /// <summary>
-    /// Readiness probe — Redis ve SQL bağlantılarını kontrol eder.
+    /// Readiness probe.
     /// GET /health/ready
     /// </summary>
     [HttpGet("ready")]
@@ -53,40 +58,46 @@ public class HealthController : ControllerBase
             {
                 status = "Unhealthy",
                 duration = 2000,
-                timedOut = true,
-                checks = new[]
-                {
-                    new
-                    {
-                        name = "readiness",
-                        status = "Unhealthy",
-                        description = "Readiness checks exceeded 2 seconds.",
-                        duration = 2000.0
-                    }
-                }
+                timedOut = true
             });
         }
 
+        var response = UsePublicSafeHealth()
+            ? BuildPublicResponse(result)
+            : BuildDetailedResponse(result);
+
         return result.Status == HealthStatus.Healthy
-            ? Ok(BuildResponse(result))
-            : StatusCode(503, BuildResponse(result));
+            ? Ok(response)
+            : StatusCode(503, response);
     }
 
     /// <summary>
-    /// Tüm health check'lerin detaylı özeti.
+    /// Aggregate health. Detailed check data is hidden in protected environments.
     /// GET /health
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> Health()
     {
         var result = await _healthCheckService.CheckHealthAsync(HttpContext.RequestAborted);
+        var response = UsePublicSafeHealth()
+            ? BuildPublicResponse(result)
+            : BuildDetailedResponse(result);
 
         return result.Status == HealthStatus.Healthy
-            ? Ok(BuildResponse(result))
-            : StatusCode(503, BuildResponse(result));
+            ? Ok(response)
+            : StatusCode(503, response);
     }
 
-    private static object BuildResponse(HealthReport report) => new
+    private bool UsePublicSafeHealth() =>
+        _environment.IsProduction() || _environment.IsStaging();
+
+    private static object BuildPublicResponse(HealthReport report) => new
+    {
+        status = report.Status.ToString(),
+        duration = report.TotalDuration.TotalMilliseconds
+    };
+
+    private static object BuildDetailedResponse(HealthReport report) => new
     {
         status = report.Status.ToString(),
         duration = report.TotalDuration.TotalMilliseconds,

@@ -148,6 +148,8 @@ builder.Services.AddHealthChecks()
 builder.Services.AddScoped<IRedisMemoryService, RedisMemoryService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<ITopicScopeResolver, TopicScopeResolver>();
+builder.Services.AddScoped<ITopicProgressPropagator, TopicProgressPropagator>();
 builder.Services.AddScoped<IDataLifecycleService, DataLifecycleService>();
 builder.Services.AddScoped<IContextBuilder, ContextBuilder>();
 builder.Services.AddScoped<IWikiService, WikiService>();
@@ -159,6 +161,7 @@ builder.Services.AddScoped<IRouterService, RouterService>();
 
 // [ORKA v3] Agent Orchestration
 builder.Services.AddScoped<IAgentOrchestrator, AgentOrchestratorService>();
+builder.Services.AddScoped<IChatTurnPostProcessor, ChatTurnPostProcessor>();
 builder.Services.AddScoped<ITutorAgent, TutorAgent>();
 builder.Services.AddScoped<IAnalyzerAgent, AnalyzerAgent>();
 builder.Services.AddScoped<ISummarizerAgent, SummarizerAgent>();
@@ -610,6 +613,8 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+ProductionSafetyStartupPolicy.Validate(builder.Configuration, builder.Environment, useInMemoryDatabase);
 
 var autoMigrateOnStartup = DatabaseMigrationStartupPolicy.ShouldRunStartupMigration(
     builder.Configuration,

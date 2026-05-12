@@ -40,6 +40,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IChatMetadataService _chatMetadata;
     private readonly IRuntimeTelemetryService _runtimeTelemetry;
+    private readonly IChatTurnPostProcessor _chatTurnPostProcessor;
+    private readonly IQuizAttemptRecorder _quizAttemptRecorder;
+    private readonly ITopicProgressPropagator _topicProgress;
+    private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ITutorPolicyTraceService? _policyTrace;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
@@ -61,6 +65,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IBackgroundTaskQueue backgroundQueue,
         IChatMetadataService chatMetadata,
         IRuntimeTelemetryService runtimeTelemetry,
+        IChatTurnPostProcessor chatTurnPostProcessor,
+        IQuizAttemptRecorder quizAttemptRecorder,
+        ITopicProgressPropagator topicProgress,
+        ITopicScopeResolver topicScopeResolver,
         ILogger<AgentOrchestratorService> logger,
         ITutorPolicyTraceService? policyTrace = null)
     {
@@ -81,6 +89,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _backgroundQueue = backgroundQueue;
         _chatMetadata = chatMetadata;
         _runtimeTelemetry = runtimeTelemetry;
+        _chatTurnPostProcessor = chatTurnPostProcessor;
+        _quizAttemptRecorder = quizAttemptRecorder;
+        _topicProgress = topicProgress;
+        _topicScopeResolver = topicScopeResolver;
         _policyTrace = policyTrace;
         _logger = logger;
     }
@@ -180,7 +192,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             isPlanMode = false;
             // Eğer sistem (AI streaming) quizi sorduktan sonra DataBase state'i Learning'de unutmuşsa,
             // bunu organik bir Lesson Quiz (ders sonu testi) olarak kabul edip durumu QuizMode'a zorla.
-            if (session.CurrentState == SessionState.Learning)
+            if (session.CurrentState == SessionState.Learning &&
+                !string.IsNullOrWhiteSpace(session.PendingQuiz))
             {
                 session.CurrentState = SessionState.QuizMode;
                 _logger.LogInformation("[Orchestrator] Quiz cevabı saptandı, state öğrenmeden QuizMode'a geçirildi.");
@@ -272,7 +285,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     _                             => isPlanMode || content.Contains("/plan", StringComparison.OrdinalIgnoreCase)
                                                      ? "DeepPlanAgent" : "TutorAgent"
                 };
-                TriggerBackgroundTasks(session, userId, content, syncResponse, syncMsgId, syncAgentRole);
+                await ScheduleTurnPostProcessingAsync(
+                    session,
+                    userId,
+                    content,
+                    syncResponse,
+                    syncMsgId,
+                    syncAgentRole,
+                    entryState,
+                    isStream: true);
             }
 
             yield return syncResponse;
@@ -302,7 +323,15 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (!string.IsNullOrEmpty(fullResponse))
         {
             var msgId = await SaveAiMessage(session, userId, fullResponse);
-            TriggerBackgroundTasks(session, userId, content, fullResponse, msgId);
+            await ScheduleTurnPostProcessingAsync(
+                session,
+                userId,
+                content,
+                fullResponse,
+                msgId,
+                "TutorAgent",
+                session.CurrentState,
+                isStream: true);
         }
     }
 
@@ -371,196 +400,14 @@ public class AgentOrchestratorService : IAgentOrchestrator
                lower.Contains("google");
     }
 
-    private void TriggerBackgroundTasks(Session session, Guid userId, string content, string aiResponse, Guid aiMessageId, string agentRole = "TutorAgent")
-    {
-        var capturedTopicId      = session.TopicId;
-        var capturedSessionId    = session.Id;
-        var capturedAgentRole    = agentRole;
-        // ICorrelationContext request-scoped oldugu icin background queue'ya girmeden once capture edilir.
-        var capturedCorrelationId = _correlationContext.CorrelationId;
-
-        _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
-            "agent-feedback-loop",
-            userId,
-            capturedCorrelationId,
-            async ct =>
-            {
-            using var scope = _scopeFactory.CreateScope();
-            var summarizer = scope.ServiceProvider.GetRequiredService<ISummarizerAgent>();
-            var analyzer   = scope.ServiceProvider.GetRequiredService<IAnalyzerAgent>();
-            var evaluator  = scope.ServiceProvider.GetRequiredService<IEvaluatorAgent>();
-            var db         = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-
-            _logger.LogInformation(
-                "[Background] EvaluatorAgent başladı. Session={SessionId} Correlation={CorrelationId}",
-                capturedSessionId, capturedCorrelationId);
-
-            try
-            {
-                // 1. LLMOps Evaluator - ilgili ajan yanıtını değerlendir
-                //    topicId geçilir: puan >= 9 ise Altın Örnek kaydedilir (Faz 12, yalnızca TutorAgent)
-                var (score, feedback) = await evaluator.EvaluateInteractionAsync(
-                    capturedSessionId, content, aiResponse, capturedAgentRole,
-                    topicId: capturedTopicId);
-
-                var eval = new AgentEvaluation
-                {
-                    SessionId         = capturedSessionId,
-                    UserId            = userId,
-                    MessageId         = aiMessageId,
-                    AgentRole         = capturedAgentRole,
-                    UserInput         = content,
-                    AgentResponse     = aiResponse,
-                    EvaluationScore   = score,
-                    EvaluatorFeedback = feedback,
-                    CreatedAt         = DateTime.UtcNow
-                };
-                db.AgentEvaluations.Add(eval);
-                await db.SaveChangesAsync();
-
-                _logger.LogInformation(
-                    "[Background] EvaluatorAgent tamamlandı. Puan={Score}/10 Correlation={CorrelationId}",
-                    score, capturedCorrelationId);
-
-                // -- Faz 16: Anlık Müdahale - düşük kalite ise TutorAgent için flag bırak --
-                // TutorAgent bir sonraki yanıtında bu uyarıyı tüketip stilini düzeltsin.
-                if (score < 7 && capturedAgentRole == "TutorAgent")
-                {
-                    var redisService = scope.ServiceProvider.GetRequiredService<IRedisMemoryService>();
-                    await redisService.SetLowQualityFeedbackAsync(capturedSessionId, score, feedback);
-                    _logger.LogInformation(
-                        "[Background] Düşük kalite flag set. SessionId={SessionId} Score={Score}",
-                        capturedSessionId, score);
-                }
-
-                // 2. Konu anlatımı tamamlandıysa wiki üret
-                _logger.LogInformation(
-                    "[Background] AnalyzerAgent başladı. Session={SessionId} Correlation={CorrelationId}",
-                    capturedSessionId, capturedCorrelationId);
-
-                var msgs           = await db.Messages.Where(m => m.SessionId == capturedSessionId).OrderBy(m => m.CreatedAt).ToListAsync();
-                var analyzerResult = await analyzer.AnalyzeCompletionAsync(msgs);
-
-                _logger.LogInformation(
-                    "[Background] AnalyzerAgent tamamlandı. IsComplete={IsComplete} MsgCount={Count} Correlation={CorrelationId}",
-                    analyzerResult.IsComplete, msgs.Count, capturedCorrelationId);
-
-                // Faz 15: Yaşayan Organizasyon - Öğrenci profilini kaydet
-                if (capturedTopicId.HasValue && analyzerResult.IntentData != null)
-                {
-                    var redisService = scope.ServiceProvider.GetRequiredService<IRedisMemoryService>();
-                    await redisService.RecordStudentProfileAsync(
-                        capturedTopicId.Value,
-                        analyzerResult.IntentData.UnderstandingScore,
-                        analyzerResult.IntentData.Weaknesses);
-                }
-
-                // Wiki özeti üret: konu tamamlandıysa VEYA yeterli yeni mesaj biriktiğinde (en az 6 mesaj ve son wiki'den bu yana 6+ yeni mesaj)
-                var aiMsgCount = msgs.Count(m => m.Role == "assistant");
-                var shouldSummarize = analyzerResult.IsComplete || (aiMsgCount >= 3 && msgs.Count >= 6 && msgs.Count % 6 == 0);
-
-                if (shouldSummarize && capturedTopicId.HasValue)
-                {
-                    _logger.LogInformation(
-                        "[Background] SummarizerAgent başladı. TopicId={TopicId} Trigger={Trigger} Correlation={CorrelationId}",
-                        capturedTopicId, analyzerResult.IsComplete ? "Complete" : "MessageCount", capturedCorrelationId);
-
-                    await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, capturedTopicId.Value, userId);
-
-                    _logger.LogInformation(
-                        "[Background] SummarizerAgent tamamlandı. TopicId={TopicId} Correlation={CorrelationId}",
-                        capturedTopicId, capturedCorrelationId);
-
-                    // Faz 13 Adım 13.4: Otomatik Ders Geçişi
-                    var topicService = scope.ServiceProvider.GetRequiredService<ITopicService>();
-                    var tutorAgentScoped = scope.ServiceProvider.GetRequiredService<ITutorAgent>();
-                    var mediatorScoped = scope.ServiceProvider.GetRequiredService<IMediator>();
-
-                    await HandleTopicProgressionAsync(
-                        capturedSessionId, capturedTopicId.Value, userId, db, topicService, tutorAgentScoped, mediatorScoped);
-
-                    // Faz 12: SummarizerAgent çıktısını da değerlendir (wiki kalitesi)
-                    // Wiki içeriğini geri okuyarak EvaluatorAgent'a gönder - DB'ye kaydeder, gold example değil
-                    try
-                    {
-                        var wikiService   = scope.ServiceProvider.GetRequiredService<IWikiService>();
-                        var wikiContent   = await wikiService.GetWikiFullContentAsync(capturedTopicId.Value, userId);
-                        var topicEntity   = await db.Topics.FindAsync(capturedTopicId.Value);
-                        var topicTitle    = topicEntity?.Title ?? "Konu";
-
-                        if (!string.IsNullOrWhiteSpace(wikiContent))
-                        {
-                            var (wikiScore, wikiFeedback) = await evaluator.EvaluateInteractionAsync(
-                                capturedSessionId, topicTitle, wikiContent, "SummarizerAgent");
-
-                            db.AgentEvaluations.Add(new AgentEvaluation
-                            {
-                                SessionId         = capturedSessionId,
-                                UserId            = userId,
-                                MessageId         = aiMessageId,
-                                AgentRole         = "SummarizerAgent",
-                                UserInput         = topicTitle,
-                                AgentResponse     = wikiContent.Length > 500 ? wikiContent[..500] + "..." : wikiContent,
-                                EvaluationScore   = wikiScore,
-                                EvaluatorFeedback = wikiFeedback,
-                                CreatedAt         = DateTime.UtcNow
-                            });
-                            await db.SaveChangesAsync();
-
-                            _logger.LogInformation(
-                                "[Background] SummarizerAgent kalite puanı: {Score}/10 Correlation={CorrelationId}",
-                                wikiScore, capturedCorrelationId);
-                        }
-                    }
-                    catch (Exception wikiEvalEx)
-                    {
-                        _logger.LogWarning(wikiEvalEx,
-                            "[Background] SummarizerAgent değerlendirmesi başarısız - ana akış etkilenmedi. Correlation={CorrelationId}",
-                            capturedCorrelationId);
-                    }
-                }
-                else if (analyzerResult.IsComplete && !capturedTopicId.HasValue)
-                {
-                    _logger.LogWarning(
-                        "[Background] IsComplete=true ama TopicId null - SummarizerAgent atlandı. Correlation={CorrelationId}",
-                        capturedCorrelationId);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "[Background] HATA. Session={SessionId} TopicId={TopicId} Correlation={CorrelationId}",
-                    capturedSessionId, capturedTopicId, capturedCorrelationId);
-
-                // Wiki üretimi başarısız olursa ilgili WikiPage'i "failed" olarak işaretle
-                try
-                {
-                    if (capturedTopicId.HasValue)
-                    {
-                        var failedPage = await db.WikiPages
-                            .FirstOrDefaultAsync(p => p.TopicId == capturedTopicId.Value &&
-                                                      (p.Status == "pending" || p.Status == "learning"));
-                        if (failedPage != null)
-                        {
-                            failedPage.Status = "failed";
-                            await db.SaveChangesAsync();
-                        }
-                    }
-                }
-                catch (Exception dbEx)
-                {
-                    _logger.LogError(dbEx,
-                        "[Background] WikiPage 'failed' işaretlenemedi. Correlation={CorrelationId}",
-                        capturedCorrelationId);
-                }
-            }
-            },
-            MaxAttempts: 1,
-            Timeout: TimeSpan.FromSeconds(120)));
-    }
-
     // -- Yardımcı: AI mesajını DB'ye kaydet ----------------------------------
     private async Task<Guid> SaveAiMessage(Session session, Guid userId, string content)
+    {
+        var message = await SaveAiMessageEntityAsync(session, userId, content);
+        return message.Id;
+    }
+
+    private async Task<Message> SaveAiMessageEntityAsync(Session session, Guid userId, string content)
     {
         // Token/cost tahmini: input = son kullanıcı mesajı, output = AI yanıtı
         var lastUserInput = session.Messages?
@@ -582,7 +429,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             CostUSD = cost,
             CreatedAt = DateTime.UtcNow,
             MessageType = (content.Contains("```json") || content.Contains("```quiz") ||
-                           (content.TrimStart().StartsWith("[{") && content.Contains("\"question\"")))
+                           (content.Contains("[{") && content.Contains("\"question\"")))
                           ? MessageType.Quiz : MessageType.General
         };
         _db.Messages.Add(aiMsg);
@@ -595,7 +442,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         await _db.SaveChangesAsync();
         await RecordCostSafeAsync(userId, session.Id, session.TopicId, aiMsg.Id, "Tutor", "AIAgentFactory", model, tokens, cost);
-        return aiMsg.Id;
+        return aiMsg;
     }
 
     private async Task RecordCostSafeAsync(
@@ -609,6 +456,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
         int tokens,
         decimal cost)
     {
+        var alreadyRecorded = await _db.CostRecords.AnyAsync(c =>
+            c.MessageId == messageId &&
+            c.AgentRole == agentRole &&
+            c.UserId == userId);
+        if (alreadyRecorded)
+            return;
+
         await _runtimeTelemetry.RecordCostAsync(new CostRecordRequest(
             UserId: userId,
             SessionId: sessionId,
@@ -624,20 +478,45 @@ public class AgentOrchestratorService : IAgentOrchestrator
             MetadataJson: null));
     }
 
+    private async ValueTask ScheduleTurnPostProcessingAsync(
+        Session session,
+        Guid userId,
+        string userContent,
+        string assistantContent,
+        Guid assistantMessageId,
+        string agentRole,
+        SessionState entryState,
+        bool isStream)
+    {
+        try
+        {
+            await _chatTurnPostProcessor.ScheduleAsync(new ChatTurnPostProcessRequest(
+                UserId: userId,
+                SessionId: session.Id,
+                TopicId: session.TopicId,
+                AssistantMessageId: assistantMessageId,
+                UserContent: userContent,
+                AssistantContent: assistantContent,
+                AgentRole: agentRole,
+                CorrelationId: _correlationContext.CorrelationId,
+                EntryState: entryState,
+                IsStream: isStream));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[ChatPostProcess] Schedule skipped. UserId={UserId} SessionId={SessionId} MessageId={MessageId} AgentRole={AgentRole} IsStream={IsStream}",
+                userId,
+                session.Id,
+                assistantMessageId,
+                agentRole,
+                isStream);
+        }
+    }
+
     public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
     {
-        // -- DEEP PLAN MODE - bypass normal agent routing ----
-        if (isPlanMode)
-        {
-            using var planAiContext = _aiRequestContext.Push(new AiRequestContext(
-                UserId: userId,
-                SessionId: sessionId,
-                TopicId: topicId,
-                CorrelationId: _correlationContext.CorrelationId,
-                Source: "ProcessMessageAsync.PlanMode"));
-            return await HandleDeepPlanModeAsync(userId, content, topicId, sessionId);
-        }
-
         Session? session = await GetOrCreateSessionAsync(userId, topicId, sessionId, content);
         if (session == null) throw new Exception("Oturum oluşturulamadı veya SmallTalk.");
 
@@ -667,13 +546,20 @@ public class AgentOrchestratorService : IAgentOrchestrator
         await _db.SaveChangesAsync();
 
         // 2. CHECK STATE & ROUTE
+        var entryState = session.CurrentState;
         string aiResponse;
         bool wikiUpdated = false;
         bool skipAutoWiki = false;
         bool planCreated = false;
         Guid? activeWikiPageId = null;
 
-        if (isNewTopic)
+        if (isPlanMode)
+        {
+            var result = await TriggerBaselineQuizForPlanAsync(userId, content, session);
+            aiResponse = result.Response;
+            skipAutoWiki = true;
+        }
+        else if (isNewTopic && session.CurrentState == SessionState.Learning)
         {
             // İlk mesaj: doğal TutorAgent yanıtı + ince plan teklifi ipucu
             var responseTask = _tutorAgent.GetResponseAsync(userId, tutorContent, session, false);
@@ -755,33 +641,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         // 3. SAVE AI MESSAGE
-        bool isQuizMessage = aiResponse.Contains("```json") || aiResponse.Contains("```quiz") ||
-                             (aiResponse.TrimStart().StartsWith("[{") && aiResponse.Contains("\"question\""));
-
-        var tutorModel = _agentFactory.GetModel(AgentRole.Tutor);
-        var (aiTokens, aiCost) = _tokenEstimator.Estimate(tutorModel, content, aiResponse);
-
-        var aiMsg = new Message
-        {
-            Id = Guid.NewGuid(),
-            SessionId = session.Id,
-            UserId = userId,
-            Role = "assistant",
-            Content = aiResponse,
-            ModelUsed = tutorModel,
-            TokensUsed = aiTokens,
-            CostUSD = aiCost,
-            CreatedAt = DateTime.UtcNow,
-            MessageType = isQuizMessage ? MessageType.Quiz : MessageType.General
-        };
-        _db.Messages.Add(aiMsg);
-        session.Messages.Add(aiMsg);
-
-        session.TotalTokensUsed += aiTokens;
-        session.TotalCostUSD    += aiCost;
-
-        await _db.SaveChangesAsync();
-        await RecordCostSafeAsync(userId, session.Id, session.TopicId, aiMsg.Id, "Tutor", "AIAgentFactory", tutorModel, aiTokens, aiCost);
+        var aiMsg = await SaveAiMessageEntityAsync(session, userId, aiResponse);
+        bool isQuizMessage = aiMsg.MessageType == MessageType.Quiz;
 
         // AUTO-WIKI: Mesaj başına wiki üretimi YAPILMAZ (CLAUDE.md kuralı).
         // Wiki yalnızca (a) alt konu quiz'i geçildiğinde veya (b) AnalyzerAgent konu tamamlandı
@@ -794,38 +655,23 @@ public class AgentOrchestratorService : IAgentOrchestrator
             if (hasActivePage) wikiUpdated = true;
         }
 
-        // BACKGROUND ANALYSIS (Topic Completed?)
-        if (session.CurrentState == SessionState.Learning)
+        var responseAgentRole = entryState switch
         {
-            var sId = session.Id;
-            var tId = session.TopicId;
+            SessionState.QuizMode => "GraderAgent",
+            SessionState.BaselineQuizMode => "DeepPlanAgent",
+            SessionState.AwaitingChoice => "TutorAgent",
+            _ => isPlanMode ? "DeepPlanAgent" : "TutorAgent"
+        };
+        await ScheduleTurnPostProcessingAsync(
+            session,
+            userId,
+            content,
+            aiResponse,
+            aiMsg.Id,
+            responseAgentRole,
+            entryState,
+            isStream: false);
 
-            _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
-                "learning-completion-analysis",
-                userId,
-                _correlationContext.CorrelationId,
-                async ct =>
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-                    var analyzer = scope.ServiceProvider.GetRequiredService<IAnalyzerAgent>();
-                    var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
-
-                    var msgs = await db.Messages.Where(m => m.SessionId == sId).OrderBy(m => m.CreatedAt).ToListAsync(ct);
-                    var analyzerRes = await analyzer.AnalyzeCompletionAsync(msgs);
-
-                    if (analyzerRes.IsComplete && tId.HasValue)
-                    {
-                        var topicService = scope.ServiceProvider.GetRequiredService<ITopicService>();
-                        var tutorAgentScoped = scope.ServiceProvider.GetRequiredService<ITutorAgent>();
-
-                        await HandleTopicProgressionAsync(
-                            sId, tId.Value, userId, db, topicService, tutorAgentScoped, mediator);
-                    }
-                },
-                MaxAttempts: 1,
-                Timeout: TimeSpan.FromSeconds(90)));
-        }
         return new ChatMessageResponse
         {
             MessageId   = aiMsg.Id,
@@ -1142,6 +988,23 @@ public class AgentOrchestratorService : IAgentOrchestrator
             bool isCorrect = await _tutorAgent.EvaluateQuizAnswerAsync(session.PendingQuiz ?? "Unknown", content);
             if (!isCorrect)
             {
+                var wrongAnswerTopic = session.TopicId.HasValue
+                    ? await _db.Topics.FirstOrDefaultAsync(t => t.Id == session.TopicId.Value && t.UserId == userId)
+                    : null;
+                var wrongAnswerActiveSubTopic = await ResolveActiveQuizTopicAsync(userId, session, wrongAnswerTopic);
+                if (wrongAnswerActiveSubTopic != null)
+                {
+                    await RecordChatQuizAttemptIfNeededAsync(
+                        userId,
+                        session,
+                        wrongAnswerActiveSubTopic,
+                        content,
+                        score: 0,
+                        total: 1,
+                        isSkipped: false,
+                        isIdeSubmission: false);
+                }
+
                 return ($"Hmm, tam olarak değil. Tekrar deneyelim:\n\n**{session.PendingQuiz}**", false);
             }
             score = 1;
@@ -1149,133 +1012,77 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         // -- PROCESS RESULTS & TRANSITION ----------------------------------
-        var user = await _db.Users.FindAsync(userId);
-        var currentTopic = session.TopicId.HasValue ? await _db.Topics.FindAsync(session.TopicId.Value) : null;
+        var currentTopic = session.TopicId.HasValue
+            ? await _db.Topics.FirstOrDefaultAsync(t => t.Id == session.TopicId.Value && t.UserId == userId)
+            : null;
+        var activeSubTopic = await ResolveActiveQuizTopicAsync(userId, session, currentTopic);
 
-        if (currentTopic != null)
+        if (activeSubTopic != null)
         {
-            var orderedLessons = await _topicService.GetOrderedLessonsAsync(currentTopic.Id, userId);
-            var activeSubTopic = orderedLessons.Skip(currentTopic.CompletedSections).FirstOrDefault();
-
-            if (activeSubTopic != null)
+            var attemptResult = await RecordChatQuizAttemptIfNeededAsync(
+                userId,
+                session,
+                activeSubTopic,
+                content,
+                score,
+                total,
+                isSkipped,
+                isIDESubmission);
+            if (attemptResult.WasDuplicate)
             {
-                var quizPercentageForAdvance = total > 0 ? (double)score / total : 0;
-                if (!isSkipped && quizPercentageForAdvance < 0.6)
-                {
-                    session.RemedialAttemptCount++;
-                    activeSubTopic.ProgressPercentage = Math.Max(activeSubTopic.ProgressPercentage, quizPercentageForAdvance * 100);
-                    activeSubTopic.IsMastered = false;
-
-                    var remedialLesson = await GenerateRemedialLessonAsync(userId, session, activeSubTopic, content, score, total);
-                    session.CurrentState = SessionState.Learning;
-                    session.PendingQuiz = null;
-                    await _db.SaveChangesAsync();
-
-                    return ($"Skorun **{score}/{total}**. Bu konuyu henüz tamamlandı saymıyorum; aşağıdaki kısa telafi dersi zayıf becerilerine odaklanıyor.\n\n{remedialLesson}", false);
-                }
-                activeSubTopic.ProgressPercentage = 100; // Alt konu her halükarda tamamlandı
-
-                if (!isSkipped)
-                {
-                    double percentage = (double)score / total;
-                    int currentCalculatedScore = (int)(percentage * 100);
-                    int previousScore = activeSubTopic.SuccessScore;
-
-                    // High Score Mantığı ve Rekor Kırma (Sonsuz XP Engeli)
-                    if (currentCalculatedScore > previousScore)
-                    {
-                        // Sadece önceki rekoru geçtiği puan farkı kadar XP! (Max 20 XP)
-                        int scoreDifference = currentCalculatedScore - previousScore;
-                        int xpReward = (int)((scoreDifference / 100.0) * 20);
-
-                        if (xpReward > 0 && user != null)
-                        {
-                            user.TotalXP += xpReward;
-                            user.LastActiveDate = DateTime.UtcNow;
-                            _logger.LogInformation("[QUIZ] Score: {Score}/{Total}. Yeni rekor (+{Diff})! XP Reward: {XP}", score, total, scoreDifference, xpReward);
-                        }
-
-                        // Eski skor rekorla güncellenir
-                        activeSubTopic.SuccessScore = currentCalculatedScore;
-
-                        if (percentage >= 0.6)
-                        {
-                            activeSubTopic.IsMastered = true;
-                            await _skillMastery.RecordMasteryAsync(userId, activeSubTopic.Id, activeSubTopic.Title, activeSubTopic.SuccessScore);
-                            // Başarılıysa remedial sayacı sıfırla
-                            session.RemedialAttemptCount = 0;
-                        }
-                        else
-                        {
-                            // Quiz geçildi ama düşük -> telafi sayacı +1
-                            session.RemedialAttemptCount++;
-                        }
-                    }
-                    else
-                    {
-                        if (user != null) user.LastActiveDate = DateTime.UtcNow;
-                        _logger.LogInformation("[QUIZ] Score: {Score}/{Total}. Eski rekor ({Prev}) başarıyla korundu, ilerleniyor.", score, total, previousScore);
-
-                        // Önceki skoru geçemediyse de (rekor kırılmadı) telafi denemesi sayılır
-                        if (percentage < 0.6) session.RemedialAttemptCount++;
-                    }
-
-                    // Faz 16: 2+ telafi -> önkoşul dersi sinyali (sonsuz döngü engeli)
-                    // Redis'e bir bayrak bırak, TutorAgent bir sonraki yanıtta önkoşul dersine yönlendirsin.
-                    if (session.RemedialAttemptCount >= 2)
-                    {
-                        _logger.LogWarning(
-                            "[REMEDIAL] {Count} telafi denemesi sonrasında önkoşul yönlendirmesi. SessionId={SessionId} Topic={Topic}",
-                            session.RemedialAttemptCount, session.Id, activeSubTopic.Title);
-
-                        var capturedTopicTitle = activeSubTopic.Title;
-                        var capturedSessionForFlag = session.Id;
-                        var capturedRemedialAttemptCount = session.RemedialAttemptCount;
-                        _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
-                            "remedial-low-quality-flag",
-                            userId,
-                            _correlationContext.CorrelationId,
-                            async ct =>
-                            {
-                                using var s = _scopeFactory.CreateScope();
-                                var redis = s.ServiceProvider.GetRequiredService<IRedisMemoryService>();
-                                await redis.SetLowQualityFeedbackAsync(
-                                    capturedSessionForFlag, 4,
-                                    $"Ogrenci '{capturedTopicTitle}' konusunda {capturedRemedialAttemptCount} kez basarisiz. " +
-                                    "Bir onceki/temel konuyu kisa orneklerle hatirlatarak basla, sonra ders devam etsin.");
-                            },
-                            MaxAttempts: 2,
-                            Timeout: TimeSpan.FromSeconds(20)));
-
-                        session.RemedialAttemptCount = 0;
-                    }
-                }
-
-                // Alt konu tamamlandı - wiki üretimini arka planda başlat
-                var completedSubtopicId = activeSubTopic.Id;
-                var capturedSessionId = session.Id;
-                var capturedUserId = userId;
-                _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
-                    "quiz-completed-subtopic-wiki",
-                    capturedUserId,
-                    _correlationContext.CorrelationId,
-                    async ct =>
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        var summarizer = scope.ServiceProvider.GetRequiredService<ISummarizerAgent>();
-                        await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, completedSubtopicId, capturedUserId);
-                    },
-                    MaxAttempts: 2,
-                    Timeout: TimeSpan.FromSeconds(90)));
+                session.CurrentState = SessionState.Learning;
+                session.PendingQuiz = null;
+                await _db.SaveChangesAsync();
+                return ("Bu quiz cevabı zaten kaydedilmiş. İlerleme tekrar güncellenmedi.", false);
             }
 
-            // Parent Topic (Ana Konu) İlerlemesini Güncelle
-            if (currentTopic.TotalSections > 0)
+            var quizPercentageForAdvance = total > 0 ? (double)score / total : 0;
+            var currentCalculatedScore = total > 0 ? (int)Math.Round(quizPercentageForAdvance * 100) : 0;
+
+            if (!isSkipped && quizPercentageForAdvance < 0.6)
             {
-                int nextCompleted = currentTopic.CompletedSections + 1;
-                currentTopic.ProgressPercentage = (double)nextCompleted / currentTopic.TotalSections * 100;
-                if (nextCompleted >= currentTopic.TotalSections) currentTopic.IsMastered = true;
+                session.RemedialAttemptCount++;
+                activeSubTopic.ProgressPercentage = Math.Max(activeSubTopic.ProgressPercentage, quizPercentageForAdvance * 100);
+                activeSubTopic.IsMastered = false;
+
+                var remedialLesson = await GenerateRemedialLessonAsync(userId, session, activeSubTopic, content, score, total);
+                session.CurrentState = SessionState.Learning;
+                session.PendingQuiz = null;
+                await _db.SaveChangesAsync();
+
+                return ($"Skorun **{score}/{total}**. Bu konuyu henüz tamamlandı saymıyorum; aşağıdaki kısa telafi dersi zayıf becerilerine odaklanıyor.\n\n{remedialLesson}", false);
             }
+
+            if (!isSkipped)
+            {
+                activeSubTopic.SuccessScore = Math.Max(activeSubTopic.SuccessScore, currentCalculatedScore);
+                session.RemedialAttemptCount = 0;
+                var user = await _db.Users.FindAsync(userId);
+                if (user != null) user.LastActiveDate = DateTime.UtcNow;
+            }
+
+            await _topicProgress.PropagateLessonCompletionAsync(
+                userId,
+                activeSubTopic.Id,
+                isSkipped ? null : currentCalculatedScore,
+                !isSkipped && quizPercentageForAdvance >= 0.6);
+
+            // Alt konu tamamlandı - wiki üretimini arka planda başlat
+            var completedSubtopicId = activeSubTopic.Id;
+            var capturedSessionId = session.Id;
+            var capturedUserId = userId;
+            _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
+                "quiz-completed-subtopic-wiki",
+                capturedUserId,
+                _correlationContext.CorrelationId,
+                async ct =>
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var summarizer = scope.ServiceProvider.GetRequiredService<ISummarizerAgent>();
+                    await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, completedSubtopicId, capturedUserId);
+                },
+                MaxAttempts: 2,
+                Timeout: TimeSpan.FromSeconds(90)));
         }
 
         // Move to next topic session state
@@ -1292,6 +1099,135 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         return ($"{prefix}\n\n{nextResponse}", false);
     }
+
+    private async Task<Topic?> ResolveActiveQuizTopicAsync(Guid userId, Session session, Topic? currentTopic)
+    {
+        if (currentTopic == null)
+            return null;
+
+        var scope = await _topicScopeResolver.ResolveAsync(userId, currentTopic.Id);
+        var activeTopicId = scope.IsValid
+            ? scope.ActiveLessonTopicId ?? currentTopic.Id
+            : currentTopic.Id;
+
+        return await _db.Topics
+            .FirstOrDefaultAsync(t => t.Id == activeTopicId && t.UserId == userId);
+    }
+
+    private sealed record ChatQuizAttemptRecordResult(bool WasDuplicate);
+
+    private async Task<ChatQuizAttemptRecordResult> RecordChatQuizAttemptIfNeededAsync(
+        Guid userId,
+        Session session,
+        Topic quizTopic,
+        string content,
+        int score,
+        int total,
+        bool isSkipped,
+        bool isIdeSubmission)
+    {
+        var pendingQuiz = session.PendingQuiz ?? quizTopic.Title;
+        var normalizedAnswer = isSkipped ? "skip" : content.Trim();
+        var questionHash = BuildChatQuizQuestionHash(session.Id, quizTopic.Id, pendingQuiz, normalizedAnswer);
+
+        var sameQuestionAnswerExists = await _db.QuizAttempts.AnyAsync(a =>
+            a.UserId == userId &&
+            a.SessionId == session.Id &&
+            a.Question == pendingQuiz &&
+            a.UserAnswer == normalizedAnswer);
+        if (sameQuestionAnswerExists)
+            return new ChatQuizAttemptRecordResult(true);
+
+        var exists = await _db.QuizAttempts.AnyAsync(a =>
+            a.UserId == userId &&
+            a.TopicId == quizTopic.Id &&
+            a.SessionId == session.Id &&
+            a.QuestionHash == questionHash);
+        if (exists)
+            return new ChatQuizAttemptRecordResult(true);
+
+        var scorePercent = total > 0 ? (int)Math.Round((double)score / total * 100) : 0;
+        var isCorrect = !isSkipped && total > 0 && (double)score / total >= 0.6;
+        var topicPath = await BuildTopicPathAsync(userId, quizTopic.Id);
+        var sourceRefsJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            origin = "chat-quiz",
+            sessionId = session.Id,
+            topicId = quizTopic.Id,
+            score,
+            total,
+            scorePercent,
+            wasSkipped = isSkipped,
+            isIdeSubmission
+        });
+
+        await _quizAttemptRecorder.RecordAsync(userId, new RecordQuizAttemptRequest
+        {
+            TopicId = quizTopic.Id,
+            SessionId = session.Id,
+            MessageId = session.Id.ToString("D"),
+            QuestionId = $"chat-{quizTopic.Id:N}",
+            Question = pendingQuiz,
+            SelectedOptionId = normalizedAnswer,
+            IsCorrect = isCorrect,
+            Explanation = isSkipped
+                ? "Chat quiz skipped."
+                : $"Chat quiz score: {score}/{total}.",
+            SkillTag = quizTopic.Title,
+            ConceptTag = quizTopic.Title,
+            LearningObjective = quizTopic.Title,
+            TopicPath = topicPath,
+            Difficulty = "chat",
+            CognitiveType = isIdeSubmission ? "code" : "mixed",
+            QuestionHash = questionHash,
+            SourceRefsJson = sourceRefsJson,
+            WasSkipped = isSkipped
+        });
+
+        return new ChatQuizAttemptRecordResult(false);
+    }
+
+    private async Task<string> BuildTopicPathAsync(Guid userId, Guid topicId)
+    {
+        var topics = await _db.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId)
+            .Select(t => new { t.Id, t.ParentTopicId, t.Title })
+            .ToListAsync();
+        var byId = topics.ToDictionary(t => t.Id);
+        var titles = new List<string>();
+        var seen = new HashSet<Guid>();
+        var cursor = topicId;
+
+        while (byId.TryGetValue(cursor, out var topic) && seen.Add(cursor))
+        {
+            titles.Add(topic.Title);
+            if (!topic.ParentTopicId.HasValue)
+                break;
+            cursor = topic.ParentTopicId.Value;
+        }
+
+        titles.Reverse();
+        return titles.Count == 0 ? "Chat Quiz" : string.Join(" / ", titles);
+    }
+
+    private static string BuildChatQuizQuestionHash(
+        Guid sessionId,
+        Guid topicId,
+        string question,
+        string answer)
+    {
+        var raw = $"chat:{sessionId:N}:{topicId:N}:{NormalizeHashPart(question)}:{NormalizeHashPart(answer)}";
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
+        return "chat:" + Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static string NormalizeHashPart(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : string.Join(' ', value.Trim().ToLowerInvariant().Split(
+                Array.Empty<char>(),
+                StringSplitOptions.RemoveEmptyEntries));
 
     private async Task<string> GenerateRemedialLessonAsync(
         Guid userId,
@@ -1669,9 +1605,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
             return (" Tebrikler! Bu konuyu tamamladın.", true);
         }
 
-        int currentIndex = currentTopic.CompletedSections;
+        int completedCount = siblings.Count(t => t.ProgressPercentage >= 100 || t.IsMastered);
+        int completedIndex = Math.Clamp(completedCount - 1, 0, siblings.Count - 1);
 
-        if (currentIndex < 0 || currentIndex >= siblings.Count - 1)
+        if (completedCount >= siblings.Count)
         {
             // Tüm alt konular bitti
             currentTopic.IsMastered = true;
@@ -1680,15 +1617,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
             session.PendingQuiz = null;
             await _db.SaveChangesAsync();
 
-            var allDoneSubtopicId = (currentIndex >= 0 && currentIndex < siblings.Count)
-                ? siblings[currentIndex].Id
-                : siblings.Last().Id;
+            var allDoneSubtopicId = siblings[completedIndex].Id;
 
             return ($" **Harika!** Tüm alt konuları başarıyla tamamladın! Artık ana konunun uzmanısın.[TOPIC_COMPLETE:{allDoneSubtopicId}]", true);
         }
 
         // Sıradaki konuya geç
-        var completedSubtopic = siblings[currentIndex];
+        var completedSubtopic = siblings[completedIndex];
         _db.LearningSignals.Add(new LearningSignal
         {
             Id = Guid.NewGuid(),
@@ -1701,8 +1636,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             IsPositive = true,
             CreatedAt = DateTime.UtcNow
         });
-        currentTopic.CompletedSections++;
-        var nextTopic = siblings[currentIndex + 1];
+        var nextTopic = siblings[completedCount];
         // Session.TopicId değişmiyor. Ana konuda (Parent) kalıyor.
         session.CurrentState = SessionState.Learning;
         session.PendingQuiz = null;
@@ -2034,71 +1968,6 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITutorAgent tutorAgent,
         IMediator mediator)
     {
-        var topic = await db.Topics.FindAsync(topicId);
-        if (topic == null) return;
-
-        // Guard: Quiz akışı (TransitionToNextTopicAsync) zaten CompletedSections'ı artırmış olabilir.
-        // Son AI mesajında [TOPIC_COMPLETE:] marker'ı varsa progression zaten tetiklendi demektir.
-        var lastAiMsg = await db.Messages
-            .Where(m => m.SessionId == sessionId && m.Role == "assistant")
-            .OrderByDescending(m => m.CreatedAt)
-            .FirstOrDefaultAsync();
-        if (lastAiMsg?.Content?.Contains("[TOPIC_COMPLETE:") == true)
-        {
-            _logger.LogInformation("[Auto-Progression] Quiz akışı zaten progression tetikledi. Atlanıyor. TopicId={Id}", topicId);
-            return;
-        }
-
-        topic.CompletedSections += 1;
-        await db.SaveChangesAsync();
-
-        // Hiyerarşi farkında: modül->ders yapısında leaf-level'a iner, düz planda children döner
-        var subTopics = await topicService.GetOrderedLessonsAsync(topicId, userId);
-        if (topic.CompletedSections < subTopics.Count)
-        {
-            var nextTopic = subTopics[topic.CompletedSections];
-            _logger.LogInformation("[Auto-Progression] Otomatik ders geçişi. Yeni konu: {Topic}", nextTopic.Title);
-
-            var curriculumTitles = subTopics.Select(t => t.Title).ToList();
-            var autoLesson = await tutorAgent.GetFirstLessonAsync(topic.Title, nextTopic.Title, curriculumTitles);
-
-            var session = await db.Sessions.FindAsync(sessionId);
-            if (session != null)
-            {
-                var autoModel = _agentFactory.GetModel(AgentRole.Tutor);
-                var (autoTokens, autoCost) = _tokenEstimator.Estimate(autoModel, string.Empty, autoLesson);
-
-                var autoMsg = new Message
-                {
-                    Id = Guid.NewGuid(),
-                    SessionId = sessionId,
-                    UserId = userId,
-                    Role = "assistant",
-                    Content = autoLesson,
-                    ModelUsed = autoModel,
-                    TokensUsed = autoTokens,
-                    CostUSD = autoCost,
-                    CreatedAt = DateTime.UtcNow,
-                    MessageType = MessageType.General
-                };
-                db.Messages.Add(autoMsg);
-
-                session.TotalTokensUsed += autoTokens;
-                session.TotalCostUSD    += autoCost;
-
-                await db.SaveChangesAsync();
-                _logger.LogInformation("[Auto-Progression] Otomatik AI dersi veritabanına eklendi.");
-            }
-        }
-        else
-        {
-            _logger.LogInformation("[Auto-Progression] Tüm alt konular bitti, TopicCompletedEvent fırlatılıyor.");
-            await mediator.Publish(new Orka.Core.Events.TopicCompletedEvent
-            {
-                SessionId = sessionId,
-                TopicId = topicId,
-                UserId = userId
-            });
-        }
+        await _topicProgress.HandleCompletionAnalysisProgressionAsync(userId, sessionId, topicId);
     }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Orka.Core.Entities;
+using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 
 namespace Orka.Infrastructure.Services;
@@ -11,10 +12,12 @@ namespace Orka.Infrastructure.Services;
 public class SessionService
 {
     private readonly OrkaDbContext _dbContext;
+    private readonly ITopicScopeResolver _topicScopeResolver;
 
-    public SessionService(OrkaDbContext dbContext)
+    public SessionService(OrkaDbContext dbContext, ITopicScopeResolver topicScopeResolver)
     {
         _dbContext = dbContext;
+        _topicScopeResolver = topicScopeResolver;
     }
 
     public async Task<IEnumerable<Session>> GetTopicSessionsAsync(Guid topicId, Guid userId)
@@ -27,14 +30,15 @@ public class SessionService
 
     public async Task<object?> GetLatestSessionAsync(Guid topicId, Guid userId)
     {
-        var treeTopicIds = await GetTopicTreeIdsAsync(topicId, userId);
-        if (treeTopicIds.Count == 0) return null;
+        var topicScope = await _topicScopeResolver.ResolveAsync(userId, topicId);
+        if (!topicScope.IsValid || topicScope.TreeTopicIds.Count == 0) return null;
 
-        var session = await _dbContext.Sessions
-            .Include(s => s.Messages)
-            .Where(s => s.TopicId.HasValue && treeTopicIds.Contains(s.TopicId.Value) && s.UserId == userId)
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync();
+        var primaryRestoreTopicIds = GetPrimaryRestoreTopicIds(topicScope);
+        var session = await FindLatestSessionAsync(primaryRestoreTopicIds, userId);
+        if (session is null && !topicScope.HasDescendants)
+        {
+            session = await FindLatestSessionAsync(topicScope.AncestorTopicIds, userId);
+        }
 
         if (session == null) return null;
 
@@ -43,8 +47,9 @@ public class SessionService
             .OrderByDescending(m => m.CreatedAt)
             .FirstOrDefault();
 
+        var nextPageTopicIds = GetNextPageTopicIds(topicScope);
         var nextPage = await _dbContext.WikiPages
-            .Where(w => w.TopicId == topicId && (w.Status == "pending" || w.Status == "learning"))
+            .Where(w => nextPageTopicIds.Contains(w.TopicId) && w.UserId == userId && (w.Status == "pending" || w.Status == "learning"))
             .OrderBy(w => w.OrderIndex)
             .FirstOrDefaultAsync();
 
@@ -69,37 +74,36 @@ public class SessionService
         };
     }
 
-    private async Task<List<Guid>> GetTopicTreeIdsAsync(Guid topicId, Guid userId)
+    private async Task<Session?> FindLatestSessionAsync(IReadOnlyCollection<Guid> topicIds, Guid userId)
     {
-        var topic = await _dbContext.Topics
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == topicId && t.UserId == userId);
-        if (topic == null) return new List<Guid>();
+        if (topicIds.Count == 0) return null;
 
-        while (topic.ParentTopicId.HasValue)
-        {
-            var parent = await _dbContext.Topics
-                .AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Id == topic.ParentTopicId.Value && t.UserId == userId);
-            if (parent == null) break;
-            topic = parent;
-        }
+        return await _dbContext.Sessions
+            .Include(s => s.Messages)
+            .Where(s => s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value) && s.UserId == userId)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
 
-        var ids = new List<Guid> { topic.Id };
-        var frontier = new List<Guid> { topic.Id };
+    private static IReadOnlyList<Guid> GetPrimaryRestoreTopicIds(TopicScope topicScope)
+    {
+        if (!topicScope.HasDescendants)
+            return [topicScope.CurrentTopicId];
 
-        while (frontier.Count > 0)
-        {
-            var children = await _dbContext.Topics
-                .AsNoTracking()
-                .Where(t => t.ParentTopicId.HasValue && frontier.Contains(t.ParentTopicId.Value) && t.UserId == userId)
-                .Select(t => t.Id)
-                .ToListAsync();
+        return new[] { topicScope.CurrentTopicId }
+            .Concat(topicScope.DescendantTopicIds)
+            .Distinct()
+            .ToArray();
+    }
 
-            frontier = children.Except(ids).ToList();
-            ids.AddRange(frontier);
-        }
+    private static IReadOnlyList<Guid> GetNextPageTopicIds(TopicScope topicScope)
+    {
+        if (topicScope.HasDescendants)
+            return GetPrimaryRestoreTopicIds(topicScope);
 
-        return ids;
+        return new[] { topicScope.CurrentTopicId }
+            .Concat(topicScope.AncestorTopicIds)
+            .Distinct()
+            .ToArray();
     }
 }

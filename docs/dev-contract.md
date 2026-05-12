@@ -41,6 +41,22 @@ request-boundary guards, migration policy, logging/error leakage hardening,
 health/swagger smoke, endpoint bridge smoke, source guards, runtime telemetry,
 tool capability contracts, and auth-filtered tests.
 
+System Closure gates before frontend baseline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\quick-coordination.ps1
+powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+cd ..
+git diff --check
+```
+
+The deterministic quick line must remain external-network-free. Real provider,
+Wikipedia/Wikidata, or other public HTTP checks stay behind explicit opt-in
+environment flags and outside `quick-backend.ps1` / `quick-coordination.ps1`.
+
 `DataLifecycleTests` in this baseline require relational SQL Server coverage.
 Use `(localdb)\OrkaLocalDB` locally or set
 `ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION` in CI. These tests should fail
@@ -88,3 +104,23 @@ return without calling an external provider.
 - External HTTP contract verification against a running API: `pytest contract_tests/`
 - Provider-heavy or AI-quality work: keep out of the deterministic baseline unless explicitly gated.
 - Additive migration work: generate an idempotent script and review it under `docs/deployment/migration-policy.md`.
+
+## Stage 4 Codex Skills Workflow
+
+Small and medium feature work must follow the current roadmap in
+`docs/project-state/current-roadmap.md` and the constitutions in
+`docs/codex-skills/`.
+
+Default flow:
+
+1. Read `docs/project-state/current-roadmap.md`.
+2. Read `docs/codex-skills/README.md`.
+3. Read the applicable constitution files before planning:
+   - backend/API/data: `backend-feature-constitution.md`
+   - AI/RAG/Wiki/Chat/Korteks/source/citation: `ai-rag-feature-constitution.md`
+   - frontend API/types/stream/UI contract: `frontend-contract-constitution.md`
+   - persistent data/cache/session/delete/privacy: `data-lifecycle-constitution.md`
+   - every feature: `testing-gate-constitution.md`
+4. Use `feature-prompt-template.md` for new feature prompts.
+5. Use `feature-completion-report-template.md` for final reports.
+6. Do not stage or commit unless explicitly requested.

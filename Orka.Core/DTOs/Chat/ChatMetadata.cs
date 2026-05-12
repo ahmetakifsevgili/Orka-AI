@@ -43,7 +43,11 @@ public sealed record CitationDto(
     string? Label,
     string? Url,
     double? Confidence,
-    Guid? ChunkId = null);
+    Guid? ChunkId = null,
+    Guid? SourceTopicId = null,
+    string? SourceTopicTitle = null,
+    string? ScopeRelation = null,
+    string? RetrievalScope = null);
 
 public sealed record UsedToolDto(
     string Name,

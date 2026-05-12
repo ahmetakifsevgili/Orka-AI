@@ -50,22 +50,19 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         var readySources = sources.Where(s => string.Equals(s.Status, "ready", StringComparison.OrdinalIgnoreCase)).ToList();
 
         var sourceChunks = Array.Empty<TopicSourceEvidenceDto>() as IReadOnlyList<TopicSourceEvidenceDto>;
-        if (readySources.Count > 0)
+        try
         {
-            try
-            {
-                sourceChunks = await _sources.RetrieveTopicEvidenceAsync(
-                    request.UserId,
-                    request.TopicId,
-                    request.Question,
-                    8,
-                    request.SourceId,
-                    ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "[WikiV2] Topic source retrieval skipped. TopicId={TopicId}", request.TopicId);
-            }
+            sourceChunks = await _sources.RetrieveTopicEvidenceAsync(
+                request.UserId,
+                request.TopicId,
+                request.Question,
+                8,
+                request.SourceId,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[WikiV2] Topic source retrieval skipped. TopicId={TopicId}", request.TopicId);
         }
 
         var wikiBlocks = await BuildWikiBlocksAsync(request, ct);
@@ -113,8 +110,7 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
             .Where(r => r.UserId == request.UserId && r.TopicId == request.TopicId)
             .OrderByDescending(r => r.CreatedAt)
             .FirstOrDefaultAsync(ct);
-        var retrievalHealth = readySources.Count == 0 ? "no_source" :
-            sourceChunks.Count == 0 ? "source_retrieval_empty" :
+        var retrievalHealth = sourceChunks.Count == 0 ? (readySources.Count == 0 ? "no_source" : "source_retrieval_empty") :
             sourceChunks.Any(c => c.QualityStatus == "low_confidence") ? "low_confidence" :
             "healthy";
 
@@ -245,7 +241,11 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
             $"{c.SourceTitle} / s.{c.PageNumber}",
             null,
             c.Score,
-            c.ChunkId));
+            c.ChunkId,
+            c.SourceTopicId,
+            c.SourceTopicTitle,
+            c.ScopeRelation,
+            c.RetrievalScope));
         var wikiCitations = wikiBlocks.Select(b => new CitationDto(
             b.CitationId,
             "wiki",

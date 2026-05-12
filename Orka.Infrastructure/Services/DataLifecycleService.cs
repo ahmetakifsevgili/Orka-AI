@@ -61,7 +61,7 @@ public sealed class DataLifecycleService : IDataLifecycleService
         if (tx is not null)
             await tx.CommitAsync(ct);
 
-        await InvalidateTopicCachesAsync(userId, topicDepths.Keys, "topic-deleted");
+        await InvalidateTopicCachesAsync(userId, topicDepths.Keys, scope.Get("SessionId"), "topic-deleted");
         return true;
     }
 
@@ -94,7 +94,7 @@ public sealed class DataLifecycleService : IDataLifecycleService
         if (tx is not null)
             await tx.CommitAsync(ct);
 
-        await InvalidateTopicCachesAsync(userId, topicDepths.Keys, "account-deleted");
+        await InvalidateTopicCachesAsync(userId, topicDepths.Keys, scope.Get("SessionId"), "account-deleted");
         return true;
     }
 
@@ -674,9 +674,18 @@ public sealed class DataLifecycleService : IDataLifecycleService
         }
     }
 
-    private async Task InvalidateTopicCachesAsync(Guid userId, IEnumerable<Guid> topicIds, string reason)
+    private async Task InvalidateTopicCachesAsync(
+        Guid userId,
+        IEnumerable<Guid> topicIds,
+        IEnumerable<Guid> sessionIds,
+        string reason)
     {
         var scopedTopicIds = topicIds.Distinct().ToArray();
+        var scopedSessionIds = sessionIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
         foreach (var topicId in scopedTopicIds)
         {
             try
@@ -689,6 +698,24 @@ public sealed class DataLifecycleService : IDataLifecycleService
             }
         }
 
+        foreach (var sessionId in scopedSessionIds)
+        {
+            foreach (var key in SessionScopedRedisKeys(sessionId))
+            {
+                try
+                {
+                    await _redis.DeleteKeyAsync(key);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Session Redis cache invalidation failed after data lifecycle operation. SessionId={SessionId}",
+                        sessionId);
+                }
+            }
+        }
+
         try
         {
             await _redis.PurgeUserCachesAsync(userId, scopedTopicIds, reason);
@@ -697,6 +724,16 @@ public sealed class DataLifecycleService : IDataLifecycleService
         {
             _logger.LogWarning(ex, "Broad Redis cache purge failed after data lifecycle operation. Reason={Reason}", reason);
         }
+    }
+
+    private static IEnumerable<string> SessionScopedRedisKeys(Guid sessionId)
+    {
+        yield return $"orka:piston:{sessionId}:last";
+        yield return $"orka:lowquality:{sessionId}";
+        yield return $"orka:v2:tutor-policy:{sessionId:N}";
+        yield return $"orka:v3:tutor-session:{sessionId}";
+        yield return $"orka:v3:pending-tool-plan:{sessionId}";
+        yield return $"orka:v3:tutor-events:{sessionId}";
     }
 
     private static Dictionary<Guid, int> CollectTopicTree(IReadOnlyList<TopicTreeRow> allTopics, Guid rootTopicId)

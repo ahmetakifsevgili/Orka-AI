@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -59,17 +60,30 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
         {
             var values = new Dictionary<string, string?>
             {
+                ["AllowedHosts"] = "localhost",
                 ["JWT:Issuer"] = "orka-api",
                 ["JWT:Audience"] = "orka-client",
                 ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01",
+                ["Database:Provider"] = "SqlServer",
                 ["Database:AutoMigrateOnStartup"] = "false",
+                ["ConnectionStrings:DefaultConnection"] = "Server=sql.example.invalid;Database=OrkaSmoke;User Id=orka;Password=SmokePass123!;TrustServerCertificate=True;",
                 ["ConnectionStrings:Redis"] = "127.0.0.1:6399,abortConnect=false",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:3000",
-                ["RateLimits:Auth:Backend"] = "InMemory",
-                ["RateLimits:Auth:AllowInMemoryFallback"] = "true",
+                ["RateLimits:Auth:Backend"] = IsProtectedEnvironment(_environmentName) ? "Redis" : "InMemory",
+                ["RateLimits:Auth:AllowInMemoryFallback"] = IsProtectedEnvironment(_environmentName) ? "false" : "true",
                 ["RateLimits:Auth:Login:PermitLimit"] = "1000",
                 ["RateLimits:Auth:Register:PermitLimit"] = "1000",
-                ["RateLimits:Auth:Refresh:PermitLimit"] = "1000"
+                ["RateLimits:Auth:Refresh:PermitLimit"] = "1000",
+                ["AI:Cost:Enabled"] = "true",
+                ["AI:Cost:GlobalDailyUsdLimit"] = "100",
+                ["AI:Cost:UserDailyUsdLimit"] = "10",
+                ["AI:GitHubModels:Token"] = "test-github-token",
+                ["AI:Groq:ApiKey"] = "test-groq-key",
+                ["AI:Gemini:ApiKey"] = "test-gemini-key",
+                ["AI:OpenRouter:ApiKey"] = "test-openrouter-key",
+                ["AI:Cerebras:ApiKey"] = "test-cerebras-key",
+                ["AI:Mistral:ApiKey"] = "test-mistral-key",
+                ["AI:SambaNova:ApiKey"] = "test-sambanova-key"
             };
 
             foreach (var (key, value) in _configurationOverrides)
@@ -160,6 +174,17 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IRedisMemoryService, SmokeRedisMemoryService>();
 
+            var realWorldEvidenceDescriptors = services
+                .Where(d => d.ServiceType == typeof(IRealWorldEvidenceService))
+                .ToList();
+
+            foreach (var descriptor in realWorldEvidenceDescriptors)
+            {
+                services.Remove(descriptor);
+            }
+
+            services.AddSingleton<IRealWorldEvidenceService, SmokeRealWorldEvidenceService>();
+
             var chaosDescriptors = services
                 .Where(d => d.ServiceType == typeof(IChaosContext))
                 .ToList();
@@ -171,6 +196,17 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
             services.AddScoped<IChaosContext, SmokeChaosContext>();
 
+            var authLimiterDescriptors = services
+                .Where(d => d.ServiceType == typeof(IAuthAttemptLimiter))
+                .ToList();
+
+            foreach (var descriptor in authLimiterDescriptors)
+            {
+                services.Remove(descriptor);
+            }
+
+            services.AddSingleton<IAuthAttemptLimiter>(sp => sp.GetRequiredService<AuthAttemptRateLimiter>());
+
             _configureServices?.Invoke(services);
 
             using var provider = services.BuildServiceProvider();
@@ -179,6 +215,10 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             db.Database.EnsureCreated();
         });
     }
+
+    private static bool IsProtectedEnvironment(string environmentName) =>
+        string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(environmentName, "Staging", StringComparison.OrdinalIgnoreCase);
 
     private sealed class SmokeAgentFactory : IAIAgentFactory
     {
@@ -349,6 +389,33 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
     {
         public Task<byte[]> SynthesizeDialogueAsync(string script, CancellationToken ct = default) =>
             Task.FromResult(Array.Empty<byte>());
+    }
+
+    private sealed class SmokeRealWorldEvidenceService : IRealWorldEvidenceService
+    {
+        public Task<TeachingEvidenceResultDto> GetEvidenceAsync(
+            TeachingEvidenceRequestDto request,
+            CancellationToken ct = default) =>
+            Task.FromResult(new TeachingEvidenceResultDto(
+                false,
+                request.EvidenceType,
+                "smoke",
+                "skipped",
+                [],
+                "Real-world evidence is disabled in deterministic smoke tests.",
+                "smoke_disabled",
+                null,
+                0,
+                0,
+                true));
+
+        public Task<IReadOnlyList<TeachingEvidenceCardDto>> GetRecentCardsAsync(
+            Guid userId,
+            Guid? topicId,
+            Guid? tutorActionTraceId = null,
+            int take = 8,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<TeachingEvidenceCardDto>>([]);
     }
 
     private sealed class SmokeRedisMemoryService : IRedisMemoryService

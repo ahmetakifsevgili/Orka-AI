@@ -82,8 +82,7 @@ export const storage = {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
-    // Home.tsx context kalıcılığı — logout'ta temizlensin ki farklı
-    // kullanıcı girişinde önceki kullanıcının ekranı açılmasın.
+    // Clear Orka session view state so another user never sees the previous user's context.
     localStorage.removeItem("orka_active_topic_id");
     localStorage.removeItem("orka_active_view");
     localStorage.removeItem("orka_wiki_topic_id");
@@ -109,6 +108,18 @@ const isAuthUrl = (url?: string) => {
   return normalized.startsWith("/auth/") || normalized.startsWith("/api/auth/");
 };
 
+const redirectToLogin = () => {
+  if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+};
+
+const handleAuthFailure = () => {
+  storage.clear();
+  delete api.defaults.headers.common.Authorization;
+  redirectToLogin();
+};
+
 // Request interceptor — attach Bearer token
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = storage.getToken();
@@ -128,6 +139,60 @@ const flushQueue = (err: unknown, token: string | null = null) => {
   pendingQueue = [];
 };
 
+const refreshAccessToken = async () => {
+  if (isRefreshing) {
+    return new Promise<string>((resolve, reject) => {
+      pendingQueue.push({ resolve, reject });
+    });
+  }
+
+  const refresh = storage.getRefresh();
+  if (!refresh) {
+    handleAuthFailure();
+    throw new Error("Authentication required");
+  }
+
+  isRefreshing = true;
+  try {
+    const { data } = await axios.post<AuthTokens>(buildApiUrl("/api/auth/refresh"), {
+      refreshToken: refresh,
+    });
+    localStorage.setItem(TOKEN_KEY, data.token);
+    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    api.defaults.headers.common.Authorization = `Bearer ${data.token}`;
+    flushQueue(null, data.token);
+    return data.token;
+  } catch (refreshError) {
+    flushQueue(refreshError);
+    handleAuthFailure();
+    throw refreshError;
+  } finally {
+    isRefreshing = false;
+  }
+};
+
+export const authenticatedFetch = async (path: string, init: RequestInit = {}) => {
+  const run = (token: string) => {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return fetch(buildApiUrl(path), { ...init, headers });
+  };
+
+  let token = storage.getToken();
+  if (!token) {
+    token = await refreshAccessToken();
+  }
+
+  let response = await run(token);
+  if (response.status !== 401 || isAuthUrl(path)) {
+    return response;
+  }
+
+  token = await refreshAccessToken();
+  response = await run(token);
+  return response;
+};
+
 api.interceptors.response.use(
   (res: AxiosResponse) => res,
   async (error) => {
@@ -137,51 +202,17 @@ api.interceptors.response.use(
     const isAuthRoute = isAuthUrl(original?.url);
 
     if (error.response?.status === 401 && !isAuthRoute && !original._retry) {
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          pendingQueue.push({ resolve, reject });
-        }).then((token) => {
-          original.headers.Authorization = `Bearer ${token}`;
-          return api(original);
-        });
-      }
-
       original._retry = true;
-      isRefreshing = true;
-
-      const refresh = storage.getRefresh();
-      if (!refresh) {
-        storage.clear();
-        isRefreshing = false;
-        if (!window.location.pathname.startsWith("/login")) {
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
-      }
-
       try {
-        const { data } = await axios.post<AuthTokens>(buildApiUrl("/api/auth/refresh"), {
-          refreshToken: refresh,
-        });
-        localStorage.setItem(TOKEN_KEY, data.token);
-        if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
-        api.defaults.headers.common.Authorization = `Bearer ${data.token}`;
-        flushQueue(null, data.token);
-        original.headers.Authorization = `Bearer ${data.token}`;
+        const token = await refreshAccessToken();
+        original.headers.Authorization = `Bearer ${token}`;
         return api(original);
       } catch (refreshError) {
-        flushQueue(refreshError);
-        storage.clear();
-        if (!window.location.pathname.startsWith("/login")) {
-          window.location.href = "/login";
-        }
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
 
-    // Global hata bildirimi (401 ve auth rotaları hariç)
+    // Global error notification, excluding auth routes.
     if (!isAuthRoute && !original?.suppressErrorToast) {
       const status = error.response?.status;
       const url = original?.url ?? "bilinmeyen endpoint";
@@ -190,7 +221,6 @@ api.interceptors.response.use(
       const suffix = correlationId ? ` · id: ${correlationId}` : "";
 
       if (!error.response) {
-        // Network error / sunucuya ulaşılamıyor
         toast.error(`Sunucuya bağlanılamıyor (${endpointLabel})`, { id: `net-${endpointLabel}` });
       } else if (status === 404) {
         toast.error(`Hata: ${endpointLabel} bulunamadı (404)${suffix}`, { id: `404-${endpointLabel}` });
@@ -263,12 +293,10 @@ export const ChatAPI = {
     content: string;
     isPlanMode?: boolean;
   }) => {
-    const token = storage.getToken();
-    return fetch(buildApiUrl("/api/chat/stream"), {
+    return authenticatedFetch("/api/chat/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
       },
       body: JSON.stringify(data)
     });
@@ -316,6 +344,33 @@ export interface DashboardTodayDto {
     topicId: string;
     title: string;
     progressPercentage: number;
+  } | null;
+  coordinationScope?: {
+    rootTopicId?: string | null;
+    currentTopicId?: string | null;
+    activeLessonTopicId?: string | null;
+    treeTopicCount: number;
+    sourceCount: number;
+    quizAttemptCount: number;
+    learningSignalCount: number;
+  } | null;
+  coordinationHealth?: {
+    overallStatus: string;
+    userSafeSummary: string;
+    windowDays: number;
+    rootTopicId?: string | null;
+    currentTopicId?: string | null;
+    activeLessonTopicId?: string | null;
+    metrics: Array<{
+      key: string;
+      status: string;
+      count: number;
+      total: number;
+      ratio: number;
+      userSafeLabel: string;
+      userSafeDetail: string;
+    }>;
+    generatedAt: string;
   } | null;
   recommendedEntryPoint: {
     view: string;
@@ -698,30 +753,50 @@ export const QuizAPI = {
   getHistory: (topicId: string) => api.get(`/quiz/history/${topicId}`),
 };
 
+export interface KorteksSyncResponseDto {
+  success: boolean;
+  topic?: string;
+  report?: string;
+  answer?: string;
+  research?: string;
+  groundingMode?: string;
+  sourceCount?: number;
+  sources?: Array<{
+    provider?: string;
+    title?: string | null;
+    url?: string | null;
+    citationLabel?: string | null;
+    confidence?: number | null;
+  }>;
+  providerWarnings?: string[];
+  providerCalls?: unknown[];
+  isFallback?: boolean;
+  legacySources?: string[];
+}
+
 export const KorteksAPI = {
-  // Düz konu araştırması (opsiyonel URL)
+  researchSync: (data: { topic: string; topicId?: string; sourceUrl?: string }) =>
+    api.post<KorteksSyncResponseDto>("/korteks/research", data).then((r) => r.data),
+
+  // Stream topic research.
   stream: (data: { topic: string; topicId?: string; sourceUrl?: string }) => {
-    const token = storage.getToken();
-    return fetch(buildApiUrl("/api/korteks/research"), {
+    return authenticatedFetch("/api/korteks/research-stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
   },
 
-  // Dosya yükleyerek araştırma (PDF / TXT / MD)
+  // Stream research with an uploaded PDF / TXT / MD file.
   streamWithFile: (data: { topic: string; topicId?: string; file: File }) => {
-    const token = storage.getToken();
     const form = new FormData();
     form.append("topic", data.topic);
     if (data.topicId) form.append("topicId", data.topicId);
     form.append("file", data.file);
-    return fetch(buildApiUrl("/api/korteks/research-file"), {
+    return authenticatedFetch("/api/korteks/research-file", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
   },
