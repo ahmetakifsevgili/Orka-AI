@@ -141,6 +141,9 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("Yanılgı sinyali", quizCard);
         Assert.Contains("Kanıt durumu", quizCard);
         Assert.Contains("remediationSeed", dashboard);
+        Assert.Contains("metadata?.misconceptionSignal", chatMessage);
+        Assert.Contains("metadata?.learningSignalConfidence", chatMessage);
+        Assert.Contains("metadata?.remediationSeed", chatMessage);
         Assert.Contains("Yanılgı sinyali güvenli şekilde işlendi", chatMessage);
         Assert.DoesNotContain("EvaluatorFeedback", quizCard + dashboard + chatMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("evaluationScore", quizCard + dashboard + chatMessage, StringComparison.OrdinalIgnoreCase);
@@ -164,8 +167,274 @@ public sealed class SourceRegressionGuardTests
         Assert.DoesNotContain("EvaluatorFeedback", dashboard, StringComparison.Ordinal);
         Assert.DoesNotContain("evaluationScore", dashboard, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("trace dump", dashboard, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("goalType", dashboard, StringComparison.Ordinal);
-        Assert.DoesNotContain("targetDate", dashboard, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack5AdaptiveStudyPlannerUi_UsesSafeGoalAndDiagnosticCopy()
+    {
+        var dashboard = ReadRepoText("Orka-Front/src/components/DashboardPanel.tsx");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var types = ReadRepoText("Orka-Front/src/lib/types.ts");
+        var controller = ReadRepoText("Orka.API/Controllers/DashboardController.cs");
+        var service = ReadRepoText("Orka.Infrastructure/Services/AdaptiveStudyPlannerService.cs");
+
+        Assert.Contains("\u00c7al\u0131\u015fma plan\u0131", dashboard);
+        Assert.Contains("Neden bu ad\u0131m?", dashboard);
+        Assert.Contains("Plan\u0131 hedefe g\u00f6re g\u00fcncelle", dashboard);
+        Assert.Contains("K\u0131sa seviye tespiti", dashboard);
+        Assert.Contains("\u0130\u015fe giri\u015f garantisi de\u011fildir", dashboard);
+        Assert.Contains("Bu plan mevcut konu a\u011f\u0131na", dashboard);
+        Assert.Contains("previewAdaptiveStudyPlan", api);
+        Assert.Contains("/dashboard/adaptive-study-plan", api);
+        Assert.Contains("AdaptiveStudyPlanDto", types);
+        Assert.Contains("AdaptiveStudyPlanRequestDto", types);
+        Assert.Contains("adaptive-study-plan", controller);
+        Assert.Contains("IAdaptiveStudyPlannerService", service);
+        Assert.DoesNotContain("official KPSS", dashboard + service, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("EvaluatorFeedback", dashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("evaluationScore", dashboard, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("trace dump", dashboard, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BExamFramework_GuardsUnsafeOfficialCurriculumClaims()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/ExamFrameworkService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/ExamsController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/ExamFrameworkDtos.cs");
+        var frontendApi = ReadRepoText("Orka-Front/src/services/api.ts");
+
+        Assert.Contains("KPSS hazırlık iskeleti", service);
+        Assert.Contains("Resmi müfredat iddiası değildir", service);
+        Assert.Contains("OfficialClaimAllowed = false", service);
+        Assert.Contains("CanClaimOfficial", dtos);
+        Assert.Contains("UserSafeVerificationLabel", dtos);
+        Assert.Contains("ExamsAPI", frontendApi);
+        Assert.Contains("/exams/import-tree", frontendApi);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("official KPSS curriculum complete", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official YKS curriculum complete", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official LGS curriculum complete", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official YDS curriculum complete", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("resmi KPSS müfredatı tamamlandı", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BQuestionBankCore_GuardsAgainstUnsafeContentClaims()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/QuestionBankService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/QuestionsController.cs");
+        var entities = ReadRepoText("Orka.Core/Entities/QuestionBankEntities.cs");
+        var frontendApi = ReadRepoText("Orka-Front/src/services/api.ts");
+
+        Assert.Contains("QuestionItem", entities);
+        Assert.Contains("ExamOutcomeId", entities);
+        Assert.Contains("publish_requires_safe_license_status", service);
+        Assert.Contains("multiple_choice_single_correct_option_required", service);
+        Assert.Contains("QuestionsAPI", frontendApi);
+        Assert.Contains("/questions", frontendApi);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("copyrighted KPSS questions", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official question bank", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("scrape", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw import payload", service + controller + frontendApi, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BQuestionImportPipeline_GuardsStructuredJsonOnlyAndNoUnsafeContentClaims()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/QuestionImportService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/QuestionImportsController.cs");
+        var frontendApi = ReadRepoText("Orka-Front/src/services/api.ts");
+        var smoke = ReadRepoText("Orka-Front/scripts/smoke-ui.mjs");
+        var importApiStart = frontendApi.IndexOf("export const QuestionImportsAPI", StringComparison.Ordinal);
+        var importApiEnd = frontendApi.IndexOf("export const ProductionReadinessAPI", StringComparison.Ordinal);
+        var importApi = frontendApi.Substring(importApiStart, importApiEnd - importApiStart);
+
+        Assert.Contains("QuestionImportsAPI", frontendApi);
+        Assert.Contains("/question-imports/preview", frontendApi);
+        Assert.Contains("/question-imports/approve", frontendApi);
+        Assert.Contains("QuestionImportPreview", service);
+        Assert.Contains("NormalizedQuestionJson", service);
+        Assert.Contains("duplicate_existing_question", service);
+        Assert.Contains("unsafe_license_imported_as_draft", service);
+        Assert.Contains("[Authorize]", controller);
+        Assert.Contains("Question import API exposed", smoke);
+        Assert.DoesNotContain("PDF parser", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AI question generation", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("copyrighted KPSS", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("auto-publish", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw upload body", service + controller + importApi, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BCentralExamsShell_GuardsKpssStudyHomeSafetyAndIntegration()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/CentralExamStudyService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/CentralExamsController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/CentralExamDtos.cs");
+        var frontend = ReadRepoText("Orka-Front/src/components/CentralExamsPanel.tsx");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+
+        Assert.Contains("ICentralExamStudyService", service + controller);
+        Assert.Contains("/central-exams/kpss", api);
+        Assert.Contains("ExamLearningContextDto", dtos);
+        Assert.Contains("Resmi mufredat iddiasi degildir", service + frontend);
+        Assert.Contains("KPSS", service + frontend);
+        Assert.Contains("QuestionItems", service);
+        Assert.Contains("QualityStatus == \"published\"", service);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("official KPSS curriculum complete", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("resmi KPSS müfredatı tamamlandı", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kazanma garantisi", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PDF parser", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AI question generation", service + controller + frontend, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BCentralExamPracticeResults_GuardsLearningLoopIntegrationSafety()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/CentralExamStudyService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/CentralExamsController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/CentralExamDtos.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var centralExamApiStart = api.IndexOf("export const CentralExamsAPI", StringComparison.Ordinal);
+        var centralExamApiEnd = api.IndexOf("export const ProductionReadinessAPI", StringComparison.Ordinal);
+        var centralExamApi = api.Substring(centralExamApiStart, centralExamApiEnd - centralExamApiStart);
+        var entities = ReadRepoText("Orka.Core/Entities/CentralExamPracticeEntities.cs");
+
+        Assert.Contains("CentralExamPracticeAttempt", entities);
+        Assert.Contains("CentralExamPracticeAnswer", entities);
+        Assert.Contains("CentralExamWeaknessDetected", service);
+        Assert.Contains("learningSignalConfidence", service);
+        Assert.Contains("remediationSeed", service);
+        Assert.Contains("studyContext", centralExamApi + dtos, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("/central-exams/practice-attempts/", centralExamApi);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("teacher panel", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dershane", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official KPSS curriculum complete", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kazanma garantisi", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PDF parser", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AI question generation", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw import payload", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("debug metadata", service + controller + dtos + centralExamApi, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BCentralExamMiniDeneme_GuardsSafetyAndIntegration()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/CentralExamDenemeService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/CentralExamDenemeController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/CentralExamDtos.cs");
+        var entities = ReadRepoText("Orka.Core/Entities/CentralExamDenemeEntities.cs");
+        var signalTypes = ReadRepoText("Orka.Core/Constants/LearningSignalTypes.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var frontend = ReadRepoText("Orka-Front/src/components/CentralExamsPanel.tsx");
+
+        Assert.Contains("CentralExamDenemeBlueprint", entities);
+        Assert.Contains("CentralExamDenemeAttempt", entities);
+        Assert.Contains("CentralExamDenemeAnswer", entities);
+        Assert.Contains("ICentralExamDenemeService", service + controller);
+        Assert.Contains("KPSS_MINI_TURKCE_PARAGRAF", service);
+        Assert.Contains("OfficialClaimAllowed = false", service);
+        Assert.Contains("QualityStatus == \"published\"", service);
+        Assert.Contains("CentralExamDenemeWeaknessDetected", signalTypes + service);
+        Assert.Contains("learningSignalConfidence", service);
+        Assert.Contains("remediationSeed", service);
+        Assert.Contains("/central-exams/kpss/denemeler", api);
+        Assert.Contains("/central-exams/deneme-attempts/", api);
+        Assert.Contains("Mini Deneme", frontend);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("official OSYM simulation", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official KPSS curriculum complete", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("puan tahmini", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("percentile", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ranking", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kazanma garantisi", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PDF parser", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AI question generation", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("teacher panel", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dershane", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw import payload", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("debug metadata", service + controller + dtos + frontend, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BMultiExamShell_GuardsScaffoldedExamSafety()
+    {
+        var examService = ReadRepoText("Orka.Infrastructure/Services/ExamFrameworkService.cs");
+        var centralService = ReadRepoText("Orka.Infrastructure/Services/CentralExamStudyService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/CentralExamsController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/CentralExamDtos.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var frontend = ReadRepoText("Orka-Front/src/components/CentralExamsPanel.tsx");
+
+        Assert.Contains("CentralExamCapabilityDto", dtos);
+        Assert.Contains("\"YKS\"", examService + centralService);
+        Assert.Contains("\"LGS\"", examService + centralService);
+        Assert.Contains("\"YDS\"", examService + centralService);
+        Assert.Contains("CreateSystemSkeletonAsync(string examCode", examService);
+        Assert.Contains("/central-exams/yks", api);
+        Assert.Contains("/central-exams/lgs", api);
+        Assert.Contains("/central-exams/yds", api);
+        Assert.Contains("Hazirlik iskeleti", frontend);
+        Assert.Contains("[Authorize]", controller);
+        Assert.Contains("OfficialClaimAllowed = false", examService);
+        Assert.DoesNotContain("official YKS curriculum complete", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official LGS curriculum complete", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official YDS curriculum complete", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official OSYM simulation", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("official MEB simulation", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kazanma garantisi", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("copyrighted", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PDF parser", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AI question generation", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("teacher panel", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dershane", examService + centralService + controller + frontend, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Pack6BQuestionDraftGeneration_GuardsSourceGroundedDraftSafety()
+    {
+        var service = ReadRepoText("Orka.Infrastructure/Services/QuestionDraftGenerationService.cs");
+        var controller = ReadRepoText("Orka.API/Controllers/QuestionDraftGenerationController.cs");
+        var dtos = ReadRepoText("Orka.Core/DTOs/QuestionDraftGenerationDtos.cs");
+        var interfaces = ReadRepoText("Orka.Core/Interfaces/ILearningArchitectureServices.cs");
+        var api = ReadRepoText("Orka-Front/src/services/api.ts");
+        var smoke = ReadRepoText("Orka-Front/scripts/smoke-ui.mjs");
+        var draftApiStart = api.IndexOf("export const QuestionDraftsAPI", StringComparison.Ordinal);
+        var draftApiEnd = api.IndexOf("export const CentralExamsAPI", StringComparison.Ordinal);
+        var draftApi = api.Substring(draftApiStart, draftApiEnd - draftApiStart);
+        var surface = service + controller + dtos + interfaces + draftApi;
+
+        Assert.Contains("IQuestionDraftGenerationService", interfaces);
+        Assert.Contains("IQuestionImportService", service);
+        Assert.Contains("PreviewImportAsync", service);
+        Assert.Contains("ApproveImportAsync", service);
+        Assert.Contains("QuestionDraftsAPI", draftApi);
+        Assert.Contains("/question-drafts/preview", draftApi);
+        Assert.Contains("/question-drafts/approve", draftApi);
+        Assert.Contains("Question draft API exposed", smoke);
+        Assert.Contains("generated_draft_requires_review", service);
+        Assert.Contains("deterministic_stub_generator", service);
+        Assert.Contains("review_distractors_before_publish", service);
+        Assert.Contains("[Authorize]", controller);
+        Assert.DoesNotContain("PublishQuestionAsync", service);
+        Assert.DoesNotContain("PDF parser", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("NotebookLM", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OCR", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("scrape", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("teacher panel", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dershane", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kazanma garantisi", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw provider", surface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hidden prompt", surface, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

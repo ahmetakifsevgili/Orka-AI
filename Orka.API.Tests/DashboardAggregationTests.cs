@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -38,6 +39,15 @@ public sealed class DashboardAggregationTests
         Assert.DoesNotContain(memoryWeakConcepts, c => c.GetProperty("label").GetString() == "Foreign Weak");
         Assert.True(learningMemory.GetProperty("goalReadiness").TryGetProperty("needsMoreEvidence", out _));
 
+        var adaptiveStudyPlan = root.GetProperty("adaptiveStudyPlan");
+        Assert.True(adaptiveStudyPlan.GetProperty("items").GetArrayLength() > 0);
+        Assert.Contains(
+            adaptiveStudyPlan.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("title").GetString()!.Contains("Lesson Weak", StringComparison.Ordinal));
+        Assert.All(
+            adaptiveStudyPlan.GetProperty("items").EnumerateArray(),
+            item => Assert.False(string.IsNullOrWhiteSpace(item.GetProperty("reason").GetString())));
+
         var sourceHealth = root.GetProperty("sourceHealth");
         Assert.Equal("unverified", sourceHealth.GetProperty("status").GetString());
 
@@ -56,5 +66,21 @@ public sealed class DashboardAggregationTests
         Assert.Contains("topicTreeCompleteness", metricKeys);
         Assert.Contains("sourceCoverage", metricKeys);
         Assert.Contains("learningProfileCoverage", metricKeys);
+
+        var preview = await user.Client.PostAsync(
+            "/api/dashboard/adaptive-study-plan",
+            new StringContent(
+                """{"goalType":"career","careerTarget":"Backend Developer","weeklyAvailableMinutes":240,"currentLevel":"intermediate"}""",
+                Encoding.UTF8,
+                "application/json"));
+        preview.EnsureSuccessStatusCode();
+
+        using var previewBody = await JsonDocument.ParseAsync(await preview.Content.ReadAsStreamAsync());
+        var warnings = previewBody.RootElement.GetProperty("warnings").EnumerateArray()
+            .Select(w => w.GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Contains(warnings, warning => warning.Contains("ise giris garantisi", StringComparison.OrdinalIgnoreCase) ||
+                                             warning.Contains("işe giriş garantisi", StringComparison.OrdinalIgnoreCase));
+        Assert.True(previewBody.RootElement.GetProperty("diagnostic").TryGetProperty("intake", out _));
     }
 }

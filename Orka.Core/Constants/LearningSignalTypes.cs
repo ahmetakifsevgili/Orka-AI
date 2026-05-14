@@ -33,6 +33,10 @@ public static class LearningSignalTypes
     public const string MistakeClassified = "MistakeClassified";
     public const string TeachingMoveApplied = "TeachingMoveApplied";
     public const string SourceCitationMissing = "SourceCitationMissing";
+    public const string CentralExamPracticeAnswered = "CentralExamPracticeAnswered";
+    public const string CentralExamWeaknessDetected = "CentralExamWeaknessDetected";
+    public const string CentralExamDenemeAnswered = "CentralExamDenemeAnswered";
+    public const string CentralExamDenemeWeaknessDetected = "CentralExamDenemeWeaknessDetected";
 
     public static readonly IReadOnlyCollection<string> All =
     [
@@ -62,7 +66,11 @@ public static class LearningSignalTypes
         MisconceptionDetected,
         MistakeClassified,
         TeachingMoveApplied,
-        SourceCitationMissing
+        SourceCitationMissing,
+        CentralExamPracticeAnswered,
+        CentralExamWeaknessDetected,
+        CentralExamDenemeAnswered,
+        CentralExamDenemeWeaknessDetected
     ];
 
     public static string Normalize(string? value)

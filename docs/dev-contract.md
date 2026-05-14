@@ -109,9 +109,15 @@ return without calling an external provider.
 
 Feature work must follow the current roadmap in
 `docs/project-state/current-roadmap.md` and the constitutions in
-`docs/codex-skills/`. Stage 4 small/medium feature packs are closed; the current
-phase is Stage 5, which starts with the Production-ready enterprise hardening /
-scalability plan.
+`docs/codex-skills/`. Stage 6B Central Exams is closed; the current phase is
+post-6B productization / frontend-content readiness.
+
+Central Exams is an integrated Orka module, not a standalone KPSS app. It must
+reuse Orka's exam framework, question bank, import pipeline, practice,
+mini-deneme, learning signal, memory/planner/tutor, and wiki-study context
+architecture. Do not add teacher/classroom/dershane workflows, official exam
+claims without verified metadata, success guarantees, scraped content
+assumptions, or auto-published generated/imported content.
 
 Default flow:
 

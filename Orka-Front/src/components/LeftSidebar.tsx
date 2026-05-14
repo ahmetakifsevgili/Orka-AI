@@ -60,6 +60,7 @@ const NAV_ITEMS = [
   { id: "dashboard", icon: Home, labelKey: "today", route: null },
   { id: "chat", icon: MessageSquare, labelKey: "learn", route: null },
   { id: "sources", icon: Network, labelKey: "sources", route: null },
+  { id: "central-exams", icon: GraduationCap, labelKey: "Merkezi Sınavlar", route: null },
   { id: "practice", icon: Code2, labelKey: "practice", route: null },
   { id: "learning", icon: ClipboardCheck, labelKey: "review", route: null },
   { id: "progress", icon: BookMarked, labelKey: "progress", route: null },

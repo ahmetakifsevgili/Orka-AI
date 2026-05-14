@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import { QuizAPI, DashboardAPI, UserAPI, storage, type DashboardTodayDto } from "@/services/api";
-import type { ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
+import type { AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, ApiTopic, ApiGlobalStats, ApiDashboardStats, ApiGamification } from "@/lib/types";
 import { evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import SystemHealthHUD from "@/components/SystemHealthHUD";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -99,6 +99,7 @@ type CoordinationMetric = NonNullable<DashboardTodayDto["coordinationHealth"]>["
 type WeakSkillSignal = NonNullable<ApiDashboardStats["learningSignalBook"]>["weakSkills"][number];
 type WeakConceptSignal = DashboardTodayDto["weakConcepts"][number];
 type LearningMemory = NonNullable<DashboardTodayDto["learningMemory"]>;
+type AdaptiveStudyPlan = NonNullable<DashboardTodayDto["adaptiveStudyPlan"]>;
 type HealthTone = "ok" | "warning" | "missing";
 type GuidanceActionView = "chat" | "wiki" | "practice" | "sources" | "learning" | "dashboard";
 type SourceCoverageTone = "ready" | "watch" | "empty";
@@ -219,6 +220,25 @@ function remediationAction(action?: string | null): { label: string; view: Guida
     case "prerequisite_review":
       return { label: "Ön koşulu gözden geçir", view: "wiki" };
     case "tutor_explain":
+    default:
+      return { label: "Tutor’da telafi et", view: "chat" };
+  }
+}
+
+function planAction(action?: string | null): { label: string; view: GuidanceActionView } {
+  switch ((action ?? "").toLowerCase()) {
+    case "wiki_review":
+      return { label: "Wiki’den tekrar et", view: "wiki" };
+    case "practice_quiz":
+      return { label: "Pratik çöz", view: "practice" };
+    case "source_check":
+      return { label: "Kaynakları kontrol et", view: "sources" };
+    case "prerequisite_review":
+      return { label: "Ön koşulu tekrar et", view: "wiki" };
+    case "diagnostic_check":
+      return { label: "Kısa seviye tespiti yap", view: "practice" };
+    case "continue_lesson":
+      return { label: "Derse devam et", view: "chat" };
     default:
       return { label: "Tutor’da telafi et", view: "chat" };
   }
@@ -728,6 +748,250 @@ function StudentProfileSummary({ memory }: { memory?: LearningMemory | null }) {
   );
 }
 
+function levelLabel(level?: string | null): string {
+  switch ((level ?? "").toLowerCase()) {
+    case "advanced":
+      return "İleri";
+    case "intermediate":
+      return "Orta";
+    case "foundation":
+    case "beginner":
+      return "Başlangıç";
+    default:
+      return "Bilinmiyor";
+  }
+}
+
+function goalModeLabel(goalType?: string | null): string {
+  switch ((goalType ?? "").toLowerCase()) {
+    case "exam":
+      return "Sınav";
+    case "career":
+      return "Kariyer";
+    default:
+      return "Genel öğrenme";
+  }
+}
+
+function AdaptiveStudyPlanCard({
+  plan,
+  onViewChange,
+  onPreview,
+  previewLoading,
+  previewError,
+}: {
+  plan?: AdaptiveStudyPlan | null;
+  onViewChange: (view: string) => void;
+  onPreview: (request: AdaptiveStudyPlanRequestDto) => void;
+  previewLoading: boolean;
+  previewError?: string | null;
+}) {
+  const [goalType, setGoalType] = useState<AdaptiveStudyPlanRequestDto["goalType"]>("general_learning");
+  const [weeklyAvailableMinutes, setWeeklyAvailableMinutes] = useState(180);
+  const [currentLevel, setCurrentLevel] = useState("unknown");
+  const [targetDate, setTargetDate] = useState("");
+  const [examName, setExamName] = useState("KPSS");
+  const [careerTarget, setCareerTarget] = useState("Backend Developer");
+
+  const submitPreview = () => {
+    onPreview({
+      goalType,
+      weeklyAvailableMinutes,
+      currentLevel,
+      targetDate: targetDate || null,
+      examName: goalType === "exam" ? examName : null,
+      careerTarget: goalType === "career" ? careerTarget : null,
+      priorityTopicIds: [],
+      prioritySkills: [],
+    });
+  };
+
+  return (
+    <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+            <Compass className="h-3.5 w-3.5" />
+            Çalışma planı
+          </p>
+          <h2 className="mt-1 text-base font-extrabold text-[#172033]">
+            {plan?.summary || "Bugün için kısa ve güvenli bir çalışma rotası hazırlanıyor."}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-[#667085]">
+            Bu plan mevcut konu ağına ve öğrenme sinyallerine göre hazırlanır; başarı veya puan garantisi vermez. İşe giriş garantisi değildir.
+          </p>
+        </div>
+        <span className="rounded-full bg-[#dcecf3]/75 px-3 py-1 text-[10px] font-bold text-[#2d5870]">
+          {plan?.windowDays ?? 7} günlük rota
+        </span>
+      </div>
+
+      <div className="grid gap-3">
+        {(plan?.items?.length ?? 0) === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#526d82]/16 bg-white/58 px-4 py-3 text-xs leading-6 text-[#667085]">
+            Plan üretmek için haftalık çalışma süresi ve hedef bilgisi yeterli olmalı.
+          </div>
+        ) : (
+          plan!.items.slice(0, 5).map((item, index) => {
+            const action = planAction(item.actionType);
+            return (
+              <div key={`${item.title}-${index}`} className="rounded-2xl border border-[#526d82]/12 bg-white/62 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#667085]">
+                      {index + 1}. adım · {item.estimatedMinutes} dk · {confidenceStatusLabel(item.confidenceStatus)}
+                    </p>
+                    <h3 className="mt-1 text-sm font-black text-[#172033]">{item.title}</h3>
+                  </div>
+                  <button
+                    onClick={() => onViewChange(action.view)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-[#f7f4ec]/78 px-3 py-2 text-[11px] font-black text-[#172033] transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                  >
+                    {action.label}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="mt-3 rounded-xl bg-[#eef1f3]/66 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#52768a]">Neden bu adım?</p>
+                  <p className="mt-1 text-xs leading-5 text-[#667085]">{item.reason}</p>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {(plan?.warnings?.length ?? 0) > 0 && (
+        <div className="mt-4 rounded-2xl border border-[#e8c46f]/30 bg-[#fff8ee]/76 px-4 py-3">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#8a641f]">Plan uyarıları</p>
+          <ul className="space-y-1 text-xs leading-5 text-[#667085]">
+            {plan!.warnings.slice(0, 3).map((warning) => (
+              <li key={warning}>• {warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[0.95fr_1.25fr]">
+        <div className="rounded-2xl border border-[#526d82]/12 bg-white/58 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#667085]">Seviye sinyali</p>
+          <p className="mt-2 text-xs leading-5 text-[#667085]">
+            Beyan: <span className="font-bold text-[#172033]">{levelLabel(plan?.diagnostic?.intake?.selfDeclaredLevel)}</span> · Gözlenen:{" "}
+            <span className="font-bold text-[#172033]">{levelLabel(plan?.diagnostic?.intake?.observedLevel)}</span>
+          </p>
+          <p className="mt-2 text-xs leading-5 text-[#667085]">
+            {plan?.diagnostic?.shouldRunDiagnostic
+              ? "Kısa seviye tespiti önerilir; kullanıcı beyanı tek gerçek kabul edilmez."
+              : plan?.diagnostic?.userSafeReason || "Mevcut sinyaller plan için yeterli görünüyor."}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[#526d82]/12 bg-white/58 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#52768a]">Hedef önizleme</p>
+              <p className="mt-1 text-xs leading-5 text-[#667085]">
+                {goalModeLabel(goalType)} modu kayıt yapmadan sadece plan önizlemesi üretir.
+              </p>
+            </div>
+            <span className="rounded-full bg-[#eef1f3]/78 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+              Persistence yok
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["general_learning", "Genel"],
+              ["exam", "Sınav"],
+              ["career", "Kariyer"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setGoalType(value as AdaptiveStudyPlanRequestDto["goalType"])}
+                className={`rounded-xl border px-3 py-2 text-[11px] font-black transition focus:outline-none focus:ring-2 focus:ring-[#9ec7d9] ${
+                  goalType === value
+                    ? "border-[#52768a]/35 bg-[#dcecf3]/76 text-[#172033]"
+                    : "border-[#526d82]/12 bg-[#f7f9fa]/55 text-[#667085] hover:bg-white/70 hover:text-[#172033]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="text-[11px] font-bold text-[#667085]">
+              Haftalık süre
+              <input
+                type="number"
+                min={0}
+                value={weeklyAvailableMinutes}
+                onChange={(event) => setWeeklyAvailableMinutes(Number(event.target.value))}
+                className="mt-1 w-full rounded-xl border border-[#526d82]/14 bg-white/80 px-3 py-2 text-xs font-bold text-[#172033] outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+              />
+            </label>
+            <label className="text-[11px] font-bold text-[#667085]">
+              Mevcut seviye
+              <select
+                value={currentLevel}
+                onChange={(event) => setCurrentLevel(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-[#526d82]/14 bg-white/80 px-3 py-2 text-xs font-bold text-[#172033] outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+              >
+                <option value="unknown">Emin değilim</option>
+                <option value="foundation">Başlangıç</option>
+                <option value="intermediate">Orta</option>
+                <option value="advanced">İleri</option>
+              </select>
+            </label>
+            <label className="text-[11px] font-bold text-[#667085]">
+              Hedef tarih
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(event) => setTargetDate(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-[#526d82]/14 bg-white/80 px-3 py-2 text-xs font-bold text-[#172033] outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+              />
+            </label>
+            {goalType === "exam" && (
+              <label className="text-[11px] font-bold text-[#667085]">
+                Sınav adı
+                <input
+                  value={examName}
+                  onChange={(event) => setExamName(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#526d82]/14 bg-white/80 px-3 py-2 text-xs font-bold text-[#172033] outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                />
+              </label>
+            )}
+            {goalType === "career" && (
+              <label className="text-[11px] font-bold text-[#667085]">
+                Kariyer hedefi
+                <input
+                  value={careerTarget}
+                  onChange={(event) => setCareerTarget(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#526d82]/14 bg-white/80 px-3 py-2 text-xs font-bold text-[#172033] outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+                />
+              </label>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={submitPreview}
+              disabled={previewLoading}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] disabled:opacity-55"
+            >
+              {previewLoading ? "Plan hazırlanıyor" : "Planı hedefe göre güncelle"}
+            </button>
+            {previewError && <span className="text-xs font-bold text-[#8a641f]">{previewError}</span>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function DashboardPanel({ topics, onViewChange, mode = "today" }: DashboardPanelProps) {
   const { t } = useLanguage();
   const { attempts: sessionAttempts } = useQuizHistory(); // For local feedback
@@ -739,6 +1003,9 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const [today, setToday] = useState<DashboardTodayDto | null>(null);
   const [gamification, setGamification] = useState<ApiGamification | null>(null);
   const [loading, setLoading] = useState(true);
+  const [customPlan, setCustomPlan] = useState<AdaptiveStudyPlanDto | null>(null);
+  const [planPreviewLoading, setPlanPreviewLoading] = useState(false);
+  const [planPreviewError, setPlanPreviewError] = useState<string | null>(null);
   const [studyFocusPreference, setStudyFocusPreference] = useState(() => {
     return localStorage.getItem("orka_study_focus") || "general";
   });
@@ -811,6 +1078,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const sourceHealthDetail = today?.sourceHealth?.userSafeDetail || "Kaynak ekledikçe Wiki ve Tutor daha güvenli cevap verir.";
   const sourceCoverageCoach = deriveSourceCoverageCoach(today?.sourceHealth);
   const learningMemory = today?.learningMemory ?? null;
+  const adaptiveStudyPlan = customPlan ?? today?.adaptiveStudyPlan ?? null;
   const activeLessonTopicId =
     today?.coordinationScope?.activeLessonTopicId ??
     today?.coordinationHealth?.activeLessonTopicId ??
@@ -843,6 +1111,19 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
   const handleStudyFocusChange = (focusId: string) => {
     setStudyFocusPreference(focusId);
     localStorage.setItem("orka_study_focus", focusId);
+  };
+
+  const handleAdaptivePlanPreview = async (request: AdaptiveStudyPlanRequestDto) => {
+    setPlanPreviewLoading(true);
+    setPlanPreviewError(null);
+    try {
+      const plan = await DashboardAPI.previewAdaptiveStudyPlan(request);
+      setCustomPlan(plan);
+    } catch {
+      setPlanPreviewError("Plan önizlemesi alınamadı. Lütfen tekrar dene.");
+    } finally {
+      setPlanPreviewLoading(false);
+    }
   };
 
   return (
@@ -1026,6 +1307,14 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
               </div>
             </div>
           </section>
+
+          <AdaptiveStudyPlanCard
+            plan={adaptiveStudyPlan}
+            onViewChange={onViewChange}
+            onPreview={handleAdaptivePlanPreview}
+            previewLoading={planPreviewLoading}
+            previewError={planPreviewError}
+          />
 
           <CoordinationHealthPanel health={today?.coordinationHealth} />
 

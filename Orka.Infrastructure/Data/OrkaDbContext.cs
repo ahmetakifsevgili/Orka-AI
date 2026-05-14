@@ -94,6 +94,28 @@ public class OrkaDbContext : DbContext
     public DbSet<StandardsExportItem> StandardsExportItems { get; set; } = null!;
     public DbSet<StandardsValidationRun> StandardsValidationRuns { get; set; } = null!;
     public DbSet<StandardsValidationItem> StandardsValidationItems { get; set; } = null!;
+    public DbSet<ExamDefinition> ExamDefinitions { get; set; } = null!;
+    public DbSet<ExamVariant> ExamVariants { get; set; } = null!;
+    public DbSet<ExamSection> ExamSections { get; set; } = null!;
+    public DbSet<ExamSubject> ExamSubjects { get; set; } = null!;
+    public DbSet<ExamTopic> ExamTopics { get; set; } = null!;
+    public DbSet<ExamOutcome> ExamOutcomes { get; set; } = null!;
+    public DbSet<ExamScoringRule> ExamScoringRules { get; set; } = null!;
+    public DbSet<ExamTimeRule> ExamTimeRules { get; set; } = null!;
+    public DbSet<ExamContentPack> ExamContentPacks { get; set; } = null!;
+    public DbSet<QuestionItem> QuestionItems { get; set; } = null!;
+    public DbSet<QuestionOption> QuestionOptions { get; set; } = null!;
+    public DbSet<QuestionExplanation> QuestionExplanations { get; set; } = null!;
+    public DbSet<QuestionTag> QuestionTags { get; set; } = null!;
+    public DbSet<QuestionOutcomeLink> QuestionOutcomeLinks { get; set; } = null!;
+    public DbSet<QuestionImportPreview> QuestionImportPreviews { get; set; } = null!;
+    public DbSet<QuestionImportPreviewItem> QuestionImportPreviewItems { get; set; } = null!;
+    public DbSet<CentralExamPracticeAttempt> CentralExamPracticeAttempts { get; set; } = null!;
+    public DbSet<CentralExamPracticeAnswer> CentralExamPracticeAnswers { get; set; } = null!;
+    public DbSet<CentralExamDenemeBlueprint> CentralExamDenemeBlueprints { get; set; } = null!;
+    public DbSet<CentralExamDenemeBlueprintSection> CentralExamDenemeBlueprintSections { get; set; } = null!;
+    public DbSet<CentralExamDenemeAttempt> CentralExamDenemeAttempts { get; set; } = null!;
+    public DbSet<CentralExamDenemeAnswer> CentralExamDenemeAnswers { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2462,5 +2484,817 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<StandardsValidationItem>()
             .HasIndex(i => new { i.StandardsValidationRunId, i.StandardFamily, i.Severity });
+
+        modelBuilder.Entity<ExamDefinition>()
+            .HasOne(e => e.OwnerUser)
+            .WithMany()
+            .HasForeignKey(e => e.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.ExamFamily)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.Visibility)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .Property(e => e.VerifiedBy)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamDefinition>()
+            .HasIndex(e => new { e.OwnerUserId, e.Code, e.IsDeleted });
+
+        modelBuilder.Entity<ExamDefinition>()
+            .HasIndex(e => new { e.Code, e.Visibility, e.IsDeleted });
+
+        modelBuilder.Entity<ExamVariant>()
+            .HasOne(v => v.ExamDefinition)
+            .WithMany(d => d.Variants)
+            .HasForeignKey(v => v.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamVariant>()
+            .Property(v => v.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamVariant>()
+            .Property(v => v.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamVariant>()
+            .HasIndex(v => new { v.ExamDefinitionId, v.Code, v.IsDeleted });
+
+        modelBuilder.Entity<ExamSection>()
+            .HasOne(s => s.ExamVariant)
+            .WithMany(v => v.Sections)
+            .HasForeignKey(s => s.ExamVariantId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamSection>()
+            .Property(s => s.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamSection>()
+            .Property(s => s.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamSection>()
+            .HasIndex(s => new { s.ExamVariantId, s.Code, s.IsDeleted });
+
+        modelBuilder.Entity<ExamSubject>()
+            .HasOne(s => s.ExamSection)
+            .WithMany(section => section.Subjects)
+            .HasForeignKey(s => s.ExamSectionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamSubject>()
+            .Property(s => s.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamSubject>()
+            .Property(s => s.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamSubject>()
+            .HasIndex(s => new { s.ExamSectionId, s.Code, s.IsDeleted });
+
+        modelBuilder.Entity<ExamTopic>()
+            .HasOne(t => t.ExamSubject)
+            .WithMany(s => s.Topics)
+            .HasForeignKey(t => t.ExamSubjectId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamTopic>()
+            .HasOne(t => t.ParentExamTopic)
+            .WithMany(t => t.Children)
+            .HasForeignKey(t => t.ParentExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamTopic>()
+            .Property(t => t.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamTopic>()
+            .Property(t => t.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamTopic>()
+            .HasIndex(t => new { t.ExamSubjectId, t.ParentExamTopicId, t.Code, t.IsDeleted });
+
+        modelBuilder.Entity<ExamOutcome>()
+            .HasOne(o => o.ExamTopic)
+            .WithMany(t => t.Outcomes)
+            .HasForeignKey(o => o.ExamTopicId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamOutcome>()
+            .Property(o => o.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamOutcome>()
+            .Property(o => o.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamOutcome>()
+            .HasIndex(o => new { o.ExamTopicId, o.Code, o.IsDeleted });
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .HasOne(r => r.ExamVariant)
+            .WithMany(v => v.ScoringRules)
+            .HasForeignKey(r => r.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .HasOne(r => r.ExamSection)
+            .WithMany(s => s.ScoringRules)
+            .HasForeignKey(r => r.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .Property(r => r.RuleType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .Property(r => r.Label)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .Property(r => r.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ExamScoringRule>()
+            .HasIndex(r => new { r.ExamVariantId, r.ExamSectionId, r.RuleType, r.IsDeleted });
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .HasOne(r => r.ExamVariant)
+            .WithMany(v => v.TimeRules)
+            .HasForeignKey(r => r.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .HasOne(r => r.ExamSection)
+            .WithMany(s => s.TimeRules)
+            .HasForeignKey(r => r.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .Property(r => r.RuleType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .Property(r => r.Label)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .Property(r => r.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ExamTimeRule>()
+            .HasIndex(r => new { r.ExamVariantId, r.ExamSectionId, r.RuleType, r.IsDeleted });
+
+        modelBuilder.Entity<ExamContentPack>()
+            .HasOne(p => p.ExamDefinition)
+            .WithMany(d => d.ContentPacks)
+            .HasForeignKey(p => p.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .HasOne(p => p.OwnerUser)
+            .WithMany()
+            .HasForeignKey(p => p.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .HasOne(p => p.ImportedByUser)
+            .WithMany()
+            .HasForeignKey(p => p.ImportedByUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.Visibility)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.SourceOrigin)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.LicenseStatus)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .Property(p => p.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ExamContentPack>()
+            .HasIndex(p => new { p.ExamDefinitionId, p.OwnerUserId, p.Code, p.IsDeleted });
+
+        modelBuilder.Entity<ExamContentPack>()
+            .HasIndex(p => new { p.ImportedByUserId, p.CreatedAt });
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.OwnerUser)
+            .WithMany()
+            .HasForeignKey(q => q.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(q => q.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamVariant)
+            .WithMany()
+            .HasForeignKey(q => q.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamSection)
+            .WithMany()
+            .HasForeignKey(q => q.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamSubject)
+            .WithMany()
+            .HasForeignKey(q => q.ExamSubjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamTopic)
+            .WithMany()
+            .HasForeignKey(q => q.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(q => q.ExamOutcomeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.QuestionType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.Difficulty)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.CognitiveSkill)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.LicenseStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.SourceOrigin)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.OwnerUserId, q.ExamDefinitionId, q.QualityStatus, q.IsDeleted });
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.ExamDefinitionId, q.ExamVariantId, q.ExamSectionId, q.ExamSubjectId, q.ExamTopicId, q.ExamOutcomeId });
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.QuestionType, q.Difficulty, q.QualityStatus, q.IsDeleted });
+
+        modelBuilder.Entity<QuestionOption>()
+            .HasOne(o => o.QuestionItem)
+            .WithMany(q => q.Options)
+            .HasForeignKey(o => o.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionOption>()
+            .Property(o => o.OptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<QuestionOption>()
+            .HasIndex(o => new { o.QuestionItemId, o.OptionKey });
+
+        modelBuilder.Entity<QuestionExplanation>()
+            .HasOne(e => e.QuestionItem)
+            .WithMany(q => q.Explanations)
+            .HasForeignKey(e => e.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionExplanation>()
+            .Property(e => e.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionExplanation>()
+            .Property(e => e.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<QuestionExplanation>()
+            .Property(e => e.Visibility)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionExplanation>()
+            .HasIndex(e => new { e.QuestionItemId, e.Visibility, e.IsDeleted });
+
+        modelBuilder.Entity<QuestionTag>()
+            .HasOne(t => t.QuestionItem)
+            .WithMany(q => q.Tags)
+            .HasForeignKey(t => t.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionTag>()
+            .Property(t => t.Tag)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionTag>()
+            .HasIndex(t => new { t.QuestionItemId, t.Tag });
+
+        modelBuilder.Entity<QuestionOutcomeLink>()
+            .HasOne(l => l.QuestionItem)
+            .WithMany(q => q.OutcomeLinks)
+            .HasForeignKey(l => l.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionOutcomeLink>()
+            .HasOne(l => l.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(l => l.ExamOutcomeId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionOutcomeLink>()
+            .Property(l => l.LinkStrength)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<QuestionOutcomeLink>()
+            .HasIndex(l => new { l.QuestionItemId, l.ExamOutcomeId, l.IsDeleted });
+
+        modelBuilder.Entity<QuestionOutcomeLink>()
+            .HasIndex(l => new { l.ExamOutcomeId, l.IsPrimary, l.IsDeleted });
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .HasOne(p => p.OwnerUser)
+            .WithMany()
+            .HasForeignKey(p => p.OwnerUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .Property(p => p.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .HasIndex(p => new { p.OwnerUserId, p.Status, p.ExpiresAt, p.IsDeleted });
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .HasOne(i => i.Preview)
+            .WithMany(p => p.Items)
+            .HasForeignKey(i => i.QuestionImportPreviewId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .Property(i => i.ExternalId)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .Property(i => i.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .Property(i => i.IssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .Property(i => i.NormalizedQuestionJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .HasIndex(i => new { i.QuestionImportPreviewId, i.Status, i.IsDeleted });
+
+        modelBuilder.Entity<QuestionImportPreviewItem>()
+            .HasIndex(i => new { i.QuestionImportPreviewId, i.ExternalId });
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(a => a.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.ExamVariant)
+            .WithMany()
+            .HasForeignKey(a => a.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.ExamSection)
+            .WithMany()
+            .HasForeignKey(a => a.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.ExamSubject)
+            .WithMany()
+            .HasForeignKey(a => a.ExamSubjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasOne(a => a.ExamTopic)
+            .WithMany()
+            .HasForeignKey(a => a.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.ExamCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.VariantCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.SectionCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.SubjectCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .Property(a => a.TopicCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasIndex(a => new { a.UserId, a.Status, a.StartedAt, a.IsDeleted });
+
+        modelBuilder.Entity<CentralExamPracticeAttempt>()
+            .HasIndex(a => new { a.UserId, a.ExamDefinitionId, a.ExamTopicId, a.StartedAt });
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasOne(a => a.PracticeAttempt)
+            .WithMany(a => a.Answers)
+            .HasForeignKey(a => a.PracticeAttemptId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasOne(a => a.QuestionItem)
+            .WithMany()
+            .HasForeignKey(a => a.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasOne(a => a.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(a => a.ExamOutcomeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasOne(a => a.ExamTopic)
+            .WithMany()
+            .HasForeignKey(a => a.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.SelectedOptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.CorrectOptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.OptionKeysJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.TopicCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.OutcomeCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.QuestionType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.Difficulty)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .Property(a => a.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasIndex(a => new { a.PracticeAttemptId, a.QuestionItemId });
+
+        modelBuilder.Entity<CentralExamPracticeAnswer>()
+            .HasIndex(a => new { a.ExamTopicId, a.ExamOutcomeId, a.IsCorrect, a.IsBlank });
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .HasOne(b => b.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(b => b.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .HasOne(b => b.ExamVariant)
+            .WithMany()
+            .HasForeignKey(b => b.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .HasOne(b => b.OwnerUser)
+            .WithMany()
+            .HasForeignKey(b => b.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .Property(b => b.Code)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .Property(b => b.Name)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .Property(b => b.Visibility)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .Property(b => b.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprint>()
+            .HasIndex(b => new { b.Code, b.OwnerUserId, b.IsDeleted });
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .HasOne(s => s.Blueprint)
+            .WithMany(b => b.Sections)
+            .HasForeignKey(s => s.BlueprintId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .HasOne(s => s.ExamSection)
+            .WithMany()
+            .HasForeignKey(s => s.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .HasOne(s => s.ExamSubject)
+            .WithMany()
+            .HasForeignKey(s => s.ExamSubjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .HasOne(s => s.ExamTopic)
+            .WithMany()
+            .HasForeignKey(s => s.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .Property(s => s.SectionCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .Property(s => s.SubjectCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .Property(s => s.TopicCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .Property(s => s.DifficultyMixJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>()
+            .HasIndex(s => new { s.BlueprintId, s.SortOrder, s.IsDeleted });
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasOne(a => a.Blueprint)
+            .WithMany()
+            .HasForeignKey(a => a.BlueprintId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasOne(a => a.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(a => a.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasOne(a => a.ExamVariant)
+            .WithMany()
+            .HasForeignKey(a => a.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .Property(a => a.ExamCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .Property(a => a.VariantCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .Property(a => a.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasIndex(a => new { a.UserId, a.Status, a.StartedAt, a.IsDeleted });
+
+        modelBuilder.Entity<CentralExamDenemeAttempt>()
+            .HasIndex(a => new { a.UserId, a.BlueprintId, a.StartedAt });
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.DenemeAttempt)
+            .WithMany(a => a.Answers)
+            .HasForeignKey(a => a.DenemeAttemptId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.QuestionItem)
+            .WithMany()
+            .HasForeignKey(a => a.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.ExamSection)
+            .WithMany()
+            .HasForeignKey(a => a.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.ExamSubject)
+            .WithMany()
+            .HasForeignKey(a => a.ExamSubjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.ExamTopic)
+            .WithMany()
+            .HasForeignKey(a => a.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasOne(a => a.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(a => a.ExamOutcomeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.SelectedOptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.CorrectOptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.OptionKeysJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.SectionCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.SubjectCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.TopicCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.OutcomeCode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.QuestionType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.Difficulty)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .Property(a => a.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasIndex(a => new { a.DenemeAttemptId, a.QuestionItemId });
+
+        modelBuilder.Entity<CentralExamDenemeAnswer>()
+            .HasIndex(a => new { a.ExamSectionId, a.ExamSubjectId, a.ExamTopicId, a.ExamOutcomeId });
     }
 }

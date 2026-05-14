@@ -379,6 +379,8 @@ public sealed class TutorWorkingMemoryService : ITutorWorkingMemoryService
 
 public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
 {
+    private static readonly JsonSerializerOptions LearningLoopJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly OrkaDbContext _db;
     private readonly ILearnerProfileService _learnerProfile;
     private readonly ITutorWorkingMemoryService _workingMemory;
@@ -440,11 +442,16 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
                 .FirstOrDefaultAsync(ct);
         }
 
-        var activeKey = FirstNonEmpty(
+        var activeKeyCandidate = FirstNonEmpty(
             policyContext.ActiveConceptKey,
             ktStates.FirstOrDefault()?.ConceptKey,
             masteries.FirstOrDefault()?.ConceptKey,
             firstGraphConceptKey);
+        var learningLoopSignal = await LoadLearningLoopSignalAsync(userId, topicId, activeKeyCandidate, ct);
+        var activeKey = FirstNonEmpty(
+            policyContext.ActiveConceptKey,
+            activeKeyCandidate,
+            learningLoopSignal?.ConceptKey);
 
         if (graph != null && !string.IsNullOrWhiteSpace(activeKey))
         {
@@ -460,6 +467,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             ktStates.FirstOrDefault(s => s.ConceptKey == activeKey)?.Label,
             masteries.FirstOrDefault(m => m.ConceptKey == activeKey)?.Label,
             activeGraphConceptLabel,
+            learningLoopSignal?.Label,
             activeKey);
 
         var activeKt = ktStates.FirstOrDefault(s => s.ConceptKey == activeKey);
@@ -467,7 +475,17 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
         var profile = await _learnerProfile.BuildOrUpdateAsync(userId, topicId, sessionId, userMessage, learningSignalContext, ideContext, ct);
         var masteryProbability = activeKt?.MasteryProbability ?? (activeMastery?.MasteryScore / 100m);
         var confidence = activeKt?.Confidence ?? activeMastery?.Confidence;
-        var learnerState = BuildLearnerState(policyContext.LearnerState, masteryProbability, confidence, profile.AffectiveState, profile.CognitiveLoad);
+        var learnerState = ApplyLearningLoopState(
+            BuildLearnerState(policyContext.LearnerState, masteryProbability, confidence, profile.AffectiveState, profile.CognitiveLoad),
+            learningLoopSignal);
+        var remediationNeed = FirstNonEmpty(activeKt?.RemediationNeed, activeMastery?.RemediationNeed, learningLoopSignal?.RemediationNeed, "unknown");
+        var recentMistakes = policyContext.RecentMistakes
+            .Concat(learningLoopSignal?.Hints ?? Array.Empty<string>())
+            .Concat(masteries.Where(m => m.MasteryScore < 50).Select(m => m.Label))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
 
         var state = new TutorTurnStateDto
         {
@@ -482,19 +500,23 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             LearnerState = learnerState,
             MasteryProbability = masteryProbability,
             Confidence = confidence,
-            RemediationNeed = FirstNonEmpty(activeKt?.RemediationNeed, activeMastery?.RemediationNeed, "unknown"),
-            PracticeReadiness = FirstNonEmpty(activeKt?.PracticeReadiness, activeMastery?.PracticeReadiness, "guided"),
+            RemediationNeed = remediationNeed,
+            PracticeReadiness = FirstNonEmpty(activeKt?.PracticeReadiness, activeMastery?.PracticeReadiness, learningLoopSignal?.PracticeReadiness, "guided"),
             StyleMode = profile.PreferredStyleMode,
             AffectiveState = profile.AffectiveState,
             CognitiveLoad = profile.CognitiveLoad,
             GroundingStatus = policyContext.GroundingStatus,
             SourceEvidenceCount = policyContext.SourceEvidenceCount + CountContextEvidence(notebookContext, wikiContext),
             EvidenceQuality = policyContext.EvidenceQuality,
+            MisconceptionSignal = learningLoopSignal?.Misconception,
+            LearningSignalConfidence = learningLoopSignal?.Confidence,
+            RemediationSeed = learningLoopSignal?.RemediationSeed,
+            LearningLoopStatus = learningLoopSignal?.Status ?? "signal_pending",
             DirectAnswerRisk = policyContext.DirectAnswerRisk || TutorSignalHeuristics.ContainsAny(TutorSignalHeuristics.Normalize(userMessage), "cevabı ver", "direkt cevap", "sonucu söyle", "çözümü ver"),
             HasIdeContext = !string.IsNullOrWhiteSpace(ideContext),
             HasNotebookContext = !string.IsNullOrWhiteSpace(notebookContext),
             HasWikiContext = !string.IsNullOrWhiteSpace(wikiContext),
-            RecentMistakes = policyContext.RecentMistakes.Concat(masteries.Where(m => m.MasteryScore < 50).Select(m => m.Label)).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().Take(8).ToList(),
+            RecentMistakes = recentMistakes,
             SourceEvidence = policyContext.SourceEvidence.Take(8).ToList(),
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -540,7 +562,8 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
                 ["activeConceptKey"] = state.ActiveConceptKey,
                 ["learnerState"] = state.LearnerState,
                 ["styleMode"] = state.StyleMode,
-                ["groundingStatus"] = state.GroundingStatus
+                ["groundingStatus"] = state.GroundingStatus,
+                ["learningLoopStatus"] = state.LearningLoopStatus
             }, ct);
         }
 
@@ -573,13 +596,108 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             - tutorResponseMode: {state.TutorResponseMode ?? "standard"}
             - evidencePolicy: {state.EvidencePolicy ?? "unknown_source_caution"}
             - personalizationMode: {state.PersonalizationMode ?? "unknown"}; masteryBasis: {state.MasteryBasis ?? "default"}
+            - learningLoopStatus: {state.LearningLoopStatus}
+            - misconceptionSignal: {state.MisconceptionSignal?.UserSafeLabel ?? "none"}
+            - learningSignalConfidence: {state.LearningSignalConfidence?.Status ?? "unknown"}
+            - remediationSeed: {state.RemediationSeed?.FirstAction ?? "none"} / {state.RemediationSeed?.Reason ?? "none"}
             - directAnswerRisk: {state.DirectAnswerRisk}
             - recentMistakes: {(state.RecentMistakes.Count == 0 ? "none" : string.Join("; ", state.RecentMistakes))}
 
             [TUTOR STATE KURALI]
             Bu turda cevabi yukaridaki aktif kavram, mastery/confidence ve duygu-yuk sinyaline gore kur. 
             Kaynak yoksa kaynak iddiasinda bulunma. Evidence limited ise temkinli ve kisa konus; confidence dusukse "ogrendin" deme; kanit yetersiz modunda mikro kontrol sor.
+            learningLoopStatus remediation_ready ise bu turu profesyonel telafi turu olarak ele al: once yanilgi ihtimalini nazikce sinirla, sonra remediationSeed aksiyonuna gore kisa ve adim adim duzeltme yap.
             """;
+    }
+
+    private async Task<LearningLoopSignalProjection?> LoadLearningLoopSignalAsync(
+        Guid userId,
+        Guid? topicId,
+        string? activeConceptKey,
+        CancellationToken ct)
+    {
+        var query = _db.LearningSignals
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.PayloadJson != null);
+        query = topicId.HasValue
+            ? query.Where(s => s.TopicId == topicId.Value)
+            : query.Where(s => s.TopicId == null);
+
+        var rows = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(30)
+            .Select(s => new { s.PayloadJson, s.CreatedAt })
+            .ToListAsync(ct);
+
+        var activeKey = NormalizeKey(activeConceptKey);
+        return rows
+            .Select(row => ParseLearningLoopSignal(row.PayloadJson, row.CreatedAt))
+            .Where(signal => signal != null)
+            .Select(signal => signal!)
+            .Where(signal => signal.Status is "remediation_ready" or "observed_only")
+            .Where(signal => string.IsNullOrWhiteSpace(activeKey) || NormalizeKey(signal.ConceptKey) == activeKey)
+            .OrderByDescending(signal => signal.Status == "remediation_ready")
+            .ThenByDescending(signal => signal.CreatedAt)
+            .FirstOrDefault();
+    }
+
+    private static LearningLoopSignalProjection? ParseLearningLoopSignal(string? payloadJson, DateTime createdAt)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<LearningLoopSignalPayload>(payloadJson, LearningLoopJsonOptions);
+            if (payload?.LearningSignalConfidence is null && payload?.RemediationSeed is null && payload?.MisconceptionSignal is null)
+                return null;
+
+            var status = payload.LearningSignalConfidence?.Status ?? payload.RemediationSeed?.ConfidenceStatus;
+            var normalizedStatus = NormalizeKey(status);
+            var loopStatus = normalizedStatus switch
+            {
+                "usable" => "remediation_ready",
+                "observed_only" => "observed_only",
+                _ => "signal_pending"
+            };
+            var conceptKey = FirstNonEmpty(payload.RemediationSeed?.ConceptKey, payload.MisconceptionSignal?.ConceptKey);
+            var label = FirstNonEmpty(payload.RemediationSeed?.Label, payload.MisconceptionSignal?.Label, payload.MisconceptionSignal?.UserSafeLabel);
+            var hints = new[]
+                {
+                    payload.RemediationSeed?.Label,
+                    payload.RemediationSeed?.UserSafeMisconceptionLabel,
+                    payload.MisconceptionSignal?.UserSafeLabel,
+                    payload.MisconceptionSignal?.SafeHint
+                }
+                .Where(h => !string.IsNullOrWhiteSpace(h))
+                .Select(h => h!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(4)
+                .ToArray();
+
+            return new LearningLoopSignalProjection(
+                payload.MisconceptionSignal,
+                payload.LearningSignalConfidence,
+                payload.RemediationSeed,
+                loopStatus,
+                conceptKey,
+                label,
+                loopStatus == "remediation_ready" ? "high" : "unknown",
+                "guided",
+                hints,
+                createdAt);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string ApplyLearningLoopState(string learnerState, LearningLoopSignalProjection? signal)
+    {
+        if (signal?.Status == "remediation_ready")
+            return "needs_remediation";
+        return string.IsNullOrWhiteSpace(learnerState) ? "unknown" : learnerState;
     }
 
     private static int CountContextEvidence(string notebookContext, string wikiContext)
@@ -601,6 +719,28 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
 
     private static string FirstNonEmpty(params string?[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
+
+    private static string NormalizeKey(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+
+    private sealed class LearningLoopSignalPayload
+    {
+        public MisconceptionSignalDto? MisconceptionSignal { get; set; }
+        public LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
+        public RemediationSeedDto? RemediationSeed { get; set; }
+    }
+
+    private sealed record LearningLoopSignalProjection(
+        MisconceptionSignalDto? Misconception,
+        LearningSignalConfidenceDto? Confidence,
+        RemediationSeedDto? RemediationSeed,
+        string Status,
+        string ConceptKey,
+        string Label,
+        string RemediationNeed,
+        string PracticeReadiness,
+        IReadOnlyList<string> Hints,
+        DateTime CreatedAt);
 
     private static string Hash(string text)
     {
@@ -718,6 +858,9 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             plan.PersonalizationMode,
             plan.MasteryBasis,
             plan.WeakConceptHints,
+            turnState.LearningLoopStatus,
+            misconceptionSignal = turnState.MisconceptionSignal?.UserSafeLabel,
+            remediationAction = turnState.RemediationSeed?.FirstAction,
             plan.NextCheckPrompt
         }, ct);
 

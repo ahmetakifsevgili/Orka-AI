@@ -266,8 +266,16 @@ git status --short
 ## Codex Skills Gate
 
 Feature isleri `docs/project-state/current-roadmap.md` ve `docs/codex-skills/`
-anayasalarini takip eder. Stage 4 small/medium feature packs kapandi; current
-phase Stage 5 Production-ready enterprise hardening / scalability plan'dir.
+anayasalarini takip eder. Stage 6B Central Exams kapandi; current phase
+post-6B productization / frontend-content readiness'tir.
+
+Stage 6B closure guard:
+
+- Central Exams Orka icinde entegre ogrenci-facing modul olarak kalir.
+- KPSS calisan ilk sinavdir; YKS/LGS/YDS safe scaffold / coming-soon kalir.
+- Official curriculum / OSYM / MEB claim sadece verified source metadata ile olabilir.
+- Success guarantee, copyrighted/scraped content assumption, PDF/OCR/NotebookLM dependency, teacher/classroom/dershane workflow ve auto-publish yoktur.
+- Generated/imported questions draft / needs_review olarak kalir; publish existing question bank validation ile yapilir.
 
 Before planning/coding:
 

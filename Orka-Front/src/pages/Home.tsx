@@ -17,6 +17,7 @@ import ChatPanel from "@/components/ChatPanel";
 import WikiMainPanel from "@/components/WikiMainPanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import DashboardPanel from "@/components/DashboardPanel";
+import CentralExamsPanel from "@/components/CentralExamsPanel";
 import InteractiveIDE from "@/components/InteractiveIDE";
 import LearningPanel from "@/components/LearningPanel";
 import SplitPane from "@/components/SplitPane";
@@ -29,7 +30,7 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress"]);
+const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress", "central-exams"]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -367,6 +368,8 @@ export default function Home() {
         return <DashboardPanel topics={topics} onViewChange={handleViewChange} />;
       case "progress":
         return <DashboardPanel topics={topics} onViewChange={handleViewChange} mode="progress" />;
+      case "central-exams":
+        return <CentralExamsPanel />;
       case "settings":
         return <SettingsPanel />;
       case "learning":

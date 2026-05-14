@@ -184,6 +184,13 @@ builder.Services.AddScoped<IDiagnosticProfileBuilder, DiagnosticProfileBuilder>(
 builder.Services.AddScoped<IConceptMasteryService, ConceptMasteryService>();
 builder.Services.AddScoped<IKnowledgeTracingService, KnowledgeTracingService>();
 builder.Services.AddScoped<ILearningMemoryService, LearningMemoryService>();
+builder.Services.AddScoped<IAdaptiveStudyPlannerService, AdaptiveStudyPlannerService>();
+builder.Services.AddScoped<IExamFrameworkService, ExamFrameworkService>();
+builder.Services.AddScoped<IQuestionBankService, QuestionBankService>();
+builder.Services.AddScoped<IQuestionImportService, QuestionImportService>();
+builder.Services.AddScoped<IQuestionDraftGenerationService, QuestionDraftGenerationService>();
+builder.Services.AddScoped<ICentralExamStudyService, CentralExamStudyService>();
+builder.Services.AddScoped<ICentralExamDenemeService, CentralExamDenemeService>();
 builder.Services.AddScoped<ILearningEventSchemaService, LearningEventSchemaService>();
 builder.Services.AddScoped<ILearningEventNormalizer, LearningEventNormalizer>();
 builder.Services.AddScoped<ITutorPolicyEngine, TutorPolicyEngine>();

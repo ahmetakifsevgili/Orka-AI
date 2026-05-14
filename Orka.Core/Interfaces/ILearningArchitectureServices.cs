@@ -165,6 +165,194 @@ public interface ILearningMemoryService
         CancellationToken ct = default);
 }
 
+public interface IAdaptiveStudyPlannerService
+{
+    Task<AdaptiveStudyPlanDto> BuildAsync(
+        Guid userId,
+        AdaptiveStudyPlanRequestDto? request,
+        LearningMemoryLiteDto? learningMemory,
+        IReadOnlyList<DashboardWeakConceptDto> weakConcepts,
+        DashboardSourceHealthDto sourceHealth,
+        DashboardActivePlanDto? activePlan,
+        int dueReviewCount,
+        IReadOnlyCollection<Guid> topicScopeIds,
+        CancellationToken ct = default);
+}
+
+public interface IExamFrameworkService
+{
+    Task<IReadOnlyList<ExamDefinitionDto>> GetDefinitionsAsync(
+        Guid userId,
+        CancellationToken ct = default);
+
+    Task<ExamDefinitionDto?> GetTreeAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<ExamDefinitionDto> ImportTreeAsync(
+        Guid userId,
+        ExamTreeImportDto request,
+        CancellationToken ct = default);
+
+    Task<ExamDefinitionDto> CreateSystemSkeletonAsync(
+        CancellationToken ct = default);
+
+    Task<ExamDefinitionDto> CreateSystemSkeletonAsync(
+        string examCode,
+        CancellationToken ct = default);
+}
+
+public interface IQuestionBankService
+{
+    Task<IReadOnlyList<QuestionItemDto>> GetQuestionsAsync(
+        Guid userId,
+        QuestionBankFilterDto filters,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> GetQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto> CreateQuestionAsync(
+        Guid userId,
+        CreateQuestionDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> UpdateQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        UpdateQuestionDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> SubmitForReviewAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> PublishQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<bool> SoftDeleteQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+}
+
+public interface IQuestionImportService
+{
+    Task<QuestionImportPreviewDto> PreviewImportAsync(
+        Guid userId,
+        QuestionImportRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportResultDto> ApproveImportAsync(
+        Guid userId,
+        QuestionImportApprovalDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto?> GetImportPreviewAsync(
+        Guid userId,
+        Guid importPreviewId,
+        CancellationToken ct = default);
+}
+
+public interface IQuestionDraftGenerationService
+{
+    Task<QuestionDraftPreviewDto> PreviewDraftGenerationAsync(
+        Guid userId,
+        QuestionDraftGenerationRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionDraftApprovalResultDto> ApproveDraftsToQuestionBankAsync(
+        Guid userId,
+        QuestionDraftApprovalDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionDraftPreviewDto?> GetDraftGenerationPreviewAsync(
+        Guid userId,
+        Guid draftPreviewId,
+        CancellationToken ct = default);
+}
+
+public interface ICentralExamStudyService
+{
+    Task<IReadOnlyList<CentralExamDto>> GetCentralExamsAsync(
+        Guid userId,
+        CancellationToken ct = default);
+
+    Task<CentralExamStudyHomeDto> GetKpssStudyHomeAsync(
+        Guid userId,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamStudyHomeDto?> GetStudyHomeAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamCountdownDto> GetKpssCountdownAsync(
+        Guid userId,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamPracticeEntryDto> GetKpssTurkceParagrafEntryAsync(
+        Guid userId,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<PracticeSessionDto> StartKpssTurkceParagrafPracticeAsync(
+        Guid userId,
+        PracticeStartRequestDto request,
+        CancellationToken ct = default);
+
+    Task<PracticeResultDto> SubmitKpssTurkceParagrafPracticeAsync(
+        Guid userId,
+        PracticeSubmitRequestDto request,
+        CancellationToken ct = default);
+
+    Task<PracticeResultDto?> GetPracticeAttemptAsync(
+        Guid userId,
+        Guid practiceAttemptId,
+        CancellationToken ct = default);
+}
+
+public interface ICentralExamDenemeService
+{
+    Task<IReadOnlyList<CentralExamDenemeBlueprintDto>> GetDenemeBlueprintsAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamDenemeBlueprintDto?> GetDenemeBlueprintAsync(
+        Guid userId,
+        string blueprintCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamDenemeSessionDto> StartDenemeAsync(
+        Guid userId,
+        string blueprintCode,
+        CentralExamDenemeStartRequestDto request,
+        CancellationToken ct = default);
+
+    Task<CentralExamDenemeResultDto> SubmitDenemeAsync(
+        Guid userId,
+        CentralExamDenemeSubmitRequestDto request,
+        CancellationToken ct = default);
+
+    Task<CentralExamDenemeResultDto?> GetDenemeAttemptAsync(
+        Guid userId,
+        Guid attemptId,
+        CancellationToken ct = default);
+}
+
 public interface ILearningEventNormalizer
 {
     Task<LearningEventDto?> RecordQuizAttemptEventAsync(

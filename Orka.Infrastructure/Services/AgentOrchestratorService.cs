@@ -755,6 +755,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 turnStateDto = System.Text.Json.JsonSerializer.Deserialize<TutorTurnStateDto>(turnState.StateJson);
                 metadata.MasteryProbability = turnStateDto?.MasteryProbability;
                 metadata.Confidence = turnStateDto?.Confidence;
+                metadata.MisconceptionSignal ??= turnStateDto?.MisconceptionSignal;
+                metadata.LearningSignalConfidence ??= turnStateDto?.LearningSignalConfidence;
+                metadata.RemediationSeed ??= turnStateDto?.RemediationSeed;
             }
             catch
             {
@@ -854,6 +857,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
             metadata.PersonalizationMode ??= decision.PersonalizationMode;
             metadata.MasteryBasis ??= decision.MasteryBasis;
             metadata.WeakConceptHints = metadata.WeakConceptHints.Count > 0 ? metadata.WeakConceptHints : decision.WeakConceptHints;
+            metadata.MisconceptionSignal ??= turnState.MisconceptionSignal;
+            metadata.LearningSignalConfidence ??= turnState.LearningSignalConfidence;
+            metadata.RemediationSeed ??= turnState.RemediationSeed;
         }
         else
         {

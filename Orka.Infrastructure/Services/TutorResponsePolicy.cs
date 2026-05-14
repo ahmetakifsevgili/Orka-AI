@@ -26,6 +26,9 @@ public static class TutorResponsePolicy
             state.LearnerState,
             state.DirectAnswerRisk);
 
+        if (IsUsableLearningLoop(state))
+            responseMode = "recovery";
+
         return new TutorResponsePolicyDecision(
             responseMode,
             evidencePolicy,
@@ -113,9 +116,15 @@ public static class TutorResponsePolicy
     }
 
     public static IReadOnlyList<string> BuildWeakConceptHints(TutorTurnStateDto state) =>
-        state.RecentMistakes
+        new[]
+            {
+                state.RemediationSeed?.Label,
+                state.RemediationSeed?.UserSafeMisconceptionLabel,
+                state.MisconceptionSignal?.UserSafeLabel
+            }
+            .Concat(state.RecentMistakes)
             .Where(h => !string.IsNullOrWhiteSpace(h))
-            .Select(h => h.Trim())
+            .Select(h => h!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(3)
             .ToArray();
@@ -125,6 +134,19 @@ public static class TutorResponsePolicy
         var evidenceStatus = Normalize(state.EvidenceQuality?.Status);
         if (decision.TutorResponseMode == "concise" && !state.DirectAnswerRisk)
             return string.Empty;
+        if (IsUsableLearningLoop(state) && state.RemediationSeed is { } seed)
+        {
+            var remediationConcept = string.IsNullOrWhiteSpace(seed.Label) ? state.ActiveConceptLabel : seed.Label;
+            remediationConcept = string.IsNullOrWhiteSpace(remediationConcept) ? "bu kavram" : remediationConcept;
+            return Normalize(seed.FirstAction) switch
+            {
+                "source_check" => $"{remediationConcept} için kaynak kanıtını birlikte kontrol edelim mi?",
+                "practice_quiz" => $"{remediationConcept} için bir kısa pratik sorusuyla yanılgıyı test edelim mi?",
+                "prerequisite_review" => $"{remediationConcept} öncesindeki temel adımı kendi cümlenle kurabilir misin?",
+                "wiki_review" => $"{remediationConcept} için Wiki tekrarından sonra en kritik kuralı söyler misin?",
+                _ => $"{remediationConcept} kısmını kısa bir örnekle yeniden açıklar mısın?"
+            };
+        }
         if (evidenceStatus == "missing")
             return "Bu konu için kaynak ekleyip cevabı birlikte doğrulayalım mı?";
         if (evidenceStatus is "weak" or "partial")
@@ -143,6 +165,8 @@ public static class TutorResponsePolicy
 
     private static string MasteryBasisFor(TutorTurnStateDto state)
     {
+        if (IsUsableLearningLoop(state))
+            return "learning_loop_remediation";
         if (state.RecentMistakes.Count > 0 ||
             string.Equals(state.RemediationNeed, "high", StringComparison.OrdinalIgnoreCase) ||
             state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase))
@@ -156,4 +180,8 @@ public static class TutorResponsePolicy
 
     private static string Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+
+    private static bool IsUsableLearningLoop(TutorTurnStateDto state) =>
+        string.Equals(state.LearningSignalConfidence?.Status, "usable", StringComparison.OrdinalIgnoreCase) &&
+        state.RemediationSeed != null;
 }

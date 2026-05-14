@@ -29,6 +29,10 @@ public sealed class TutorTurnStateDto
     public string? PersonalizationMode { get; set; }
     public string? MasteryBasis { get; set; }
     public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
+    public MisconceptionSignalDto? MisconceptionSignal { get; set; }
+    public LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
+    public RemediationSeedDto? RemediationSeed { get; set; }
+    public string LearningLoopStatus { get; set; } = "signal_pending";
     public bool DirectAnswerRisk { get; set; }
     public bool HasIdeContext { get; set; }
     public bool HasNotebookContext { get; set; }

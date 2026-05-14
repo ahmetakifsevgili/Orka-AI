@@ -220,6 +220,53 @@ export interface LearningMemoryLiteDto {
   hasEnoughSignals: boolean;
 }
 
+export interface AdaptiveStudyPlanRequestDto {
+  goalType: "exam" | "career" | "general_learning" | string;
+  targetDate?: string | null;
+  weeklyAvailableMinutes: number;
+  currentLevel: string;
+  examName?: string | null;
+  careerTarget?: string | null;
+  priorityTopicIds?: string[];
+  prioritySkills?: string[];
+}
+
+export interface AdaptiveStudyPlanItemDto {
+  title: string;
+  reason: string;
+  topicId?: string | null;
+  actionType: string;
+  estimatedMinutes: number;
+  priority: number;
+  evidenceBasis: string[];
+  confidenceStatus: string;
+}
+
+export interface DiagnosticIntakeDto {
+  selfDeclaredLevel: string;
+  observedLevel: string;
+  observedLevelConfidence: number;
+  needsMoreEvidence: boolean;
+  weakAreas: string[];
+}
+
+export interface DiagnosticResultDto {
+  intake: DiagnosticIntakeDto;
+  recommendedStartingPoint: string;
+  shouldRunDiagnostic: boolean;
+  userSafeReason: string;
+}
+
+export interface AdaptiveStudyPlanDto {
+  summary: string;
+  windowDays: number;
+  items: AdaptiveStudyPlanItemDto[];
+  warnings: string[];
+  diagnostic: DiagnosticResultDto;
+  generatedAt: string;
+  hasEnoughSignals: boolean;
+}
+
 export interface SourceQualityReportDto {
   id: string;
   userId: string;
@@ -942,6 +989,702 @@ export interface ProductionReadiness {
 
 // ─── Course Types ───────────────────────────────────────────────────────────
 
+export interface ExamSourceVerificationDto {
+  verificationStatus: "unverified" | "source_backed" | "official_verified" | string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  verifiedAt?: string | null;
+}
+
+export interface ExamOutcomeDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+}
+
+export interface ExamTopicDto {
+  id: string;
+  parentExamTopicId?: string | null;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  outcomes: ExamOutcomeDto[];
+  children: ExamTopicDto[];
+}
+
+export interface ExamSubjectDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  topics: ExamTopicDto[];
+}
+
+export interface ExamSectionDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  subjects: ExamSubjectDto[];
+}
+
+export interface ExamVariantDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  sections: ExamSectionDto[];
+}
+
+export interface ExamContentPackDto {
+  id: string;
+  examDefinitionId: string;
+  code: string;
+  name: string;
+  description: string;
+  visibility: "system" | "user" | string;
+  sourceOrigin: string;
+  licenseStatus: string;
+  verificationStatus: "unverified" | "source_backed" | "official_verified" | string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  sourceVerification: ExamSourceVerificationDto;
+  status: string;
+  publishedAt?: string | null;
+}
+
+export interface ExamDefinitionDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  examFamily: string;
+  visibility: "system" | "user" | string;
+  verificationStatus: "unverified" | "source_backed" | "official_verified" | string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  sourceVerification: ExamSourceVerificationDto;
+  variants: ExamVariantDto[];
+  contentPacks: ExamContentPackDto[];
+}
+
+export interface ExamOutcomeImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+}
+
+export interface ExamTopicImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  outcomes?: ExamOutcomeImportDto[];
+  children?: ExamTopicImportDto[];
+}
+
+export interface ExamSubjectImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  topics: ExamTopicImportDto[];
+}
+
+export interface ExamSectionImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  subjects: ExamSubjectImportDto[];
+}
+
+export interface ExamVariantImportDto {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  sections: ExamSectionImportDto[];
+}
+
+export interface ExamTreeImportDto {
+  examCode: string;
+  examName: string;
+  description?: string;
+  examFamily?: string;
+  verificationStatus?: "unverified" | "source_backed" | "official_verified" | string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  contentPackCode?: string;
+  contentPackName?: string;
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  variants: ExamVariantImportDto[];
+}
+
+export interface QuestionValidationResultDto {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface QuestionOptionDto {
+  id?: string | null;
+  optionKey: string;
+  text: string;
+  isCorrect: boolean;
+  sortOrder: number;
+}
+
+export interface QuestionExplanationDto {
+  id?: string | null;
+  explanationText: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  visibility: string;
+  isSafeForLearners: boolean;
+}
+
+export interface QuestionTagDto {
+  id?: string | null;
+  tag: string;
+}
+
+export interface QuestionOutcomeLinkDto {
+  id?: string | null;
+  examOutcomeId: string;
+  isPrimary: boolean;
+  linkStrength: number;
+}
+
+export interface QuestionItemDto {
+  id: string;
+  ownershipState: "system" | "user" | string;
+  examDefinitionId: string;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  questionType: "multiple_choice" | "paragraph" | "math_problem" | "grammar" | "vocabulary" | "reading_comprehension" | string;
+  stem: string;
+  difficulty: "easy" | "medium" | "hard" | string;
+  cognitiveSkill: string;
+  qualityStatus: "draft" | "needs_review" | "approved" | "published" | "rejected" | string;
+  licenseStatus: "unknown" | "user_provided" | "licensed" | "open" | "restricted" | string;
+  sourceOrigin: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  explanation: string;
+  createdAt: string;
+  updatedAt: string;
+  options: QuestionOptionDto[];
+  explanations: QuestionExplanationDto[];
+  tags: QuestionTagDto[];
+  outcomeLinks: QuestionOutcomeLinkDto[];
+  validation: QuestionValidationResultDto;
+}
+
+export interface CreateQuestionDto {
+  examDefinitionId: string;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  questionType?: string;
+  stem: string;
+  difficulty?: string;
+  cognitiveSkill?: string;
+  licenseStatus?: string;
+  sourceOrigin?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  explanation?: string;
+  options: QuestionOptionDto[];
+  explanations?: QuestionExplanationDto[];
+  tags?: QuestionTagDto[];
+  outcomeLinks?: QuestionOutcomeLinkDto[];
+}
+
+export interface UpdateQuestionDto {
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  questionType?: string;
+  stem?: string;
+  difficulty?: string;
+  cognitiveSkill?: string;
+  qualityStatus?: string;
+  licenseStatus?: string;
+  sourceOrigin?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  explanation?: string;
+  options?: QuestionOptionDto[];
+  explanations?: QuestionExplanationDto[];
+  tags?: QuestionTagDto[];
+  outcomeLinks?: QuestionOutcomeLinkDto[];
+}
+
+export interface QuestionBankFilterDto {
+  examDefinitionId?: string;
+  examVariantId?: string;
+  examSectionId?: string;
+  examSubjectId?: string;
+  examTopicId?: string;
+  examOutcomeId?: string;
+  qualityStatus?: string;
+  questionType?: string;
+  difficulty?: string;
+  take?: number;
+}
+
+export interface QuestionImportOptionDto {
+  optionKey: string;
+  text: string;
+  isCorrect: boolean;
+  sortOrder?: number;
+}
+
+export interface QuestionImportSourceDto {
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+}
+
+export interface QuestionImportItemDto {
+  externalId?: string | null;
+  examDefinitionId?: string | null;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  examCode?: string | null;
+  variantCode?: string | null;
+  sectionCode?: string | null;
+  subjectCode?: string | null;
+  topicCode?: string | null;
+  outcomeCode?: string | null;
+  questionType?: string;
+  stem: string;
+  options: QuestionImportOptionDto[];
+  explanation?: string;
+  difficulty?: string;
+  cognitiveSkill?: string;
+  tags?: string[];
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  source?: QuestionImportSourceDto | null;
+}
+
+export interface QuestionImportRequestDto {
+  items: QuestionImportItemDto[];
+}
+
+export interface QuestionImportValidationIssueDto {
+  code: string;
+  severity: "error" | "warning" | string;
+  message: string;
+}
+
+export interface QuestionImportPreviewItemDto {
+  id: string;
+  rowIndex: number;
+  externalId?: string | null;
+  status: "accepted" | "rejected" | "duplicate" | string;
+  issues: QuestionImportValidationIssueDto[];
+  isDuplicate: boolean;
+  duplicateQuestionId?: string | null;
+  createdQuestionId?: string | null;
+  normalizedQuestion?: CreateQuestionDto | null;
+}
+
+export interface QuestionImportPreviewDto {
+  id: string;
+  status: "pending" | "approved" | "expired" | string;
+  totalCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  warningCount: number;
+  createdAt: string;
+  expiresAt: string;
+  items: QuestionImportPreviewItemDto[];
+}
+
+export interface QuestionImportApprovalDto {
+  importPreviewId: string;
+}
+
+export interface QuestionImportResultDto {
+  importPreviewId: string;
+  status: string;
+  createdCount: number;
+  skippedCount: number;
+  rejectedCount: number;
+  createdQuestionIds: string[];
+  issues: QuestionImportValidationIssueDto[];
+}
+
+export interface QuestionDraftGenerationContextDto {
+  examDefinitionId?: string | null;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  examCode?: string | null;
+  variantCode?: string | null;
+  sectionCode?: string | null;
+  subjectCode?: string | null;
+  topicCode?: string | null;
+  outcomeCode?: string | null;
+}
+
+export interface QuestionDraftGenerationSourceDto {
+  sourceTitle: string;
+  sourceUrl?: string | null;
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  sourceText?: string | null;
+  structuredSourceContext?: string[];
+}
+
+export interface QuestionDraftGenerationRequestDto {
+  context: QuestionDraftGenerationContextDto;
+  source: QuestionDraftGenerationSourceDto;
+  questionType?: string;
+  desiredCount?: number;
+  difficulty?: string;
+  cognitiveSkill?: string;
+}
+
+export interface QuestionDraftOptionDto {
+  optionKey: string;
+  text: string;
+  isCorrect: boolean;
+  sortOrder: number;
+}
+
+export interface QuestionDraftCandidateDto {
+  externalId?: string | null;
+  questionType: string;
+  stem: string;
+  options: QuestionDraftOptionDto[];
+  explanation: string;
+  difficulty: string;
+  cognitiveSkill: string;
+  tags: string[];
+  sourceOrigin: string;
+  licenseStatus: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+}
+
+export interface QuestionDraftGenerationIssueDto {
+  code: string;
+  severity: "error" | "warning" | string;
+  message: string;
+}
+
+export interface QuestionDraftPreviewItemDto {
+  id: string;
+  rowIndex: number;
+  externalId?: string | null;
+  status: "accepted" | "rejected" | "duplicate" | string;
+  isDuplicate: boolean;
+  duplicateQuestionId?: string | null;
+  createdQuestionId?: string | null;
+  candidate?: QuestionDraftCandidateDto | null;
+  issues: QuestionDraftGenerationIssueDto[];
+}
+
+export interface QuestionDraftPreviewDto {
+  id: string;
+  importPreviewId: string;
+  status: "pending" | "approved" | "expired" | "rejected" | string;
+  totalRequested: number;
+  generatedCount: number;
+  acceptedDraftCount: number;
+  rejectedCount: number;
+  warningCount: number;
+  createdAt: string;
+  expiresAt: string;
+  items: QuestionDraftPreviewItemDto[];
+  issues: QuestionDraftGenerationIssueDto[];
+}
+
+export interface QuestionDraftApprovalDto {
+  draftPreviewId: string;
+}
+
+export interface QuestionDraftApprovalResultDto {
+  draftPreviewId: string;
+  importPreviewId: string;
+  status: string;
+  createdCount: number;
+  skippedCount: number;
+  rejectedCount: number;
+  createdQuestionIds: string[];
+  issues: QuestionDraftGenerationIssueDto[];
+}
+
+export interface CentralExamVariantDto {
+  variantCode: string;
+  displayName: string;
+  availabilityStatus: string;
+}
+
+export interface CentralExamCapabilityDto {
+  hasQuestionBank: boolean;
+  hasPractice: boolean;
+  hasMiniDeneme: boolean;
+  hasCountdown: boolean;
+  hasStudyPlan: boolean;
+}
+
+export interface CentralExamDto {
+  examCode: string;
+  displayName: string;
+  description: string;
+  availabilityStatus: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  supportedVariants: CentralExamVariantDto[];
+  capabilities: CentralExamCapabilityDto;
+}
+
+export interface CentralExamCountdownDto {
+  examCode: string;
+  examDate?: string | null;
+  daysRemaining?: number | null;
+  verificationStatus: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  userSafeLabel: string;
+}
+
+export interface CentralExamTopicDto {
+  id: string;
+  code: string;
+  name: string;
+  practiceReadyCount: number;
+  children: CentralExamTopicDto[];
+}
+
+export interface CentralExamSubjectDto {
+  id: string;
+  code: string;
+  name: string;
+  topics: CentralExamTopicDto[];
+}
+
+export interface CentralExamSectionDto {
+  id: string;
+  code: string;
+  name: string;
+  subjects: CentralExamSubjectDto[];
+}
+
+export interface CentralExamQuestionCountDto {
+  practiceReadyCount: number;
+  systemPublishedCount: number;
+  userPublishedCount: number;
+  callerDraftCount: number;
+  callerNeedsReviewCount: number;
+}
+
+export interface ExamLearningContextDto {
+  examDefinitionId?: string | null;
+  examCode?: string | null;
+  examVariantId?: string | null;
+  variantCode?: string | null;
+  examSectionId?: string | null;
+  sectionCode?: string | null;
+  examSubjectId?: string | null;
+  subjectCode?: string | null;
+  examTopicId?: string | null;
+  topicCode?: string | null;
+  examOutcomeId?: string | null;
+  outcomeCode?: string | null;
+}
+
+export interface CentralExamPracticeEntryDto {
+  examCode: string;
+  slug: string;
+  title: string;
+  description: string;
+  hasPracticeReadyQuestions: boolean;
+  practiceReadyCount: number;
+  emptyState: string;
+  recommendedAction: string;
+  examContext: ExamLearningContextDto;
+}
+
+export interface CentralExamStudyHomeDto {
+  examCode: string;
+  displayName: string;
+  description: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  countdown: CentralExamCountdownDto;
+  supportedVariants: CentralExamVariantDto[];
+  sections: CentralExamSectionDto[];
+  practiceReadyCounts: CentralExamQuestionCountDto;
+  recommendedEntryPoint?: CentralExamPracticeEntryDto | null;
+  capabilities: CentralExamCapabilityDto;
+  emptyState: string;
+  generatedAt: string;
+}
+
+export interface PracticeStartRequestDto {
+  variantCode?: string | null;
+  limit?: number;
+}
+
+export interface PracticeOptionDto {
+  optionKey: string;
+  text: string;
+  sortOrder: number;
+}
+
+export interface PracticeQuestionDto {
+  questionId: string;
+  stem: string;
+  difficulty: string;
+  cognitiveSkill: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  examContext: ExamLearningContextDto;
+  options: PracticeOptionDto[];
+}
+
+export interface PracticeSessionDto {
+  practiceSetId: string;
+  practiceAttemptId?: string | null;
+  status: string;
+  emptyState: string;
+  totalQuestions: number;
+  examContext: ExamLearningContextDto;
+  questions: PracticeQuestionDto[];
+}
+
+export interface PracticeAnswerDto {
+  questionId: string;
+  selectedOptionKey?: string | null;
+}
+
+export interface PracticeSubmitRequestDto {
+  variantCode?: string | null;
+  practiceSetId?: string | null;
+  answers: PracticeAnswerDto[];
+}
+
+export interface PracticeQuestionResultDto {
+  questionId: string;
+  selectedOptionKey?: string | null;
+  correctOptionKey?: string | null;
+  isCorrect: boolean;
+  isBlank: boolean;
+  explanation: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  examContext: ExamLearningContextDto;
+}
+
+export interface PracticeTopicBreakdownDto {
+  examTopicId?: string | null;
+  topicCode?: string | null;
+  label: string;
+  totalQuestions: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+}
+
+export interface CentralExamPracticeSummaryDto {
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  correctnessRatio: number;
+}
+
+export interface CentralExamLearningSignalDto {
+  status: string;
+  signalCount: number;
+  evidenceBasis: string[];
+  weakAreas: string[];
+}
+
+export interface CentralExamNextActionDto {
+  actionType: string;
+  title: string;
+  reason: string;
+  confidenceStatus: string;
+  examContext: ExamLearningContextDto;
+}
+
+export interface CentralExamStudyContextDto {
+  pathLabel: string;
+  suggestedWikiPath: string;
+  examContext: ExamLearningContextDto;
+  focusLabels: string[];
+}
+
+export interface CentralExamPracticeAttemptDto {
+  id: string;
+  status: string;
+  examContext: ExamLearningContextDto;
+  summary: CentralExamPracticeSummaryDto;
+  startedAt: string;
+  submittedAt?: string | null;
+}
+
+export interface CentralExamPracticeAnswerDto {
+  questionId: string;
+  selectedOptionKey?: string | null;
+  correctOptionKey?: string | null;
+  isCorrect: boolean;
+  isBlank: boolean;
+  examContext: ExamLearningContextDto;
+}
+
+export interface PracticeResultDto {
+  practiceAttemptId?: string | null;
+  status: string;
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  examContext: ExamLearningContextDto;
+  results: PracticeQuestionResultDto[];
+  topicBreakdown: PracticeTopicBreakdownDto[];
+  nextAction?: CentralExamNextActionDto | null;
+  learningSignal?: CentralExamLearningSignalDto | null;
+  studyContext?: CentralExamStudyContextDto | null;
+  tutorRemediationContext: string;
+}
+
 export type CourseLevel = "Başlangıç" | "Orta" | "İleri";
 export type CourseCategory =
   | "Programlama"
@@ -983,4 +1726,121 @@ export interface Course {
   instructor: string;
   rating: number;
   students: number;
+}
+
+export interface CentralExamDenemeBlueprintSectionDto {
+  id: string;
+  sortOrder: number;
+  questionCount: number;
+  availableQuestionCount: number;
+  label: string;
+  examContext: ExamLearningContextDto;
+}
+
+export interface CentralExamDenemeBlueprintDto {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  visibility: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  durationMinutes?: number | null;
+  totalQuestionCount: number;
+  availableQuestionCount: number;
+  hasEnoughQuestions: boolean;
+  emptyState: string;
+  examContext: ExamLearningContextDto;
+  sections: CentralExamDenemeBlueprintSectionDto[];
+}
+
+export interface CentralExamDenemeStartRequestDto {
+  variantCode?: string | null;
+}
+
+export interface CentralExamDenemeOptionDto {
+  optionKey: string;
+  text: string;
+  sortOrder: number;
+}
+
+export interface CentralExamDenemeQuestionDto {
+  questionId: string;
+  stem: string;
+  difficulty: string;
+  cognitiveSkill: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  examContext: ExamLearningContextDto;
+  options: CentralExamDenemeOptionDto[];
+}
+
+export interface CentralExamDenemeSessionDto {
+  denemeAttemptId: string;
+  blueprintCode: string;
+  blueprintName: string;
+  status: string;
+  emptyState: string;
+  durationMinutes?: number | null;
+  totalQuestions: number;
+  examContext: ExamLearningContextDto;
+  questions: CentralExamDenemeQuestionDto[];
+}
+
+export interface CentralExamDenemeAnswerDto {
+  questionId: string;
+  selectedOptionKey?: string | null;
+}
+
+export interface CentralExamDenemeSubmitRequestDto {
+  denemeAttemptId: string;
+  answers: CentralExamDenemeAnswerDto[];
+}
+
+export interface CentralExamDenemeSummaryDto {
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  correctnessRatio: number;
+}
+
+export interface CentralExamDenemeBreakdownDto {
+  examSectionId?: string | null;
+  sectionCode?: string | null;
+  examSubjectId?: string | null;
+  subjectCode?: string | null;
+  examTopicId?: string | null;
+  topicCode?: string | null;
+  label: string;
+  totalQuestions: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+}
+
+export interface CentralExamDenemeNextActionDto {
+  actionType: string;
+  title: string;
+  reason: string;
+  confidenceStatus: string;
+  examContext: ExamLearningContextDto;
+}
+
+export interface CentralExamDenemeResultDto {
+  denemeAttemptId: string;
+  blueprintCode: string;
+  blueprintName: string;
+  status: string;
+  durationMinutes?: number | null;
+  summary: CentralExamDenemeSummaryDto;
+  examContext: ExamLearningContextDto;
+  results: PracticeQuestionResultDto[];
+  breakdown: CentralExamDenemeBreakdownDto[];
+  nextAction?: CentralExamDenemeNextActionDto | null;
+  learningSignal?: CentralExamLearningSignalDto | null;
+  studyContext?: CentralExamStudyContextDto | null;
+  tutorRemediationContext: string;
 }

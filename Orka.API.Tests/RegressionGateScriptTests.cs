@@ -98,11 +98,14 @@ public sealed class RegressionGateScriptTests
         Assert.Contains("docs/codex-skills/README.md", codexEntrypoint);
         Assert.Contains("Do not stage/commit unless explicitly requested", codexEntrypoint);
         Assert.Contains("Do not reorder roadmap without user approval", codexEntrypoint);
-        Assert.Contains("Stage 5 — Production-ready enterprise hardening / scalability plan", roadmap);
-        Assert.Contains("Codex Skills Anayasası + küçük/orta özellikler ✅", roadmap);
+        Assert.Contains("Post-6B productization / frontend-content readiness", roadmap);
+        Assert.Contains("Stage 5 - Production-ready enterprise hardening / scalability plan", roadmap);
+        Assert.Contains("Stage 6B - Merkezi Sinavlar / Exam & Practice Content Engine", roadmap);
+        Assert.Contains("docs/project-state/stage-6b-closure.md", roadmap);
+        Assert.Contains("Codex Skills Anayasasi + small/medium features", roadmap);
         Assert.Contains("Stage 4 Small/Medium Feature Completion Audit", roadmap);
-        Assert.Contains("Stage 5'e geçilebilir", roadmap);
-        Assert.Contains("Stage 5 starts with the Production-ready enterprise hardening / scalability plan", codexEntrypoint);
+        Assert.Contains("Stage 6B - Merkezi Sinavlar / Exam & Practice Content Engine is closed", codexEntrypoint);
+        Assert.Contains("post-6B productization / frontend-content readiness", codexEntrypoint);
         Assert.Contains("CODEX.md", readme);
         Assert.Contains("CODEX.md", codexSkillsReadme);
         Assert.Contains("docs/project-state/current-roadmap.md", readme);

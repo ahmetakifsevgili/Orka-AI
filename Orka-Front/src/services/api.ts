@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AssessmentCalibrationRun, EvidenceQualityDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, ProductionReadiness, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AssessmentCalibrationRun, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamStudyHomeDto, CreateQuestionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, QuestionBankFilterDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionItemDto, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline, UpdateQuestionDto } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -309,6 +309,8 @@ export const ChatAPI = {
 
 export const DashboardAPI = {
   getToday: () => api.get<DashboardTodayDto>("/dashboard/today"),
+  previewAdaptiveStudyPlan: (data: AdaptiveStudyPlanRequestDto) =>
+    api.post<AdaptiveStudyPlanDto>("/dashboard/adaptive-study-plan", data).then((r) => r.data),
   getStats: () => api.get("/dashboard/stats"),
   getRecentActivity: () => api.get("/dashboard/recent-activity"),
   getSystemHealth: () => api.get("/dashboard/system-health"),
@@ -383,6 +385,7 @@ export interface DashboardTodayDto {
     reason: string;
   };
   learningMemory?: LearningMemoryLiteDto | null;
+  adaptiveStudyPlan?: AdaptiveStudyPlanDto | null;
   hasRealLearningData: boolean;
   generatedAt: string;
 }
@@ -844,6 +847,76 @@ export const StandardsAPI = {
     api.post<StandardsValidationRun>(`/standards/topic/${topicId}/validate`).then((r) => r.data),
   exportTopic: (topicId: string, exportType = "combined") =>
     api.post<StandardsExportRun>(`/standards/topic/${topicId}/export?exportType=${encodeURIComponent(exportType)}`).then((r) => r.data),
+};
+
+export const ExamsAPI = {
+  getDefinitions: () => api.get<ExamDefinitionDto[]>("/exams").then((r) => r.data),
+  getTree: (examCode: string) => api.get<ExamDefinitionDto>(`/exams/${encodeURIComponent(examCode)}`).then((r) => r.data),
+  getVariantTree: (examCode: string, variantCode: string) =>
+    api.get<ExamDefinitionDto>(`/exams/${encodeURIComponent(examCode)}/variants/${encodeURIComponent(variantCode)}`).then((r) => r.data),
+  importTree: (data: ExamTreeImportDto) => api.post<ExamDefinitionDto>("/exams/import-tree", data).then((r) => r.data),
+};
+
+export const QuestionsAPI = {
+  getQuestions: (filters: QuestionBankFilterDto = {}) =>
+    api.get<QuestionItemDto[]>("/questions", { params: filters }).then((r) => r.data),
+  getQuestion: (id: string) => api.get<QuestionItemDto>(`/questions/${id}`).then((r) => r.data),
+  createQuestion: (data: CreateQuestionDto) => api.post<QuestionItemDto>("/questions", data).then((r) => r.data),
+  updateQuestion: (id: string, data: UpdateQuestionDto) => api.put<QuestionItemDto>(`/questions/${id}`, data).then((r) => r.data),
+  submitForReview: (id: string) => api.post<QuestionItemDto>(`/questions/${id}/submit-review`).then((r) => r.data),
+  publishQuestion: (id: string) => api.post<QuestionItemDto>(`/questions/${id}/publish`).then((r) => r.data),
+  deleteQuestion: (id: string) => api.delete(`/questions/${id}`).then((r) => r.data),
+};
+
+export const QuestionImportsAPI = {
+  previewImport: (data: QuestionImportRequestDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview", data).then((r) => r.data),
+  approveImport: (data: QuestionImportApprovalDto) =>
+    api.post<QuestionImportResultDto>("/question-imports/approve", data).then((r) => r.data),
+  getPreview: (id: string) =>
+    api.get<QuestionImportPreviewDto>(`/question-imports/${id}`).then((r) => r.data),
+};
+
+export const QuestionDraftsAPI = {
+  previewDrafts: (data: QuestionDraftGenerationRequestDto) =>
+    api.post<QuestionDraftPreviewDto>("/question-drafts/preview", data).then((r) => r.data),
+  approveDrafts: (data: QuestionDraftApprovalDto) =>
+    api.post<QuestionDraftApprovalResultDto>("/question-drafts/approve", data).then((r) => r.data),
+  getPreview: (id: string) =>
+    api.get<QuestionDraftPreviewDto>(`/question-drafts/${id}`).then((r) => r.data),
+};
+
+export const CentralExamsAPI = {
+  getCentralExams: () =>
+    api.get<CentralExamDto[]>("/central-exams").then((r) => r.data),
+  getKpssStudyHome: (variantCode?: string | null) =>
+    api.get<CentralExamStudyHomeDto>("/central-exams/kpss", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getYksStudyHome: (variantCode?: string | null) =>
+    api.get<CentralExamStudyHomeDto>("/central-exams/yks", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getLgsStudyHome: (variantCode?: string | null) =>
+    api.get<CentralExamStudyHomeDto>("/central-exams/lgs", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getYdsStudyHome: (variantCode?: string | null) =>
+    api.get<CentralExamStudyHomeDto>("/central-exams/yds", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getKpssCountdown: (variantCode?: string | null) =>
+    api.get<CentralExamCountdownDto>("/central-exams/kpss/countdown", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getKpssTurkceParagrafEntry: (variantCode?: string | null) =>
+    api.get<CentralExamPracticeEntryDto>("/central-exams/kpss/turkce-paragraf", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  startKpssTurkceParagrafPractice: (data: PracticeStartRequestDto = {}) =>
+    api.post<PracticeSessionDto>("/central-exams/kpss/turkce-paragraf/start", data).then((r) => r.data),
+  submitKpssTurkceParagrafPractice: (data: PracticeSubmitRequestDto) =>
+    api.post<PracticeResultDto>("/central-exams/kpss/turkce-paragraf/submit", data).then((r) => r.data),
+  getPracticeAttempt: (id: string) =>
+    api.get<PracticeResultDto>(`/central-exams/practice-attempts/${id}`).then((r) => r.data),
+  getKpssDenemeler: (variantCode?: string | null) =>
+    api.get<CentralExamDenemeBlueprintDto[]>("/central-exams/kpss/denemeler", { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getKpssDeneme: (blueprintCode: string, variantCode?: string | null) =>
+    api.get<CentralExamDenemeBlueprintDto>(`/central-exams/kpss/denemeler/${blueprintCode}`, { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  startKpssDeneme: (blueprintCode: string, data: CentralExamDenemeStartRequestDto = {}) =>
+    api.post<CentralExamDenemeSessionDto>(`/central-exams/kpss/denemeler/${blueprintCode}/start`, data).then((r) => r.data),
+  submitKpssDeneme: (data: CentralExamDenemeSubmitRequestDto) =>
+    api.post<CentralExamDenemeResultDto>("/central-exams/kpss/denemeler/submit", data).then((r) => r.data),
+  getDenemeAttempt: (id: string) =>
+    api.get<CentralExamDenemeResultDto>(`/central-exams/deneme-attempts/${id}`).then((r) => r.data),
 };
 
 export const ProductionReadinessAPI = {

@@ -23,6 +23,7 @@ public class DashboardController : ControllerBase
     private readonly IRedisMemoryService _redis;
     private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ILearningMemoryService _learningMemory;
+    private readonly IAdaptiveStudyPlannerService _adaptiveStudyPlanner;
     private readonly IAiProviderTelemetryService _aiProviderTelemetry;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
@@ -32,6 +33,7 @@ public class DashboardController : ControllerBase
         IRedisMemoryService redis,
         ITopicScopeResolver topicScopeResolver,
         ILearningMemoryService learningMemory,
+        IAdaptiveStudyPlannerService adaptiveStudyPlanner,
         IAiProviderTelemetryService aiProviderTelemetry,
         IConfiguration configuration,
         IWebHostEnvironment environment)
@@ -40,6 +42,7 @@ public class DashboardController : ControllerBase
         _redis = redis;
         _topicScopeResolver = topicScopeResolver;
         _learningMemory = learningMemory;
+        _adaptiveStudyPlanner = adaptiveStudyPlanner;
         _aiProviderTelemetry = aiProviderTelemetry;
         _configuration = configuration;
         _environment = environment;
@@ -216,6 +219,16 @@ public class DashboardController : ControllerBase
                 }
                 : BuildSourceHealth(null);
         var learningMemory = await _learningMemory.BuildAsync(userId, activeScopeTopicIds, sourceHealth.EvidenceQuality, ct);
+        var adaptiveStudyPlan = await _adaptiveStudyPlanner.BuildAsync(
+            userId,
+            null,
+            learningMemory,
+            weakConcepts,
+            sourceHealth,
+            activeTopic,
+            dueReviews,
+            activeScopeTopicIds,
+            ct);
         var hasRealData = activeTopic is not null ||
             weakConcepts.Count > 0 ||
             dueReviews > 0 ||
@@ -266,6 +279,7 @@ public class DashboardController : ControllerBase
             CoordinationHealth = coordinationHealth,
             RecommendedEntryPoint = entry,
             LearningMemory = learningMemory,
+            AdaptiveStudyPlan = adaptiveStudyPlan,
             HasRealLearningData = hasRealData,
             NextAction = new DashboardNextActionDto
             {
@@ -277,6 +291,121 @@ public class DashboardController : ControllerBase
             },
             GeneratedAt = DateTimeOffset.UtcNow
         });
+    }
+
+    [HttpPost("adaptive-study-plan")]
+    public async Task<ActionResult<AdaptiveStudyPlanDto>> PreviewAdaptiveStudyPlan(
+        [FromBody] AdaptiveStudyPlanRequestDto request,
+        CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var now = DateTime.UtcNow;
+
+        var activeTopic = await _dbContext.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId && !t.IsArchived && t.ParentTopicId == null)
+            .OrderByDescending(t => t.LastAccessedAt)
+            .ThenByDescending(t => t.CreatedAt)
+            .Select(t => new DashboardActivePlanDto
+            {
+                TopicId = t.Id,
+                Title = t.Title,
+                ProgressPercentage = t.ProgressPercentage
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var activeTopicId = activeTopic?.TopicId;
+        var activeScopeTopicIds = Array.Empty<Guid>();
+        if (activeTopicId.HasValue)
+        {
+            var activeScope = await _topicScopeResolver.ResolveAsync(userId, activeTopicId.Value, ct);
+            activeScopeTopicIds = activeScope.IsValid
+                ? activeScope.TreeTopicIds.ToArray()
+                : [activeTopicId.Value];
+        }
+
+        var weakConceptStates = await _dbContext.KnowledgeTracingStates
+            .AsNoTracking()
+            .Where(k => k.UserId == userId && (activeScopeTopicIds.Length == 0 || (k.TopicId.HasValue && activeScopeTopicIds.Contains(k.TopicId.Value))))
+            .OrderBy(k => k.MasteryProbability)
+            .ThenBy(k => k.Confidence)
+            .Take(5)
+            .Select(k => new
+            {
+                k.ConceptKey,
+                k.Label,
+                k.MasteryProbability,
+                k.Confidence,
+                k.TopicId,
+                k.IncorrectCount,
+                k.RemediationNeed
+            })
+            .ToListAsync(ct);
+        var weakConcepts = weakConceptStates
+            .Select(k =>
+            {
+                var label = string.IsNullOrWhiteSpace(k.Label) ? k.ConceptKey : k.Label;
+                var intelligence = MisconceptionIntelligenceEvaluator.FromWeakConcept(
+                    k.TopicId,
+                    k.ConceptKey,
+                    label,
+                    k.MasteryProbability,
+                    k.Confidence,
+                    k.IncorrectCount,
+                    k.RemediationNeed);
+                return new DashboardWeakConceptDto
+                {
+                    ConceptKey = k.ConceptKey,
+                    Label = label,
+                    MasteryProbability = k.MasteryProbability,
+                    Confidence = k.Confidence,
+                    TopicId = k.TopicId,
+                    UserSafeStatus = k.Confidence < 0.60m ? "Kanıt düşük" : k.MasteryProbability < 0.55m ? "Tekrar iyi olur" : "İzleniyor",
+                    MisconceptionSignal = intelligence.MisconceptionSignal,
+                    LearningSignalConfidence = intelligence.LearningSignalConfidence,
+                    RemediationSeed = intelligence.RemediationSeed
+                };
+            })
+            .ToList();
+
+        var dueReviews = await _dbContext.ReviewItems
+            .AsNoTracking()
+            .CountAsync(r => r.UserId == userId && r.Status == "active" && r.DueAt <= now, ct);
+        var latestSourceQuality = await _dbContext.SourceQualityReports
+            .AsNoTracking()
+            .Where(r => r.UserId == userId && (activeScopeTopicIds.Length == 0 || (r.TopicId.HasValue && activeScopeTopicIds.Contains(r.TopicId.Value))))
+            .OrderByDescending(r => r.GeneratedAt)
+            .FirstOrDefaultAsync(ct);
+        var scopedSourceCount = await _dbContext.LearningSources
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && !s.IsDeleted && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
+        var scopedReadySourceCount = await _dbContext.LearningSources
+            .AsNoTracking()
+            .CountAsync(s => s.UserId == userId && !s.IsDeleted && s.Status == "ready" && (activeScopeTopicIds.Length == 0 || (s.TopicId.HasValue && activeScopeTopicIds.Contains(s.TopicId.Value))), ct);
+        var sourceHealth = latestSourceQuality is not null
+            ? BuildSourceHealth(latestSourceQuality, scopedSourceCount, scopedReadySourceCount)
+            : scopedSourceCount > 0
+                ? new DashboardSourceHealthDto
+                {
+                    Status = "unverified",
+                    UserSafeLabel = "Kaynaklar hazır",
+                    UserSafeDetail = "Kaynaklar var; citation kalitesi ilk kullanımda ölçülecek.",
+                    EvidenceQuality = EvidenceQualityEvaluator.Build(scopedSourceCount, scopedReadySourceCount, 0, 0m, 0, 0, "unverified", "unverified")
+                }
+                : BuildSourceHealth(null);
+        var learningMemory = await _learningMemory.BuildAsync(userId, activeScopeTopicIds, sourceHealth.EvidenceQuality, ct);
+        var plan = await _adaptiveStudyPlanner.BuildAsync(
+            userId,
+            request,
+            learningMemory,
+            weakConcepts,
+            sourceHealth,
+            activeTopic,
+            dueReviews,
+            activeScopeTopicIds,
+            ct);
+
+        return Ok(plan);
     }
 
     private async Task<DashboardCoordinationHealthDto> BuildCoordinationHealthAsync(
@@ -883,6 +1012,8 @@ public class DashboardController : ControllerBase
             Endpoint("POST", "/api/learning/signal"),
             Endpoint("GET", "/api/wiki/{topicId}"),
             Endpoint("GET", "/api/sources/topic/{topicId}"),
+            Endpoint("GET", "/api/central-exams"),
+            Endpoint("GET", "/api/central-exams/kpss"),
             Endpoint("POST", "/api/classroom/session"),
             Endpoint("POST", "/api/audio/overview"),
             Endpoint("POST", "/api/code/run")

@@ -35,10 +35,15 @@ See `docs/dev-contract.md` for the canonical smoke/regression matrix. Deployment
 
 Feature work with Codex must start from `CODEX.md`, then follow the current
 roadmap in `docs/project-state/current-roadmap.md` and the Codex Skills
-Anayasasi in `docs/codex-skills/`. Current phase is Stage 5: Production-ready
-enterprise hardening / scalability planning. Start with `docs/codex-skills/README.md`, then read the
+Anayasasi in `docs/codex-skills/`. Current phase is post-6B productization /
+frontend-content readiness after Stage 6B Central Exams closure. Start with `docs/codex-skills/README.md`, then read the
 backend, AI/RAG, frontend contract, data lifecycle, and testing gate constitution
 files that apply to the feature.
+
+Stage 6B closed the integrated Central Exams module inside Orka: KPSS is the
+first working exam with study home, practice, persisted learning-loop results,
+and mini-deneme; YKS/LGS/YDS are safe scaffold entries; source-grounded question
+draft generation is review-only and never auto-publishes content.
 
 ---
 

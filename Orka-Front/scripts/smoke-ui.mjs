@@ -75,6 +75,11 @@ addCheck("Assessment calibration API exposed", api.includes("/assessment/topic")
 addCheck("Adaptive quiz API exposed", api.includes("/quiz/adaptive/start") && api.includes("getAdaptiveNext") && api.includes("answerAdaptive"));
 addCheck("Tutor timeline API exposed", api.includes("/tutor/events/session") && api.includes("getSessionTimeline"));
 addCheck("Standards alignment API exposed", api.includes("/standards/topic") && api.includes("StandardsAPI"));
+addCheck("Exam framework API exposed", api.includes("ExamsAPI") && api.includes("/exams") && api.includes("/exams/import-tree") && api.includes("ExamDefinitionDto") && api.includes("ExamTreeImportDto"));
+addCheck("Question bank API exposed", api.includes("QuestionsAPI") && api.includes("/questions") && api.includes("/submit-review") && api.includes("/publish") && api.includes("QuestionItemDto") && api.includes("CreateQuestionDto"));
+addCheck("Question import API exposed", api.includes("QuestionImportsAPI") && api.includes("/question-imports/preview") && api.includes("/question-imports/approve") && api.includes("QuestionImportPreviewDto"));
+addCheck("Question draft API exposed", api.includes("QuestionDraftsAPI") && api.includes("/question-drafts/preview") && api.includes("/question-drafts/approve") && api.includes("QuestionDraftPreviewDto"));
+addCheck("Central exams API exposed", api.includes("CentralExamsAPI") && api.includes("/central-exams/kpss") && api.includes("/central-exams/kpss/turkce-paragraf/start") && api.includes("CentralExamStudyHomeDto") && api.includes("PracticeSessionDto"));
 addCheck("Production readiness API exposed", api.includes("/production-readiness/v1") && api.includes("ProductionReadinessAPI"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
@@ -93,7 +98,10 @@ addCheck("Tool capability context drives visibility", toolContext.includes("Tool
 const dashboard = read("src/components/DashboardPanel.tsx");
 addCheck("Learning signal book visible", dashboard.includes("Öğrenci Sinyal Defteri") && dashboard.includes("learningSignalBook"));
 addCheck("Learning memory profile summary is visible", dashboard.includes("Orka’nın öğrenci profili") && dashboard.includes("Güçlü ilerlediğin alanlar") && dashboard.includes("Tekrar gerektiren alanlar") && dashboard.includes("Henüz yeterli öğrenme sinyali yok. Quiz, chat ve Wiki kullandıkça profil oluşur."));
-addCheck("Learning memory stays status-only beside weak queue", dashboard.includes("StudentProfileSummary") && dashboard.includes("Önerilen telafi odağı") && !dashboard.includes("goalType") && !dashboard.includes("targetDate"));
+addCheck("Learning memory stays status-only beside weak queue", dashboard.includes("StudentProfileSummary") && dashboard.includes("Önerilen telafi odağı") && dashboard.includes("Planner için güvenli öğrenme girdileri hazırlanıyor"));
+addCheck("Adaptive study planner is visible", dashboard.includes("Çalışma planı") && dashboard.includes("Neden bu adım?") && dashboard.includes("Planı hedefe göre güncelle"));
+addCheck("Adaptive goal preview uses safe exam and career copy", dashboard.includes("Bu plan mevcut konu ağına") && dashboard.includes("İşe giriş garantisi değildir") && api.includes("previewAdaptiveStudyPlan") && api.includes("/dashboard/adaptive-study-plan"));
+addCheck("Diagnostic intake copy is user-facing", dashboard.includes("Kısa seviye tespiti") && dashboard.includes("kullanıcı beyanı tek gerçek kabul edilmez"));
 addCheck("Dashboard guidance and coordination visibility exist", dashboard.includes("Sıradaki en iyi adım") && dashboard.includes("Koordinasyon özeti") && dashboard.includes("coordinationHealth"));
 addCheck("Learning guidance pack surfaces are visible", dashboard.includes("Çalışma kuyruğu") && dashboard.includes("Eksiklerini tamamla") && dashboard.includes("Kaldığın dersten devam et") && dashboard.includes("buildWeakConceptActionQueue"));
 addCheck("Coordination health uses user-facing labels", dashboard.includes("Kaynaklar hazır") && dashboard.includes("Wiki eksik olabilir") && dashboard.includes("Quiz kanıtı zayıf") && dashboard.includes("RAG kaynak kalitesi iyi"));
@@ -118,6 +126,15 @@ addCheck("Wiki weak queue context is visible", wiki.includes("Bu konuda çalış
 const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("Topic readiness badges are visible", sidebar.includes("TopicReadinessBadge") && sidebar.includes("Hazır") && sidebar.includes("Dikkat") && sidebar.includes("Yeni") && sidebar.includes("getTopicReadinessBadge"));
 addCheck("App sidebar exposes logout action", sidebar.includes("Çıkış yap") && sidebar.includes("onLogout") && sidebar.includes("logoutLoading") && sidebar.includes("LogOut"));
+
+const centralExams = read("src/components/CentralExamsPanel.tsx");
+const centralHome = read("src/pages/Home.tsx");
+addCheck("Central exams product shell is visible", sidebar.includes("Merkezi Sınavlar") && centralHome.includes("central-exams") && centralExams.includes("Merkezi Sınavlar") && centralExams.includes("KPSS hazırlık iskeleti"));
+addCheck("Central exams safe KPSS copy is guarded", centralExams.includes("Resmi müfredat iddiası değildir") && centralExams.includes("doğrulanmış kaynak") && !centralExams.includes("kazanma garantisi") && !centralExams.includes("official curriculum complete") && !centralExams.includes("NotebookLM"));
+
+addCheck("Central exams mini deneme stays safe", centralExams.includes("Mini Deneme") && centralExams.includes("Resmi OSYM simulasyonu degil") && !centralExams.includes("puan tahmini") && !centralExams.includes("percentile") && !centralExams.includes("dershane paneli") && !centralExams.includes("scraping"));
+addCheck("Central exams multi-exam shell is visible", centralExams.includes("YKS") && centralExams.includes("LGS") && centralExams.includes("YDS") && centralExams.includes("Hazirlik iskeleti") && centralExams.includes("Pratik") && centralExams.includes("Mini deneme"));
+addCheck("Central exams scaffold copy stays safe", !centralExams.includes("resmi kapsam tamam") && !centralExams.includes("kazanma garantisi") && !centralExams.includes("official MEB simulation") && !centralExams.includes("official OSYM simulation") && !centralExams.includes("NotebookLM"));
 
 const citationDisplay = read("src/lib/citationDisplay.ts");
 addCheck("Evidence quality helpers have user-facing labels", citationDisplay.includes("evidenceQualityLabel") && citationDisplay.includes("Kaynak güveni güçlü") && citationDisplay.includes("Kaynak güveni sınırlı") && citationDisplay.includes("Kaynak bulunamadı"));
@@ -172,6 +189,7 @@ addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && 
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
 addCheck("Quiz wrong answer recovery CTA is visible", quiz.includes("Toparlanma adımı") && quiz.includes("Tutor’a sor") && quiz.includes("Wiki’de tekrar et") && quiz.includes("Benzer pratik çöz"));
 addCheck("Pack 3 misconception remediation stays user-safe", quiz.includes("Yanılgı sinyali") && quiz.includes("Kanıt durumu") && dashboard.includes("remediationSeed") && chatMessage.includes("Yanılgı sinyali güvenli şekilde işlendi"));
+addCheck("Pack A learning loop metadata surfaces in chat trace", chatMessage.includes("metadata?.misconceptionSignal") && chatMessage.includes("metadata?.learningSignalConfidence") && chatMessage.includes("metadata?.remediationSeed"));
 addCheck("Pack 3 raw evaluator payload is not rendered", !quiz.includes("EvaluatorFeedback") && !dashboard.includes("EvaluatorFeedback") && !chatMessage.includes("EvaluatorFeedback") && !quiz.includes("evaluationScore") && !dashboard.includes("evaluationScore") && !chatMessage.includes("evaluationScore"));
 addCheck("Quiz parser strips correctness labels from options", quizParser.includes("dogru") && quizParser.includes("yanlis") && quizParser.includes("incorrect"));
 addCheck("Mermaid error SVG falls back safely", chatMessage.includes("looksLikeMermaidFailure") && chatMessage.includes("Mermaid returned an error SVG."));

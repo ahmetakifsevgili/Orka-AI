@@ -779,7 +779,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.misconceptionSignal || metadata?.learningSignalConfidence || metadata?.remediationSeed || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
   if (!hasMeta) return null;
   metadata = metadata ?? {};
 

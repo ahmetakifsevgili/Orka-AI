@@ -789,6 +789,132 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task EndToEndLearningLoop_WeakAnswerSignalChangesTutorMemoryAndPlanner()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var sessionId = Guid.NewGuid();
+        var signalPayload = new
+        {
+            misconceptionSignal = new MisconceptionSignalDto
+            {
+                Category = "concept_confusion",
+                UserSafeLabel = "Kavram karışıklığı olabilir",
+                Confidence = 0.84m,
+                ConfidenceStatus = "usable",
+                TopicId = topicId,
+                ConceptKey = "indexes",
+                Label = "Indexes",
+                SafeHint = "Index amacını kısa bir pratikle yeniden kurmak iyi olur.",
+                EvidenceBasis = ["wrong_quiz_attempt", "knowledge_tracing"]
+            },
+            learningSignalConfidence = new LearningSignalConfidenceDto
+            {
+                Status = "usable",
+                Confidence = 0.84m,
+                Reasons = ["concept_mapped", "repeated_wrong_concept"]
+            },
+            remediationSeed = new RemediationSeedDto
+            {
+                ConceptKey = "indexes",
+                Label = "Indexes",
+                TopicId = topicId,
+                Reason = "Bu kavram için yanlış cevap sinyali var; kısa pratikle telafi etmek iyi olur.",
+                Confidence = 0.84m,
+                ConfidenceStatus = "usable",
+                MisconceptionCategory = "concept_confusion",
+                UserSafeMisconceptionLabel = "Kavram karışıklığı olabilir",
+                FirstAction = "practice_quiz",
+                SecondaryActions = ["tutor_explain"],
+                EvidenceBasis = ["wrong_quiz_attempt", "knowledge_tracing"]
+            }
+        };
+        db.KnowledgeTracingStates.Add(new KnowledgeTracingState
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ConceptKey = "indexes",
+            Label = "Indexes",
+            MasteryProbability = 0.38m,
+            Confidence = 0.72m,
+            EvidenceCount = 3,
+            IncorrectCount = 2,
+            RemediationNeed = "high",
+            PracticeReadiness = "guided",
+            UpdatedAt = DateTime.UtcNow
+        });
+        db.LearningSignals.Add(new LearningSignal
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = sessionId,
+            SignalType = "MisconceptionDetected",
+            SkillTag = "indexes",
+            IsPositive = false,
+            PayloadJson = JsonSerializer.Serialize(signalPayload),
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var workingMemory = new TestTutorWorkingMemoryService();
+        var learnerProfile = new LearnerProfileService(
+            db,
+            new LearningStyleSignalService(db),
+            new AffectiveSignalService(db),
+            new CognitiveLoadService(db));
+        var assembler = new TutorTurnStateAssembler(db, learnerProfile, workingMemory);
+
+        var turnState = await assembler.BuildAsync(
+            userId,
+            topicId,
+            sessionId,
+            "Index konusunu neden yanlış yaptım, adım adım anlat.",
+            conversationContext: "",
+            notebookContext: "",
+            wikiContext: "",
+            learningSignalContext: "",
+            ideContext: "",
+            new TutorPolicyContextDto
+            {
+                ActiveConceptKey = "indexes",
+                ActiveConceptLabel = "Indexes",
+                GroundingStatus = "source_grounded",
+                SourceEvidenceCount = 1,
+                EvidenceQuality = new EvidenceQualityDto { Status = "strong" }
+            });
+        var tutorPlan = await new TutorActionPlanner(db, workingMemory).PlanAsync(turnState);
+        var memory = await new LearningMemoryService(db).BuildAsync(
+            userId,
+            [topicId],
+            new EvidenceQualityDto { Status = "strong" });
+        var adaptivePlan = await new AdaptiveStudyPlannerService().BuildAsync(
+            userId,
+            request: null,
+            learningMemory: memory,
+            weakConcepts: Array.Empty<DashboardWeakConceptDto>(),
+            sourceHealth: new DashboardSourceHealthDto { Status = "healthy", EvidenceQuality = new EvidenceQualityDto { Status = "strong" } },
+            activePlan: null,
+            dueReviewCount: 0,
+            topicScopeIds: [topicId]);
+
+        Assert.Equal("remediation_ready", turnState.LearningLoopStatus);
+        Assert.Equal("needs_remediation", turnState.LearnerState);
+        Assert.Equal("recovery", turnState.TutorResponseMode);
+        Assert.Equal("learning_loop_remediation", turnState.MasteryBasis);
+        Assert.Equal("practice_quiz", turnState.RemediationSeed?.FirstAction);
+        Assert.Contains("Indexes", turnState.WeakConceptHints);
+        Assert.Equal("remediate", tutorPlan.TeachingMode);
+        Assert.Contains("pratik", tutorPlan.NextCheckPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(memory.RemediationReadyItems, item => item.ConceptKey == "indexes" && item.ConfidenceStatus == "usable");
+        var firstItem = Assert.Single(adaptivePlan.Items.Take(1));
+        Assert.Equal("practice_quiz", firstItem.ActionType);
+        Assert.Contains("yanlış cevap sinyali", firstItem.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("wrong_quiz_attempt", firstItem.EvidenceBasis);
+    }
+
+    [Fact]
     public async Task LearningMemoryService_ReturnsSafeEmptyStateWithoutSignals()
     {
         await using var db = CreateDb();
@@ -802,6 +928,120 @@ public sealed class LearningArchitectureTests
         Assert.Empty(memory.WeakConcepts);
         Assert.Contains("Henüz yeterli öğrenme sinyali yok", memory.Summary);
         Assert.True(memory.GoalReadiness.NeedsMoreEvidence);
+    }
+
+    [Fact]
+    public async Task AdaptiveStudyPlannerService_BuildsDeterministicRemediationPlan()
+    {
+        var userId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        var service = new AdaptiveStudyPlannerService();
+        var memory = new LearningMemoryLiteDto
+        {
+            HasEnoughSignals = true,
+            ConfidenceStatus = "usable",
+            RemediationReadyItems =
+            [
+                new LearningMemoryConceptDto
+                {
+                    TopicId = topicId,
+                    ConceptKey = "indexes",
+                    Label = "Indexes",
+                    ConfidenceStatus = "usable",
+                    UserSafeReason = "Bu konuda zayıf sinyal var.",
+                    EvidenceBasis = ["knowledge_tracing"],
+                    RemediationSeed = new RemediationSeedDto
+                    {
+                        ConceptKey = "indexes",
+                        Label = "Indexes",
+                        TopicId = topicId,
+                        Reason = "Bu kavram için telafi önerisi hazır.",
+                        ConfidenceStatus = "usable",
+                        FirstAction = "practice_quiz",
+                        EvidenceBasis = ["wrong_quiz_attempt"]
+                    }
+                }
+            ],
+            GoalReadiness = new GoalReadinessDto
+            {
+                ObservedLevel = "intermediate",
+                ObservedLevelConfidence = 0.72m,
+                NeedsMoreEvidence = false,
+                SuggestedDiagnosticFocus = ["Indexes"]
+            }
+        };
+
+        var plan = await service.BuildAsync(
+            userId,
+            new AdaptiveStudyPlanRequestDto { WeeklyAvailableMinutes = 180, CurrentLevel = "intermediate" },
+            memory,
+            Array.Empty<DashboardWeakConceptDto>(),
+            new DashboardSourceHealthDto { Status = "healthy", EvidenceQuality = new EvidenceQualityDto { Status = "strong" } },
+            new DashboardActivePlanDto { TopicId = topicId, Title = "SQL", ProgressPercentage = 42 },
+            dueReviewCount: 0,
+            [topicId]);
+
+        Assert.True(plan.Items.Count >= 2);
+        Assert.Equal("practice_quiz", plan.Items[0].ActionType);
+        Assert.Contains("telafi", plan.Items[0].Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("wrong_quiz_attempt", plan.Items[0].EvidenceBasis);
+        Assert.Contains(plan.Items, item => item.ActionType == "continue_lesson");
+        Assert.False(plan.Diagnostic.ShouldRunDiagnostic);
+    }
+
+    [Fact]
+    public async Task AdaptiveStudyPlannerService_ValidatesGoalAndDiagnosticInputs()
+    {
+        var service = new AdaptiveStudyPlannerService();
+        var memory = new LearningMemoryLiteDto
+        {
+            HasEnoughSignals = true,
+            ConfidenceStatus = "observed_only",
+            GoalReadiness = new GoalReadinessDto
+            {
+                ObservedLevel = "foundation",
+                ObservedLevelConfidence = 0.70m,
+                NeedsMoreEvidence = false,
+                SuggestedDiagnosticFocus = ["REST API"]
+            }
+        };
+
+        var careerPlan = await service.BuildAsync(
+            Guid.NewGuid(),
+            new AdaptiveStudyPlanRequestDto
+            {
+                GoalType = "career",
+                CareerTarget = "Backend Developer",
+                WeeklyAvailableMinutes = 240,
+                CurrentLevel = "advanced",
+                TargetDate = DateTimeOffset.UtcNow.AddDays(-1)
+            },
+            memory,
+            Array.Empty<DashboardWeakConceptDto>(),
+            new DashboardSourceHealthDto { Status = "source_retrieval_empty", EvidenceQuality = new EvidenceQualityDto { Status = "missing" } },
+            null,
+            dueReviewCount: 0,
+            Array.Empty<Guid>());
+
+        Assert.True(careerPlan.Diagnostic.ShouldRunDiagnostic);
+        Assert.Contains(careerPlan.Items, item => item.ActionType == "diagnostic_check");
+        Assert.Contains(careerPlan.Warnings, warning => warning.Contains("işe giriş garantisi", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(careerPlan.Warnings, warning => warning.Contains("Hedef tarih", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(careerPlan.Warnings, warning => warning.Contains("Kaynak güveni", StringComparison.OrdinalIgnoreCase));
+
+        var invalidTimePlan = await service.BuildAsync(
+            Guid.NewGuid(),
+            new AdaptiveStudyPlanRequestDto { GoalType = "exam", ExamName = "KPSS", WeeklyAvailableMinutes = 0 },
+            null,
+            Array.Empty<DashboardWeakConceptDto>(),
+            new DashboardSourceHealthDto(),
+            null,
+            dueReviewCount: 0,
+            Array.Empty<Guid>());
+
+        Assert.Empty(invalidTimePlan.Items);
+        Assert.Contains(invalidTimePlan.Warnings, warning => warning.Contains("Haftalık çalışma süresi", StringComparison.Ordinal));
+        Assert.Contains(invalidTimePlan.Warnings, warning => warning.Contains("resmi sınav duyuruları", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -226,6 +226,58 @@ public sealed class GoalReadinessDto
     public IReadOnlyList<string> SuggestedDiagnosticFocus { get; set; } = Array.Empty<string>();
 }
 
+public sealed class AdaptiveStudyPlanRequestDto
+{
+    public string GoalType { get; set; } = "general_learning";
+    public DateTimeOffset? TargetDate { get; set; }
+    public int WeeklyAvailableMinutes { get; set; } = 180;
+    public string CurrentLevel { get; set; } = "unknown";
+    public string? ExamName { get; set; }
+    public string? CareerTarget { get; set; }
+    public IReadOnlyList<Guid> PriorityTopicIds { get; set; } = Array.Empty<Guid>();
+    public IReadOnlyList<string> PrioritySkills { get; set; } = Array.Empty<string>();
+}
+
+public sealed class AdaptiveStudyPlanDto
+{
+    public string Summary { get; set; } = "Bugün için kısa ve güvenli bir çalışma rotası hazır.";
+    public int WindowDays { get; set; } = 7;
+    public IReadOnlyList<AdaptiveStudyPlanItemDto> Items { get; set; } = Array.Empty<AdaptiveStudyPlanItemDto>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public DiagnosticResultDto Diagnostic { get; set; } = new();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool HasEnoughSignals { get; set; }
+}
+
+public sealed class AdaptiveStudyPlanItemDto
+{
+    public string Title { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public Guid? TopicId { get; set; }
+    public string ActionType { get; set; } = "continue_lesson";
+    public int EstimatedMinutes { get; set; } = 20;
+    public int Priority { get; set; }
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+    public string ConfidenceStatus { get; set; } = "observed_only";
+}
+
+public sealed class DiagnosticIntakeDto
+{
+    public string SelfDeclaredLevel { get; set; } = "unknown";
+    public string ObservedLevel { get; set; } = "unknown";
+    public decimal ObservedLevelConfidence { get; set; }
+    public bool NeedsMoreEvidence { get; set; } = true;
+    public IReadOnlyList<string> WeakAreas { get; set; } = Array.Empty<string>();
+}
+
+public sealed class DiagnosticResultDto
+{
+    public DiagnosticIntakeDto Intake { get; set; } = new();
+    public string RecommendedStartingPoint { get; set; } = "Kısa seviye tespiti ile başla.";
+    public bool ShouldRunDiagnostic { get; set; } = true;
+    public string UserSafeReason { get; set; } = "Bu konuda yeterli sinyal yok; kısa seviye tespiti iyi olur.";
+}
+
 public sealed class LearningEventDto
 {
     public Guid Id { get; set; }
