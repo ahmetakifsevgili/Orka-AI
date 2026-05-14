@@ -80,6 +80,7 @@ addCheck("Question bank API exposed", api.includes("QuestionsAPI") && api.includ
 addCheck("Question import API exposed", api.includes("QuestionImportsAPI") && api.includes("/question-imports/preview") && api.includes("/question-imports/approve") && api.includes("QuestionImportPreviewDto"));
 addCheck("Question draft API exposed", api.includes("QuestionDraftsAPI") && api.includes("/question-drafts/preview") && api.includes("/question-drafts/approve") && api.includes("QuestionDraftPreviewDto"));
 addCheck("Central exams API exposed", api.includes("CentralExamsAPI") && api.includes("/central-exams/kpss") && api.includes("/central-exams/kpss/turkce-paragraf/start") && api.includes("CentralExamStudyHomeDto") && api.includes("PracticeSessionDto"));
+addCheck("Question quality analytics API exposed", api.includes("QuestionQualityAPI") && api.includes("/question-quality/questions/") && api.includes("/question-quality/central-exams/") && api.includes("QuestionItemAnalyticsDto") && api.includes("CentralExamBlueprintCoverageDto"));
 addCheck("Production readiness API exposed", api.includes("/production-readiness/v1") && api.includes("ProductionReadinessAPI"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
@@ -129,12 +130,14 @@ addCheck("App sidebar exposes logout action", sidebar.includes("Çıkış yap") 
 
 const centralExams = read("src/components/CentralExamsPanel.tsx");
 const centralHome = read("src/pages/Home.tsx");
-addCheck("Central exams product shell is visible", sidebar.includes("Merkezi Sınavlar") && centralHome.includes("central-exams") && centralExams.includes("Merkezi Sınavlar") && centralExams.includes("KPSS hazırlık iskeleti"));
-addCheck("Central exams safe KPSS copy is guarded", centralExams.includes("Resmi müfredat iddiası değildir") && centralExams.includes("doğrulanmış kaynak") && !centralExams.includes("kazanma garantisi") && !centralExams.includes("official curriculum complete") && !centralExams.includes("NotebookLM"));
+addCheck("Central exams product shell is visible", sidebar.includes("Merkezi Sınavlar") && centralHome.includes("central-exams") && centralExams.includes("Merkezi Sinavlar") && centralExams.includes("KPSS hazirlik iskeleti"));
+addCheck("Central exams safe KPSS copy is guarded", centralExams.includes("Resmi mufredat iddiasi degildir") && centralExams.includes("dogrulanmis kaynak") && !centralExams.includes("kazanma garantisi") && !centralExams.includes("official curriculum complete") && !centralExams.includes("NotebookLM"));
 
 addCheck("Central exams mini deneme stays safe", centralExams.includes("Mini Deneme") && centralExams.includes("Resmi OSYM simulasyonu degil") && !centralExams.includes("puan tahmini") && !centralExams.includes("percentile") && !centralExams.includes("dershane paneli") && !centralExams.includes("scraping"));
 addCheck("Central exams multi-exam shell is visible", centralExams.includes("YKS") && centralExams.includes("LGS") && centralExams.includes("YDS") && centralExams.includes("Hazirlik iskeleti") && centralExams.includes("Pratik") && centralExams.includes("Mini deneme"));
 addCheck("Central exams scaffold copy stays safe", !centralExams.includes("resmi kapsam tamam") && !centralExams.includes("kazanma garantisi") && !centralExams.includes("official MEB simulation") && !centralExams.includes("official OSYM simulation") && !centralExams.includes("NotebookLM"));
+addCheck("KPSS pilot practice flow is visible", centralExams.includes("KPSS Turkce Paragraf pratigi") && centralExams.includes("Pratigi baslat") && centralExams.includes("Cevaplari gonder") && centralExams.includes("Cevap anahtari ve aciklama sadece gonderimden sonra gosterilir"));
+addCheck("KPSS pilot practice hides pre-submit answer keys", centralExams.includes("Seceneklerde dogru cevap bilgisi tasinmaz") && centralExams.includes("result.correctOptionKey") && !centralExams.includes("option.isCorrect") && !centralExams.includes("storageKey"));
 
 const citationDisplay = read("src/lib/citationDisplay.ts");
 addCheck("Evidence quality helpers have user-facing labels", citationDisplay.includes("evidenceQualityLabel") && citationDisplay.includes("Kaynak güveni güçlü") && citationDisplay.includes("Kaynak güveni sınırlı") && citationDisplay.includes("Kaynak bulunamadı"));

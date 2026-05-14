@@ -1135,6 +1135,130 @@ export interface QuestionValidationResultDto {
   isValid: boolean;
   errors: string[];
   warnings: string[];
+  accessibility: QuestionAccessibilityValidationDto[];
+}
+
+export interface QuestionAccessibilityValidationDto {
+  targetType: string;
+  targetId?: string | null;
+  code: string;
+  severity: string;
+}
+
+export interface QuestionAssetDto {
+  id: string;
+  ownershipState: "system" | "user" | string;
+  assetType: string;
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256Hash: string;
+  sourceRegistryItemId?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  licenseStatus: string;
+  verificationStatus: string;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateQuestionAssetDto {
+  assetType?: string;
+  storageKey: string;
+  fileName: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sha256Hash: string;
+  sourceRegistryItemId?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  licenseStatus?: string;
+  verificationStatus?: string;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface QuestionContentBlockDto {
+  id?: string | null;
+  blockType: string;
+  text?: string | null;
+  contentJson?: string | null;
+  assetId?: string | null;
+  asset?: QuestionAssetDto | null;
+  sortOrder: number;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface CreateQuestionContentBlockDto {
+  blockType?: string;
+  text?: string | null;
+  contentJson?: string | null;
+  assetId?: string | null;
+  sortOrder?: number;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface QuestionOptionContentBlockDto {
+  id?: string | null;
+  blockType: string;
+  text?: string | null;
+  contentJson?: string | null;
+  assetId?: string | null;
+  asset?: QuestionAssetDto | null;
+  sortOrder: number;
+  altText?: string | null;
+  caption?: string | null;
+}
+
+export interface CreateQuestionOptionContentBlockDto {
+  blockType?: string;
+  text?: string | null;
+  contentJson?: string | null;
+  assetId?: string | null;
+  sortOrder?: number;
+  altText?: string | null;
+  caption?: string | null;
+}
+
+export interface QuestionStimulusDto {
+  id: string;
+  ownershipState: "system" | "user" | string;
+  title: string;
+  stimulusType: string;
+  contentText?: string | null;
+  contentJson?: string | null;
+  sourceRegistryItemId?: string | null;
+  curriculumNodeId?: string | null;
+  verificationStatus: string;
+  licenseStatus: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateQuestionStimulusDto {
+  title: string;
+  stimulusType?: string;
+  contentText?: string | null;
+  contentJson?: string | null;
+  sourceRegistryItemId?: string | null;
+  curriculumNodeId?: string | null;
+  verificationStatus?: string;
+  licenseStatus?: string;
+}
+
+export interface QuestionStimulusLinkDto {
+  questionStimulusId: string;
+  sortOrder?: number;
 }
 
 export interface QuestionOptionDto {
@@ -1143,6 +1267,7 @@ export interface QuestionOptionDto {
   text: string;
   isCorrect: boolean;
   sortOrder: number;
+  contentBlocks?: QuestionOptionContentBlockDto[];
 }
 
 export interface QuestionExplanationDto {
@@ -1191,6 +1316,8 @@ export interface QuestionItemDto {
   explanations: QuestionExplanationDto[];
   tags: QuestionTagDto[];
   outcomeLinks: QuestionOutcomeLinkDto[];
+  contentBlocks: QuestionContentBlockDto[];
+  stimuli: QuestionStimulusDto[];
   validation: QuestionValidationResultDto;
 }
 
@@ -1214,6 +1341,8 @@ export interface CreateQuestionDto {
   explanations?: QuestionExplanationDto[];
   tags?: QuestionTagDto[];
   outcomeLinks?: QuestionOutcomeLinkDto[];
+  contentBlocks?: CreateQuestionContentBlockDto[];
+  stimuli?: QuestionStimulusLinkDto[];
 }
 
 export interface UpdateQuestionDto {
@@ -1236,6 +1365,8 @@ export interface UpdateQuestionDto {
   explanations?: QuestionExplanationDto[];
   tags?: QuestionTagDto[];
   outcomeLinks?: QuestionOutcomeLinkDto[];
+  contentBlocks?: CreateQuestionContentBlockDto[];
+  stimuli?: QuestionStimulusLinkDto[];
 }
 
 export interface QuestionBankFilterDto {
@@ -1318,12 +1449,17 @@ export interface QuestionImportPreviewItemDto {
 export interface QuestionImportPreviewDto {
   id: string;
   status: "pending" | "approved" | "expired" | string;
+  importFormat: string;
+  packageTitle?: string | null;
+  packageVersion?: string | null;
   totalCount: number;
   acceptedCount: number;
   rejectedCount: number;
   warningCount: number;
   createdAt: string;
   expiresAt: string;
+  assets: QuestionImportAssetDto[];
+  stimuli: QuestionImportStimulusDto[];
   items: QuestionImportPreviewItemDto[];
 }
 
@@ -1339,6 +1475,131 @@ export interface QuestionImportResultDto {
   rejectedCount: number;
   createdQuestionIds: string[];
   issues: QuestionImportValidationIssueDto[];
+}
+
+export interface QuestionImportPackageDto {
+  packageVersion?: string;
+  packageTitle?: string;
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  examDefinitionId?: string | null;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  examCode?: string | null;
+  variantCode?: string | null;
+  sectionCode?: string | null;
+  subjectCode?: string | null;
+  topicCode?: string | null;
+  outcomeCode?: string | null;
+  assets: QuestionImportAssetDto[];
+  stimuli: QuestionImportStimulusDto[];
+  questions: QuestionImportRichQuestionDto[];
+}
+
+export interface QuestionImportAssetDto {
+  externalAssetId: string;
+  assetType?: string;
+  storageKey?: string;
+  relativePath?: string | null;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sha256Hash: string;
+  sourceRegistryItemId?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  licenseStatus?: string;
+  verificationStatus?: string;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface QuestionImportStimulusDto {
+  externalStimulusId: string;
+  title: string;
+  stimulusType?: string;
+  contentText?: string | null;
+  contentJson?: string | null;
+  sourceRegistryItemId?: string | null;
+  curriculumNodeId?: string | null;
+  licenseStatus?: string;
+  verificationStatus?: string;
+}
+
+export interface QuestionImportRichQuestionDto {
+  externalId?: string | null;
+  examDefinitionId?: string | null;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  examCode?: string | null;
+  variantCode?: string | null;
+  sectionCode?: string | null;
+  subjectCode?: string | null;
+  topicCode?: string | null;
+  outcomeCode?: string | null;
+  questionType?: string;
+  stem?: string;
+  difficulty?: string;
+  cognitiveSkill?: string;
+  sourceOrigin?: string | null;
+  licenseStatus?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  explanation?: string;
+  contentBlocks: QuestionImportContentBlockDto[];
+  options: QuestionImportRichOptionDto[];
+  explanations?: QuestionExplanationDto[];
+  tags?: string[];
+  outcomeLinks?: QuestionOutcomeLinkDto[];
+  externalStimulusIds?: string[];
+}
+
+export interface QuestionImportContentBlockDto {
+  blockType?: string;
+  text?: string | null;
+  contentJson?: string | null;
+  externalAssetId?: string | null;
+  sortOrder?: number;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface QuestionImportRichOptionDto {
+  optionKey: string;
+  text?: string;
+  isCorrect: boolean;
+  sortOrder?: number;
+  contentBlocks: QuestionImportContentBlockDto[];
+}
+
+export interface QuestionImportTextAdapterRequestDto {
+  content: string;
+  sourceOrigin?: string;
+  licenseStatus?: string;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  examDefinitionId?: string | null;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  examCode?: string | null;
+  variantCode?: string | null;
+  sectionCode?: string | null;
+  subjectCode?: string | null;
+  topicCode?: string | null;
+  outcomeCode?: string | null;
 }
 
 export interface QuestionDraftGenerationContextDto {
@@ -1442,6 +1703,176 @@ export interface QuestionDraftApprovalResultDto {
   rejectedCount: number;
   createdQuestionIds: string[];
   issues: QuestionDraftGenerationIssueDto[];
+}
+
+export interface SourceRegistryItemDto {
+  id: string;
+  ownershipState: string;
+  sourceKey: string;
+  title: string;
+  sourceUrl?: string | null;
+  sourceType: string;
+  publisher: string;
+  licenseStatus: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+  sourceContentHash?: string | null;
+  verifiedAt?: string | null;
+  visibility: string;
+  createdAt: string;
+  updatedAt: string;
+  licenseReviews: ContentLicenseReviewDto[];
+}
+
+export interface RegisterSourceRegistryItemDto {
+  sourceKey: string;
+  title: string;
+  sourceUrl?: string | null;
+  sourceType?: string;
+  publisher?: string;
+  licenseStatus?: string;
+  verificationStatus?: string;
+  sourceContentHash?: string | null;
+}
+
+export interface VerifySourceRegistryItemDto {
+  verificationStatus?: string;
+  verificationMethod?: string;
+  evidenceLocator?: string | null;
+  internalNotes?: string | null;
+}
+
+export interface ReviewSourceLicenseDto {
+  licenseStatus?: string;
+  reviewStatus?: string;
+  decisionReason?: string;
+}
+
+export interface ContentLicenseReviewDto {
+  id: string;
+  licenseStatus: string;
+  reviewStatus: string;
+  publishAllowed: boolean;
+  decisionReason: string;
+  createdAt: string;
+}
+
+export interface CurriculumVersionDto {
+  id: string;
+  examDefinitionId: string;
+  sourceRegistryItemId?: string | null;
+  ownershipState: string;
+  code: string;
+  name: string;
+  description: string;
+  versionLabel: string;
+  status: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+    userSafeVerificationLabel: string;
+    sourceSnapshotHash?: string | null;
+    supersededByCurriculumVersionId?: string | null;
+    deprecatedAt?: string | null;
+    deprecatedReason?: string | null;
+    archivedAt?: string | null;
+    effectiveFrom?: string | null;
+    effectiveUntil?: string | null;
+    nodes: CurriculumNodeDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCurriculumVersionDto {
+  examDefinitionId: string;
+  sourceRegistryItemId?: string | null;
+  code: string;
+  name: string;
+  description?: string;
+  versionLabel?: string;
+  status?: string;
+  verificationStatus?: string;
+  effectiveFrom?: string | null;
+    effectiveUntil?: string | null;
+  }
+
+  export interface DeprecateCurriculumVersionDto {
+    deprecatedReason?: string;
+  }
+
+  export interface SupersedeCurriculumVersionDto {
+    replacementCurriculumVersionId: string;
+    deprecatedReason?: string;
+  }
+
+  export interface CurriculumNodeDto {
+  id: string;
+  curriculumVersionId: string;
+  parentCurriculumNodeId?: string | null;
+  nodeType: string;
+  code: string;
+  title: string;
+  description: string;
+    verificationStatus: string;
+    canClaimOfficial: boolean;
+    sourceAnchor?: string | null;
+    sourceLocator?: string | null;
+    sortOrder: number;
+    children: CurriculumNodeDto[];
+  }
+
+export interface CreateCurriculumNodeDto {
+  parentCurriculumNodeId?: string | null;
+  nodeType?: string;
+  code: string;
+  title: string;
+    description?: string;
+    verificationStatus?: string;
+    sourceAnchor?: string | null;
+    sourceLocator?: string | null;
+    sortOrder?: number;
+  }
+
+export interface CurriculumOutcomeMappingDto {
+  id: string;
+  curriculumVersionId: string;
+  curriculumNodeId: string;
+  examOutcomeId: string;
+    sourceRegistryItemId?: string | null;
+    mappingType: string;
+    confidenceStatus: string;
+    reviewStatus: string;
+    verificationStatus: string;
+    canClaimOfficial: boolean;
+    sourceLocator?: string | null;
+    pageNumber?: number | null;
+    sectionTitle?: string | null;
+    clause?: string | null;
+    anchorText?: string | null;
+    evidenceUrl?: string | null;
+    userSafeVerificationLabel: string;
+    createdAt: string;
+  }
+
+export interface CreateCurriculumOutcomeMappingDto {
+  curriculumNodeId: string;
+  examOutcomeId: string;
+    sourceRegistryItemId?: string | null;
+    mappingType?: string;
+    confidenceStatus?: string;
+    reviewStatus?: string;
+    verificationStatus?: string;
+    sourceLocator?: string | null;
+    pageNumber?: number | null;
+    sectionTitle?: string | null;
+    clause?: string | null;
+    anchorText?: string | null;
+    evidenceUrl?: string | null;
+  }
+
+export interface CurriculumOutcomeSourceDto {
+  examOutcomeId: string;
+  mappings: CurriculumOutcomeMappingDto[];
 }
 
 export interface CentralExamVariantDto {
@@ -1563,6 +1994,28 @@ export interface PracticeOptionDto {
   optionKey: string;
   text: string;
   sortOrder: number;
+  contentBlocks: PracticeContentBlockDto[];
+}
+
+export interface PracticeContentBlockDto {
+  blockType: string;
+  text?: string | null;
+  contentJson?: string | null;
+  assetType?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  sortOrder: number;
+  altText?: string | null;
+  caption?: string | null;
+  longDescription?: string | null;
+}
+
+export interface PracticeStimulusDto {
+  title: string;
+  stimulusType: string;
+  contentText?: string | null;
+  contentJson?: string | null;
+  sortOrder: number;
 }
 
 export interface PracticeQuestionDto {
@@ -1573,6 +2026,8 @@ export interface PracticeQuestionDto {
   sourceTitle?: string | null;
   sourceUrl?: string | null;
   examContext: ExamLearningContextDto;
+  stimuli: PracticeStimulusDto[];
+  contentBlocks: PracticeContentBlockDto[];
   options: PracticeOptionDto[];
 }
 
@@ -1599,6 +2054,7 @@ export interface PracticeSubmitRequestDto {
 
 export interface PracticeQuestionResultDto {
   questionId: string;
+  stem: string;
   selectedOptionKey?: string | null;
   correctOptionKey?: string | null;
   isCorrect: boolean;
@@ -1607,6 +2063,9 @@ export interface PracticeQuestionResultDto {
   sourceTitle?: string | null;
   sourceUrl?: string | null;
   examContext: ExamLearningContextDto;
+  stimuli: PracticeStimulusDto[];
+  contentBlocks: PracticeContentBlockDto[];
+  options: PracticeOptionDto[];
 }
 
 export interface PracticeTopicBreakdownDto {
@@ -1683,6 +2142,103 @@ export interface PracticeResultDto {
   learningSignal?: CentralExamLearningSignalDto | null;
   studyContext?: CentralExamStudyContextDto | null;
   tutorRemediationContext: string;
+}
+
+export interface QuestionOptionAnalyticsDto {
+  optionKey: string;
+  selectionCount: number;
+  correctSelectionCount: number;
+  wrongSelectionCount: number;
+  selectionRate: number;
+  isCorrectOption: boolean;
+  distractorSignal: string;
+}
+
+export interface QuestionQualityReviewSignalDto {
+  id: string;
+  questionItemId: string;
+  signalType: string;
+  severity: string;
+  message: string;
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
+export interface QuestionItemAnalyticsDto {
+  questionItemId: string;
+  examDefinitionId: string;
+  examVariantId?: string | null;
+  examSectionId?: string | null;
+  examSubjectId?: string | null;
+  examTopicId?: string | null;
+  examOutcomeId?: string | null;
+  attemptCount: number;
+  answeredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  correctnessRate: number;
+  blankRate: number;
+  difficultyEstimate: string;
+  discriminationStatus: string;
+  qualitySignal: string;
+  sampleSizeStatus: string;
+  lastCalculatedAt: string;
+  options: QuestionOptionAnalyticsDto[];
+  reviewSignals: QuestionQualityReviewSignalDto[];
+}
+
+export interface CentralExamQualityTopicCoverageDto {
+  examSubjectId?: string | null;
+  subjectCode?: string | null;
+  examTopicId?: string | null;
+  topicCode?: string | null;
+  examOutcomeId?: string | null;
+  outcomeCode?: string | null;
+  publishedQuestionCount: number;
+  practiceReadyCount: number;
+  callerDraftCount: number;
+  callerNeedsReviewCount: number;
+  coverageStatus: string;
+  averageDifficultyEstimate?: string | null;
+}
+
+export interface CentralExamQualityOverviewDto {
+  examCode: string;
+  variantCode?: string | null;
+  userSafeLabel: string;
+  visibleQuestionCount: number;
+  publishedQuestionCount: number;
+  analyticsSnapshotCount: number;
+  needsReviewSignalCount: number;
+  lowCoverageTopicCount: number;
+  generatedAt: string;
+  topics: CentralExamQualityTopicCoverageDto[];
+}
+
+export interface CentralExamBlueprintCoverageDto {
+  examCode: string;
+  variantCode?: string | null;
+  userSafeLabel: string;
+  topicCount: number;
+  noContentCount: number;
+  lowContentCount: number;
+  usableCount: number;
+  strongCount: number;
+  topics: CentralExamQualityTopicCoverageDto[];
+}
+
+export interface RecalculateQuestionAnalyticsResultDto {
+  questionItemId: string;
+  recalculated: boolean;
+  analytics?: QuestionItemAnalyticsDto | null;
+}
+
+export interface RecalculateExamAnalyticsResultDto {
+  examCode: string;
+  variantCode?: string | null;
+  recalculatedQuestionCount: number;
+  calculatedAt: string;
 }
 
 export type CourseLevel = "Başlangıç" | "Orta" | "İleri";
@@ -1843,4 +2399,78 @@ export interface CentralExamDenemeResultDto {
   learningSignal?: CentralExamLearningSignalDto | null;
   studyContext?: CentralExamStudyContextDto | null;
   tutorRemediationContext: string;
+}
+
+export interface QuestionReviewEventDto {
+  id: string;
+  eventType: string;
+  fromStage?: string | null;
+  toStage?: string | null;
+  reason?: string | null;
+  safeNote?: string | null;
+  createdAt: string;
+}
+
+export interface QuestionReviewWorkflowDto {
+  id: string;
+  questionItemId: string;
+  currentStage: string;
+  status: string;
+  hasAssignedReviewer: boolean;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+  events: QuestionReviewEventDto[];
+}
+
+export interface SubmitQuestionReviewDto {
+  safeNote?: string | null;
+}
+
+export interface AssignQuestionReviewerDto {
+  assignedReviewerUserId?: string | null;
+  safeNote?: string | null;
+}
+
+export interface AdvanceQuestionReviewStageDto {
+  toStage: string;
+  safeNote?: string | null;
+}
+
+export interface RejectQuestionReviewDto {
+  reason: string;
+}
+
+export interface RetireQuestionDto {
+  reason: string;
+}
+
+export interface PublishQuestionContentDto {
+  safeNote?: string | null;
+}
+
+export interface QuestionPublishIssueDto {
+  code: string;
+  severity: string;
+  area: string;
+  message: string;
+}
+
+export interface QuestionPublishReadinessDto {
+  questionItemId: string;
+  workflowId?: string | null;
+  workflowStage?: string | null;
+  workflowStatus?: string | null;
+  isReadyToPublish: boolean;
+  recommendedNextReviewStage: string;
+  blockingIssues: QuestionPublishIssueDto[];
+  warningIssues: QuestionPublishIssueDto[];
+}
+
+export interface QuestionContentVersionDto {
+  id: string;
+  questionItemId: string;
+  versionNumber: number;
+  createdAt: string;
+  reason?: string | null;
 }

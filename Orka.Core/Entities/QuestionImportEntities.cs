@@ -10,6 +10,10 @@ public sealed class QuestionImportPreview
     public int AcceptedCount { get; set; }
     public int RejectedCount { get; set; }
     public int WarningCount { get; set; }
+    public string ImportFormat { get; set; } = "structured_json";
+    public string? PackageTitle { get; set; }
+    public string? PackageVersion { get; set; }
+    public string? NormalizedPackageJson { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddHours(24);
     public DateTime? ApprovedAt { get; set; }

@@ -54,12 +54,17 @@ public sealed class QuestionImportPreviewDto
 {
     public Guid Id { get; set; }
     public string Status { get; set; } = "pending";
+    public string ImportFormat { get; set; } = "structured_json";
+    public string? PackageTitle { get; set; }
+    public string? PackageVersion { get; set; }
     public int TotalCount { get; set; }
     public int AcceptedCount { get; set; }
     public int RejectedCount { get; set; }
     public int WarningCount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
+    public List<QuestionImportAssetDto> Assets { get; set; } = [];
+    public List<QuestionImportStimulusDto> Stimuli { get; set; } = [];
     public List<QuestionImportPreviewItemDto> Items { get; set; } = [];
 }
 
@@ -97,4 +102,136 @@ public sealed class QuestionImportResultDto
     public int RejectedCount { get; set; }
     public List<Guid> CreatedQuestionIds { get; set; } = [];
     public List<QuestionImportValidationIssueDto> Issues { get; set; } = [];
+}
+
+public sealed class QuestionImportPackageDto
+{
+    public string PackageVersion { get; set; } = "2.0";
+    public string PackageTitle { get; set; } = string.Empty;
+    public string SourceOrigin { get; set; } = "structured_json_v2";
+    public string LicenseStatus { get; set; } = "unknown";
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public Guid? ExamDefinitionId { get; set; }
+    public Guid? ExamVariantId { get; set; }
+    public Guid? ExamSectionId { get; set; }
+    public Guid? ExamSubjectId { get; set; }
+    public Guid? ExamTopicId { get; set; }
+    public Guid? ExamOutcomeId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string? SectionCode { get; set; }
+    public string? SubjectCode { get; set; }
+    public string? TopicCode { get; set; }
+    public string? OutcomeCode { get; set; }
+    public List<QuestionImportAssetDto> Assets { get; set; } = [];
+    public List<QuestionImportStimulusDto> Stimuli { get; set; } = [];
+    public List<QuestionImportRichQuestionDto> Questions { get; set; } = [];
+}
+
+public sealed class QuestionImportAssetDto
+{
+    public string ExternalAssetId { get; set; } = string.Empty;
+    public string AssetType { get; set; } = "image";
+    public string StorageKey { get; set; } = string.Empty;
+    public string? RelativePath { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public string Sha256Hash { get; set; } = string.Empty;
+    public Guid? SourceRegistryItemId { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string LicenseStatus { get; set; } = "unknown";
+    public string VerificationStatus { get; set; } = "unverified";
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class QuestionImportStimulusDto
+{
+    public string ExternalStimulusId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string StimulusType { get; set; } = "passage";
+    public string? ContentText { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? SourceRegistryItemId { get; set; }
+    public Guid? CurriculumNodeId { get; set; }
+    public string LicenseStatus { get; set; } = "unknown";
+    public string VerificationStatus { get; set; } = "unverified";
+}
+
+public sealed class QuestionImportRichQuestionDto
+{
+    public string? ExternalId { get; set; }
+    public Guid? ExamDefinitionId { get; set; }
+    public Guid? ExamVariantId { get; set; }
+    public Guid? ExamSectionId { get; set; }
+    public Guid? ExamSubjectId { get; set; }
+    public Guid? ExamTopicId { get; set; }
+    public Guid? ExamOutcomeId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string? SectionCode { get; set; }
+    public string? SubjectCode { get; set; }
+    public string? TopicCode { get; set; }
+    public string? OutcomeCode { get; set; }
+    public string QuestionType { get; set; } = "multiple_choice";
+    public string Stem { get; set; } = string.Empty;
+    public string Difficulty { get; set; } = "medium";
+    public string CognitiveSkill { get; set; } = "conceptual";
+    public string? SourceOrigin { get; set; }
+    public string? LicenseStatus { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string Explanation { get; set; } = string.Empty;
+    public List<QuestionImportContentBlockDto> ContentBlocks { get; set; } = [];
+    public List<QuestionImportRichOptionDto> Options { get; set; } = [];
+    public List<QuestionExplanationDto> Explanations { get; set; } = [];
+    public List<string> Tags { get; set; } = [];
+    public List<QuestionOutcomeLinkDto> OutcomeLinks { get; set; } = [];
+    public List<string> ExternalStimulusIds { get; set; } = [];
+}
+
+public sealed class QuestionImportContentBlockDto
+{
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public string? ExternalAssetId { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class QuestionImportRichOptionDto
+{
+    public string OptionKey { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public bool IsCorrect { get; set; }
+    public int SortOrder { get; set; }
+    public List<QuestionImportContentBlockDto> ContentBlocks { get; set; } = [];
+}
+
+public sealed class QuestionImportTextAdapterRequestDto
+{
+    public string Content { get; set; } = string.Empty;
+    public string SourceOrigin { get; set; } = "structured_text";
+    public string LicenseStatus { get; set; } = "unknown";
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public Guid? ExamDefinitionId { get; set; }
+    public Guid? ExamVariantId { get; set; }
+    public Guid? ExamSectionId { get; set; }
+    public Guid? ExamSubjectId { get; set; }
+    public Guid? ExamTopicId { get; set; }
+    public Guid? ExamOutcomeId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string? SectionCode { get; set; }
+    public string? SubjectCode { get; set; }
+    public string? TopicCode { get; set; }
+    public string? OutcomeCode { get; set; }
 }

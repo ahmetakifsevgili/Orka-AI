@@ -241,6 +241,39 @@ public interface IQuestionBankService
         Guid userId,
         Guid questionId,
         CancellationToken ct = default);
+
+    Task<QuestionAssetDto> CreateAssetAsync(
+        Guid userId,
+        CreateQuestionAssetDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionAssetDto?> GetAssetAsync(
+        Guid userId,
+        Guid assetId,
+        CancellationToken ct = default);
+
+    Task<QuestionStimulusDto> CreateStimulusAsync(
+        Guid userId,
+        CreateQuestionStimulusDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> AttachStimulusAsync(
+        Guid userId,
+        Guid questionId,
+        QuestionStimulusLinkDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> AddQuestionContentBlockAsync(
+        Guid userId,
+        Guid questionId,
+        CreateQuestionContentBlockDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> AddOptionContentBlockAsync(
+        Guid userId,
+        Guid optionId,
+        CreateQuestionOptionContentBlockDto request,
+        CancellationToken ct = default);
 }
 
 public interface IQuestionImportService
@@ -248,6 +281,31 @@ public interface IQuestionImportService
     Task<QuestionImportPreviewDto> PreviewImportAsync(
         Guid userId,
         QuestionImportRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto> PreviewPackageImportAsync(
+        Guid userId,
+        QuestionImportPackageDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto> PreviewAikenImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto> PreviewGiftImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto> PreviewQtiImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionImportPreviewDto> PreviewMoodleImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
         CancellationToken ct = default);
 
     Task<QuestionImportResultDto> ApproveImportAsync(
@@ -276,6 +334,133 @@ public interface IQuestionDraftGenerationService
     Task<QuestionDraftPreviewDto?> GetDraftGenerationPreviewAsync(
         Guid userId,
         Guid draftPreviewId,
+        CancellationToken ct = default);
+}
+
+public interface IContentOperationsService
+{
+    Task<QuestionReviewWorkflowDto?> GetWorkflowAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<QuestionReviewWorkflowDto?> SubmitQuestionForReviewAsync(
+        Guid userId,
+        Guid questionId,
+        SubmitQuestionReviewDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionReviewWorkflowDto?> AssignReviewerAsync(
+        Guid userId,
+        Guid questionId,
+        AssignQuestionReviewerDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionReviewWorkflowDto?> AdvanceReviewStageAsync(
+        Guid userId,
+        Guid questionId,
+        AdvanceQuestionReviewStageDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionReviewWorkflowDto?> RejectQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        RejectQuestionReviewDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionReviewWorkflowDto?> RetireQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        RetireQuestionDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionPublishReadinessDto?> GetPublishReadinessAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<QuestionItemDto?> PublishApprovedQuestionAsync(
+        Guid userId,
+        Guid questionId,
+        PublishQuestionContentDto request,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<QuestionContentVersionDto>> GetQuestionVersionsAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+}
+
+public interface ICurriculumSourceRegistryService
+{
+    Task<IReadOnlyList<SourceRegistryItemDto>> GetSourcesAsync(
+        Guid userId,
+        CancellationToken ct = default);
+
+    Task<SourceRegistryItemDto?> GetSourceAsync(
+        Guid userId,
+        Guid sourceId,
+        CancellationToken ct = default);
+
+    Task<SourceRegistryItemDto> RegisterSourceAsync(
+        Guid userId,
+        RegisterSourceRegistryItemDto request,
+        CancellationToken ct = default);
+
+    Task<SourceRegistryItemDto?> VerifySourceAsync(
+        Guid userId,
+        Guid sourceId,
+        VerifySourceRegistryItemDto request,
+        CancellationToken ct = default);
+
+    Task<ContentLicenseReviewDto?> ReviewSourceLicenseAsync(
+        Guid userId,
+        Guid sourceId,
+        ReviewSourceLicenseDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumVersionDto> CreateCurriculumVersionAsync(
+        Guid userId,
+        CreateCurriculumVersionDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumVersionDto?> GetCurriculumVersionAsync(
+        Guid userId,
+        Guid curriculumVersionId,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<CurriculumVersionDto>> GetCurriculumVersionsForExamAsync(
+        Guid userId,
+        string examCode,
+        CancellationToken ct = default);
+
+    Task<CurriculumVersionDto?> DeprecateCurriculumVersionAsync(
+        Guid userId,
+        Guid curriculumVersionId,
+        DeprecateCurriculumVersionDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumVersionDto?> SupersedeCurriculumVersionAsync(
+        Guid userId,
+        Guid curriculumVersionId,
+        SupersedeCurriculumVersionDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumNodeDto?> AddCurriculumNodeAsync(
+        Guid userId,
+        Guid curriculumVersionId,
+        CreateCurriculumNodeDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumOutcomeMappingDto?> MapOutcomeAsync(
+        Guid userId,
+        Guid curriculumVersionId,
+        CreateCurriculumOutcomeMappingDto request,
+        CancellationToken ct = default);
+
+    Task<CurriculumOutcomeSourceDto> GetOutcomeSourcesAsync(
+        Guid userId,
+        Guid examOutcomeId,
         CancellationToken ct = default);
 }
 
@@ -350,6 +535,42 @@ public interface ICentralExamDenemeService
     Task<CentralExamDenemeResultDto?> GetDenemeAttemptAsync(
         Guid userId,
         Guid attemptId,
+        CancellationToken ct = default);
+}
+
+public interface IQuestionQualityAnalyticsService
+{
+    Task<RecalculateQuestionAnalyticsResultDto?> RecalculateQuestionAnalyticsAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<RecalculateExamAnalyticsResultDto> RecalculateCentralExamAnalyticsAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<QuestionItemAnalyticsDto?> GetQuestionAnalyticsAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<QuestionQualityReviewSignalDto>> GetQuestionQualitySignalsAsync(
+        Guid userId,
+        Guid questionId,
+        CancellationToken ct = default);
+
+    Task<CentralExamQualityOverviewDto?> GetCentralExamQualityOverviewAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<CentralExamBlueprintCoverageDto?> GetBlueprintCoverageAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
         CancellationToken ct = default);
 }
 

@@ -98,6 +98,72 @@ public sealed class QuestionsController : ControllerBase
         return deleted ? NoContent() : NotFound();
     }
 
+    [HttpPost("{id:guid}/content-blocks")]
+    public async Task<ActionResult<QuestionItemDto>> AddQuestionContentBlock(
+        Guid id,
+        [FromBody] CreateQuestionContentBlockDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await _questionBank.AddQuestionContentBlockAsync(GetUserId(), id, request, ct);
+            return result is null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(Invalid(ex.Message));
+        }
+    }
+
+    [HttpPost("{id:guid}/stimuli")]
+    public async Task<ActionResult<QuestionItemDto>> AttachStimulus(
+        Guid id,
+        [FromBody] QuestionStimulusLinkDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await _questionBank.AttachStimulusAsync(GetUserId(), id, request, ct);
+            return result is null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(Invalid(ex.Message));
+        }
+    }
+
+    [HttpPost("stimuli")]
+    public async Task<ActionResult<QuestionStimulusDto>> CreateStimulus(
+        [FromBody] CreateQuestionStimulusDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await _questionBank.CreateStimulusAsync(GetUserId(), request, ct));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(Invalid(ex.Message));
+        }
+    }
+
+    [HttpPost("options/{optionId:guid}/content-blocks")]
+    public async Task<ActionResult<QuestionItemDto>> AddOptionContentBlock(
+        Guid optionId,
+        [FromBody] CreateQuestionOptionContentBlockDto request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await _questionBank.AddOptionContentBlockAsync(GetUserId(), optionId, request, ct);
+            return result is null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(Invalid(ex.Message));
+        }
+    }
+
     private static QuestionValidationResultDto Invalid(string message) => new()
     {
         IsValid = false,

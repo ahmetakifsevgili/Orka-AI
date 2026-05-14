@@ -35,6 +35,8 @@ public sealed class QuestionItem
     public ICollection<QuestionExplanation> Explanations { get; set; } = [];
     public ICollection<QuestionTag> Tags { get; set; } = [];
     public ICollection<QuestionOutcomeLink> OutcomeLinks { get; set; } = [];
+    public ICollection<QuestionContentBlock> ContentBlocks { get; set; } = [];
+    public ICollection<QuestionStimulusLink> StimulusLinks { get; set; } = [];
 }
 
 public sealed class QuestionOption
@@ -47,6 +49,7 @@ public sealed class QuestionOption
     public int SortOrder { get; set; }
 
     public QuestionItem QuestionItem { get; set; } = null!;
+    public ICollection<QuestionOptionContentBlock> ContentBlocks { get; set; } = [];
 }
 
 public sealed class QuestionExplanation
@@ -86,4 +89,101 @@ public sealed class QuestionOutcomeLink
 
     public QuestionItem QuestionItem { get; set; } = null!;
     public ExamOutcome ExamOutcome { get; set; } = null!;
+}
+
+public sealed class QuestionAsset
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? OwnerUserId { get; set; }
+    public string AssetType { get; set; } = "image";
+    public string StorageKey { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public string Sha256Hash { get; set; } = string.Empty;
+    public Guid? SourceRegistryItemId { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string LicenseStatus { get; set; } = "unknown";
+    public string VerificationStatus { get; set; } = "unverified";
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; }
+
+    public User? OwnerUser { get; set; }
+    public SourceRegistryItem? SourceRegistryItem { get; set; }
+}
+
+public sealed class QuestionStimulus
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? OwnerUserId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string StimulusType { get; set; } = "passage";
+    public string? ContentText { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? SourceRegistryItemId { get; set; }
+    public Guid? CurriculumNodeId { get; set; }
+    public string VerificationStatus { get; set; } = "unverified";
+    public string LicenseStatus { get; set; } = "unknown";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; }
+
+    public User? OwnerUser { get; set; }
+    public SourceRegistryItem? SourceRegistryItem { get; set; }
+    public CurriculumNode? CurriculumNode { get; set; }
+    public ICollection<QuestionStimulusLink> QuestionLinks { get; set; } = [];
+}
+
+public sealed class QuestionStimulusLink
+{
+    public Guid QuestionItemId { get; set; }
+    public Guid QuestionStimulusId { get; set; }
+    public int SortOrder { get; set; }
+
+    public QuestionItem QuestionItem { get; set; } = null!;
+    public QuestionStimulus QuestionStimulus { get; set; } = null!;
+}
+
+public sealed class QuestionContentBlock
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid QuestionItemId { get; set; }
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; }
+
+    public QuestionItem QuestionItem { get; set; } = null!;
+    public QuestionAsset? Asset { get; set; }
+}
+
+public sealed class QuestionOptionContentBlock
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid QuestionOptionId { get; set; }
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; }
+
+    public QuestionOption QuestionOption { get; set; } = null!;
+    public QuestionAsset? Asset { get; set; }
 }

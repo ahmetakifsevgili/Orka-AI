@@ -147,6 +147,8 @@ public sealed class PracticeQuestionDto
     public string? SourceTitle { get; set; }
     public string? SourceUrl { get; set; }
     public ExamLearningContextDto ExamContext { get; set; } = new();
+    public List<PracticeStimulusDto> Stimuli { get; set; } = [];
+    public List<PracticeContentBlockDto> ContentBlocks { get; set; } = [];
     public List<PracticeOptionDto> Options { get; set; } = [];
 }
 
@@ -154,6 +156,30 @@ public sealed class PracticeOptionDto
 {
     public string OptionKey { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public List<PracticeContentBlockDto> ContentBlocks { get; set; } = [];
+}
+
+public sealed class PracticeContentBlockDto
+{
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public string? AssetType { get; set; }
+    public string? FileName { get; set; }
+    public string? MimeType { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class PracticeStimulusDto
+{
+    public string Title { get; set; } = string.Empty;
+    public string StimulusType { get; set; } = "passage";
+    public string? ContentText { get; set; }
+    public string? ContentJson { get; set; }
     public int SortOrder { get; set; }
 }
 
@@ -191,6 +217,7 @@ public sealed class PracticeResultDto
 public sealed class PracticeQuestionResultDto
 {
     public Guid QuestionId { get; set; }
+    public string Stem { get; set; } = string.Empty;
     public string? SelectedOptionKey { get; set; }
     public string? CorrectOptionKey { get; set; }
     public bool IsCorrect { get; set; }
@@ -199,6 +226,9 @@ public sealed class PracticeQuestionResultDto
     public string? SourceTitle { get; set; }
     public string? SourceUrl { get; set; }
     public ExamLearningContextDto ExamContext { get; set; } = new();
+    public List<PracticeStimulusDto> Stimuli { get; set; } = [];
+    public List<PracticeContentBlockDto> ContentBlocks { get; set; } = [];
+    public List<PracticeOptionDto> Options { get; set; } = [];
 }
 
 public sealed class PracticeTopicBreakdownDto

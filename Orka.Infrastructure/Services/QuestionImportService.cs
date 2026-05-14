@@ -46,6 +46,46 @@ public sealed partial class QuestionImportService : IQuestionImportService
         "open"
     };
 
+    private static readonly HashSet<string> AllowedAssetTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image",
+        "audio",
+        "table_json",
+        "chart_json",
+        "formula",
+        "document_reference"
+    };
+
+    private static readonly HashSet<string> AllowedQuestionBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text",
+        "passage",
+        "image",
+        "table",
+        "chart",
+        "formula",
+        "code",
+        "callout"
+    };
+
+    private static readonly HashSet<string> AllowedOptionBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text",
+        "image",
+        "formula",
+        "table"
+    };
+
+    private static readonly HashSet<string> AllowedStimulusTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "passage",
+        "image",
+        "table",
+        "chart",
+        "formula",
+        "mixed"
+    };
+
     private readonly OrkaDbContext _db;
     private readonly IQuestionBankService _questionBank;
 
@@ -127,6 +167,126 @@ public sealed partial class QuestionImportService : IQuestionImportService
         return ToDto(preview);
     }
 
+    public async Task<QuestionImportPreviewDto> PreviewPackageImportAsync(
+        Guid userId,
+        QuestionImportPackageDto request,
+        CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var preview = new QuestionImportPreview
+        {
+            OwnerUserId = userId,
+            Status = "pending",
+            ImportFormat = "json_v2",
+            PackageTitle = SafeOptional(request.PackageTitle),
+            PackageVersion = Clean(request.PackageVersion, "2.0"),
+            CreatedAt = now,
+            ExpiresAt = now.Add(PreviewTtl)
+        };
+
+        var packageIssues = new List<QuestionImportValidationIssueDto>();
+        var normalizedAssets = NormalizePackageAssets(request.Assets, packageIssues);
+        var normalizedStimuli = NormalizePackageStimuli(request.Stimuli, packageIssues);
+        var assetIds = normalizedAssets.Select(a => a.ExternalAssetId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var stimulusIds = normalizedStimuli.Select(s => s.ExternalStimulusId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var externalIds = request.Questions
+            .Select(q => CleanOptional(q.ExternalId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var normalizedQuestions = new List<QuestionImportRichQuestionDto>();
+        for (var index = 0; index < request.Questions.Count; index++)
+        {
+            var richQuestion = MergePackageDefaults(request, request.Questions[index]);
+            var issues = new List<QuestionImportValidationIssueDto>(packageIssues);
+            var externalId = CleanOptional(richQuestion.ExternalId);
+
+            if (!string.IsNullOrWhiteSpace(externalId) && externalIds.Contains(externalId))
+            {
+                issues.Add(Error("duplicate_external_id", "Aynı externalId bu rich import içinde birden fazla kez kullanılmış."));
+            }
+
+            ValidateRichReferences(richQuestion, assetIds, stimulusIds, issues);
+            var normalizedQuestion = await NormalizeRichQuestionAsync(userId, richQuestion, issues, ct);
+            Guid? duplicateQuestionId = null;
+            if (normalizedQuestion is not null)
+            {
+                duplicateQuestionId = await FindDuplicateQuestionAsync(userId, normalizedQuestion, ct);
+                if (duplicateQuestionId is not null)
+                {
+                    issues.Add(Error("duplicate_existing_question", "Bu soru aynı sınav/kazanım kapsamındaki mevcut soru bankasında zaten var."));
+                }
+            }
+
+            var hasErrors = issues.Any(i => i.Severity == "error");
+            var status = duplicateQuestionId is not null
+                ? "duplicate"
+                : hasErrors
+                    ? "rejected"
+                    : "accepted";
+
+            normalizedQuestions.Add(richQuestion);
+            preview.Items.Add(new QuestionImportPreviewItem
+            {
+                RowIndex = index,
+                ExternalId = externalId,
+                Status = status,
+                IssuesJson = JsonSerializer.Serialize(issues, JsonOptions),
+                NormalizedQuestionJson = normalizedQuestion is not null
+                    ? JsonSerializer.Serialize(normalizedQuestion, JsonOptions)
+                    : null,
+                DuplicateQuestionId = duplicateQuestionId,
+                CreatedAt = now
+            });
+        }
+
+        preview.NormalizedPackageJson = JsonSerializer.Serialize(
+            new NormalizedRichImportPackage(normalizedAssets, normalizedStimuli, normalizedQuestions),
+            JsonOptions);
+        RecalculateCounts(preview);
+        _db.QuestionImportPreviews.Add(preview);
+        await _db.SaveChangesAsync(ct);
+
+        return ToDto(preview);
+    }
+
+    public async Task<QuestionImportPreviewDto> PreviewAikenImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default)
+    {
+        var parsed = ParseAiken(request);
+        return parsed.Items.Count == 0
+            ? await CreateAdapterUnsupportedPreviewAsync(userId, "aiken", "aiken_partial_support", "Aiken içeriği güvenli çoktan seçmeli formata çevrilemedi.", ct)
+            : await PreviewImportAsync(userId, parsed, ct);
+    }
+
+    public async Task<QuestionImportPreviewDto> PreviewGiftImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default)
+    {
+        var parsed = ParseGift(request);
+        return parsed.Items.Count == 0
+            ? await CreateAdapterUnsupportedPreviewAsync(userId, "gift", "gift_partial_support", "GIFT içeriği güvenli çoktan seçmeli formata çevrilemedi.", ct)
+            : await PreviewImportAsync(userId, parsed, ct);
+    }
+
+    public Task<QuestionImportPreviewDto> PreviewQtiImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default) =>
+        CreateAdapterUnsupportedPreviewAsync(userId, "qti3", "qti3_partial_support", "QTI 3 için Pack C yalnızca güvenli preview seam sağlar; tam uyumluluk henüz iddia edilmez.", ct);
+
+    public Task<QuestionImportPreviewDto> PreviewMoodleImportAsync(
+        Guid userId,
+        QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct = default) =>
+        CreateAdapterUnsupportedPreviewAsync(userId, "moodle_xml", "moodle_partial_support", "Moodle XML için Pack C yalnızca güvenli preview seam sağlar; tam uyumluluk henüz iddia edilmez.", ct);
+
     public async Task<QuestionImportResultDto> ApproveImportAsync(
         Guid userId,
         QuestionImportApprovalDto request,
@@ -158,6 +318,11 @@ public sealed partial class QuestionImportService : IQuestionImportService
             preview.Status = "expired";
             await _db.SaveChangesAsync(ct);
             return InvalidResult(preview.Id, "preview_expired", "Import önizlemesinin süresi dolmuş.");
+        }
+
+        if (string.Equals(preview.ImportFormat, "json_v2", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ApproveRichPackageImportAsync(userId, preview, ct);
         }
 
         foreach (var item in preview.Items.Where(i => !i.IsDeleted && i.Status == "accepted").OrderBy(i => i.RowIndex))
@@ -213,6 +378,674 @@ public sealed partial class QuestionImportService : IQuestionImportService
                                       && !p.IsDeleted, ct);
 
         return preview is null ? null : ToDto(preview);
+    }
+
+    private async Task<QuestionImportResultDto> ApproveRichPackageImportAsync(
+        Guid userId,
+        QuestionImportPreview preview,
+        CancellationToken ct)
+    {
+        var package = DeserializeRichPackage(preview.NormalizedPackageJson);
+        if (package is null)
+        {
+            return InvalidResult(preview.Id, "normalized_package_missing", "Normalize edilmiş rich import paketi bulunamadı.");
+        }
+
+        var acceptedRows = preview.Items
+            .Where(i => !i.IsDeleted && i.Status == "accepted")
+            .Select(i => i.RowIndex)
+            .ToHashSet();
+        var acceptedQuestions = package.Questions
+            .Select((question, index) => new { question, index })
+            .Where(item => acceptedRows.Contains(item.index))
+            .Select(item => item.question)
+            .ToList();
+        var referencedAssetIds = acceptedQuestions
+            .SelectMany(q => q.ContentBlocks.Concat(q.Options.SelectMany(o => o.ContentBlocks)))
+            .Select(b => CleanOptional(b.ExternalAssetId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var referencedStimulusIds = acceptedQuestions
+            .SelectMany(q => q.ExternalStimulusIds)
+            .Select(CleanOptional)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var assetIdMap = await CreateOrReuseAssetsAsync(
+            userId,
+            package.Assets.Where(a => referencedAssetIds.Contains(a.ExternalAssetId)).ToList(),
+            ct);
+        var stimulusIdMap = await CreateOrReuseStimuliAsync(
+            userId,
+            package.Stimuli.Where(s => referencedStimulusIds.Contains(s.ExternalStimulusId)).ToList(),
+            ct);
+
+        foreach (var item in preview.Items.Where(i => !i.IsDeleted && i.Status == "accepted").OrderBy(i => i.RowIndex))
+        {
+            if (item.CreatedQuestionId is not null)
+            {
+                continue;
+            }
+
+            var richQuestion = package.Questions.ElementAtOrDefault(item.RowIndex);
+            if (richQuestion is null)
+            {
+                item.Status = "rejected";
+                item.IssuesJson = JsonSerializer.Serialize(new[] { Error("normalized_rich_question_missing", "Normalize edilmiş rich soru verisi bulunamadı.") }, JsonOptions);
+                continue;
+            }
+
+            var issues = DeserializeIssues(item.IssuesJson);
+            var create = await NormalizeRichQuestionAsync(userId, richQuestion, issues, ct);
+            if (create is null || issues.Any(i => i.Severity == "error"))
+            {
+                item.Status = "rejected";
+                item.IssuesJson = JsonSerializer.Serialize(issues, JsonOptions);
+                continue;
+            }
+
+            create.ContentBlocks = MapQuestionContentBlocks(richQuestion.ContentBlocks, assetIdMap);
+            create.Stimuli = richQuestion.ExternalStimulusIds
+                .Select(id => CleanOptional(id))
+                .Where(id => !string.IsNullOrWhiteSpace(id) && stimulusIdMap.ContainsKey(id))
+                .Select((id, index) => new QuestionStimulusLinkDto
+                {
+                    QuestionStimulusId = stimulusIdMap[id!],
+                    SortOrder = index
+                })
+                .ToList();
+
+            try
+            {
+                var created = await _questionBank.CreateQuestionAsync(userId, create, ct);
+                foreach (var option in richQuestion.Options)
+                {
+                    var createdOption = created.Options.FirstOrDefault(o =>
+                        string.Equals(o.OptionKey, NormalizeOptionKey(option.OptionKey, option.SortOrder), StringComparison.OrdinalIgnoreCase));
+                    if (createdOption?.Id is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var block in option.ContentBlocks.OrderBy(b => b.SortOrder))
+                    {
+                        await _questionBank.AddOptionContentBlockAsync(
+                            userId,
+                            createdOption.Id.Value,
+                            MapOptionContentBlock(block, assetIdMap),
+                            ct);
+                    }
+                }
+
+                item.CreatedQuestionId = created.Id;
+                if (SafeReviewLicenseStatuses.Contains(create.LicenseStatus))
+                {
+                    await _questionBank.SubmitForReviewAsync(userId, created.Id, ct);
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                item.Status = "rejected";
+                item.IssuesJson = JsonSerializer.Serialize(new[] { Error("question_bank_validation_failed", ex.Message) }, JsonOptions);
+            }
+        }
+
+        preview.Status = "approved";
+        preview.ApprovedAt = DateTime.UtcNow;
+        RecalculateCounts(preview);
+        await _db.SaveChangesAsync(ct);
+        return ToResult(preview, "approved");
+    }
+
+    private async Task<Dictionary<string, Guid>> CreateOrReuseAssetsAsync(
+        Guid userId,
+        IReadOnlyList<QuestionImportAssetDto> assets,
+        CancellationToken ct)
+    {
+        var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var asset in assets)
+        {
+            var externalId = Clean(asset.ExternalAssetId);
+            if (string.IsNullOrWhiteSpace(externalId))
+            {
+                continue;
+            }
+
+            var hash = Clean(asset.Sha256Hash).ToLowerInvariant();
+            var existing = await _db.QuestionAssets.AsNoTracking()
+                .Where(a => !a.IsDeleted
+                            && a.Sha256Hash == hash
+                            && (a.OwnerUserId == null || a.OwnerUserId == userId))
+                .OrderByDescending(a => a.OwnerUserId == userId)
+                .FirstOrDefaultAsync(ct);
+            if (existing is not null)
+            {
+                map[externalId] = existing.Id;
+                continue;
+            }
+
+            var created = await _questionBank.CreateAssetAsync(userId, new CreateQuestionAssetDto
+            {
+                AssetType = asset.AssetType,
+                StorageKey = asset.StorageKey,
+                FileName = asset.FileName,
+                MimeType = asset.MimeType,
+                SizeBytes = asset.SizeBytes,
+                Sha256Hash = hash,
+                SourceRegistryItemId = asset.SourceRegistryItemId,
+                SourceTitle = asset.SourceTitle,
+                SourceUrl = asset.SourceUrl,
+                LicenseStatus = asset.LicenseStatus,
+                VerificationStatus = asset.VerificationStatus,
+                AltText = asset.AltText,
+                Caption = asset.Caption,
+                LongDescription = asset.LongDescription
+            }, ct);
+            map[externalId] = created.Id;
+        }
+
+        return map;
+    }
+
+    private async Task<Dictionary<string, Guid>> CreateOrReuseStimuliAsync(
+        Guid userId,
+        IReadOnlyList<QuestionImportStimulusDto> stimuli,
+        CancellationToken ct)
+    {
+        var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var stimulus in stimuli)
+        {
+            var externalId = Clean(stimulus.ExternalStimulusId);
+            if (string.IsNullOrWhiteSpace(externalId))
+            {
+                continue;
+            }
+
+            var title = Clean(stimulus.Title);
+            var type = NormalizeBounded(stimulus.StimulusType, AllowedStimulusTypes, "passage");
+            var contentText = SafeOptional(stimulus.ContentText);
+            var existing = await _db.QuestionStimuli.AsNoTracking()
+                .Where(s => !s.IsDeleted
+                            && (s.OwnerUserId == null || s.OwnerUserId == userId)
+                            && s.StimulusType == type
+                            && s.Title == title
+                            && s.ContentText == contentText)
+                .OrderByDescending(s => s.OwnerUserId == userId)
+                .FirstOrDefaultAsync(ct);
+            if (existing is not null)
+            {
+                map[externalId] = existing.Id;
+                continue;
+            }
+
+            var created = await _questionBank.CreateStimulusAsync(userId, new CreateQuestionStimulusDto
+            {
+                Title = title,
+                StimulusType = type,
+                ContentText = contentText,
+                ContentJson = SafeOptional(stimulus.ContentJson),
+                SourceRegistryItemId = stimulus.SourceRegistryItemId,
+                CurriculumNodeId = stimulus.CurriculumNodeId,
+                LicenseStatus = NormalizeBounded(stimulus.LicenseStatus, AllowedLicenseStatuses, "unknown"),
+                VerificationStatus = Clean(stimulus.VerificationStatus, "unverified")
+            }, ct);
+            map[externalId] = created.Id;
+        }
+
+        return map;
+    }
+
+    private async Task<CreateQuestionDto?> NormalizeRichQuestionAsync(
+        Guid userId,
+        QuestionImportRichQuestionDto question,
+        List<QuestionImportValidationIssueDto> issues,
+        CancellationToken ct)
+    {
+        var item = new QuestionImportItemDto
+        {
+            ExternalId = question.ExternalId,
+            ExamDefinitionId = question.ExamDefinitionId,
+            ExamVariantId = question.ExamVariantId,
+            ExamSectionId = question.ExamSectionId,
+            ExamSubjectId = question.ExamSubjectId,
+            ExamTopicId = question.ExamTopicId,
+            ExamOutcomeId = question.ExamOutcomeId,
+            ExamCode = question.ExamCode,
+            VariantCode = question.VariantCode,
+            SectionCode = question.SectionCode,
+            SubjectCode = question.SubjectCode,
+            TopicCode = question.TopicCode,
+            OutcomeCode = question.OutcomeCode
+        };
+        var links = await ResolveExamLinksAsync(userId, item, issues, ct);
+        if (links is null)
+        {
+            return null;
+        }
+
+        var questionType = NormalizeBounded(question.QuestionType, AllowedQuestionTypes, "multiple_choice");
+        if (!AllowedQuestionTypes.Contains(CleanOptional(question.QuestionType) ?? string.Empty))
+        {
+            issues.Add(Error("unsupported_question_type", "Desteklenmeyen soru tipi."));
+        }
+
+        var licenseStatus = NormalizeBounded(question.LicenseStatus, AllowedLicenseStatuses, "unknown");
+        if (!SafeReviewLicenseStatuses.Contains(licenseStatus))
+        {
+            issues.Add(Warning("unsafe_license_imported_as_draft", "Kaynak/lisans güvenli değil; soru sadece taslak olarak içe aktarılır."));
+        }
+
+        var sourceUrl = SafeOptional(question.SourceUrl);
+        if (!string.IsNullOrWhiteSpace(sourceUrl) && !Uri.TryCreate(sourceUrl, UriKind.Absolute, out _))
+        {
+            issues.Add(Error("source_url_invalid", "Kaynak URL geçerli değil."));
+        }
+
+        var stem = CleanOptional(question.Stem) ?? string.Empty;
+        var hasBlocks = question.ContentBlocks.Any(b => HasBlockContent(b));
+        if (string.IsNullOrWhiteSpace(stem) && !hasBlocks)
+        {
+            issues.Add(Error("question_stem_or_content_required", "Rich soru için soru kökü veya content block gerekir."));
+        }
+
+        var options = NormalizeRichOptions(question.Options, issues);
+        if (questionType == "multiple_choice")
+        {
+            if (options.Count < 2)
+            {
+                issues.Add(Error("multiple_choice_minimum_two_options", "Çoktan seçmeli soru en az iki seçenek içermeli."));
+            }
+
+            var correctCount = options.Count(o => o.IsCorrect);
+            if (correctCount == 0)
+            {
+                issues.Add(Error("multiple_choice_correct_option_required", "Çoktan seçmeli soruda bir doğru seçenek olmalı."));
+            }
+            else if (correctCount > 1)
+            {
+                issues.Add(Error("multiple_choice_single_correct_option_required", "Şimdilik yalnızca tek doğru seçenek desteklenir."));
+            }
+        }
+
+        ValidateAccessibility(question.ContentBlocks, question.Options, issues);
+
+        var tags = question.Tags
+            .Select(t => CleanOptional(t))
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(t => new QuestionTagDto { Tag = t! })
+            .ToList();
+
+        if (question.ContentBlocks.Count > 0)
+        {
+            tags.Add(new QuestionTagDto { Tag = "rich_import" });
+        }
+
+        return new CreateQuestionDto
+        {
+            ExamDefinitionId = links.ExamDefinitionId,
+            ExamVariantId = links.ExamVariantId,
+            ExamSectionId = links.ExamSectionId,
+            ExamSubjectId = links.ExamSubjectId,
+            ExamTopicId = links.ExamTopicId,
+            ExamOutcomeId = links.ExamOutcomeId,
+            QuestionType = questionType,
+            Stem = stem,
+            Difficulty = NormalizeBounded(question.Difficulty, AllowedDifficulties, "medium"),
+            CognitiveSkill = Clean(question.CognitiveSkill, "conceptual"),
+            LicenseStatus = licenseStatus,
+            SourceOrigin = Clean(question.SourceOrigin, "structured_json_v2"),
+            SourceTitle = SafeOptional(question.SourceTitle),
+            SourceUrl = sourceUrl,
+            Explanation = CleanOptional(question.Explanation),
+            Options = options,
+            Explanations = question.Explanations.Count > 0
+                ? question.Explanations
+                : string.IsNullOrWhiteSpace(question.Explanation)
+                    ? []
+                    : [new QuestionExplanationDto { ExplanationText = Clean(question.Explanation), Visibility = "authoring", IsSafeForLearners = true }],
+            Tags = tags,
+            OutcomeLinks = question.OutcomeLinks.Count > 0
+                ? question.OutcomeLinks
+                : links.ExamOutcomeId is null
+                    ? []
+                    : [new QuestionOutcomeLinkDto { ExamOutcomeId = links.ExamOutcomeId.Value, IsPrimary = true, LinkStrength = 1.0m }],
+            ContentBlocks = MapQuestionContentBlocks(question.ContentBlocks, new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase))
+        };
+    }
+
+    private static List<QuestionOptionDto> NormalizeRichOptions(
+        IReadOnlyList<QuestionImportRichOptionDto> options,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        var normalized = options
+            .Select((option, index) =>
+            {
+                var key = NormalizeOptionKey(option.OptionKey, index);
+                var text = CleanOptional(option.Text);
+                if (string.IsNullOrWhiteSpace(text) && !option.ContentBlocks.Any(HasBlockContent))
+                {
+                    issues.Add(Error("multiple_choice_option_text_or_content_required", "Rich seçenekte metin veya content block gerekir."));
+                }
+
+                return new QuestionOptionDto
+                {
+                    OptionKey = key,
+                    Text = string.IsNullOrWhiteSpace(text) ? $"Rich option {key}" : text,
+                    IsCorrect = option.IsCorrect,
+                    SortOrder = option.SortOrder == 0 ? index : option.SortOrder
+                };
+            })
+            .OrderBy(o => o.SortOrder)
+            .ThenBy(o => o.OptionKey, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (normalized.GroupBy(o => o.OptionKey, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
+        {
+            issues.Add(Error("duplicate_option_key", "Aynı seçenek anahtarı birden fazla kullanılmış."));
+        }
+
+        return normalized;
+    }
+
+    private static List<QuestionImportAssetDto> NormalizePackageAssets(
+        IReadOnlyList<QuestionImportAssetDto> assets,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        var duplicateIds = assets
+            .Select(a => CleanOptional(a.ExternalAssetId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var normalized = new List<QuestionImportAssetDto>();
+        foreach (var asset in assets)
+        {
+            var externalId = Clean(asset.ExternalAssetId);
+            if (string.IsNullOrWhiteSpace(externalId))
+            {
+                issues.Add(Error("asset_external_id_required", "Asset externalAssetId zorunlu."));
+                continue;
+            }
+
+            if (duplicateIds.Contains(externalId))
+            {
+                issues.Add(Error("duplicate_external_asset_id", "Aynı externalAssetId birden fazla asset için kullanılmış."));
+            }
+
+            if (!AllowedAssetTypes.Contains(CleanOptional(asset.AssetType) ?? string.Empty))
+            {
+                issues.Add(Error("unsupported_asset_type", "Asset tipi desteklenmiyor."));
+            }
+
+            var storageKey = Clean(asset.StorageKey);
+            if (string.IsNullOrWhiteSpace(storageKey))
+            {
+                storageKey = Clean(asset.RelativePath);
+            }
+
+            if (!IsSafePackageStorageKey(storageKey))
+            {
+                issues.Add(Error("unsafe_asset_storage_key", "Asset storageKey/relativePath güvenli paket yolu olmalı."));
+            }
+
+            var hash = Clean(asset.Sha256Hash).ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                issues.Add(Error("asset_sha256_required", "Import asset için sha256Hash zorunlu."));
+            }
+
+            var sourceUrl = SafeOptional(asset.SourceUrl);
+            if (!string.IsNullOrWhiteSpace(sourceUrl) && !Uri.TryCreate(sourceUrl, UriKind.Absolute, out _))
+            {
+                issues.Add(Error("asset_source_url_invalid", "Asset kaynak URL geçerli değil."));
+            }
+
+            normalized.Add(new QuestionImportAssetDto
+            {
+                ExternalAssetId = externalId,
+                AssetType = NormalizeBounded(asset.AssetType, AllowedAssetTypes, "image"),
+                StorageKey = storageKey,
+                FileName = Clean(asset.FileName, externalId),
+                MimeType = Clean(asset.MimeType, "application/octet-stream"),
+                SizeBytes = Math.Max(asset.SizeBytes, 0),
+                Sha256Hash = hash,
+                SourceRegistryItemId = asset.SourceRegistryItemId,
+                SourceTitle = SafeOptional(asset.SourceTitle),
+                SourceUrl = sourceUrl,
+                LicenseStatus = NormalizeBounded(asset.LicenseStatus, AllowedLicenseStatuses, "unknown"),
+                VerificationStatus = Clean(asset.VerificationStatus, "unverified"),
+                AltText = SafeOptional(asset.AltText),
+                Caption = SafeOptional(asset.Caption),
+                LongDescription = SafeOptional(asset.LongDescription)
+            });
+        }
+
+        return normalized;
+    }
+
+    private static List<QuestionImportStimulusDto> NormalizePackageStimuli(
+        IReadOnlyList<QuestionImportStimulusDto> stimuli,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        var duplicateIds = stimuli
+            .Select(s => CleanOptional(s.ExternalStimulusId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .GroupBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var normalized = new List<QuestionImportStimulusDto>();
+        foreach (var stimulus in stimuli)
+        {
+            var externalId = Clean(stimulus.ExternalStimulusId);
+            if (string.IsNullOrWhiteSpace(externalId))
+            {
+                issues.Add(Error("stimulus_external_id_required", "Stimulus externalStimulusId zorunlu."));
+                continue;
+            }
+
+            if (duplicateIds.Contains(externalId))
+            {
+                issues.Add(Error("duplicate_external_stimulus_id", "Aynı externalStimulusId birden fazla stimulus için kullanılmış."));
+            }
+
+            var title = Clean(stimulus.Title);
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                issues.Add(Error("stimulus_title_required", "Stimulus title zorunlu."));
+            }
+
+            if (string.IsNullOrWhiteSpace(stimulus.ContentText) && string.IsNullOrWhiteSpace(stimulus.ContentJson))
+            {
+                issues.Add(Error("stimulus_content_required", "Stimulus contentText veya contentJson içermeli."));
+            }
+
+            normalized.Add(new QuestionImportStimulusDto
+            {
+                ExternalStimulusId = externalId,
+                Title = title,
+                StimulusType = NormalizeBounded(stimulus.StimulusType, AllowedStimulusTypes, "passage"),
+                ContentText = SafeOptional(stimulus.ContentText),
+                ContentJson = SafeOptional(stimulus.ContentJson),
+                SourceRegistryItemId = stimulus.SourceRegistryItemId,
+                CurriculumNodeId = stimulus.CurriculumNodeId,
+                LicenseStatus = NormalizeBounded(stimulus.LicenseStatus, AllowedLicenseStatuses, "unknown"),
+                VerificationStatus = Clean(stimulus.VerificationStatus, "unverified")
+            });
+        }
+
+        return normalized;
+    }
+
+    private static QuestionImportRichQuestionDto MergePackageDefaults(
+        QuestionImportPackageDto package,
+        QuestionImportRichQuestionDto question)
+    {
+        question.ExamDefinitionId ??= package.ExamDefinitionId;
+        question.ExamVariantId ??= package.ExamVariantId;
+        question.ExamSectionId ??= package.ExamSectionId;
+        question.ExamSubjectId ??= package.ExamSubjectId;
+        question.ExamTopicId ??= package.ExamTopicId;
+        question.ExamOutcomeId ??= package.ExamOutcomeId;
+        question.ExamCode ??= package.ExamCode;
+        question.VariantCode ??= package.VariantCode;
+        question.SectionCode ??= package.SectionCode;
+        question.SubjectCode ??= package.SubjectCode;
+        question.TopicCode ??= package.TopicCode;
+        question.OutcomeCode ??= package.OutcomeCode;
+        question.SourceOrigin ??= package.SourceOrigin;
+        question.LicenseStatus ??= package.LicenseStatus;
+        question.SourceTitle ??= package.SourceTitle;
+        question.SourceUrl ??= package.SourceUrl;
+        return question;
+    }
+
+    private static void ValidateRichReferences(
+        QuestionImportRichQuestionDto question,
+        HashSet<string> assetIds,
+        HashSet<string> stimulusIds,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        foreach (var block in question.ContentBlocks)
+        {
+            ValidateBlock("question", block, assetIds, AllowedQuestionBlockTypes, issues);
+        }
+
+        foreach (var option in question.Options)
+        {
+            foreach (var block in option.ContentBlocks)
+            {
+                ValidateBlock("option", block, assetIds, AllowedOptionBlockTypes, issues);
+            }
+        }
+
+        foreach (var stimulusId in question.ExternalStimulusIds.Select(CleanOptional).Where(id => !string.IsNullOrWhiteSpace(id)))
+        {
+            if (!stimulusIds.Contains(stimulusId!))
+            {
+                issues.Add(Error("missing_referenced_stimulus", "Soru, paket içinde bulunmayan stimulus referansı içeriyor."));
+            }
+        }
+    }
+
+    private static void ValidateBlock(
+        string target,
+        QuestionImportContentBlockDto block,
+        HashSet<string> assetIds,
+        HashSet<string> allowedBlockTypes,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        var blockType = NormalizeBounded(block.BlockType, allowedBlockTypes, "text");
+        if (!allowedBlockTypes.Contains(CleanOptional(block.BlockType) ?? string.Empty))
+        {
+            issues.Add(Error("unsupported_content_block_type", $"{target} content block tipi desteklenmiyor."));
+        }
+
+        var externalAssetId = CleanOptional(block.ExternalAssetId);
+        if (!string.IsNullOrWhiteSpace(externalAssetId) && !assetIds.Contains(externalAssetId))
+        {
+            issues.Add(Error("missing_referenced_asset", "Content block, paket içinde bulunmayan asset referansı içeriyor."));
+        }
+
+        if (!HasBlockContent(block))
+        {
+            issues.Add(Error("content_block_empty", "Content block metin, JSON veya asset referansı içermeli."));
+        }
+
+        if ((blockType is "image" or "table" or "chart") && string.IsNullOrWhiteSpace(block.AltText) && string.IsNullOrWhiteSpace(block.Caption))
+        {
+            issues.Add(Warning("content_block_accessibility_missing", "Görsel/tablo/grafik block için altText veya caption önerilir; publish Pack B gate tarafından engellenebilir."));
+        }
+
+        if (blockType == "formula" && string.IsNullOrWhiteSpace(block.Text) && string.IsNullOrWhiteSpace(block.AltText))
+        {
+            issues.Add(Warning("formula_accessible_fallback_missing", "Formül block için metin fallback veya altText gerekir."));
+        }
+    }
+
+    private static void ValidateAccessibility(
+        IReadOnlyList<QuestionImportContentBlockDto> questionBlocks,
+        IReadOnlyList<QuestionImportRichOptionDto> options,
+        List<QuestionImportValidationIssueDto> issues)
+    {
+        foreach (var block in questionBlocks)
+        {
+            var type = Clean(block.BlockType).ToLowerInvariant();
+            if ((type is "image" or "table" or "chart") && string.IsNullOrWhiteSpace(block.AltText) && string.IsNullOrWhiteSpace(block.Caption))
+            {
+                issues.Add(Warning("rich_question_accessibility_missing", "Soru görsel/tablo/grafik block'u altText veya caption içermeli."));
+            }
+        }
+
+        foreach (var block in options.SelectMany(o => o.ContentBlocks))
+        {
+            var type = Clean(block.BlockType).ToLowerInvariant();
+            if (type == "image" && string.IsNullOrWhiteSpace(block.AltText))
+            {
+                issues.Add(Warning("rich_option_image_alt_text_missing", "Seçenek görseli altText içermeli."));
+            }
+        }
+    }
+
+    private static List<CreateQuestionContentBlockDto> MapQuestionContentBlocks(
+        IReadOnlyList<QuestionImportContentBlockDto> blocks,
+        IReadOnlyDictionary<string, Guid> assetIdMap) =>
+        blocks.OrderBy(b => b.SortOrder)
+            .Select(b => new CreateQuestionContentBlockDto
+            {
+                BlockType = NormalizeBounded(b.BlockType, AllowedQuestionBlockTypes, "text"),
+                Text = SafeOptional(b.Text),
+                ContentJson = SafeOptional(b.ContentJson),
+                AssetId = ResolveExternalAssetId(b.ExternalAssetId, assetIdMap),
+                SortOrder = b.SortOrder,
+                AltText = SafeOptional(b.AltText),
+                Caption = SafeOptional(b.Caption),
+                LongDescription = SafeOptional(b.LongDescription)
+            })
+            .ToList();
+
+    private static CreateQuestionOptionContentBlockDto MapOptionContentBlock(
+        QuestionImportContentBlockDto block,
+        IReadOnlyDictionary<string, Guid> assetIdMap) => new()
+    {
+        BlockType = NormalizeBounded(block.BlockType, AllowedOptionBlockTypes, "text"),
+        Text = SafeOptional(block.Text),
+        ContentJson = SafeOptional(block.ContentJson),
+        AssetId = ResolveExternalAssetId(block.ExternalAssetId, assetIdMap),
+        SortOrder = block.SortOrder,
+        AltText = SafeOptional(block.AltText),
+        Caption = SafeOptional(block.Caption)
+    };
+
+    private static Guid? ResolveExternalAssetId(string? externalAssetId, IReadOnlyDictionary<string, Guid> assetIdMap)
+    {
+        var clean = CleanOptional(externalAssetId);
+        return !string.IsNullOrWhiteSpace(clean) && assetIdMap.TryGetValue(clean, out var assetId)
+            ? assetId
+            : null;
+    }
+
+    private static bool HasBlockContent(QuestionImportContentBlockDto block) =>
+        !string.IsNullOrWhiteSpace(block.Text)
+        || !string.IsNullOrWhiteSpace(block.ContentJson)
+        || !string.IsNullOrWhiteSpace(block.ExternalAssetId);
+
+    private static bool IsSafePackageStorageKey(string storageKey)
+    {
+        if (string.IsNullOrWhiteSpace(storageKey)
+            || storageKey.StartsWith("/", StringComparison.Ordinal)
+            || storageKey.StartsWith("\\", StringComparison.Ordinal)
+            || storageKey.Contains("..", StringComparison.Ordinal)
+            || storageKey.Contains(':', StringComparison.Ordinal)
+            || storageKey.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private async Task<CreateQuestionDto?> NormalizeItemAsync(
@@ -501,6 +1334,149 @@ public sealed partial class QuestionImportService : IQuestionImportService
         return candidates.FirstOrDefault(q => NormalizeStem(q.Stem) == normalizedStem)?.Id;
     }
 
+    private async Task<QuestionImportPreviewDto> CreateAdapterUnsupportedPreviewAsync(
+        Guid userId,
+        string importFormat,
+        string issueCode,
+        string message,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var preview = new QuestionImportPreview
+        {
+            OwnerUserId = userId,
+            Status = "pending",
+            ImportFormat = importFormat,
+            CreatedAt = now,
+            ExpiresAt = now.Add(PreviewTtl),
+            Items =
+            [
+                new QuestionImportPreviewItem
+                {
+                    RowIndex = 0,
+                    Status = "rejected",
+                    IssuesJson = JsonSerializer.Serialize(new[] { Error(issueCode, message) }, JsonOptions),
+                    CreatedAt = now
+                }
+            ]
+        };
+        RecalculateCounts(preview);
+        _db.QuestionImportPreviews.Add(preview);
+        await _db.SaveChangesAsync(ct);
+        return ToDto(preview);
+    }
+
+    private static QuestionImportRequestDto ParseAiken(QuestionImportTextAdapterRequestDto request)
+    {
+        var lines = request.Content.Replace("\r\n", "\n").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        if (lines.Count < 4)
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        var answerLine = lines.FirstOrDefault(l => l.StartsWith("ANSWER:", StringComparison.OrdinalIgnoreCase));
+        if (answerLine is null)
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        var answer = NormalizeOptionKey(answerLine["ANSWER:".Length..], 0);
+        var optionLines = lines
+            .Where(l => Regex.IsMatch(l, "^[A-Z][).]\\s+"))
+            .ToList();
+        if (optionLines.Count < 2)
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        var stem = lines.FirstOrDefault(l => !Regex.IsMatch(l, "^[A-Z][).]\\s+") && !l.StartsWith("ANSWER:", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(stem))
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        return new QuestionImportRequestDto
+        {
+            Items =
+            [
+                BuildAdapterItem(request, stem, optionLines.Select((line, index) =>
+                {
+                    var key = NormalizeOptionKey(line[..1], index);
+                    return new QuestionImportOptionDto
+                    {
+                        OptionKey = key,
+                        Text = Clean(line[2..]),
+                        IsCorrect = string.Equals(key, answer, StringComparison.OrdinalIgnoreCase),
+                        SortOrder = index
+                    };
+                }).ToList(), "aiken")
+            ]
+        };
+    }
+
+    private static QuestionImportRequestDto ParseGift(QuestionImportTextAdapterRequestDto request)
+    {
+        var content = request.Content.Trim();
+        var open = content.IndexOf('{');
+        var close = content.LastIndexOf('}');
+        if (open <= 0 || close <= open)
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        var stem = Clean(content[..open]);
+        var body = content[(open + 1)..close];
+        var parts = Regex.Split(body, @"(?=[=~])")
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 1)
+            .ToList();
+        if (parts.Count < 2)
+        {
+            return new QuestionImportRequestDto();
+        }
+
+        var options = parts.Select((part, index) => new QuestionImportOptionDto
+        {
+            OptionKey = ((char)('A' + Math.Min(index, 25))).ToString(),
+            Text = Clean(part[1..]),
+            IsCorrect = part[0] == '=',
+            SortOrder = index
+        }).ToList();
+
+        return new QuestionImportRequestDto
+        {
+            Items = [BuildAdapterItem(request, stem, options, "gift")]
+        };
+    }
+
+    private static QuestionImportItemDto BuildAdapterItem(
+        QuestionImportTextAdapterRequestDto request,
+        string stem,
+        List<QuestionImportOptionDto> options,
+        string sourceOrigin) => new()
+    {
+        ExamDefinitionId = request.ExamDefinitionId,
+        ExamVariantId = request.ExamVariantId,
+        ExamSectionId = request.ExamSectionId,
+        ExamSubjectId = request.ExamSubjectId,
+        ExamTopicId = request.ExamTopicId,
+        ExamOutcomeId = request.ExamOutcomeId,
+        ExamCode = request.ExamCode,
+        VariantCode = request.VariantCode,
+        SectionCode = request.SectionCode,
+        SubjectCode = request.SubjectCode,
+        TopicCode = request.TopicCode,
+        OutcomeCode = request.OutcomeCode,
+        QuestionType = "multiple_choice",
+        Stem = stem,
+        Options = options,
+        SourceOrigin = sourceOrigin,
+        LicenseStatus = request.LicenseStatus,
+        SourceTitle = request.SourceTitle,
+        SourceUrl = request.SourceUrl,
+        Tags = [sourceOrigin, "standards_preview_adapter"]
+    };
+
     private static List<QuestionOptionDto> NormalizeOptions(IReadOnlyList<QuestionImportOptionDto> options, List<QuestionImportValidationIssueDto> issues)
     {
         var normalized = options
@@ -538,12 +1514,17 @@ public sealed partial class QuestionImportService : IQuestionImportService
     {
         Id = preview.Id,
         Status = preview.Status == "pending" && preview.ExpiresAt <= DateTime.UtcNow ? "expired" : preview.Status,
+        ImportFormat = preview.ImportFormat,
+        PackageTitle = preview.PackageTitle,
+        PackageVersion = preview.PackageVersion,
         TotalCount = preview.TotalCount,
         AcceptedCount = preview.AcceptedCount,
         RejectedCount = preview.RejectedCount,
         WarningCount = preview.WarningCount,
         CreatedAt = preview.CreatedAt,
         ExpiresAt = preview.ExpiresAt,
+        Assets = DeserializeRichPackage(preview.NormalizedPackageJson)?.Assets ?? [],
+        Stimuli = DeserializeRichPackage(preview.NormalizedPackageJson)?.Stimuli ?? [],
         Items = preview.Items
             .Where(i => !i.IsDeleted)
             .OrderBy(i => i.RowIndex)
@@ -619,6 +1600,23 @@ public sealed partial class QuestionImportService : IQuestionImportService
         }
     }
 
+    private static NormalizedRichImportPackage? DeserializeRichPackage(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<NormalizedRichImportPackage>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static QuestionImportValidationIssueDto Error(string code, string message) => new()
     {
         Code = code,
@@ -684,6 +1682,11 @@ public sealed partial class QuestionImportService : IQuestionImportService
         Guid? ExamSubjectId,
         Guid? ExamTopicId,
         Guid? ExamOutcomeId);
+
+    private sealed record NormalizedRichImportPackage(
+        List<QuestionImportAssetDto> Assets,
+        List<QuestionImportStimulusDto> Stimuli,
+        List<QuestionImportRichQuestionDto> Questions);
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();

@@ -184,8 +184,14 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         var limit = Math.Clamp(request.Limit <= 0 ? 5 : request.Limit, 1, 20);
         var questions = await QueryPracticeReadyQuestions(userId, tree.Id, paths)
             .Include(q => q.Options)
+            .ThenInclude(o => o.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
             .Include(q => q.Explanations)
             .Include(q => q.OutcomeLinks)
+            .Include(q => q.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.StimulusLinks)
+            .ThenInclude(l => l.QuestionStimulus)
             .OrderBy(q => q.UpdatedAt)
             .ThenBy(q => q.Id)
             .Take(limit)
@@ -354,8 +360,11 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         }
 
         var context = ToContext(attempt);
+        var questionMap = includeResults && attempt.Status == "submitted"
+            ? await LoadPracticeQuestionMapAsync(attempt.Answers.Select(a => a.QuestionItemId), ct)
+            : new Dictionary<Guid, QuestionItem>();
         var results = includeResults && attempt.Status == "submitted"
-            ? attempt.Answers.OrderBy(a => a.SortOrder).Select(a => ToQuestionResult(a, context)).ToList()
+            ? attempt.Answers.OrderBy(a => a.SortOrder).Select(a => ToQuestionResult(a, context, questionMap.GetValueOrDefault(a.QuestionItemId))).ToList()
             : [];
         var breakdown = results
             .GroupBy(r => new { r.ExamContext.ExamTopicId, r.ExamContext.TopicCode })
@@ -614,6 +623,22 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         }
     }
 
+    private async Task<Dictionary<Guid, QuestionItem>> LoadPracticeQuestionMapAsync(IEnumerable<Guid> questionIds, CancellationToken ct)
+    {
+        var ids = questionIds.Distinct().ToArray();
+        return await _db.QuestionItems
+            .AsNoTracking()
+            .Where(q => ids.Contains(q.Id))
+            .Include(q => q.Options)
+            .ThenInclude(o => o.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.StimulusLinks)
+            .ThenInclude(l => l.QuestionStimulus)
+            .ToDictionaryAsync(q => q.Id, ct);
+    }
+
     private static PracticeQuestionDto ToPracticeQuestion(QuestionItem question, ExamDefinitionDto tree, IReadOnlyList<ResolvedExamPath> paths) => new()
     {
         QuestionId = question.Id,
@@ -623,6 +648,8 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         SourceTitle = question.SourceTitle,
         SourceUrl = question.SourceUrl,
         ExamContext = BuildQuestionContext(question, tree, paths),
+        Stimuli = ToPracticeStimuli(question),
+        ContentBlocks = ToPracticeContentBlocks(question.ContentBlocks),
         Options = question.Options
             .OrderBy(o => o.SortOrder)
             .ThenBy(o => o.OptionKey)
@@ -630,14 +657,19 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
             {
                 OptionKey = o.OptionKey,
                 Text = o.Text,
-                SortOrder = o.SortOrder
+                SortOrder = o.SortOrder,
+                ContentBlocks = ToPracticeContentBlocks(o.ContentBlocks)
             })
             .ToList()
     };
 
-    private static PracticeQuestionResultDto ToQuestionResult(CentralExamPracticeAnswer answer, ExamLearningContextDto aggregateContext) => new()
+    private static PracticeQuestionResultDto ToQuestionResult(
+        CentralExamPracticeAnswer answer,
+        ExamLearningContextDto aggregateContext,
+        QuestionItem? question) => new()
     {
         QuestionId = answer.QuestionItemId,
+        Stem = question?.Stem ?? string.Empty,
         SelectedOptionKey = answer.SelectedOptionKey,
         CorrectOptionKey = answer.CorrectOptionKey,
         IsCorrect = answer.IsCorrect,
@@ -645,6 +677,21 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         Explanation = answer.Explanation,
         SourceTitle = answer.SourceTitle,
         SourceUrl = answer.SourceUrl,
+        Stimuli = question is null ? [] : ToPracticeStimuli(question),
+        ContentBlocks = question is null ? [] : ToPracticeContentBlocks(question.ContentBlocks),
+        Options = question is null
+            ? []
+            : question.Options
+                .OrderBy(o => o.SortOrder)
+                .ThenBy(o => o.OptionKey)
+                .Select(o => new PracticeOptionDto
+                {
+                    OptionKey = o.OptionKey,
+                    Text = o.Text,
+                    SortOrder = o.SortOrder,
+                    ContentBlocks = ToPracticeContentBlocks(o.ContentBlocks)
+                })
+                .ToList(),
         ExamContext = new ExamLearningContextDto
         {
             ExamDefinitionId = aggregateContext.ExamDefinitionId,
@@ -661,6 +708,58 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
             OutcomeCode = answer.OutcomeCode
         }
     };
+
+    private static List<PracticeStimulusDto> ToPracticeStimuli(QuestionItem question) =>
+        question.StimulusLinks
+            .Where(l => l.QuestionStimulus is not null && !l.QuestionStimulus.IsDeleted)
+            .OrderBy(l => l.SortOrder)
+            .Select(l => new PracticeStimulusDto
+            {
+                Title = l.QuestionStimulus.Title,
+                StimulusType = l.QuestionStimulus.StimulusType,
+                ContentText = l.QuestionStimulus.ContentText,
+                ContentJson = l.QuestionStimulus.ContentJson,
+                SortOrder = l.SortOrder
+            })
+            .ToList();
+
+    private static List<PracticeContentBlockDto> ToPracticeContentBlocks(IEnumerable<QuestionContentBlock> blocks) =>
+        blocks
+            .Where(b => !b.IsDeleted)
+            .OrderBy(b => b.SortOrder)
+            .Select(b => new PracticeContentBlockDto
+            {
+                BlockType = b.BlockType,
+                Text = b.Text,
+                ContentJson = b.ContentJson,
+                AssetType = b.Asset?.AssetType,
+                FileName = b.Asset?.FileName,
+                MimeType = b.Asset?.MimeType,
+                SortOrder = b.SortOrder,
+                AltText = b.AltText ?? b.Asset?.AltText,
+                Caption = b.Caption ?? b.Asset?.Caption,
+                LongDescription = b.LongDescription ?? b.Asset?.LongDescription
+            })
+            .ToList();
+
+    private static List<PracticeContentBlockDto> ToPracticeContentBlocks(IEnumerable<QuestionOptionContentBlock> blocks) =>
+        blocks
+            .Where(b => !b.IsDeleted)
+            .OrderBy(b => b.SortOrder)
+            .Select(b => new PracticeContentBlockDto
+            {
+                BlockType = b.BlockType,
+                Text = b.Text,
+                ContentJson = b.ContentJson,
+                AssetType = b.Asset?.AssetType,
+                FileName = b.Asset?.FileName,
+                MimeType = b.Asset?.MimeType,
+                SortOrder = b.SortOrder,
+                AltText = b.AltText ?? b.Asset?.AltText,
+                Caption = b.Caption ?? b.Asset?.Caption,
+                LongDescription = b.Asset?.LongDescription
+            })
+            .ToList();
 
     private static ExamLearningContextDto BuildQuestionContext(QuestionItem question, ExamDefinitionDto tree, IReadOnlyList<ResolvedExamPath> paths)
     {

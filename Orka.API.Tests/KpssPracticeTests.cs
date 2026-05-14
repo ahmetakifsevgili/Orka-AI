@@ -64,6 +64,29 @@ public sealed class KpssPracticeTests
     }
 
     [Fact]
+    public async Task StartReturnsRichPracticeContentWithoutCorrectAnswersOrStorageKeys()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "kpss-practice-rich");
+        var ids = await GetKpssIdsAsync(factory);
+        await SeedRichQuestionAsync(factory, ids.Paragraf, "Rich paragraph pilot");
+
+        var response = await user.Client.PostAsJsonAsync("/api/central-exams/kpss/turkce-paragraf/start", new PracticeStartRequestDto { Limit = 5 });
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+        var session = JsonSerializer.Deserialize<PracticeSessionDto>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(session);
+        var question = Assert.Single(session!.Questions);
+        Assert.Single(question.Stimuli);
+        Assert.Contains(question.ContentBlocks, block => block.BlockType == "image" && block.AltText == "Original Orka pilot chart alt text");
+        Assert.Contains(question.Options.Single(o => o.OptionKey == "A").ContentBlocks, block => block.BlockType == "formula");
+        Assert.DoesNotContain("isCorrect", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("internal/rich-pilot.png", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("storageKey", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task SubmitReturnsCorrectnessExplanationAndSummaryCounts()
     {
         using var factory = new ApiSmokeFactory();
@@ -187,6 +210,96 @@ public sealed class KpssPracticeTests
             OutcomeLinks =
             [
                 new QuestionOutcomeLink { ExamOutcomeId = ids.OutcomeId, IsPrimary = true, LinkStrength = 1.0m }
+            ]
+        };
+
+        db.QuestionItems.Add(question);
+        await db.SaveChangesAsync();
+        return question.Id;
+    }
+
+    private static async Task<Guid> SeedRichQuestionAsync(ApiSmokeFactory factory, KpssPath ids, string stem)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var asset = new QuestionAsset
+        {
+            OwnerUserId = null,
+            AssetType = "image",
+            StorageKey = "internal/rich-pilot.png",
+            FileName = "rich-pilot.png",
+            MimeType = "image/png",
+            SizeBytes = 128,
+            Sha256Hash = "F2B33B0D5C9B4E9A8C3A0D14F4B4ABCCF7679D2FAECA7AE5C5D22B0C65B30D4C",
+            LicenseStatus = "open",
+            VerificationStatus = "source_backed",
+            AltText = "Original Orka pilot chart alt text",
+            Caption = "Original Orka pilot chart"
+        };
+        var stimulus = new QuestionStimulus
+        {
+            OwnerUserId = null,
+            Title = "Original Orka pilot passage",
+            StimulusType = "passage",
+            ContentText = "Original Orka-authored short paragraph for practice rendering.",
+            LicenseStatus = "open",
+            VerificationStatus = "source_backed"
+        };
+        var optionA = new QuestionOption { OptionKey = "A", Text = "Correct rich option", IsCorrect = true, SortOrder = 0 };
+        optionA.ContentBlocks.Add(new QuestionOptionContentBlock
+        {
+            BlockType = "formula",
+            Text = "A = main idea",
+            SortOrder = 0,
+            AltText = "Formula fallback"
+        });
+        var question = new QuestionItem
+        {
+            OwnerUserId = null,
+            ExamDefinitionId = ids.DefinitionId,
+            ExamVariantId = ids.VariantId,
+            ExamSectionId = ids.SectionId,
+            ExamSubjectId = ids.SubjectId,
+            ExamTopicId = ids.TopicId,
+            ExamOutcomeId = ids.OutcomeId,
+            QuestionType = "multiple_choice",
+            Stem = stem,
+            Difficulty = "medium",
+            CognitiveSkill = "reading_comprehension",
+            QualityStatus = "published",
+            LicenseStatus = "open",
+            SourceOrigin = "orka_original_fixture",
+            SourceTitle = "Orka original pilot sample",
+            Explanation = "Rich pilot explanation is revealed only after submission.",
+            Options =
+            [
+                optionA,
+                new QuestionOption { OptionKey = "B", Text = "Incorrect rich option", IsCorrect = false, SortOrder = 1 }
+            ],
+            OutcomeLinks =
+            [
+                new QuestionOutcomeLink { ExamOutcomeId = ids.OutcomeId, IsPrimary = true, LinkStrength = 1.0m }
+            ],
+            ContentBlocks =
+            [
+                new QuestionContentBlock
+                {
+                    BlockType = "image",
+                    Asset = asset,
+                    SortOrder = 0,
+                    AltText = "Original Orka pilot chart alt text",
+                    Caption = "Original Orka pilot chart"
+                },
+                new QuestionContentBlock
+                {
+                    BlockType = "text",
+                    Text = "Original Orka pilot content block.",
+                    SortOrder = 1
+                }
+            ],
+            StimulusLinks =
+            [
+                new QuestionStimulusLink { QuestionStimulus = stimulus, SortOrder = 0 }
             ]
         };
 

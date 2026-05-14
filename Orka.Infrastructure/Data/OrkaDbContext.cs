@@ -108,14 +108,33 @@ public class OrkaDbContext : DbContext
     public DbSet<QuestionExplanation> QuestionExplanations { get; set; } = null!;
     public DbSet<QuestionTag> QuestionTags { get; set; } = null!;
     public DbSet<QuestionOutcomeLink> QuestionOutcomeLinks { get; set; } = null!;
+    public DbSet<QuestionAsset> QuestionAssets { get; set; } = null!;
+    public DbSet<QuestionStimulus> QuestionStimuli { get; set; } = null!;
+    public DbSet<QuestionStimulusLink> QuestionStimulusLinks { get; set; } = null!;
+    public DbSet<QuestionContentBlock> QuestionContentBlocks { get; set; } = null!;
+    public DbSet<QuestionOptionContentBlock> QuestionOptionContentBlocks { get; set; } = null!;
     public DbSet<QuestionImportPreview> QuestionImportPreviews { get; set; } = null!;
     public DbSet<QuestionImportPreviewItem> QuestionImportPreviewItems { get; set; } = null!;
+    public DbSet<QuestionReviewWorkflow> QuestionReviewWorkflows { get; set; } = null!;
+    public DbSet<QuestionReviewEvent> QuestionReviewEvents { get; set; } = null!;
+    public DbSet<QuestionPublishReadinessSnapshot> QuestionPublishReadinessSnapshots { get; set; } = null!;
+    public DbSet<QuestionContentVersion> QuestionContentVersions { get; set; } = null!;
+    public DbSet<QuestionItemAnalyticsSnapshot> QuestionItemAnalyticsSnapshots { get; set; } = null!;
+    public DbSet<QuestionOptionAnalyticsSnapshot> QuestionOptionAnalyticsSnapshots { get; set; } = null!;
+    public DbSet<QuestionQualityReviewSignal> QuestionQualityReviewSignals { get; set; } = null!;
     public DbSet<CentralExamPracticeAttempt> CentralExamPracticeAttempts { get; set; } = null!;
     public DbSet<CentralExamPracticeAnswer> CentralExamPracticeAnswers { get; set; } = null!;
     public DbSet<CentralExamDenemeBlueprint> CentralExamDenemeBlueprints { get; set; } = null!;
     public DbSet<CentralExamDenemeBlueprintSection> CentralExamDenemeBlueprintSections { get; set; } = null!;
     public DbSet<CentralExamDenemeAttempt> CentralExamDenemeAttempts { get; set; } = null!;
     public DbSet<CentralExamDenemeAnswer> CentralExamDenemeAnswers { get; set; } = null!;
+    public DbSet<SourceRegistryItem> SourceRegistryItems { get; set; } = null!;
+    public DbSet<CurriculumVersion> CurriculumVersions { get; set; } = null!;
+    public DbSet<CurriculumNode> CurriculumNodes { get; set; } = null!;
+    public DbSet<CurriculumOutcomeMapping> CurriculumOutcomeMappings { get; set; } = null!;
+    public DbSet<SourceVerificationRecord> SourceVerificationRecords { get; set; } = null!;
+    public DbSet<OfficialClaimPolicy> OfficialClaimPolicies { get; set; } = null!;
+    public DbSet<ContentLicenseReview> ContentLicenseReviews { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2900,6 +2919,186 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionOutcomeLink>()
             .HasIndex(l => new { l.ExamOutcomeId, l.IsPrimary, l.IsDeleted });
 
+        modelBuilder.Entity<QuestionAsset>()
+            .HasOne(a => a.OwnerUser)
+            .WithMany()
+            .HasForeignKey(a => a.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .HasOne(a => a.SourceRegistryItem)
+            .WithMany()
+            .HasForeignKey(a => a.SourceRegistryItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.AssetType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.StorageKey)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.FileName)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.MimeType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.Sha256Hash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.SourceTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.LicenseStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.AltText)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.Caption)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.LongDescription)
+            .HasMaxLength(2048);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .HasIndex(a => new { a.OwnerUserId, a.Sha256Hash, a.IsDeleted });
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .HasOne(s => s.OwnerUser)
+            .WithMany()
+            .HasForeignKey(s => s.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .HasOne(s => s.SourceRegistryItem)
+            .WithMany()
+            .HasForeignKey(s => s.SourceRegistryItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .HasOne(s => s.CurriculumNode)
+            .WithMany()
+            .HasForeignKey(s => s.CurriculumNodeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .Property(s => s.Title)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .Property(s => s.StimulusType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .Property(s => s.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .Property(s => s.LicenseStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionStimulus>()
+            .HasIndex(s => new { s.OwnerUserId, s.StimulusType, s.IsDeleted });
+
+        modelBuilder.Entity<QuestionStimulusLink>()
+            .HasKey(l => new { l.QuestionItemId, l.QuestionStimulusId });
+
+        modelBuilder.Entity<QuestionStimulusLink>()
+            .HasOne(l => l.QuestionItem)
+            .WithMany(q => q.StimulusLinks)
+            .HasForeignKey(l => l.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionStimulusLink>()
+            .HasOne(l => l.QuestionStimulus)
+            .WithMany(s => s.QuestionLinks)
+            .HasForeignKey(l => l.QuestionStimulusId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .HasOne(b => b.QuestionItem)
+            .WithMany(q => q.ContentBlocks)
+            .HasForeignKey(b => b.QuestionItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .HasOne(b => b.Asset)
+            .WithMany()
+            .HasForeignKey(b => b.AssetId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .Property(b => b.BlockType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .Property(b => b.AltText)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .Property(b => b.Caption)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .Property(b => b.LongDescription)
+            .HasMaxLength(2048);
+
+        modelBuilder.Entity<QuestionContentBlock>()
+            .HasIndex(b => new { b.QuestionItemId, b.SortOrder, b.IsDeleted });
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .HasOne(b => b.QuestionOption)
+            .WithMany(o => o.ContentBlocks)
+            .HasForeignKey(b => b.QuestionOptionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .HasOne(b => b.Asset)
+            .WithMany()
+            .HasForeignKey(b => b.AssetId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .Property(b => b.BlockType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .Property(b => b.AltText)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .Property(b => b.Caption)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionOptionContentBlock>()
+            .HasIndex(b => new { b.QuestionOptionId, b.SortOrder, b.IsDeleted });
+
         modelBuilder.Entity<QuestionImportPreview>()
             .HasOne(p => p.OwnerUser)
             .WithMany()
@@ -2909,6 +3108,23 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionImportPreview>()
             .Property(p => p.Status)
             .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .Property(p => p.ImportFormat)
+            .HasMaxLength(64)
+            .HasDefaultValue("structured_json");
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .Property(p => p.PackageTitle)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .Property(p => p.PackageVersion)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionImportPreview>()
+            .Property(p => p.NormalizedPackageJson)
+            .HasColumnType("nvarchar(max)");
 
         modelBuilder.Entity<QuestionImportPreview>()
             .HasIndex(p => new { p.OwnerUserId, p.Status, p.ExpiresAt, p.IsDeleted });
@@ -2940,6 +3156,576 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<QuestionImportPreviewItem>()
             .HasIndex(i => new { i.QuestionImportPreviewId, i.ExternalId });
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasOne(w => w.QuestionItem)
+            .WithMany()
+            .HasForeignKey(w => w.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasOne(w => w.OwnerUser)
+            .WithMany()
+            .HasForeignKey(w => w.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasOne(w => w.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(w => w.CreatedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasOne(w => w.UpdatedByUser)
+            .WithMany()
+            .HasForeignKey(w => w.UpdatedByUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasOne(w => w.AssignedReviewerUser)
+            .WithMany()
+            .HasForeignKey(w => w.AssignedReviewerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .Property(w => w.CurrentStage)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .Property(w => w.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasIndex(w => new { w.QuestionItemId, w.IsDeleted });
+
+        modelBuilder.Entity<QuestionReviewWorkflow>()
+            .HasIndex(w => new { w.OwnerUserId, w.Status, w.CurrentStage, w.IsDeleted });
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .HasOne(e => e.Workflow)
+            .WithMany(w => w.Events)
+            .HasForeignKey(e => e.QuestionReviewWorkflowId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .HasOne(e => e.QuestionItem)
+            .WithMany()
+            .HasForeignKey(e => e.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .HasOne(e => e.ActorUser)
+            .WithMany()
+            .HasForeignKey(e => e.ActorUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .Property(e => e.EventType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .Property(e => e.FromStage)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .Property(e => e.ToStage)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .Property(e => e.Reason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .Property(e => e.SafeNote)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionReviewEvent>()
+            .HasIndex(e => new { e.QuestionReviewWorkflowId, e.CreatedAt, e.IsDeleted });
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .HasOne(s => s.QuestionItem)
+            .WithMany()
+            .HasForeignKey(s => s.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .HasOne(s => s.Workflow)
+            .WithMany()
+            .HasForeignKey(s => s.WorkflowId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .HasOne(s => s.CheckedByUser)
+            .WithMany()
+            .HasForeignKey(s => s.CheckedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .Property(s => s.BlockingIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .Property(s => s.WarningIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>()
+            .HasIndex(s => new { s.QuestionItemId, s.CheckedAt, s.IsDeleted });
+
+        modelBuilder.Entity<QuestionContentVersion>()
+            .HasOne(v => v.QuestionItem)
+            .WithMany()
+            .HasForeignKey(v => v.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionContentVersion>()
+            .HasOne(v => v.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(v => v.CreatedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionContentVersion>()
+            .Property(v => v.SnapshotJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionContentVersion>()
+            .Property(v => v.Reason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionContentVersion>()
+            .HasIndex(v => new { v.QuestionItemId, v.VersionNumber, v.IsDeleted });
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.QuestionItem)
+            .WithMany()
+            .HasForeignKey(s => s.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(s => s.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamVariant)
+            .WithMany()
+            .HasForeignKey(s => s.ExamVariantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamSection)
+            .WithMany()
+            .HasForeignKey(s => s.ExamSectionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamSubject)
+            .WithMany()
+            .HasForeignKey(s => s.ExamSubjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamTopic)
+            .WithMany()
+            .HasForeignKey(s => s.ExamTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasOne(s => s.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(s => s.ExamOutcomeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.DifficultyEstimate)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.DiscriminationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.QualitySignal)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.SampleSizeStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.CorrectnessRate)
+            .HasPrecision(8, 4);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .Property(s => s.BlankRate)
+            .HasPrecision(8, 4);
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasIndex(s => new { s.QuestionItemId, s.LastCalculatedAt, s.IsDeleted });
+
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>()
+            .HasIndex(s => new { s.ExamDefinitionId, s.ExamTopicId, s.ExamOutcomeId, s.IsDeleted });
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .HasOne(s => s.QuestionItemAnalyticsSnapshot)
+            .WithMany(s => s.OptionSnapshots)
+            .HasForeignKey(s => s.QuestionItemAnalyticsSnapshotId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .HasOne(s => s.QuestionItem)
+            .WithMany()
+            .HasForeignKey(s => s.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .Property(s => s.OptionKey)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .Property(s => s.DistractorSignal)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .Property(s => s.SelectionRate)
+            .HasPrecision(8, 4);
+
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>()
+            .HasIndex(s => new { s.QuestionItemId, s.OptionKey, s.IsDeleted });
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .HasOne(s => s.QuestionItem)
+            .WithMany()
+            .HasForeignKey(s => s.QuestionItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .Property(s => s.SignalType)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .Property(s => s.Severity)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .Property(s => s.Message)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .Property(s => s.EvidenceJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<QuestionQualityReviewSignal>()
+            .HasIndex(s => new { s.QuestionItemId, s.SignalType, s.ResolvedAt, s.IsDeleted });
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .HasOne(s => s.OwnerUser)
+            .WithMany()
+            .HasForeignKey(s => s.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.SourceKey)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.Title)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.SourceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.SourceType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.Publisher)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.LicenseStatus)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.Visibility)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.SourceContentHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .Property(s => s.VerifiedBy)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .HasIndex(s => new { s.OwnerUserId, s.SourceKey, s.IsDeleted });
+
+        modelBuilder.Entity<SourceRegistryItem>()
+            .HasIndex(s => new { s.Visibility, s.VerificationStatus, s.IsDeleted });
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasOne(v => v.ExamDefinition)
+            .WithMany()
+            .HasForeignKey(v => v.ExamDefinitionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasOne(v => v.SourceRegistryItem)
+            .WithMany(s => s.CurriculumVersions)
+            .HasForeignKey(v => v.SourceRegistryItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasOne(v => v.OwnerUser)
+            .WithMany()
+            .HasForeignKey(v => v.OwnerUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasOne(v => v.SupersededByCurriculumVersion)
+            .WithMany(v => v.SupersededVersions)
+            .HasForeignKey(v => v.SupersededByCurriculumVersionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.Code)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.Name)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.VersionLabel)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.SourceSnapshotHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .Property(v => v.DeprecatedReason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasIndex(v => new { v.ExamDefinitionId, v.OwnerUserId, v.Code, v.IsDeleted });
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasIndex(v => new { v.SourceRegistryItemId, v.Status, v.IsDeleted });
+
+        modelBuilder.Entity<CurriculumVersion>()
+            .HasIndex(v => new { v.ExamDefinitionId, v.OwnerUserId, v.SourceRegistryItemId, v.Status, v.IsDeleted });
+
+        modelBuilder.Entity<CurriculumNode>()
+            .HasOne(n => n.CurriculumVersion)
+            .WithMany(v => v.Nodes)
+            .HasForeignKey(n => n.CurriculumVersionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .HasOne(n => n.ParentCurriculumNode)
+            .WithMany(n => n.Children)
+            .HasForeignKey(n => n.ParentCurriculumNodeId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.NodeType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.Code)
+            .HasMaxLength(160);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.Title)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.SourceAnchor)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .Property(n => n.SourceLocator)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumNode>()
+            .HasIndex(n => new { n.CurriculumVersionId, n.ParentCurriculumNodeId, n.Code, n.IsDeleted });
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasOne(m => m.CurriculumVersion)
+            .WithMany(v => v.OutcomeMappings)
+            .HasForeignKey(m => m.CurriculumVersionId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasOne(m => m.CurriculumNode)
+            .WithMany(n => n.OutcomeMappings)
+            .HasForeignKey(m => m.CurriculumNodeId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasOne(m => m.ExamOutcome)
+            .WithMany()
+            .HasForeignKey(m => m.ExamOutcomeId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasOne(m => m.SourceRegistryItem)
+            .WithMany()
+            .HasForeignKey(m => m.SourceRegistryItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.MappingType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.ConfidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.ReviewStatus)
+            .HasMaxLength(64)
+            .HasDefaultValue("draft");
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.SourceLocator)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.SectionTitle)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.Clause)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.AnchorText)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .Property(m => m.EvidenceUrl)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasIndex(m => new { m.ExamOutcomeId, m.VerificationStatus, m.IsDeleted });
+
+        modelBuilder.Entity<CurriculumOutcomeMapping>()
+            .HasIndex(m => new { m.CurriculumVersionId, m.CurriculumNodeId, m.ExamOutcomeId, m.IsDeleted });
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .HasOne(r => r.SourceRegistryItem)
+            .WithMany(s => s.VerificationRecords)
+            .HasForeignKey(r => r.SourceRegistryItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .Property(r => r.VerificationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .Property(r => r.VerificationMethod)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .Property(r => r.EvidenceLocator)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .Property(r => r.VerifiedBy)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceVerificationRecord>()
+            .HasIndex(r => new { r.SourceRegistryItemId, r.VerificationStatus, r.IsDeleted });
+
+        modelBuilder.Entity<OfficialClaimPolicy>()
+            .HasOne(p => p.SourceVerificationRecord)
+            .WithMany()
+            .HasForeignKey(p => p.SourceVerificationRecordId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<OfficialClaimPolicy>()
+            .Property(p => p.EntityType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<OfficialClaimPolicy>()
+            .Property(p => p.ClaimType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<OfficialClaimPolicy>()
+            .Property(p => p.Reason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<OfficialClaimPolicy>()
+            .HasIndex(p => new { p.EntityType, p.EntityId, p.ClaimType, p.IsDeleted });
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .HasOne(r => r.SourceRegistryItem)
+            .WithMany(s => s.LicenseReviews)
+            .HasForeignKey(r => r.SourceRegistryItemId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .HasOne(r => r.ReviewedByUser)
+            .WithMany()
+            .HasForeignKey(r => r.ReviewedByUserId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .Property(r => r.LicenseStatus)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .Property(r => r.ReviewStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .Property(r => r.DecisionReason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<ContentLicenseReview>()
+            .HasIndex(r => new { r.SourceRegistryItemId, r.ReviewStatus, r.IsDeleted });
 
         modelBuilder.Entity<CentralExamPracticeAttempt>()
             .HasOne(a => a.User)

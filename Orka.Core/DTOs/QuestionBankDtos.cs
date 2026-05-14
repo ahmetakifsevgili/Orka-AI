@@ -26,6 +26,8 @@ public sealed class QuestionItemDto
     public List<QuestionExplanationDto> Explanations { get; set; } = [];
     public List<QuestionTagDto> Tags { get; set; } = [];
     public List<QuestionOutcomeLinkDto> OutcomeLinks { get; set; } = [];
+    public List<QuestionContentBlockDto> ContentBlocks { get; set; } = [];
+    public List<QuestionStimulusDto> Stimuli { get; set; } = [];
     public QuestionValidationResultDto Validation { get; set; } = new();
 }
 
@@ -36,6 +38,7 @@ public sealed class QuestionOptionDto
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
     public int SortOrder { get; set; }
+    public List<QuestionOptionContentBlockDto> ContentBlocks { get; set; } = [];
 }
 
 public sealed class QuestionExplanationDto
@@ -83,6 +86,8 @@ public sealed class CreateQuestionDto
     public List<QuestionExplanationDto> Explanations { get; set; } = [];
     public List<QuestionTagDto> Tags { get; set; } = [];
     public List<QuestionOutcomeLinkDto> OutcomeLinks { get; set; } = [];
+    public List<CreateQuestionContentBlockDto> ContentBlocks { get; set; } = [];
+    public List<QuestionStimulusLinkDto> Stimuli { get; set; } = [];
 }
 
 public sealed class UpdateQuestionDto
@@ -106,6 +111,8 @@ public sealed class UpdateQuestionDto
     public List<QuestionExplanationDto>? Explanations { get; set; }
     public List<QuestionTagDto>? Tags { get; set; }
     public List<QuestionOutcomeLinkDto>? OutcomeLinks { get; set; }
+    public List<CreateQuestionContentBlockDto>? ContentBlocks { get; set; }
+    public List<QuestionStimulusLinkDto>? Stimuli { get; set; }
 }
 
 public sealed class QuestionBankFilterDto
@@ -127,4 +134,138 @@ public sealed class QuestionValidationResultDto
     public bool IsValid { get; set; } = true;
     public List<string> Errors { get; set; } = [];
     public List<string> Warnings { get; set; } = [];
+    public List<QuestionAccessibilityValidationDto> Accessibility { get; set; } = [];
+}
+
+public sealed class QuestionAssetDto
+{
+    public Guid Id { get; set; }
+    public string OwnershipState { get; set; } = "user";
+    public string AssetType { get; set; } = "image";
+    public string StorageKey { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public string Sha256Hash { get; set; } = string.Empty;
+    public Guid? SourceRegistryItemId { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string LicenseStatus { get; set; } = "unknown";
+    public string VerificationStatus { get; set; } = "unverified";
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class CreateQuestionAssetDto
+{
+    public string AssetType { get; set; } = "image";
+    public string StorageKey { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    public string Sha256Hash { get; set; } = string.Empty;
+    public Guid? SourceRegistryItemId { get; set; }
+    public string? SourceTitle { get; set; }
+    public string? SourceUrl { get; set; }
+    public string LicenseStatus { get; set; } = "unknown";
+    public string VerificationStatus { get; set; } = "unverified";
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class QuestionContentBlockDto
+{
+    public Guid? Id { get; set; }
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public QuestionAssetDto? Asset { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class CreateQuestionContentBlockDto
+{
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+    public string? LongDescription { get; set; }
+}
+
+public sealed class QuestionOptionContentBlockDto
+{
+    public Guid? Id { get; set; }
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public QuestionAssetDto? Asset { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+}
+
+public sealed class CreateQuestionOptionContentBlockDto
+{
+    public string BlockType { get; set; } = "text";
+    public string? Text { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? AssetId { get; set; }
+    public int SortOrder { get; set; }
+    public string? AltText { get; set; }
+    public string? Caption { get; set; }
+}
+
+public sealed class QuestionStimulusDto
+{
+    public Guid Id { get; set; }
+    public string OwnershipState { get; set; } = "user";
+    public string Title { get; set; } = string.Empty;
+    public string StimulusType { get; set; } = "passage";
+    public string? ContentText { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? SourceRegistryItemId { get; set; }
+    public Guid? CurriculumNodeId { get; set; }
+    public string VerificationStatus { get; set; } = "unverified";
+    public string LicenseStatus { get; set; } = "unknown";
+    public int SortOrder { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public sealed class CreateQuestionStimulusDto
+{
+    public string Title { get; set; } = string.Empty;
+    public string StimulusType { get; set; } = "passage";
+    public string? ContentText { get; set; }
+    public string? ContentJson { get; set; }
+    public Guid? SourceRegistryItemId { get; set; }
+    public Guid? CurriculumNodeId { get; set; }
+    public string VerificationStatus { get; set; } = "unverified";
+    public string LicenseStatus { get; set; } = "unknown";
+}
+
+public sealed class QuestionStimulusLinkDto
+{
+    public Guid QuestionStimulusId { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public sealed class QuestionAccessibilityValidationDto
+{
+    public string TargetType { get; set; } = string.Empty;
+    public Guid? TargetId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Severity { get; set; } = "warning";
 }

@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AssessmentCalibrationRun, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamStudyHomeDto, CreateQuestionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, QuestionBankFilterDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionItemDto, RemediationSeedDto, SourceQualityReportDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline, UpdateQuestionDto } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AdvanceQuestionReviewStageDto, AssessmentCalibrationRun, AssignQuestionReviewerDto, CentralExamBlueprintCoverageDto, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamQualityOverviewDto, CentralExamStudyHomeDto, ContentLicenseReviewDto, CreateCurriculumNodeDto, CreateCurriculumOutcomeMappingDto, CreateCurriculumVersionDto, CreateQuestionAssetDto, CreateQuestionContentBlockDto, CreateQuestionDto, CreateQuestionOptionContentBlockDto, CreateQuestionStimulusDto, CurriculumNodeDto, CurriculumOutcomeMappingDto, CurriculumOutcomeSourceDto, CurriculumVersionDto, DeprecateCurriculumVersionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, PublishQuestionContentDto, QuestionAssetDto, QuestionBankFilterDto, QuestionContentVersionDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPackageDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionImportTextAdapterRequestDto, QuestionItemAnalyticsDto, QuestionItemDto, QuestionPublishReadinessDto, QuestionQualityReviewSignalDto, QuestionReviewWorkflowDto, QuestionStimulusDto, QuestionStimulusLinkDto, RecalculateExamAnalyticsResultDto, RecalculateQuestionAnalyticsResultDto, RegisterSourceRegistryItemDto, RejectQuestionReviewDto, RemediationSeedDto, RetireQuestionDto, ReviewSourceLicenseDto, SourceQualityReportDto, SourceRegistryItemDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, SubmitQuestionReviewDto, SupersedeCurriculumVersionDto, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline, UpdateQuestionDto, VerifySourceRegistryItemDto } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -866,11 +866,33 @@ export const QuestionsAPI = {
   submitForReview: (id: string) => api.post<QuestionItemDto>(`/questions/${id}/submit-review`).then((r) => r.data),
   publishQuestion: (id: string) => api.post<QuestionItemDto>(`/questions/${id}/publish`).then((r) => r.data),
   deleteQuestion: (id: string) => api.delete(`/questions/${id}`).then((r) => r.data),
+  addContentBlock: (id: string, data: CreateQuestionContentBlockDto) =>
+    api.post<QuestionItemDto>(`/questions/${id}/content-blocks`, data).then((r) => r.data),
+  createStimulus: (data: CreateQuestionStimulusDto) =>
+    api.post<QuestionStimulusDto>("/questions/stimuli", data).then((r) => r.data),
+  attachStimulus: (id: string, data: QuestionStimulusLinkDto) =>
+    api.post<QuestionItemDto>(`/questions/${id}/stimuli`, data).then((r) => r.data),
+  addOptionContentBlock: (optionId: string, data: CreateQuestionOptionContentBlockDto) =>
+    api.post<QuestionItemDto>(`/questions/options/${optionId}/content-blocks`, data).then((r) => r.data),
+  createAsset: (data: CreateQuestionAssetDto) =>
+    api.post<QuestionAssetDto>("/question-assets", data).then((r) => r.data),
+  getAsset: (id: string) =>
+    api.get<QuestionAssetDto>(`/question-assets/${id}`).then((r) => r.data),
 };
 
 export const QuestionImportsAPI = {
   previewImport: (data: QuestionImportRequestDto) =>
     api.post<QuestionImportPreviewDto>("/question-imports/preview", data).then((r) => r.data),
+  previewPackage: (data: QuestionImportPackageDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview-package", data).then((r) => r.data),
+  previewAiken: (data: QuestionImportTextAdapterRequestDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview-aiken", data).then((r) => r.data),
+  previewGift: (data: QuestionImportTextAdapterRequestDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview-gift", data).then((r) => r.data),
+  previewQti: (data: QuestionImportTextAdapterRequestDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview-qti", data).then((r) => r.data),
+  previewMoodle: (data: QuestionImportTextAdapterRequestDto) =>
+    api.post<QuestionImportPreviewDto>("/question-imports/preview-moodle", data).then((r) => r.data),
   approveImport: (data: QuestionImportApprovalDto) =>
     api.post<QuestionImportResultDto>("/question-imports/approve", data).then((r) => r.data),
   getPreview: (id: string) =>
@@ -884,6 +906,56 @@ export const QuestionDraftsAPI = {
     api.post<QuestionDraftApprovalResultDto>("/question-drafts/approve", data).then((r) => r.data),
   getPreview: (id: string) =>
     api.get<QuestionDraftPreviewDto>(`/question-drafts/${id}`).then((r) => r.data),
+};
+
+export const ContentOpsAPI = {
+  getWorkflow: (questionId: string) =>
+    api.get<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/workflow`).then((r) => r.data),
+  submitReview: (questionId: string, data: SubmitQuestionReviewDto = {}) =>
+    api.post<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/submit-review`, data).then((r) => r.data),
+  assignReviewer: (questionId: string, data: AssignQuestionReviewerDto) =>
+    api.post<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/assign-reviewer`, data).then((r) => r.data),
+  advanceStage: (questionId: string, data: AdvanceQuestionReviewStageDto) =>
+    api.post<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/advance-stage`, data).then((r) => r.data),
+  reject: (questionId: string, data: RejectQuestionReviewDto) =>
+    api.post<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/reject`, data).then((r) => r.data),
+  retire: (questionId: string, data: RetireQuestionDto) =>
+    api.post<QuestionReviewWorkflowDto>(`/content-ops/questions/${questionId}/retire`, data).then((r) => r.data),
+  getPublishReadiness: (questionId: string) =>
+    api.get<QuestionPublishReadinessDto>(`/content-ops/questions/${questionId}/publish-readiness`).then((r) => r.data),
+  publish: (questionId: string, data: PublishQuestionContentDto = {}) =>
+    api.post<QuestionItemDto>(`/content-ops/questions/${questionId}/publish`, data).then((r) => r.data),
+  getVersions: (questionId: string) =>
+    api.get<QuestionContentVersionDto[]>(`/content-ops/questions/${questionId}/versions`).then((r) => r.data),
+};
+
+export const CurriculumAPI = {
+  getSources: () =>
+    api.get<SourceRegistryItemDto[]>("/curriculum/sources").then((r) => r.data),
+  getSource: (id: string) =>
+    api.get<SourceRegistryItemDto>(`/curriculum/sources/${id}`).then((r) => r.data),
+  registerSource: (data: RegisterSourceRegistryItemDto) =>
+    api.post<SourceRegistryItemDto>("/curriculum/sources", data).then((r) => r.data),
+  verifySource: (id: string, data: VerifySourceRegistryItemDto) =>
+    api.post<SourceRegistryItemDto>(`/curriculum/sources/${id}/verify`, data).then((r) => r.data),
+  reviewSourceLicense: (id: string, data: ReviewSourceLicenseDto) =>
+    api.post<ContentLicenseReviewDto>(`/curriculum/sources/${id}/license-review`, data).then((r) => r.data),
+    createVersion: (data: CreateCurriculumVersionDto) =>
+      api.post<CurriculumVersionDto>("/curriculum/versions", data).then((r) => r.data),
+    getVersion: (id: string) =>
+      api.get<CurriculumVersionDto>(`/curriculum/versions/${id}`).then((r) => r.data),
+    getExamVersions: (examCode: string) =>
+      api.get<CurriculumVersionDto[]>(`/curriculum/exams/${examCode}/versions`).then((r) => r.data),
+    deprecateVersion: (id: string, data: DeprecateCurriculumVersionDto = {}) =>
+      api.post<CurriculumVersionDto>(`/curriculum/versions/${id}/deprecate`, data).then((r) => r.data),
+    supersedeVersion: (id: string, data: SupersedeCurriculumVersionDto) =>
+      api.post<CurriculumVersionDto>(`/curriculum/versions/${id}/supersede`, data).then((r) => r.data),
+    addNode: (versionId: string, data: CreateCurriculumNodeDto) =>
+      api.post<CurriculumNodeDto>(`/curriculum/versions/${versionId}/nodes`, data).then((r) => r.data),
+  mapOutcome: (versionId: string, data: CreateCurriculumOutcomeMappingDto) =>
+    api.post<CurriculumOutcomeMappingDto>(`/curriculum/versions/${versionId}/outcome-mappings`, data).then((r) => r.data),
+  getOutcomeSources: (examOutcomeId: string) =>
+    api.get<CurriculumOutcomeSourceDto>(`/curriculum/outcomes/${examOutcomeId}/sources`).then((r) => r.data),
 };
 
 export const CentralExamsAPI = {
@@ -917,6 +989,21 @@ export const CentralExamsAPI = {
     api.post<CentralExamDenemeResultDto>("/central-exams/kpss/denemeler/submit", data).then((r) => r.data),
   getDenemeAttempt: (id: string) =>
     api.get<CentralExamDenemeResultDto>(`/central-exams/deneme-attempts/${id}`).then((r) => r.data),
+};
+
+export const QuestionQualityAPI = {
+  getQuestionAnalytics: (questionId: string) =>
+    api.get<QuestionItemAnalyticsDto>(`/question-quality/questions/${questionId}`).then((r) => r.data),
+  recalculateQuestionAnalytics: (questionId: string) =>
+    api.post<RecalculateQuestionAnalyticsResultDto>(`/question-quality/questions/${questionId}/recalculate`).then((r) => r.data),
+  getQuestionSignals: (questionId: string) =>
+    api.get<QuestionQualityReviewSignalDto[]>(`/question-quality/questions/${questionId}/signals`).then((r) => r.data),
+  getCentralExamOverview: (examCode: string, variantCode?: string | null) =>
+    api.get<CentralExamQualityOverviewDto>(`/question-quality/central-exams/${examCode}`, { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  recalculateCentralExam: (examCode: string, variantCode?: string | null) =>
+    api.post<RecalculateExamAnalyticsResultDto>(`/question-quality/central-exams/${examCode}/recalculate`, null, { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
+  getCentralExamCoverage: (examCode: string, variantCode?: string | null) =>
+    api.get<CentralExamBlueprintCoverageDto>(`/question-quality/central-exams/${examCode}/coverage`, { params: variantCode ? { variantCode } : undefined }).then((r) => r.data),
 };
 
 export const ProductionReadinessAPI = {

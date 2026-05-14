@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Orka.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using Orka.Infrastructure.Data;
 namespace Orka.Infrastructure.Migrations
 {
     [DbContext(typeof(OrkaDbContext))]
-    partial class OrkaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260514104328_AddRichQuestionContentModel")]
+    partial class AddRichQuestionContentModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3917,44 +3920,6 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("QuestionContentBlocks");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.QuestionContentVersion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("SnapshotJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("VersionNumber")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("QuestionItemId", "VersionNumber", "IsDeleted");
-
-                    b.ToTable("QuestionContentVersions");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.QuestionExplanation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4015,29 +3980,11 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("ImportFormat")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
-                        .HasDefaultValue("structured_json");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<string>("NormalizedPackageJson")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PackageTitle")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("PackageVersion")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("RejectedCount")
                         .HasColumnType("int");
@@ -4212,107 +4159,6 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("QuestionItems");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.QuestionItemAnalyticsSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("AnsweredCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("AttemptCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("BlankCount")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("BlankRate")
-                        .HasPrecision(8, 4)
-                        .HasColumnType("decimal(8,4)");
-
-                    b.Property<int>("CorrectCount")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("CorrectnessRate")
-                        .HasPrecision(8, 4)
-                        .HasColumnType("decimal(8,4)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DifficultyEstimate")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("DiscriminationStatus")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid>("ExamDefinitionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ExamOutcomeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ExamSectionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ExamSubjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ExamTopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ExamVariantId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("LastCalculatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("QualitySignal")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SampleSizeStatus")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("WrongCount")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExamOutcomeId");
-
-                    b.HasIndex("ExamSectionId");
-
-                    b.HasIndex("ExamSubjectId");
-
-                    b.HasIndex("ExamTopicId");
-
-                    b.HasIndex("ExamVariantId");
-
-                    b.HasIndex("QuestionItemId", "LastCalculatedAt", "IsDeleted");
-
-                    b.HasIndex("ExamDefinitionId", "ExamTopicId", "ExamOutcomeId", "IsDeleted");
-
-                    b.ToTable("QuestionItemAnalyticsSnapshots");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.QuestionOption", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4342,65 +4188,6 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("QuestionItemId", "OptionKey");
 
                     b.ToTable("QuestionOptions");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionOptionAnalyticsSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("CorrectSelectionCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DistractorSignal")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<bool>("IsCorrectOption")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("LastCalculatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("OptionKey")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<Guid>("QuestionItemAnalyticsSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("SelectionCount")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("SelectionRate")
-                        .HasPrecision(8, 4)
-                        .HasColumnType("decimal(8,4)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("WrongSelectionCount")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionItemAnalyticsSnapshotId");
-
-                    b.HasIndex("QuestionItemId", "OptionKey", "IsDeleted");
-
-                    b.ToTable("QuestionOptionAnalyticsSnapshots");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionOptionContentBlock", b =>
@@ -4487,204 +4274,6 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("QuestionItemId", "ExamOutcomeId", "IsDeleted");
 
                     b.ToTable("QuestionOutcomeLinks");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionPublishReadinessSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("BlockingIssuesJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CheckedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CheckedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsReadyToPublish")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("WarningIssuesJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("WorkflowId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CheckedByUserId");
-
-                    b.HasIndex("WorkflowId");
-
-                    b.HasIndex("QuestionItemId", "CheckedAt", "IsDeleted");
-
-                    b.ToTable("QuestionPublishReadinessSnapshots");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionQualityReviewSignal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("EvidenceJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("SignalType")
-                        .IsRequired()
-                        .HasMaxLength(96)
-                        .HasColumnType("nvarchar(96)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionItemId", "SignalType", "ResolvedAt", "IsDeleted");
-
-                    b.ToTable("QuestionQualityReviewSignals");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionReviewEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("FromStage")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuestionReviewWorkflowId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("SafeNote")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("ToStage")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("QuestionItemId");
-
-                    b.HasIndex("QuestionReviewWorkflowId", "CreatedAt", "IsDeleted");
-
-                    b.ToTable("QuestionReviewEvents");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionReviewWorkflow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("AssignedReviewerUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CurrentStage")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid?>("OwnerUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuestionItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedReviewerUserId");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.HasIndex("QuestionItemId", "IsDeleted");
-
-                    b.HasIndex("OwnerUserId", "Status", "CurrentStage", "IsDeleted");
-
-                    b.ToTable("QuestionReviewWorkflows");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionStimulus", b =>
@@ -8970,25 +8559,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("QuestionItem");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.QuestionContentVersion", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("QuestionItem");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.QuestionExplanation", b =>
                 {
                     b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
@@ -9075,60 +8645,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("OwnerUser");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.QuestionItemAnalyticsSnapshot", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.ExamDefinition", "ExamDefinition")
-                        .WithMany()
-                        .HasForeignKey("ExamDefinitionId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.ExamOutcome", "ExamOutcome")
-                        .WithMany()
-                        .HasForeignKey("ExamOutcomeId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.ExamSection", "ExamSection")
-                        .WithMany()
-                        .HasForeignKey("ExamSectionId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.ExamSubject", "ExamSubject")
-                        .WithMany()
-                        .HasForeignKey("ExamSubjectId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.ExamTopic", "ExamTopic")
-                        .WithMany()
-                        .HasForeignKey("ExamTopicId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.ExamVariant", "ExamVariant")
-                        .WithMany()
-                        .HasForeignKey("ExamVariantId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("ExamDefinition");
-
-                    b.Navigation("ExamOutcome");
-
-                    b.Navigation("ExamSection");
-
-                    b.Navigation("ExamSubject");
-
-                    b.Navigation("ExamTopic");
-
-                    b.Navigation("ExamVariant");
-
-                    b.Navigation("QuestionItem");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.QuestionOption", b =>
                 {
                     b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
@@ -9138,25 +8654,6 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("QuestionItem");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionOptionAnalyticsSnapshot", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.QuestionItemAnalyticsSnapshot", "QuestionItemAnalyticsSnapshot")
-                        .WithMany("OptionSnapshots")
-                        .HasForeignKey("QuestionItemAnalyticsSnapshotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("QuestionItem");
-
-                    b.Navigation("QuestionItemAnalyticsSnapshot");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionOptionContentBlock", b =>
@@ -9194,110 +8691,6 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("ExamOutcome");
 
                     b.Navigation("QuestionItem");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionPublishReadinessSnapshot", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", "CheckedByUser")
-                        .WithMany()
-                        .HasForeignKey("CheckedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionReviewWorkflow", "Workflow")
-                        .WithMany()
-                        .HasForeignKey("WorkflowId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("CheckedByUser");
-
-                    b.Navigation("QuestionItem");
-
-                    b.Navigation("Workflow");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionQualityReviewSignal", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("QuestionItem");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionReviewEvent", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", "ActorUser")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.QuestionReviewWorkflow", "Workflow")
-                        .WithMany("Events")
-                        .HasForeignKey("QuestionReviewWorkflowId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ActorUser");
-
-                    b.Navigation("QuestionItem");
-
-                    b.Navigation("Workflow");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionReviewWorkflow", b =>
-                {
-                    b.HasOne("Orka.Core.Entities.User", "AssignedReviewerUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedReviewerUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.User", "OwnerUser")
-                        .WithMany()
-                        .HasForeignKey("OwnerUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Orka.Core.Entities.QuestionItem", "QuestionItem")
-                        .WithMany()
-                        .HasForeignKey("QuestionItemId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Orka.Core.Entities.User", "UpdatedByUser")
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("AssignedReviewerUser");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("OwnerUser");
-
-                    b.Navigation("QuestionItem");
-
-                    b.Navigation("UpdatedByUser");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionStimulus", b =>
@@ -10079,19 +9472,9 @@ namespace Orka.Infrastructure.Migrations
                     b.Navigation("Tags");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.QuestionItemAnalyticsSnapshot", b =>
-                {
-                    b.Navigation("OptionSnapshots");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.QuestionOption", b =>
                 {
                     b.Navigation("ContentBlocks");
-                });
-
-            modelBuilder.Entity("Orka.Core.Entities.QuestionReviewWorkflow", b =>
-                {
-                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionStimulus", b =>

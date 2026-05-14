@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Post-6B productization / frontend-content readiness
+Central Exams pilot productization readiness
 
 ## Completed Phases
 
@@ -29,6 +29,14 @@ Post-6B productization / frontend-content readiness
   - Pack 6 - Mini Deneme Engine MVP
   - Pack 7 - Multi-Exam Shell & Content Pack Expansion MVP
   - Pack 8 - Source-Grounded Question Draft Generation MVP
+- Post-6B Professionalization
+  - Pack A - Curriculum & Source Registry + Verification Gate
+  - Pack A2 - Curriculum Graph Hardening
+  - Pack B - Rich Question Model & Asset Infrastructure
+  - Pack C - Import Pipeline v2: Rich Package + Standards Preview Adapters
+  - Pack D - Content Operations Lite: Review, Publish Gate & Audit Trail
+  - Pack E - KPSS Turkce Pilot UX + Original Pilot Content Flow
+  - Pack F - Quality Analytics & Item Calibration
 
 ## Active Roadmap
 
@@ -38,7 +46,8 @@ Post-6B productization / frontend-content readiness
 4. Codex Skills Anayasasi + small/medium features - complete
 5. Production-ready enterprise hardening / scalability plan - complete
 6. Stage 6B - Merkezi Sinavlar / Exam & Practice Content Engine - complete
-7. Post-6B productization readiness - current
+7. Post-6B Professionalization - complete
+8. Central Exams pilot productization readiness - current
 
 ## Stage 4 Closure Summary
 
@@ -83,11 +92,41 @@ Post-6B productization / frontend-content readiness
   - Orka-Front npm run quick:smoke
   - git diff --check, sadece mevcut CRLF normalization warningleri
 
+## Post-6B Professionalization Closure Summary
+
+- Closure doc: `docs/project-state/post-6b-professionalization-closure.md`
+- Final audit: PASS
+- Mini fix: migration scope consistency duzeltildi; Content Ops tabloları `AddContentOperationsLite`, analytics tabloları `AddQuestionQualityAnalytics` icinde.
+- Product outcome:
+  - Curriculum/source registry ve official claim gate sertlestirildi.
+  - Rich question, stimulus, asset ve accessibility modeli eklendi.
+  - Rich package import preview/approval ve standards adapter seam eklendi.
+  - Content Operations Lite review, publish readiness ve audit trail eklendi.
+  - KPSS Turkce Paragraf pilot student flow Central Exams paneline baglandi.
+  - Question quality analytics, item calibration ve coverage temeli eklendi.
+- Safety:
+  - verified metadata olmadan official curriculum claim yok.
+  - official OSYM/MEB simulation claim yok.
+  - success guarantee yok.
+  - copyrighted/scraped content assumption yok.
+  - PDF/OCR/NotebookLM dependency yok.
+  - teacher/classroom/dershane workflow yok.
+  - imported/generated content auto-publish edilmiyor.
+  - score/net/ranking/percentile/placement yok.
+- Validation gecti:
+  - Post-6B A-F targeted backend tests
+  - RegressionGateScriptTests
+  - scripts/quick-coordination.ps1
+  - scripts/quick-backend.ps1
+  - Orka-Front npm run typecheck
+  - Orka-Front npm run quick:smoke
+  - git diff --check, sadece mevcut CRLF normalization warningleri
+
 ## Roadmap Rule
 
 - Bu sira kullanici onayi olmadan degistirilmeyecek.
 - Frontend Corporate Baseline bu backend roadmap'in resmi maddesi degildir.
-- Post-6B productization readiness current phase'tir.
+- Central Exams pilot productization readiness current phase'tir.
 - Yeni ara asama icat edilmeyecek.
 - Stage 6C, global exam implementation veya teacher/institutional feature kullanici onayi olmadan baslatilmayacak.
 
@@ -96,5 +135,6 @@ Post-6B productization / frontend-content readiness
 - Yeni chat/branch basinda once bu dosya ve `docs/codex-skills/README.md` okunacak.
 - Feature isi yapmadan once ilgili constitution dosyalari okunacak.
 - Stage/commit kullanici acikca istemeden yapilmayacak.
-- Post-6B icin once Central Exams productization readiness, content strategy,
-  admin/content ops lite ve KPSS user-flow frontend polish planlanacak.
+- Post-6B Professionalization tamamlandi; siradaki isler Content Ops/Admin Lite UI,
+  asset delivery hardening, KPSS pilot content, KPSS user-flow polish ve import
+  standards hardening olarak ayrica onaylanmadan baslatilmayacak.

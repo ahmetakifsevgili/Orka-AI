@@ -29,6 +29,51 @@ public sealed class QuestionImportsController : ControllerBase
         return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
     }
 
+    [HttpPost("preview-package")]
+    public async Task<ActionResult<QuestionImportPreviewDto>> PreviewPackageImport(
+        [FromBody] QuestionImportPackageDto request,
+        CancellationToken ct)
+    {
+        var result = await _questionImports.PreviewPackageImportAsync(GetUserId(), request, ct);
+        return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
+    }
+
+    [HttpPost("preview-aiken")]
+    public async Task<ActionResult<QuestionImportPreviewDto>> PreviewAikenImport(
+        [FromBody] QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _questionImports.PreviewAikenImportAsync(GetUserId(), request, ct);
+        return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
+    }
+
+    [HttpPost("preview-gift")]
+    public async Task<ActionResult<QuestionImportPreviewDto>> PreviewGiftImport(
+        [FromBody] QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _questionImports.PreviewGiftImportAsync(GetUserId(), request, ct);
+        return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
+    }
+
+    [HttpPost("preview-qti")]
+    public async Task<ActionResult<QuestionImportPreviewDto>> PreviewQtiImport(
+        [FromBody] QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _questionImports.PreviewQtiImportAsync(GetUserId(), request, ct);
+        return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
+    }
+
+    [HttpPost("preview-moodle")]
+    public async Task<ActionResult<QuestionImportPreviewDto>> PreviewMoodleImport(
+        [FromBody] QuestionImportTextAdapterRequestDto request,
+        CancellationToken ct)
+    {
+        var result = await _questionImports.PreviewMoodleImportAsync(GetUserId(), request, ct);
+        return CreatedAtAction(nameof(GetImportPreview), new { id = result.Id }, result);
+    }
+
     [HttpPost("approve")]
     public async Task<ActionResult<QuestionImportResultDto>> ApproveImport(
         [FromBody] QuestionImportApprovalDto request,

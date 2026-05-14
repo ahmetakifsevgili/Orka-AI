@@ -50,6 +50,46 @@ public sealed class QuestionBankService : IQuestionBankService
         "open"
     };
 
+    private static readonly HashSet<string> AllowedAssetTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image",
+        "audio",
+        "table_json",
+        "chart_json",
+        "formula",
+        "document_reference"
+    };
+
+    private static readonly HashSet<string> AllowedQuestionBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text",
+        "passage",
+        "image",
+        "table",
+        "chart",
+        "formula",
+        "code",
+        "callout"
+    };
+
+    private static readonly HashSet<string> AllowedOptionBlockTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text",
+        "image",
+        "formula",
+        "table"
+    };
+
+    private static readonly HashSet<string> AllowedStimulusTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "passage",
+        "image",
+        "table",
+        "chart",
+        "formula",
+        "mixed"
+    };
+
     private readonly OrkaDbContext _db;
 
     public QuestionBankService(OrkaDbContext db)
@@ -170,6 +210,8 @@ public sealed class QuestionBankService : IQuestionBankService
         };
 
         ApplyChildren(question, request.Options, request.Explanations, request.Tags, links.OutcomeLinks, now);
+        await ApplyQuestionContentBlocksAsync(userId, question, request.ContentBlocks, now, ct);
+        await ApplyStimulusLinksAsync(userId, question, request.Stimuli, ct);
         var validation = ValidateQuestion(question, forPublish: false);
         if (!validation.IsValid)
         {
@@ -246,6 +288,18 @@ public sealed class QuestionBankService : IQuestionBankService
             ApplyOutcomeLinks(question, links.OutcomeLinks, question.UpdatedAt);
         }
 
+        if (request.ContentBlocks is not null)
+        {
+            question.ContentBlocks.Clear();
+            await ApplyQuestionContentBlocksAsync(userId, question, request.ContentBlocks, question.UpdatedAt, ct);
+        }
+
+        if (request.Stimuli is not null)
+        {
+            question.StimulusLinks.Clear();
+            await ApplyStimulusLinksAsync(userId, question, request.Stimuli, ct);
+        }
+
         var validation = ValidateQuestion(question, forPublish: false);
         if (!validation.IsValid)
         {
@@ -311,10 +365,193 @@ public sealed class QuestionBankService : IQuestionBankService
         return true;
     }
 
+    public async Task<QuestionAssetDto> CreateAssetAsync(
+        Guid userId,
+        CreateQuestionAssetDto request,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.StorageKey))
+        {
+            throw new ArgumentException("question_asset_storage_key_required");
+        }
+
+        if (!IsSafeStorageKey(request.StorageKey))
+        {
+            throw new ArgumentException("question_asset_storage_key_must_be_relative");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.FileName))
+        {
+            throw new ArgumentException("question_asset_file_name_required");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Sha256Hash))
+        {
+            throw new ArgumentException("question_asset_hash_required");
+        }
+
+        if (!IsValidOptionalUrl(request.SourceUrl))
+        {
+            throw new ArgumentException("question_asset_source_url_invalid");
+        }
+
+        await EnsureSourceVisibleAsync(userId, request.SourceRegistryItemId, ct);
+
+        var now = DateTime.UtcNow;
+        var asset = new QuestionAsset
+        {
+            OwnerUserId = userId,
+            AssetType = NormalizeBounded(request.AssetType, AllowedAssetTypes, "image"),
+            StorageKey = Clean(request.StorageKey),
+            FileName = Clean(request.FileName),
+            MimeType = Clean(request.MimeType, "application/octet-stream"),
+            SizeBytes = Math.Max(0, request.SizeBytes),
+            Sha256Hash = Clean(request.Sha256Hash).ToLowerInvariant(),
+            SourceRegistryItemId = request.SourceRegistryItemId,
+            SourceTitle = SafeOptional(request.SourceTitle),
+            SourceUrl = SafeOptional(request.SourceUrl),
+            LicenseStatus = NormalizeBounded(request.LicenseStatus, AllowedLicenseStatuses, "unknown"),
+            VerificationStatus = Clean(request.VerificationStatus, "unverified"),
+            AltText = SafeOptional(request.AltText),
+            Caption = SafeOptional(request.Caption),
+            LongDescription = SafeOptional(request.LongDescription),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        _db.QuestionAssets.Add(asset);
+        await _db.SaveChangesAsync(ct);
+        return ToDto(asset);
+    }
+
+    public async Task<QuestionAssetDto?> GetAssetAsync(Guid userId, Guid assetId, CancellationToken ct = default)
+    {
+        var asset = await VisibleAssets(userId).FirstOrDefaultAsync(a => a.Id == assetId, ct);
+        return asset is null ? null : ToDto(asset);
+    }
+
+    public async Task<QuestionStimulusDto> CreateStimulusAsync(
+        Guid userId,
+        CreateQuestionStimulusDto request,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title))
+        {
+            throw new ArgumentException("question_stimulus_title_required");
+        }
+
+        await EnsureSourceVisibleAsync(userId, request.SourceRegistryItemId, ct);
+        await EnsureCurriculumNodeVisibleAsync(userId, request.CurriculumNodeId, ct);
+
+        var now = DateTime.UtcNow;
+        var stimulus = new QuestionStimulus
+        {
+            OwnerUserId = userId,
+            Title = Clean(request.Title),
+            StimulusType = NormalizeBounded(request.StimulusType, AllowedStimulusTypes, "passage"),
+            ContentText = SafeOptional(request.ContentText),
+            ContentJson = SafeOptional(request.ContentJson),
+            SourceRegistryItemId = request.SourceRegistryItemId,
+            CurriculumNodeId = request.CurriculumNodeId,
+            VerificationStatus = Clean(request.VerificationStatus, "unverified"),
+            LicenseStatus = NormalizeBounded(request.LicenseStatus, AllowedLicenseStatuses, "unknown"),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        _db.QuestionStimuli.Add(stimulus);
+        await _db.SaveChangesAsync(ct);
+        return ToDto(stimulus, sortOrder: 0);
+    }
+
+    public async Task<QuestionItemDto?> AttachStimulusAsync(
+        Guid userId,
+        Guid questionId,
+        QuestionStimulusLinkDto request,
+        CancellationToken ct = default)
+    {
+        var question = await OwnedQuestionForMutation(userId, questionId).FirstOrDefaultAsync(ct);
+        if (question is null)
+        {
+            return null;
+        }
+
+        var stimulus = await VisibleStimuli(userId).FirstOrDefaultAsync(s => s.Id == request.QuestionStimulusId, ct);
+        if (stimulus is null)
+        {
+            throw new ArgumentException("question_stimulus_not_visible");
+        }
+
+        if (question.StimulusLinks.All(l => l.QuestionStimulusId != stimulus.Id))
+        {
+            _db.QuestionStimulusLinks.Add(new QuestionStimulusLink
+            {
+                QuestionItemId = question.Id,
+                QuestionStimulusId = stimulus.Id,
+                SortOrder = request.SortOrder
+            });
+        }
+
+        question.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return await GetQuestionAsync(userId, question.Id, ct);
+    }
+
+    public async Task<QuestionItemDto?> AddQuestionContentBlockAsync(
+        Guid userId,
+        Guid questionId,
+        CreateQuestionContentBlockDto request,
+        CancellationToken ct = default)
+    {
+        var question = await OwnedQuestionForMutation(userId, questionId).FirstOrDefaultAsync(ct);
+        if (question is null)
+        {
+            return null;
+        }
+
+        _db.QuestionContentBlocks.Add(await BuildQuestionContentBlockAsync(userId, question.Id, request, DateTime.UtcNow, ct));
+        question.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return await GetQuestionAsync(userId, question.Id, ct);
+    }
+
+    public async Task<QuestionItemDto?> AddOptionContentBlockAsync(
+        Guid userId,
+        Guid optionId,
+        CreateQuestionOptionContentBlockDto request,
+        CancellationToken ct = default)
+    {
+        var option = await _db.QuestionOptions
+            .Include(o => o.QuestionItem)
+            .ThenInclude(q => q.ContentBlocks)
+            .Include(o => o.QuestionItem)
+            .ThenInclude(q => q.StimulusLinks)
+            .Include(o => o.ContentBlocks)
+            .FirstOrDefaultAsync(o => o.Id == optionId
+                                      && !o.QuestionItem.IsDeleted
+                                      && o.QuestionItem.OwnerUserId == userId, ct);
+
+        if (option is null)
+        {
+            return null;
+        }
+
+        _db.QuestionOptionContentBlocks.Add(await BuildOptionContentBlockAsync(userId, option.Id, request, DateTime.UtcNow, ct));
+        option.QuestionItem.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return await GetQuestionAsync(userId, option.QuestionItemId, ct);
+    }
+
     private IQueryable<QuestionItem> VisibleQuestions(Guid userId) =>
         _db.QuestionItems
             .AsNoTracking()
             .Include(q => q.Options)
+            .ThenInclude(o => o.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.ContentBlocks.Where(b => !b.IsDeleted))
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.StimulusLinks)
+            .ThenInclude(l => l.QuestionStimulus)
             .Include(q => q.Explanations)
             .Include(q => q.Tags)
             .Include(q => q.OutcomeLinks)
@@ -323,6 +560,11 @@ public sealed class QuestionBankService : IQuestionBankService
     private IQueryable<QuestionItem> OwnedQuestionForMutation(Guid userId, Guid questionId) =>
         _db.QuestionItems
             .Include(q => q.Options)
+            .ThenInclude(o => o.ContentBlocks)
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.ContentBlocks)
+            .ThenInclude(b => b.Asset)
+            .Include(q => q.StimulusLinks)
             .Include(q => q.Explanations)
             .Include(q => q.Tags)
             .Include(q => q.OutcomeLinks)
@@ -527,11 +769,157 @@ public sealed class QuestionBankService : IQuestionBankService
         }
     }
 
+    private async Task ApplyQuestionContentBlocksAsync(
+        Guid userId,
+        QuestionItem question,
+        IReadOnlyList<CreateQuestionContentBlockDto> blocks,
+        DateTime now,
+        CancellationToken ct)
+    {
+        foreach (var block in blocks.OrderBy(b => b.SortOrder))
+        {
+            question.ContentBlocks.Add(await BuildQuestionContentBlockAsync(userId, question.Id, block, now, ct));
+        }
+    }
+
+    private async Task<QuestionContentBlock> BuildQuestionContentBlockAsync(
+        Guid userId,
+        Guid questionId,
+        CreateQuestionContentBlockDto request,
+        DateTime now,
+        CancellationToken ct)
+    {
+        await EnsureAssetVisibleAsync(userId, request.AssetId, ct);
+        return new QuestionContentBlock
+        {
+            QuestionItemId = questionId,
+            BlockType = NormalizeBounded(request.BlockType, AllowedQuestionBlockTypes, "text"),
+            Text = SafeOptional(request.Text),
+            ContentJson = SafeOptional(request.ContentJson),
+            AssetId = request.AssetId,
+            SortOrder = request.SortOrder,
+            AltText = SafeOptional(request.AltText),
+            Caption = SafeOptional(request.Caption),
+            LongDescription = SafeOptional(request.LongDescription),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+    }
+
+    private async Task<QuestionOptionContentBlock> BuildOptionContentBlockAsync(
+        Guid userId,
+        Guid optionId,
+        CreateQuestionOptionContentBlockDto request,
+        DateTime now,
+        CancellationToken ct)
+    {
+        await EnsureAssetVisibleAsync(userId, request.AssetId, ct);
+        return new QuestionOptionContentBlock
+        {
+            QuestionOptionId = optionId,
+            BlockType = NormalizeBounded(request.BlockType, AllowedOptionBlockTypes, "text"),
+            Text = SafeOptional(request.Text),
+            ContentJson = SafeOptional(request.ContentJson),
+            AssetId = request.AssetId,
+            SortOrder = request.SortOrder,
+            AltText = SafeOptional(request.AltText),
+            Caption = SafeOptional(request.Caption),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+    }
+
+    private async Task ApplyStimulusLinksAsync(
+        Guid userId,
+        QuestionItem question,
+        IReadOnlyList<QuestionStimulusLinkDto> stimuli,
+        CancellationToken ct)
+    {
+        foreach (var item in stimuli
+                     .Where(s => s.QuestionStimulusId != Guid.Empty)
+                     .GroupBy(s => s.QuestionStimulusId)
+                     .Select(g => g.OrderBy(s => s.SortOrder).First()))
+        {
+            var stimulus = await VisibleStimuli(userId).FirstOrDefaultAsync(s => s.Id == item.QuestionStimulusId, ct);
+            if (stimulus is null)
+            {
+                throw new ArgumentException("question_stimulus_not_visible");
+            }
+
+            question.StimulusLinks.Add(new QuestionStimulusLink
+            {
+                QuestionItemId = question.Id,
+                QuestionStimulusId = item.QuestionStimulusId,
+                SortOrder = item.SortOrder
+            });
+        }
+    }
+
+    private IQueryable<QuestionAsset> VisibleAssets(Guid userId) =>
+        _db.QuestionAssets
+            .AsNoTracking()
+            .Where(a => !a.IsDeleted && (a.OwnerUserId == null || a.OwnerUserId == userId));
+
+    private IQueryable<QuestionStimulus> VisibleStimuli(Guid userId) =>
+        _db.QuestionStimuli
+            .AsNoTracking()
+            .Where(s => !s.IsDeleted && (s.OwnerUserId == null || s.OwnerUserId == userId));
+
+    private async Task EnsureAssetVisibleAsync(Guid userId, Guid? assetId, CancellationToken ct)
+    {
+        if (assetId is null)
+        {
+            return;
+        }
+
+        if (!await VisibleAssets(userId).AnyAsync(a => a.Id == assetId, ct))
+        {
+            throw new ArgumentException("question_asset_not_visible");
+        }
+    }
+
+    private async Task EnsureSourceVisibleAsync(Guid userId, Guid? sourceId, CancellationToken ct)
+    {
+        if (sourceId is null)
+        {
+            return;
+        }
+
+        var visible = await _db.SourceRegistryItems
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == sourceId && !s.IsDeleted && (s.OwnerUserId == null || s.OwnerUserId == userId), ct);
+        if (!visible)
+        {
+            throw new ArgumentException("source_not_visible");
+        }
+    }
+
+    private async Task EnsureCurriculumNodeVisibleAsync(Guid userId, Guid? curriculumNodeId, CancellationToken ct)
+    {
+        if (curriculumNodeId is null)
+        {
+            return;
+        }
+
+        var visible = await _db.CurriculumNodes
+            .AsNoTracking()
+            .Include(n => n.CurriculumVersion)
+            .AnyAsync(n => n.Id == curriculumNodeId
+                           && !n.IsDeleted
+                           && !n.CurriculumVersion.IsDeleted
+                           && (n.CurriculumVersion.OwnerUserId == null || n.CurriculumVersion.OwnerUserId == userId), ct);
+        if (!visible)
+        {
+            throw new ArgumentException("curriculum_node_not_visible");
+        }
+    }
+
     private static QuestionValidationResultDto ValidateQuestion(QuestionItem question, bool forPublish)
     {
         var result = new QuestionValidationResultDto();
 
-        if (string.IsNullOrWhiteSpace(question.Stem))
+        var activeQuestionBlocks = question.ContentBlocks.Where(b => !b.IsDeleted).ToList();
+        if (string.IsNullOrWhiteSpace(question.Stem) && activeQuestionBlocks.Count == 0)
         {
             result.Errors.Add("question_stem_required");
         }
@@ -544,7 +932,9 @@ public sealed class QuestionBankService : IQuestionBankService
                 result.Errors.Add("multiple_choice_minimum_two_options");
             }
 
-            if (activeOptions.Any(o => string.IsNullOrWhiteSpace(o.OptionKey) || string.IsNullOrWhiteSpace(o.Text)))
+            if (activeOptions.Any(o => string.IsNullOrWhiteSpace(o.OptionKey)
+                                       || (string.IsNullOrWhiteSpace(o.Text)
+                                           && o.ContentBlocks.All(b => b.IsDeleted || !HasRenderableOptionBlock(b)))))
             {
                 result.Errors.Add("multiple_choice_option_text_required");
             }
@@ -577,10 +967,158 @@ public sealed class QuestionBankService : IQuestionBankService
             {
                 result.Errors.Add("publish_requires_valid_source_url");
             }
+
+            foreach (var issue in ValidateAccessibility(question))
+            {
+                result.Accessibility.Add(issue);
+                result.Errors.Add(issue.Code);
+            }
+        }
+        else
+        {
+            foreach (var issue in ValidateAccessibility(question))
+            {
+                result.Accessibility.Add(issue);
+                result.Warnings.Add(issue.Code);
+            }
         }
 
         result.IsValid = result.Errors.Count == 0;
         return result;
+    }
+
+    private static bool HasRenderableOptionBlock(QuestionOptionContentBlock block)
+    {
+        return !string.IsNullOrWhiteSpace(block.Text)
+               || !string.IsNullOrWhiteSpace(block.ContentJson)
+               || block.AssetId is not null;
+    }
+
+    private static IReadOnlyList<QuestionAccessibilityValidationDto> ValidateAccessibility(QuestionItem question)
+    {
+        var issues = new List<QuestionAccessibilityValidationDto>();
+
+        foreach (var block in question.ContentBlocks.Where(b => !b.IsDeleted))
+        {
+            ValidateQuestionBlockAccessibility(block, issues);
+        }
+
+        foreach (var optionBlock in question.Options.SelectMany(o => o.ContentBlocks).Where(b => !b.IsDeleted))
+        {
+            ValidateOptionBlockAccessibility(optionBlock, issues);
+        }
+
+        return issues;
+    }
+
+    private static void ValidateQuestionBlockAccessibility(
+        QuestionContentBlock block,
+        List<QuestionAccessibilityValidationDto> issues)
+    {
+        var requiresTextAlternative = block.BlockType is "image" or "chart" or "table";
+        var hasTextAlternative = !string.IsNullOrWhiteSpace(block.AltText)
+                                 || !string.IsNullOrWhiteSpace(block.Caption)
+                                 || !string.IsNullOrWhiteSpace(block.Asset?.AltText)
+                                 || !string.IsNullOrWhiteSpace(block.Asset?.Caption);
+
+        if (requiresTextAlternative && !hasTextAlternative)
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = "question_content_block",
+                TargetId = block.Id,
+                Code = $"{block.BlockType}_requires_alt_text_or_caption",
+                Severity = "error"
+            });
+        }
+
+        if (block.BlockType == "formula"
+            && string.IsNullOrWhiteSpace(block.Text)
+            && string.IsNullOrWhiteSpace(block.AltText)
+            && string.IsNullOrWhiteSpace(block.Asset?.AltText))
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = "question_content_block",
+                TargetId = block.Id,
+                Code = "formula_requires_accessible_text",
+                Severity = "error"
+            });
+        }
+
+        if (block.Asset is { } asset)
+        {
+            ValidateAssetAccessibility(asset, "question_asset", issues);
+        }
+    }
+
+    private static void ValidateOptionBlockAccessibility(
+        QuestionOptionContentBlock block,
+        List<QuestionAccessibilityValidationDto> issues)
+    {
+        var requiresTextAlternative = block.BlockType is "image" or "table";
+        var hasTextAlternative = !string.IsNullOrWhiteSpace(block.AltText)
+                                 || !string.IsNullOrWhiteSpace(block.Caption)
+                                 || !string.IsNullOrWhiteSpace(block.Asset?.AltText)
+                                 || !string.IsNullOrWhiteSpace(block.Asset?.Caption);
+
+        if (requiresTextAlternative && !hasTextAlternative)
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = "question_option_content_block",
+                TargetId = block.Id,
+                Code = $"{block.BlockType}_option_requires_alt_text",
+                Severity = "error"
+            });
+        }
+
+        if (block.BlockType == "formula"
+            && string.IsNullOrWhiteSpace(block.Text)
+            && string.IsNullOrWhiteSpace(block.AltText)
+            && string.IsNullOrWhiteSpace(block.Asset?.AltText))
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = "question_option_content_block",
+                TargetId = block.Id,
+                Code = "formula_option_requires_accessible_text",
+                Severity = "error"
+            });
+        }
+
+        if (block.Asset is { } asset)
+        {
+            ValidateAssetAccessibility(asset, "question_asset", issues);
+        }
+    }
+
+    private static void ValidateAssetAccessibility(
+        QuestionAsset asset,
+        string targetType,
+        List<QuestionAccessibilityValidationDto> issues)
+    {
+        if (asset.AssetType == "image" && string.IsNullOrWhiteSpace(asset.AltText))
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = targetType,
+                TargetId = asset.Id,
+                Code = "image_asset_requires_alt_text",
+                Severity = "error"
+            });
+        }
+
+        if (!SafePublishLicenseStatuses.Contains(asset.LicenseStatus))
+        {
+            issues.Add(new QuestionAccessibilityValidationDto
+            {
+                TargetType = targetType,
+                TargetId = asset.Id,
+                Code = "asset_requires_safe_license_status",
+                Severity = "error"
+            });
+        }
     }
 
     private static QuestionItemDto ToDto(QuestionItem question) => new()
@@ -614,7 +1152,12 @@ public sealed class QuestionBankService : IQuestionBankService
                 OptionKey = o.OptionKey,
                 Text = o.Text,
                 IsCorrect = o.IsCorrect,
-                SortOrder = o.SortOrder
+                SortOrder = o.SortOrder,
+                ContentBlocks = o.ContentBlocks
+                    .Where(b => !b.IsDeleted)
+                    .OrderBy(b => b.SortOrder)
+                    .Select(ToDto)
+                    .ToList()
             })
             .ToList(),
         Explanations = question.Explanations
@@ -646,7 +1189,83 @@ public sealed class QuestionBankService : IQuestionBankService
                 LinkStrength = l.LinkStrength
             })
             .ToList(),
+        ContentBlocks = question.ContentBlocks
+            .Where(b => !b.IsDeleted)
+            .OrderBy(b => b.SortOrder)
+            .Select(ToDto)
+            .ToList(),
+        Stimuli = question.StimulusLinks
+            .Where(l => !l.QuestionStimulus.IsDeleted)
+            .OrderBy(l => l.SortOrder)
+            .Select(l => ToDto(l.QuestionStimulus, l.SortOrder))
+            .ToList(),
         Validation = ValidateQuestion(question, forPublish: question.QualityStatus == "approved")
+    };
+
+    private static QuestionContentBlockDto ToDto(QuestionContentBlock block) => new()
+    {
+        Id = block.Id,
+        BlockType = block.BlockType,
+        Text = block.Text,
+        ContentJson = block.ContentJson,
+        AssetId = block.AssetId,
+        Asset = block.Asset is null || block.Asset.IsDeleted ? null : ToDto(block.Asset),
+        SortOrder = block.SortOrder,
+        AltText = block.AltText,
+        Caption = block.Caption,
+        LongDescription = block.LongDescription
+    };
+
+    private static QuestionOptionContentBlockDto ToDto(QuestionOptionContentBlock block) => new()
+    {
+        Id = block.Id,
+        BlockType = block.BlockType,
+        Text = block.Text,
+        ContentJson = block.ContentJson,
+        AssetId = block.AssetId,
+        Asset = block.Asset is null || block.Asset.IsDeleted ? null : ToDto(block.Asset),
+        SortOrder = block.SortOrder,
+        AltText = block.AltText,
+        Caption = block.Caption
+    };
+
+    private static QuestionAssetDto ToDto(QuestionAsset asset) => new()
+    {
+        Id = asset.Id,
+        OwnershipState = asset.OwnerUserId is null ? "system" : "user",
+        AssetType = asset.AssetType,
+        StorageKey = asset.StorageKey,
+        FileName = asset.FileName,
+        MimeType = asset.MimeType,
+        SizeBytes = asset.SizeBytes,
+        Sha256Hash = asset.Sha256Hash,
+        SourceRegistryItemId = asset.SourceRegistryItemId,
+        SourceTitle = asset.SourceTitle,
+        SourceUrl = asset.SourceUrl,
+        LicenseStatus = asset.LicenseStatus,
+        VerificationStatus = asset.VerificationStatus,
+        AltText = asset.AltText,
+        Caption = asset.Caption,
+        LongDescription = asset.LongDescription,
+        CreatedAt = asset.CreatedAt,
+        UpdatedAt = asset.UpdatedAt
+    };
+
+    private static QuestionStimulusDto ToDto(QuestionStimulus stimulus, int sortOrder) => new()
+    {
+        Id = stimulus.Id,
+        OwnershipState = stimulus.OwnerUserId is null ? "system" : "user",
+        Title = stimulus.Title,
+        StimulusType = stimulus.StimulusType,
+        ContentText = stimulus.ContentText,
+        ContentJson = stimulus.ContentJson,
+        SourceRegistryItemId = stimulus.SourceRegistryItemId,
+        CurriculumNodeId = stimulus.CurriculumNodeId,
+        VerificationStatus = stimulus.VerificationStatus,
+        LicenseStatus = stimulus.LicenseStatus,
+        SortOrder = sortOrder,
+        CreatedAt = stimulus.CreatedAt,
+        UpdatedAt = stimulus.UpdatedAt
     };
 
     private static string NormalizeBounded(string? value, HashSet<string> allowed, string fallback)
@@ -663,6 +1282,23 @@ public sealed class QuestionBankService : IQuestionBankService
 
     private static string? SafeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool IsValidOptionalUrl(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+               || Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+               && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+    }
+
+    private static bool IsSafeStorageKey(string value)
+    {
+        var cleaned = value.Trim();
+        return !string.IsNullOrWhiteSpace(cleaned)
+               && !cleaned.Contains("..", StringComparison.Ordinal)
+               && !cleaned.Contains(@":\", StringComparison.Ordinal)
+               && !cleaned.StartsWith("\\", StringComparison.Ordinal)
+               && !cleaned.StartsWith("/", StringComparison.Ordinal);
+    }
 
     private sealed record ResolvedExamLinks(
         Guid ExamDefinitionId,
