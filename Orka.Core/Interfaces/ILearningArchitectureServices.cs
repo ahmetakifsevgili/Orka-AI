@@ -77,6 +77,43 @@ public interface IAssessmentQualityService
         CancellationToken ct = default);
 }
 
+public interface IAssessmentBlueprintService
+{
+    Task<AssessmentBlueprintDto> BuildBlueprintForPlanStepAsync(
+        Guid userId,
+        AssessmentBlueprintRequestDto request,
+        CancellationToken ct = default);
+
+    Task<AssessmentBlueprintDto> BuildDiagnosticBlueprintAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task<AssessmentBlueprintDto> BuildMisconceptionProbeBlueprintAsync(
+        Guid userId,
+        Guid topicId,
+        string conceptKey,
+        string? misconceptionKey = null,
+        CancellationToken ct = default);
+
+    Task<AssessmentQualityEvaluationDto> EvaluateAssessmentContractAsync(
+        Guid userId,
+        AssessmentQualityEvaluationRequestDto request,
+        CancellationToken ct = default);
+
+    Task<AssessmentQualityEvaluationDto?> GetAssessmentQualitySnapshotAsync(
+        Guid userId,
+        Guid snapshotId,
+        CancellationToken ct = default);
+
+    Task<AssessmentQualityEvaluationDto?> GetLatestAssessmentQualitySnapshotAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+}
+
 public interface IAssessmentCalibrationService
 {
     Task<AssessmentCalibrationRunDto> RunAsync(
@@ -165,6 +202,89 @@ public interface ILearningMemoryService
         CancellationToken ct = default);
 }
 
+public interface IActiveLessonSnapshotService
+{
+    Task<ActiveLessonSnapshotDto> BuildOrRefreshActiveLessonSnapshotAsync(
+        Guid userId,
+        ActiveLessonSnapshotRequestDto request,
+        CancellationToken ct = default);
+
+    Task<StudentContextSnapshotDto> BuildOrRefreshStudentContextSnapshotAsync(
+        Guid userId,
+        StudentContextSnapshotRequestDto request,
+        CancellationToken ct = default);
+
+    Task<ActiveLessonSnapshotDto?> GetActiveLessonSnapshotAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task<StudentContextSnapshotDto?> GetStudentContextSnapshotAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task MarkActiveLessonSnapshotStaleAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        string reason,
+        CancellationToken ct = default);
+}
+
+public interface IUnifiedToolRuntimeService
+{
+    Task<ToolRuntimeDecisionDto> DecideAsync(
+        Guid userId,
+        ToolRuntimeRequestDto request,
+        CancellationToken ct = default);
+
+    Task<ToolRuntimeResultDto> RecordResultAsync(
+        Guid userId,
+        ToolRuntimeResultDto result,
+        CancellationToken ct = default);
+
+    Task<ToolRuntimeTraceDto?> GetToolRuntimeTraceAsync(
+        Guid userId,
+        Guid traceId,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<ToolRuntimeTraceDto>> GetRecentToolRuntimeTracesAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        int take = 20,
+        CancellationToken ct = default);
+
+    Task<ToolGovernanceSummaryDto> GetToolGovernanceSummaryAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+}
+
+public interface IKorteksSynthesisService
+{
+    Task<KorteksResearchWorkflowDto> BuildAndSaveAsync(
+        Guid userId,
+        KorteksResearchResultDto researchResult,
+        KorteksResearchSynthesisContextDto? context = null,
+        CancellationToken ct = default);
+
+    Task<KorteksResearchWorkflowDto?> GetWorkflowAsync(
+        Guid userId,
+        Guid workflowId,
+        CancellationToken ct = default);
+
+    Task<KorteksResearchWorkflowDto?> GetLatestWorkflowAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+}
+
 public interface IAdaptiveStudyPlannerService
 {
     Task<AdaptiveStudyPlanDto> BuildAsync(
@@ -176,6 +296,42 @@ public interface IAdaptiveStudyPlannerService
         DashboardActivePlanDto? activePlan,
         int dueReviewCount,
         IReadOnlyCollection<Guid> topicScopeIds,
+        CancellationToken ct = default);
+}
+
+public interface IPlanSequencingService
+{
+    Task<PlanCurriculumSequenceDto> BuildPlanSequenceAsync(
+        Guid userId,
+        PlanQualityEvaluationRequestDto request,
+        CancellationToken ct = default);
+
+    Task<PlanQualityEvaluationDto> EvaluatePlanSequenceAsync(
+        Guid userId,
+        PlanQualityEvaluationRequestDto request,
+        CancellationToken ct = default);
+
+    Task<PlanReadinessDto> GetPlanReadinessAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task<PlanStepContractDto> BuildPlanStepContractAsync(
+        Guid userId,
+        Guid topicId,
+        string conceptKey,
+        CancellationToken ct = default);
+
+    Task<PlanQualityEvaluationDto?> GetPlanQualitySnapshotAsync(
+        Guid userId,
+        Guid snapshotId,
+        CancellationToken ct = default);
+
+    Task<PlanQualityEvaluationDto?> GetLatestPlanQualitySnapshotAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId = null,
         CancellationToken ct = default);
 }
 
@@ -616,6 +772,31 @@ public interface ITutorPolicyEngine
         CancellationToken ct = default);
 }
 
+public interface ITutorResponsePolicyService
+{
+    Task<TutorResponsePolicyDto> BuildPolicyAsync(
+        Guid userId,
+        TutorResponsePolicyRequestDto request,
+        CancellationToken ct = default);
+
+    Task<TutorResponseQualityEvaluationDto> EvaluateTutorResponseAsync(
+        Guid userId,
+        TutorResponseQualityEvaluationRequestDto request,
+        CancellationToken ct = default);
+
+    Task<TutorResponseQualityEvaluationDto?> GetLatestResponseQualityAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<TutorNextLearningActionDto>> GetTutorNextLearningActionsAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId = null,
+        CancellationToken ct = default);
+}
+
 public interface ITutorPolicyTraceService
 {
     Task<TutorPolicyTraceDto> CreateTraceAsync(
@@ -748,6 +929,129 @@ public interface ITeachingArtifactService
         CancellationToken ct = default);
 
     Task MarkRenderedAsync(Guid artifactId, Guid userId, string? renderError = null, CancellationToken ct = default);
+}
+
+public interface ILearningArtifactService
+{
+    Task<LearningArtifactDto> CreateArtifactAsync(
+        Guid userId,
+        LearningArtifactRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto?> GetArtifactAsync(
+        Guid userId,
+        Guid artifactId,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactListDto> ListArtifactsAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? conceptKey = null,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto?> RefreshArtifactStatusAsync(
+        Guid userId,
+        Guid artifactId,
+        string? reason = null,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactSafetyDto> ValidateArtifactAsync(
+        Guid userId,
+        LearningArtifactRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto> MirrorTeachingArtifactAsync(
+        Guid userId,
+        TeachingArtifact artifact,
+        TutorTurnStateDto? turnState = null,
+        TutorActionPlanDto? actionPlan = null,
+        string origin = "tutor",
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<LearningArtifactDto>> BuildArtifactForTutorActionAsync(
+        Guid userId,
+        TutorTurnStateDto turnState,
+        TutorActionPlanDto actionPlan,
+        TutorResponsePolicyDto? policy = null,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto> BuildArtifactForWikiSectionAsync(
+        Guid userId,
+        Guid topicId,
+        string sectionKey,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto> BuildArtifactForQuizRemediationAsync(
+        Guid userId,
+        LearningArtifactRequestDto request,
+        CancellationToken ct = default);
+}
+
+public interface ILearningNotebookStudioService
+{
+    Task<LearningNotebookPackListDto> ListPacksAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId = null,
+        Guid? wikiPageId = null,
+        string? surface = null,
+        Guid? sourceId = null,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto?> GetPackAsync(
+        Guid userId,
+        Guid packId,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto> BuildMilestonePackAsync(
+        Guid userId,
+        Guid topicId,
+        LearningNotebookPackRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto?> BuildWikiPagePackAsync(
+        Guid userId,
+        Guid wikiPageId,
+        LearningNotebookPackRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto?> BuildSourcePackAsync(
+        Guid userId,
+        Guid sourceId,
+        LearningNotebookPackRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto?> BuildTopicSourcePackAsync(
+        Guid userId,
+        Guid topicId,
+        LearningNotebookPackRequestDto request,
+        CancellationToken ct = default);
+
+    Task<LearningNotebookPackDto?> RefreshPackAsync(
+        Guid userId,
+        Guid packId,
+        CancellationToken ct = default);
+
+    Task<LearningArtifactDto?> BuildArtifactAsync(
+        Guid userId,
+        Guid packId,
+        LearningNotebookArtifactRequestDto request,
+        CancellationToken ct = default);
+}
+
+public interface INotebookExportService
+{
+    Task<NotebookSlideExportPreviewDto?> BuildSlidePreviewAsync(
+        Guid userId,
+        Guid packId,
+        CancellationToken ct = default);
+
+    Task<NotebookExportResultDto?> ExportAsync(
+        Guid userId,
+        Guid packId,
+        NotebookExportRequestDto request,
+        CancellationToken ct = default);
 }
 
 public interface ITutorReflectionService

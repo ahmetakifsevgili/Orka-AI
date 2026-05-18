@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orka.API.Services;
+using Orka.Core.DTOs.Korteks;
 using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
@@ -17,6 +18,7 @@ namespace Orka.API.Controllers;
 public class KorteksController : ControllerBase
 {
     private readonly IKorteksAgent _korteks;
+    private readonly IKorteksSynthesisService _synthesis;
     private readonly FileExtractionService _fileExtractor;
     private readonly UploadContentSafetyGuard _contentSafety;
     private readonly IAuthAttemptLimiter _rateLimiter;
@@ -24,12 +26,14 @@ public class KorteksController : ControllerBase
 
     public KorteksController(
         IKorteksAgent korteks,
+        IKorteksSynthesisService synthesis,
         FileExtractionService fileExtractor,
         UploadContentSafetyGuard contentSafety,
         IAuthAttemptLimiter rateLimiter,
         ILogger<KorteksController> logger)
     {
         _korteks = korteks;
+        _synthesis = synthesis;
         _fileExtractor = fileExtractor;
         _contentSafety = contentSafety;
         _rateLimiter = rateLimiter;
@@ -117,6 +121,15 @@ public class KorteksController : ControllerBase
         {
             var researchResult = await _korteks.RunResearchWithEvidenceAsync(
                 request.Topic, userId, request.TopicId, fileContext, ct);
+            var synthesis = await _synthesis.BuildAndSaveAsync(
+                userId,
+                researchResult,
+                new KorteksResearchSynthesisContextDto
+                {
+                    TopicId = request.TopicId,
+                    Purpose = "korteks_sync"
+                },
+                ct);
             var text = researchResult.Report;
             var providerWarnings = researchResult.ProviderFailures
                 .Concat(researchResult.Warnings)
@@ -138,7 +151,13 @@ public class KorteksController : ControllerBase
                 providerWarnings,
                 providerCalls = researchResult.ProviderCalls,
                 isFallback = researchResult.IsFallback,
-                legacySources = researchResult.Sources.Select(s => s.Url).ToList()
+                legacySources = researchResult.Sources.Select(s => s.Url).ToList(),
+                synthesisWorkflowId = synthesis.Id,
+                synthesisStatus = synthesis.Status,
+                synthesis = synthesis.Synthesis,
+                consumerContexts = synthesis.ConsumerContexts,
+                evidenceSummary = synthesis.EvidenceSummary,
+                safetyIssues = synthesis.SafetyIssues
             });
         }
         catch (Exception ex)
@@ -150,6 +169,23 @@ public class KorteksController : ControllerBase
 
     [HttpGet("ping")]
     public IActionResult Ping() => Ok(new { status = "Korteks online", timestamp = DateTime.UtcNow });
+
+    [HttpGet("synthesis/{id:guid}")]
+    public async Task<IActionResult> GetSynthesis(Guid id, CancellationToken ct = default)
+    {
+        var workflow = await _synthesis.GetWorkflowAsync(GetUserId(), id, ct);
+        return workflow == null ? NotFound(new { error = "korteks_synthesis_not_found" }) : Ok(workflow);
+    }
+
+    [HttpGet("synthesis/latest")]
+    public async Task<IActionResult> GetLatestSynthesis(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        CancellationToken ct = default)
+    {
+        var workflow = await _synthesis.GetLatestWorkflowAsync(GetUserId(), topicId, sessionId, ct);
+        return workflow == null ? NotFound(new { error = "korteks_synthesis_not_found" }) : Ok(workflow);
+    }
 
     private async Task StreamResearchAsync(
         string topic, Guid userId, Guid? topicId, string? fileContext, CancellationToken ct)

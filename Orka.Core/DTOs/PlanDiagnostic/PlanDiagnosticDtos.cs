@@ -21,6 +21,9 @@ public sealed class PlanDiagnosticStateDto
     public PlanDiagnosticStatus Status { get; set; }
     public string CompressedResearchContextJson { get; set; } = string.Empty;
     public string CompressedResearchPromptBlock { get; set; } = string.Empty;
+    public Guid? KorteksResearchWorkflowId { get; set; }
+    public string KorteksSynthesisJson { get; set; } = string.Empty;
+    public string KorteksSynthesisPromptBlock { get; set; } = string.Empty;
     public string LearningBlueprintJson { get; set; } = string.Empty;
     public string LearningBlueprintHash { get; set; } = string.Empty;
     public string LearningBlueprintDomain { get; set; } = string.Empty;
@@ -93,6 +96,9 @@ public sealed class StartPlanDiagnosticResponse
     public Guid? QualityReportId { get; set; }
     public string SourceBundleHash { get; set; } = string.Empty;
     public string SourceBundleCacheKey { get; set; } = string.Empty;
+    public Guid? KorteksResearchWorkflowId { get; set; }
+    public string KorteksSynthesisStatus { get; set; } = "not_available";
+    public string KorteksSourceConfidence { get; set; } = "low";
     public int QuizQuestionCount { get; set; }
     public Guid? IntentRequestId { get; set; }
     public string ApprovedMainTopic { get; set; } = string.Empty;
@@ -136,6 +142,7 @@ public sealed class FinalizePlanDiagnosticResponse
     public string? Message { get; set; }
     public Guid? GeneratedPlanRootTopicId { get; set; }
     public List<Guid> GeneratedTopicIds { get; set; } = [];
+    public PlanQualityEvaluationDto? PlanQuality { get; set; }
 }
 
 public sealed class PlanDiagnosticAnswerResponse
@@ -145,4 +152,5 @@ public sealed class PlanDiagnosticAnswerResponse
     public PlanDiagnosticStatus Status { get; set; }
     public int AnsweredQuestionCount { get; set; }
     public int QuizQuestionCount { get; set; }
+    public QuizResultLearningImpactDto? LearningImpact { get; set; }
 }

@@ -5,7 +5,7 @@ import type { QuizData } from "./types";
  * - raw JSON arrays/objects
  * - fenced ```json / ```quiz blocks
  * - wrapper objects like { questions: [...] }
- * - choices/options/answers and correctAnswer variants
+ * - choices/options/answers while stripping any answer-key variants
  */
 export function tryParseQuiz(content: string): QuizData | QuizData[] | null {
   const candidates: string[] = [];
@@ -119,12 +119,8 @@ function normalizeQuestion(q: any, qi: number): QuizData | null {
   const isCoding = q?.type === "coding" || q?.questionType === "coding";
   if (!Array.isArray(rawOptions) && !isCoding) return null;
 
-  const correctHint = String(
-    q?.correctAnswer ?? q?.correct_answer ?? q?.answer ?? q?.correctOption ?? ""
-  ).trim();
-
   const options = Array.isArray(rawOptions)
-    ? rawOptions.map((o: any, i: number) => normalizeOption(o, i, qi, correctHint))
+    ? rawOptions.map((o: any, i: number) => normalizeOption(o, i, qi))
     : [];
 
   if (!isCoding && options.length === 0) return null;
@@ -134,7 +130,6 @@ function normalizeQuestion(q: any, qi: number): QuizData | null {
     questionId: q?.questionId ?? q?.question_id ?? q?.id,
     question: question.trim(),
     options,
-    explanation: q?.explanation ?? q?.rationale ?? q?.reason ?? "",
     topic: q?.topic,
     skillTag: q?.skillTag ?? q?.skill_tag ?? q?.skill,
     topicPath: q?.topicPath ?? q?.topic_path,
@@ -168,7 +163,7 @@ function toNumber(value: unknown) {
   return undefined;
 }
 
-function normalizeOption(option: any, i: number, qi: number, correctHint: string) {
+function normalizeOption(option: any, i: number, qi: number) {
   const id = String(option?.id ?? option?.key ?? option?.label ?? `opt-${qi}-${i}`);
   const text = String(typeof option === "string" ? option : option?.text ?? option?.value ?? option?.label ?? "")
     .replace(/^[A-F][).]\s*/i, "")
@@ -176,10 +171,5 @@ function normalizeOption(option: any, i: number, qi: number, correctHint: string
     .replace(/^(?:yanlış|yanlis)\s*[:：-]\s*/i, "")
     .replace(/^(?:correct|incorrect|wrong)\s*(?:approach)?\s*[:：-]\s*/i, "")
     .trim();
-  const optionLetter = String.fromCharCode(65 + i);
-  const isCorrect =
-    Boolean(option?.isCorrect ?? option?.is_correct ?? option?.correct) ||
-    (!!correctHint && [id, optionLetter, text].some((v) => v.toLowerCase() === correctHint.toLowerCase()));
-
-  return { id, text, isCorrect };
+  return { id, text };
 }

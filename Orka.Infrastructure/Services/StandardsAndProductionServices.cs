@@ -727,6 +727,7 @@ public sealed class ProductionReadinessService : IProductionReadinessService
     private readonly IDbIndexAuditService _dbIndex;
     private readonly IV1RegressionGateService _regression;
     private readonly IStandardsAlignmentService _standards;
+    private readonly ILearningRuntimeTelemetryService _runtimeTelemetry;
 
     public ProductionReadinessService(
         IProviderGovernanceService providers,
@@ -734,7 +735,8 @@ public sealed class ProductionReadinessService : IProductionReadinessService
         IRedisStreamMaintenanceService redis,
         IDbIndexAuditService dbIndex,
         IV1RegressionGateService regression,
-        IStandardsAlignmentService standards)
+        IStandardsAlignmentService standards,
+        ILearningRuntimeTelemetryService runtimeTelemetry)
     {
         _providers = providers;
         _retention = retention;
@@ -742,6 +744,7 @@ public sealed class ProductionReadinessService : IProductionReadinessService
         _dbIndex = dbIndex;
         _regression = regression;
         _standards = standards;
+        _runtimeTelemetry = runtimeTelemetry;
     }
 
     public async Task<ProductionReadinessDto> GetV1ReadinessAsync(Guid? userId = null, CancellationToken ct = default)
@@ -752,10 +755,14 @@ public sealed class ProductionReadinessService : IProductionReadinessService
         var db = await _dbIndex.AuditAsync(ct);
         var regression = await _regression.EvaluateAsync(ct);
         var standards = userId.HasValue ? await _standards.GetSummaryAsync(userId.Value, null, ct) : new StandardsSummaryDto { StandardsAlignmentStatus = "unknown" };
+        var runtimeTelemetry = userId.HasValue
+            ? await _runtimeTelemetry.GetLearningRuntimeHealthAsync(userId.Value, null, null, ct)
+            : new LearningRuntimeHealthDto { Status = "unknown", UserSafeWarnings = ["Runtime telemetry is user-scoped."] };
         var sections = new[]
         {
             Section("standards", standards.StandardsAlignmentStatus, "Standards alignment", "Kazanım, soru ve learning event profilleri izleniyor."),
             Section("providers", provider.Status, "Provider governance", "Araç ve provider çağrıları telemetry ile takip ediliyor."),
+            Section("runtime_telemetry", runtimeTelemetry.Status, "Learning runtime telemetry", "Tutor, plan, quiz, source, artifact, provider ve tool izleri guvenli runtime ozetiyle izleniyor."),
             Section("audio_retention", audio.Status, "Audio retention", "Ses byte payloadları retention kuralıyla yönetiliyor."),
             Section("redis_streams", redis.Status, "Redis live streams", "Canlı tutor izleri Redis ve SQL projection ile korunuyor."),
             Section("db_indexes", db.Status, "DB index audit", "V1 sorgu yüzeyleri için kritik indexler kontrol edildi."),
@@ -766,6 +773,7 @@ public sealed class ProductionReadinessService : IProductionReadinessService
             Status = Overall(sections.Select(s => s.Status)),
             Sections = sections,
             ProviderGovernance = provider,
+            RuntimeTelemetry = runtimeTelemetry,
             AudioRetention = audio,
             RedisStreams = redis,
             DbIndexAudit = db,

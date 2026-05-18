@@ -26,6 +26,9 @@ public class QuizAttemptDto
     public string? LearningObjective { get; set; }
     public string? QuestionType { get; set; }
     public string? MistakeCategory { get; set; }
+    public string? AssessmentMode { get; set; }
+    public string? SourceReadiness { get; set; }
+    public string? WikiReviewHint { get; set; }
     public string? TopicPath { get; set; }
     public string? Difficulty { get; set; }
     public string? CognitiveType { get; set; }

@@ -18,6 +18,8 @@ public class AudioOverviewService : IAudioOverviewService
     private readonly OrkaDbContext _db;
     private readonly IAIAgentFactory _factory;
     private readonly IWikiService _wikiService;
+    private readonly ISourceEvidenceLifecycleService _sourceLifecycle;
+    private readonly IAgenticTrustPolicyService _trust;
     private readonly IEdgeTtsService _ttsService;
     private readonly ILogger<AudioOverviewService> _logger;
 
@@ -25,12 +27,16 @@ public class AudioOverviewService : IAudioOverviewService
         OrkaDbContext db,
         IAIAgentFactory factory,
         IWikiService wikiService,
+        ISourceEvidenceLifecycleService sourceLifecycle,
+        IAgenticTrustPolicyService trust,
         IEdgeTtsService ttsService,
         ILogger<AudioOverviewService> logger)
     {
         _db = db;
         _factory = factory;
         _wikiService = wikiService;
+        _sourceLifecycle = sourceLifecycle;
+        _trust = trust;
         _ttsService = ttsService;
         _logger = logger;
     }
@@ -78,6 +84,32 @@ public class AudioOverviewService : IAudioOverviewService
 
         try
         {
+            var packContext = await BuildNotebookPackContextAsync(userId, topicId, sessionId, ct);
+            if (packContext != null)
+            {
+                var packScript = BuildNotebookPackScript(packContext);
+                var trust = await _trust.CheckPublicPayloadAsync(userId, new AgenticTrustCheckRequestDto
+                {
+                    TopicId = packContext.TopicId,
+                    SessionId = packContext.SessionId,
+                    Surface = "audio_overview_script",
+                    Content = packScript
+                }, ct);
+                if (!trust.Allowed)
+                {
+                    packScript = "[HOCA]: Bu OrkaLM paketi icin sesli anlatim guvenlik kontrolunden gecemedi.\n[ASISTAN]: Kaynak veya not icerigini temizleyip paketi yeniledikten sonra tekrar deneyebilirsin.";
+                }
+
+                job.TopicId = packContext.TopicId;
+                job.SessionId = packContext.SessionId;
+                job.Script = AudioDialogueFormatter.NormalizeScript(packScript);
+                job.SpeakersJson = JsonSerializer.Serialize(AudioDialogueFormatter.ParseSpeakers(job.Script));
+                await TryGenerateTtsAsync(job, ct);
+                job.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(ct);
+                return ToDto(job);
+            }
+
             var context = await BuildOverviewContextAsync(userId, topicId, sessionId, ct);
             if (IsInsufficientOverviewContext(context))
             {
@@ -116,30 +148,7 @@ public class AudioOverviewService : IAudioOverviewService
             job.Script = script;
             job.SpeakersJson = JsonSerializer.Serialize(speakers);
 
-            try
-            {
-                using var ttsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                ttsTimeout.CancelAfter(TtsGenerationTimeout);
-                var audioBytes = await _ttsService.SynthesizeDialogueAsync(script, ttsTimeout.Token);
-                if (audioBytes.Length == 0)
-                {
-                    throw new InvalidOperationException("Edge-TTS returned an empty audio payload.");
-                }
-
-                job.AudioBytes = audioBytes;
-                job.AudioByteLength = audioBytes.LongLength;
-                job.AudioExpiresAt = DateTime.UtcNow.AddDays(7);
-                job.AudioPurgedAt = null;
-                job.ContentType = "audio/mpeg";
-                job.Status = "ready";
-                _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
-            }
-            catch (Exception ttsEx)
-            {
-                _logger.LogWarning(ttsEx, "[AudioOverview] Edge-TTS failed; switching to script-only. Job={JobId}", job.Id);
-                job.Status = "script-only";
-                job.ErrorMessage = "Edge-TTS uretilemedi; frontend browser TTS fallback kullanmali.";
-            }
+            await TryGenerateTtsAsync(job, ct);
 
             job.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
@@ -158,6 +167,35 @@ public class AudioOverviewService : IAudioOverviewService
         }
 
         return ToDto(job);
+    }
+
+    private async Task TryGenerateTtsAsync(AudioOverviewJob job, CancellationToken ct)
+    {
+        try
+        {
+            using var ttsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            ttsTimeout.CancelAfter(TtsGenerationTimeout);
+            var audioBytes = await _ttsService.SynthesizeDialogueAsync(job.Script, ttsTimeout.Token);
+            if (audioBytes.Length == 0)
+            {
+                throw new InvalidOperationException("Edge-TTS returned an empty audio payload.");
+            }
+
+            job.AudioBytes = audioBytes;
+            job.AudioByteLength = audioBytes.LongLength;
+            job.AudioExpiresAt = DateTime.UtcNow.AddDays(7);
+            job.AudioPurgedAt = null;
+            job.ContentType = "audio/mpeg";
+            job.Status = "ready";
+            job.ErrorMessage = null;
+            _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
+        }
+        catch (Exception ttsEx)
+        {
+            _logger.LogWarning(ttsEx, "[AudioOverview] Edge-TTS failed; switching to script-only. Job={JobId}", job.Id);
+            job.Status = "script-only";
+            job.ErrorMessage = "Edge-TTS uretilemedi; frontend browser TTS fallback kullanmali.";
+        }
     }
 
     public async Task<AudioOverviewJobDto?> GetOverviewAsync(
@@ -184,6 +222,87 @@ public class AudioOverviewService : IAudioOverviewService
         if (job?.AudioBytes == null || job.AudioBytes.Length == 0) return null;
         var contentType = NormalizeContentType(job.ContentType);
         return (job.AudioBytes, contentType, BuildFileName(job.Id, contentType));
+    }
+
+    private async Task<NotebookPackAudioContext?> BuildNotebookPackContextAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        CancellationToken ct)
+    {
+        var resolvedTopicId = topicId;
+        if (!resolvedTopicId.HasValue && sessionId.HasValue)
+        {
+            resolvedTopicId = await _db.Sessions.AsNoTracking()
+                .Where(s => s.Id == sessionId.Value && s.UserId == userId)
+                .Select(s => (Guid?)s.TopicId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var query = _db.LearningNotebookPacks.AsNoTracking()
+            .Where(p => p.UserId == userId && !p.IsDeleted);
+        if (resolvedTopicId.HasValue) query = query.Where(p => p.TopicId == resolvedTopicId.Value);
+        if (sessionId.HasValue) query = query.Where(p => p.SessionId == sessionId.Value || p.SessionId == null);
+
+        var pack = await query
+            .OrderByDescending(p => p.SessionId == sessionId)
+            .ThenByDescending(p => p.UpdatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (pack == null) return null;
+
+        var artifactIds = ParseGuids(pack.ArtifactIdsJson).Take(12).ToArray();
+        var artifacts = artifactIds.Length == 0
+            ? new List<NotebookPackAudioArtifact>()
+            : await _db.LearningArtifacts.AsNoTracking()
+                .Where(a => a.UserId == userId && artifactIds.Contains(a.Id) && !a.IsDeleted)
+                .OrderByDescending(a => a.ArtifactType == "study_guide")
+                .ThenByDescending(a => a.ArtifactType == "misconception_repair_pack")
+                .ThenByDescending(a => a.UpdatedAt)
+                .Take(8)
+                .Select(a => new NotebookPackAudioArtifact(a.ArtifactType, a.Title, a.SourceBasis, Trim(a.SafeContent, 900)))
+                .ToListAsync(ct);
+
+        var sourceBundle = await _sourceLifecycle.GetLatestSourceEvidenceBundleAsync(userId, pack.TopicId, pack.SessionId, ct);
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        return new NotebookPackAudioContext(
+            pack.Id,
+            pack.TopicId,
+            pack.SessionId,
+            pack.Title,
+            pack.Summary,
+            pack.PackType,
+            pack.PackStatus,
+            pack.EvidenceStatus,
+            sourceBundle?.EvidenceStatus ?? pack.SourceReadiness,
+            metadata.WikiPageTitle,
+            ParseStrings(pack.CompletedConceptKeysJson),
+            ParseStrings(pack.WeakConceptKeysJson),
+            ParseStrings(pack.MisconceptionKeysJson),
+            artifacts);
+    }
+
+    private static string BuildNotebookPackScript(NotebookPackAudioContext context)
+    {
+        var completed = JoinOrFallback(context.CompletedConceptKeys, "tamamlanan kavram sinyali henuz zayif");
+        var weak = JoinOrFallback(context.WeakConceptKeys, "zayif kavram sinyali henuz yok");
+        var misconceptions = JoinOrFallback(context.MisconceptionKeys, "belirgin yanlis anlama sinyali yok");
+        var artifactNotes = context.Artifacts.Count == 0
+            ? "Bu pack icin henuz ek calisma artifact'i yok."
+            : string.Join("\n", context.Artifacts.Take(4).Select(a =>
+                $"- {a.ArtifactType} ({a.SourceBasis}): {Trim(a.SafeContent.ReplaceLineEndings(" "), 360)}"));
+        var pageLine = string.IsNullOrWhiteSpace(context.WikiPageTitle)
+            ? "Bu anlatim genel OrkaLM pack uzerinden hazirlandi."
+            : $"Bu anlatim `{context.WikiPageTitle}` Wiki sayfasina bagli OrkaLM pack uzerinden hazirlandi.";
+
+        return AudioDialogueFormatter.NormalizeScript($"""
+            [HOCA]: {pageLine}
+            [ASISTAN]: Kisa ozet: {Trim(context.Summary, 420)}
+            [HOCA]: Tamamlanan kavramlar: {completed}.
+            [ASISTAN]: Dikkat isteyen alanlar: {weak}. Yanlis anlama sinyali: {misconceptions}.
+            [HOCA]: Kaynak durumu {context.SourceReadiness}. Kaynak zemini sinirliyse bunu kaynakli kesin anlatim gibi sunmayacagiz.
+            [ASISTAN]: Pack icindeki calisma notlari sunlar: {artifactNotes}
+            [HOCA]: Kapanista pasif dinleme yerine aktif hatirlama yap: once bir kavrami kendi cumlenle acikla, sonra kisa review quiz veya flashcard ile kontrol et.
+            """);
     }
 
     private async Task<string> BuildOverviewContextAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
@@ -243,6 +362,37 @@ public class AudioOverviewService : IAudioOverviewService
         string.IsNullOrWhiteSpace(context) ||
         context.Trim().Equals("Henuz yeterli ders icerigi yok.", StringComparison.OrdinalIgnoreCase);
 
+    private static IReadOnlyList<string> ParseStrings(string? json) => Parse(json, Array.Empty<string>());
+    private static IReadOnlyList<Guid> ParseGuids(string? json) => Parse(json, Array.Empty<Guid>());
+
+    private static T Parse<T>(string? json, T fallback)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return fallback;
+        try { return JsonSerializer.Deserialize<T>(json) ?? fallback; }
+        catch { return fallback; }
+    }
+
+    private static string JoinOrFallback(IReadOnlyList<string> values, string fallback) =>
+        values.Count == 0 ? fallback : string.Join(", ", values.Take(8));
+
+    private static PackWikiPageMetadata ParseWikiPageMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return new PackWikiPageMetadata(null);
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            var root = document.RootElement;
+            var title = root.TryGetProperty("wikiPageTitle", out var titleElement) && titleElement.ValueKind == JsonValueKind.String
+                ? titleElement.GetString()
+                : null;
+            return new PackWikiPageMetadata(title);
+        }
+        catch
+        {
+            return new PackWikiPageMetadata(null);
+        }
+    }
+
     private static string Trim(string value, int maxChars) =>
         value.Length > maxChars ? value[..maxChars] + "\n[...kirpildi]" : value;
 
@@ -297,4 +447,28 @@ public class AudioOverviewService : IAudioOverviewService
         var ext = contentType.Contains("wav", StringComparison.OrdinalIgnoreCase) ? "wav" : "mp3";
         return $"orka-audio-overview-{id}.{ext}";
     }
+
+    private sealed record NotebookPackAudioContext(
+        Guid PackId,
+        Guid TopicId,
+        Guid? SessionId,
+        string Title,
+        string Summary,
+        string PackType,
+        string PackStatus,
+        string EvidenceStatus,
+        string SourceReadiness,
+        string? WikiPageTitle,
+        IReadOnlyList<string> CompletedConceptKeys,
+        IReadOnlyList<string> WeakConceptKeys,
+        IReadOnlyList<string> MisconceptionKeys,
+        IReadOnlyList<NotebookPackAudioArtifact> Artifacts);
+
+    private sealed record NotebookPackAudioArtifact(
+        string ArtifactType,
+        string Title,
+        string SourceBasis,
+        string SafeContent);
+
+    private sealed record PackWikiPageMetadata(string? WikiPageTitle);
 }

@@ -65,12 +65,13 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
                 : $"{weakMastery.PracticeReadiness}; mastery={weakMastery.MasteryScore:0}; confidence={weakMastery.Confidence:0.00}";
             var move = BuildTeachingMove(weakMastery, learningSignalContext, userMessage);
             var recentMistakes = await LoadRecentMistakesAsync(userId, topicId, ct);
-            var sourceEvidence = BuildSourceEvidence(snapshot?.SourceConfidence, notebookContext, wikiContext, graph);
-            var sourceEvidenceCount = CountReliableEvidence(sourceEvidence);
+            var sourceBundle = await LoadLatestSourceBundleAsync(userId, topicId, sessionId, ct);
+            var sourceEvidence = BuildSourceEvidence(snapshot?.SourceConfidence, notebookContext, wikiContext, graph, sourceBundle);
+            var sourceEvidenceCount = sourceBundle is { EvidenceStatus: "source_grounded" or "mixed" }
+                ? Math.Max(sourceBundle.ChunkCount, CountReliableEvidence(sourceEvidence))
+                : CountReliableEvidence(sourceEvidence);
             var evidenceQuality = await LoadEvidenceQualityAsync(userId, topicId, sourceEvidenceCount, snapshot?.SourceConfidence, ct);
-            var groundingStatus = sourceEvidenceCount > 0
-                ? "source_grounded"
-                : string.Equals(snapshot?.SourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_source" : "model_only";
+            var groundingStatus = ResolveGroundingStatus(sourceBundle?.EvidenceStatus, sourceEvidenceCount, snapshot?.SourceConfidence);
             var directAnswerRisk = IsDirectAnswerRequest(userMessage) &&
                                    (weakMastery == null ||
                                     weakMastery.RemediationNeed == "high" ||
@@ -236,9 +237,43 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         }
     }
 
-    private static List<string> BuildSourceEvidence(string? sourceConfidence, string notebookContext, string wikiContext, ConceptGraphDto? graph)
+    private async Task<SourceEvidenceBundleProjection?> LoadLatestSourceBundleAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
+    {
+        if (!topicId.HasValue)
+        {
+            return null;
+        }
+
+        return await _db.SourceEvidenceBundles
+            .AsNoTracking()
+            .Where(b =>
+                b.UserId == userId &&
+                !b.IsDeleted &&
+                b.TopicId == topicId.Value &&
+                (!sessionId.HasValue || b.SessionId == sessionId))
+            .OrderByDescending(b => b.UpdatedAt)
+            .Select(b => new SourceEvidenceBundleProjection(b.EvidenceStatus, b.ReadySourceCount, b.ChunkCount, b.StaleEvidenceCount, b.DeletedEvidenceCount))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private static List<string> BuildSourceEvidence(string? sourceConfidence, string notebookContext, string wikiContext, ConceptGraphDto? graph, SourceEvidenceBundleProjection? sourceBundle)
     {
         var evidence = new List<string>();
+        if (sourceBundle != null)
+        {
+            if (sourceBundle.EvidenceStatus is "source_grounded" or "mixed")
+            {
+                evidence.Add($"Source evidence lifecycle bundle is {sourceBundle.EvidenceStatus}; cite active document chunks only.");
+            }
+            else if (sourceBundle.EvidenceStatus == "wiki_backed")
+            {
+                evidence.Add("Wiki notebook evidence is active; label wiki-backed claims and avoid document-source claims.");
+            }
+            else if (sourceBundle.EvidenceStatus is "stale" or "degraded")
+            {
+                evidence.Add("Source evidence lifecycle is degraded/stale; avoid source-backed certainty until evidence is refreshed.");
+            }
+        }
         if (!string.IsNullOrWhiteSpace(notebookContext))
         {
             evidence.Add("Notebook document context is active; use exact [doc:sourceId:pN] citations for document-backed claims.");
@@ -258,10 +293,22 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         return evidence;
     }
 
+    private static string ResolveGroundingStatus(string? bundleStatus, int sourceEvidenceCount, string? sourceConfidence)
+    {
+        if (bundleStatus is "source_grounded" or "mixed") return "source_grounded";
+        if (bundleStatus == "wiki_backed") return "wiki_backed";
+        if (bundleStatus is "stale" or "degraded") return bundleStatus;
+        return sourceEvidenceCount > 0
+            ? "source_grounded"
+            : string.Equals(sourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_source" : "model_only";
+    }
+
     private static int CountReliableEvidence(IReadOnlyList<string> sourceEvidence) =>
         sourceEvidence.Count(e =>
             !e.Contains("source confidence is low", StringComparison.OrdinalIgnoreCase) &&
-            !e.Contains("avoid current-source claims", StringComparison.OrdinalIgnoreCase));
+            !e.Contains("avoid current-source claims", StringComparison.OrdinalIgnoreCase) &&
+            !e.Contains("avoid source-backed certainty", StringComparison.OrdinalIgnoreCase) &&
+            !e.Contains("degraded/stale", StringComparison.OrdinalIgnoreCase));
 
     private static bool UserAsksForSource(string message) =>
         message.Contains("kaynak", StringComparison.OrdinalIgnoreCase) ||
@@ -300,6 +347,13 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         }
         return "teach the next small step and verify understanding";
     }
+
+    private sealed record SourceEvidenceBundleProjection(
+        string EvidenceStatus,
+        int ReadySourceCount,
+        int ChunkCount,
+        int StaleEvidenceCount,
+        int DeletedEvidenceCount);
 
     private static ConceptGraphDto? SafeGraph(string json)
     {

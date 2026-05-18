@@ -28,4 +28,5 @@ public sealed record QuizAttemptRecordResult(
     MistakeTaxonomyResult? Mistake,
     MisconceptionSignalDto? MisconceptionSignal = null,
     LearningSignalConfidenceDto? LearningSignalConfidence = null,
-    RemediationSeedDto? RemediationSeed = null);
+    RemediationSeedDto? RemediationSeed = null,
+    QuizResultLearningImpactDto? LearningImpact = null);

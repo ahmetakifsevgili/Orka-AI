@@ -422,7 +422,7 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
   const tools = metadata?.usedTools ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.tutorTeachingMove || metadata?.tutorGroundingPolicy || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
   if (!hasMeta) return null;
 
   return (
@@ -458,6 +458,24 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
         >
           <CheckCircle className="h-3 w-3" />
           {formatTechnicalLabel(metadata.tutorResponseMode)}
+        </span>
+      )}
+      {metadata?.tutorTeachingMove && (
+        <span
+          title={metadata.tutorRemediationPolicy ? formatTechnicalLabel(metadata.tutorRemediationPolicy) : undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-indigo-500/18 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700"
+        >
+          <BookOpen className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.tutorTeachingMove)}
+        </span>
+      )}
+      {metadata?.tutorGroundingPolicy && (
+        <span
+          title={metadata.sourceReadiness ? formatTechnicalLabel(metadata.sourceReadiness) : undefined}
+          className="inline-flex items-center gap-1 rounded-full border border-[#526d82]/12 bg-white/75 px-2 py-1 text-[10px] font-bold text-[#667085]"
+        >
+          <Link2 className="h-3 w-3" />
+          {formatTechnicalLabel(metadata.tutorGroundingPolicy)}
         </span>
       )}
       {metadata?.personalizationMode && metadata.personalizationMode !== "unknown" && (
@@ -707,6 +725,30 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
     });
   }
 
+  if (metadata?.currentPlanStepTitle && items.length < 3) {
+    items.push({
+      label: "Aktif plan adimi baglandi.",
+      detail: `${metadata.currentPlanStepTitle}${metadata.currentPlanTutorMove ? ` - Tutor hamlesi: ${formatTechnicalLabel(metadata.currentPlanTutorMove)}.` : "."}`,
+      tone: "learning",
+    });
+  }
+
+  if ((metadata?.sourceReadiness || metadata?.planSourceReadiness) && items.length < 3) {
+    items.push({
+      label: "Kaynak durumu gorunur tutuldu.",
+      detail: `Durum: ${formatTechnicalLabel(metadata.sourceReadiness ?? metadata.planSourceReadiness)}. Kanit zayifsa Orka kaynak iddiasi kurmaz.`,
+      tone: "watch",
+    });
+  }
+
+  if (metadata?.tutorNextLearningActions?.length && items.length < 3) {
+    items.push({
+      label: "Siradaki aksiyon hazir.",
+      detail: metadata.tutorNextLearningActions.slice(0, 2).join(" · "),
+      tone: "learning",
+    });
+  }
+
   if (items.length === 0 && metadata) {
     items.push({
       label: "Henüz öğrenme izi oluşmadı.",
@@ -779,7 +821,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.misconceptionSignal || metadata?.learningSignalConfidence || metadata?.remediationSeed || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || typeof metadata?.masteryProbability === "number";
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.misconceptionSignal || metadata?.learningSignalConfidence || metadata?.remediationSeed || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || metadata?.currentPlanStepTitle || metadata?.sourceReadiness || metadata?.planSourceReadiness || metadata?.tutorNextLearningActions?.length || typeof metadata?.masteryProbability === "number";
   if (!hasMeta) return null;
   metadata = metadata ?? {};
 

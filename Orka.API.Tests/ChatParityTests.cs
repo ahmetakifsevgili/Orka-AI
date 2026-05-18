@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Xunit;
@@ -40,6 +41,47 @@ public sealed class ChatParityTests
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
         Assert.True(await db.CostRecords.AnyAsync(c => c.MessageId == body.MessageId && c.UserId == user.UserId));
+    }
+
+    [Fact]
+    public async Task NonStreamTutorChat_AppendsSafeTutorNoteToActiveWikiPage()
+    {
+        var capture = new CapturingPostProcessor();
+        await using var factory = CreateFactory(capture);
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "chat-wiki-capture");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Chat Wiki Capture");
+        var pageId = await SeedTutorWikiPageAsync(factory, user.UserId, topicId);
+
+        var response = await user.Client.PostAsJsonAsync("/api/chat/message", new
+        {
+            content = "Big-O mantigini kisa bir ornekle anlat.",
+            topicId
+        });
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ChatMessageResponse>();
+
+        Assert.NotNull(body);
+        Assert.True(body!.WikiUpdated);
+        Assert.Equal(pageId, body.WikiPageId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var block = await db.WikiBlocks
+            .AsNoTracking()
+            .SingleAsync(b => b.WikiPageId == pageId && b.BlockType == WikiBlockType.TutorExplanation);
+        var questionBlock = await db.WikiBlocks
+            .AsNoTracking()
+            .SingleAsync(b => b.WikiPageId == pageId && b.BlockType == WikiBlockType.StudentQuestion);
+
+        Assert.Equal("tutor", block.Source);
+        Assert.Equal("model_assisted", block.SourceBasis);
+        Assert.Contains("Ogrenci sorusu:", block.Content);
+        Assert.Contains("Tutor notu:", block.Content);
+        Assert.DoesNotContain("rawProviderPayload", block.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hiddenPrompt", block.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("student", questionBlock.Source);
+        Assert.Contains("Big-O mantigini", questionBlock.Content);
     }
 
     [Fact]
@@ -233,6 +275,34 @@ public sealed class ChatParityTests
             CreatedAt = DateTime.UtcNow
         });
         return Task.FromResult(messageId);
+    }
+
+    private static async Task<Guid> SeedTutorWikiPageAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+        var pageId = Guid.NewGuid();
+
+        db.WikiPages.Add(new WikiPage
+        {
+            Id = pageId,
+            UserId = userId,
+            TopicId = topicId,
+            Title = "Big-O Notes",
+            PageKey = "big-o",
+            PageType = "topic_root",
+            ConceptKey = "big-o",
+            SourceReadiness = "evidence_insufficient",
+            EvidenceStatus = "evidence_insufficient",
+            SafeSummary = "Big-O safe notes",
+            Status = "ready",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+
+        await db.SaveChangesAsync();
+        return pageId;
     }
 
     private sealed class CapturingPostProcessor : IChatTurnPostProcessor

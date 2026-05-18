@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Layers3,
   Link2,
+  ListChecks,
   Loader2,
   MessageSquareText,
   Network,
@@ -20,7 +21,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
-import type { ChatResponseMetadata, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
+import type { ChatResponseMetadata, LearningArtifactDto, LearningWorkspaceState, TeachingArtifact, TutorTraceTimelineEvent } from "@/lib/types";
 import { TutorAPI } from "@/services/api";
 import { statusTone, userSafeStatus } from "@/lib/userSafeStatus";
 
@@ -156,11 +157,13 @@ export function AgentStatusRail({
   sessionId,
   topicTitle,
   isThinking,
+  workspaceState,
 }: {
   metadata?: ChatResponseMetadata | null;
   sessionId?: string | null;
   topicTitle?: string | null;
   isThinking?: boolean;
+  workspaceState?: LearningWorkspaceState | null;
 }) {
   const [events, setEvents] = useState<TutorTraceTimelineEvent[]>([]);
   const [lastId, setLastId] = useState("0-0");
@@ -197,8 +200,33 @@ export function AgentStatusRail({
 
   const tools = metadata?.toolStatuses ?? [];
   const sourceCount = metadata?.evidenceSummary?.sourceCount ?? metadata?.citations?.length ?? 0;
-  const activeConcept = metadata?.activeConceptKey || topicTitle || "Henüz kavram seçilmedi";
-  const teachingMode = metadata?.teachingMode || (isThinking ? "explain" : "unknown");
+  const currentPlanStep = workspaceState?.currentPlanStep;
+  const activeConcept =
+    currentPlanStep?.conceptLabel ||
+    currentPlanStep?.conceptKey ||
+    workspaceState?.activeLessonSnapshot?.activeConceptLabel ||
+    workspaceState?.activeLessonSnapshot?.activeConceptKey ||
+    metadata?.activeConceptKey ||
+    topicTitle ||
+    "Henuz kavram secilmedi";
+  const teachingMode =
+    workspaceState?.tutorPolicy?.teachingMove ||
+    metadata?.tutorTeachingMove ||
+    metadata?.teachingMode ||
+    currentPlanStep?.tutorMove ||
+    (isThinking ? "explain" : "unknown");
+  const sourceReadiness =
+    workspaceState?.sourceReadiness ||
+    metadata?.sourceReadiness ||
+    metadata?.planSourceReadiness ||
+    metadata?.evidenceSummary?.groundingStatus ||
+    null;
+  const nextAction = workspaceState?.nextActions?.[0]?.userSafeLabel ?? metadata?.tutorNextLearningActions?.[0] ?? null;
+  const recentArtifacts = workspaceState?.recentArtifacts ?? [];
+  const runtimeHealth = workspaceState?.runtimeHealth ?? null;
+  const degradedToolCount = workspaceState?.toolGovernanceSummary
+    ? (workspaceState.toolGovernanceSummary.deniedCount ?? 0) + (workspaceState.toolGovernanceSummary.degradedCount ?? 0)
+    : 0;
 
   return (
     <aside className="hidden min-h-0 w-[320px] flex-shrink-0 flex-col border-l border-[#526d82]/10 bg-[#eef1f3]/72 p-4 xl:flex">
@@ -211,6 +239,68 @@ export function AgentStatusRail({
         <RailCard icon={<Target className="h-4 w-4" />} label="Aktif kavram" value={activeConcept} />
         <RailCard icon={<BookOpen className="h-4 w-4" />} label="Öğretim modu" value={userSafeStatus(teachingMode)} />
         <RailCard icon={<Activity className="h-4 w-4" />} label="Kanıt durumu" value={metadata?.evidenceSummary?.learnerEvidenceStatus ? userSafeStatus(metadata.evidenceSummary.learnerEvidenceStatus) : sourceCount > 0 ? "Kaynak sinyali var" : "Kanıt bekleniyor"} />
+        {currentPlanStep && (
+          <RailCard
+            icon={<ListChecks className="h-4 w-4" />}
+            label="Plan adimi"
+            value={currentPlanStep.title || currentPlanStep.objective || "Plan adimi hazirlaniyor"}
+          />
+        )}
+        {sourceReadiness && (
+          <RailCard icon={<Network className="h-4 w-4" />} label="Kaynak durumu" value={userSafeStatus(sourceReadiness)} />
+        )}
+        {nextAction && (
+          <RailCard icon={<Sparkles className="h-4 w-4" />} label="Sonraki aksiyon" value={nextAction} />
+        )}
+        {(recentArtifacts.length > 0 || degradedToolCount > 0 || (workspaceState?.staleWarnings?.length ?? 0) > 0) && (
+          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
+            <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
+              <Layers3 className="h-3.5 w-3.5" />
+              Calisma yuzeyi
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <div className="rounded-xl bg-[#f7f9fa]/75 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{recentArtifacts.length}</span>
+                <span className="text-[#667085]">artifact</span>
+              </div>
+              <div className="rounded-xl bg-[#fff8ee]/82 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{workspaceState?.staleWarnings?.length ?? 0}</span>
+                <span className="text-[#667085]">uyari</span>
+              </div>
+              <div className="rounded-xl bg-[#dcecf3]/58 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{degradedToolCount}</span>
+                <span className="text-[#667085]">arac</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {runtimeHealth && (
+          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
+            <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
+              <Activity className="h-3.5 w-3.5" />
+              Runtime sagligi
+            </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <StatusPill value={runtimeHealth.status} />
+              <span className="text-[11px] font-bold text-[#667085]">{runtimeHealth.traceCount} iz</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <div className="rounded-xl bg-[#f7f9fa]/75 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.correlatedTraceCount}</span>
+                <span className="text-[#667085]">corr</span>
+              </div>
+              <div className="rounded-xl bg-[#fff8ee]/82 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.fallbackCount}</span>
+                <span className="text-[#667085]">fallback</span>
+              </div>
+              <div className="rounded-xl bg-[#dcecf3]/58 px-2 py-2 text-center">
+                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.services?.length ?? 0}</span>
+                <span className="text-[#667085]">servis</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {typeof metadata?.masteryProbability === "number" && (
           <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
@@ -296,14 +386,25 @@ export function ReasoningTimeline({ events, isThinking }: { events?: TutorTraceT
   );
 }
 
-export function ArtifactCanvas({ artifacts, compact = false }: { artifacts?: TeachingArtifact[]; compact?: boolean }) {
+export function ArtifactCanvas({
+  artifacts,
+  learningArtifacts,
+  compact = false,
+}: {
+  artifacts?: TeachingArtifact[];
+  learningArtifacts?: LearningArtifactDto[];
+  compact?: boolean;
+}) {
   useEffect(() => {
     artifacts?.forEach((artifact) => {
       if (!artifact.renderedAt) TutorAPI.markArtifactRendered(artifact.id).catch(() => undefined);
     });
   }, [artifacts]);
 
-  if (!artifacts?.length) {
+  const hasLegacyArtifacts = Boolean(artifacts?.length);
+  const hasLearningArtifacts = Boolean(learningArtifacts?.length);
+
+  if (!hasLegacyArtifacts && !hasLearningArtifacts) {
     return (
       <div className="rounded-2xl border border-dashed border-[#526d82]/16 bg-white/46 p-5 text-center">
         <Layers3 className="mx-auto h-5 w-5 text-[#8ba8b5]" />
@@ -315,7 +416,36 @@ export function ArtifactCanvas({ artifacts, compact = false }: { artifacts?: Tea
 
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
-      {artifacts.map((artifact) => (
+      {learningArtifacts?.map((artifact) => (
+        <div key={`learning-${artifact.id}`} className="overflow-hidden rounded-2xl border border-[#526d82]/12 bg-white/72 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#526d82]/10 px-4 py-3">
+            <div className="flex items-center gap-2 text-xs font-black text-[#172033]">
+              {artifact.renderFormat.includes("code") ? <Code2 className="h-4 w-4 text-[#52768a]" /> : artifact.sourceBasis.includes("source") || artifact.sourceBasis.includes("wiki") ? <Network className="h-4 w-4 text-[#52768a]" /> : <ImageIcon className="h-4 w-4 text-[#52768a]" />}
+              <span>{artifact.title || userSafeStatus(artifact.artifactType)}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <StatusPill value={artifact.sourceBasis} />
+              <StatusPill value={artifact.artifactStatus} />
+            </div>
+          </div>
+          <div className="px-4 py-4 text-sm leading-6 text-[#344054]">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              urlTransform={safeMarkdownUrlTransform}
+              components={safeMarkdownComponents}
+            >
+              {artifact.safeContent || artifact.accessibility?.summary || "Bu artifact guvenli ozet bekliyor."}
+            </ReactMarkdown>
+            {(artifact.safety?.warnings?.length > 0 || artifact.accessibility?.issues?.length > 0) && (
+              <div className="mt-3 rounded-xl border border-[#e8c46f]/30 bg-[#fff8ee] px-3 py-2 text-xs font-bold text-[#8a641f]">
+                {[...(artifact.safety?.warnings ?? []), ...(artifact.accessibility?.issues ?? [])].slice(0, 2).map(userSafeStatus).join(" · ")}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      {artifacts?.map((artifact) => (
         <div key={artifact.id} className="overflow-hidden rounded-2xl border border-[#526d82]/12 bg-white/72 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#526d82]/10 px-4 py-3">
             <div className="flex items-center gap-2 text-xs font-black text-[#172033]">

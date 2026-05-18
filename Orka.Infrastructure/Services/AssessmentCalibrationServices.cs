@@ -312,12 +312,13 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
             await _db.SaveChangesAsync(ct);
         }
 
-        var question = BuildQuizData(selected.Item, session.QuizRunId);
+        var question = StripAnswerKey(BuildQuizData(selected.Item, session.QuizRunId));
         return new AdaptiveAssessmentDecisionDto
         {
             Id = Guid.NewGuid(),
             AssessmentItemId = selected.Item.Id,
             ConceptKey = selected.Item.ConceptKey,
+            AssessmentMode = AssessmentModeFor(selected.Item),
             SelectionScore = selected.Score,
             MasteryProbability = selected.Mastery,
             MasteryConfidence = selected.Confidence,
@@ -393,6 +394,7 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
                     parsed.ConceptKey = item.ConceptKey;
                     parsed.ConceptTag = item.ConceptKey;
                     parsed.CognitiveSkill = item.CognitiveSkill;
+                    parsed.AssessmentMode = AssessmentModeFor(item);
                     parsed.MisconceptionTarget = item.MisconceptionTarget;
                     parsed.EvidenceExpected = item.EvidenceExpected;
                     parsed.ScoringRule = item.ScoringRuleJson;
@@ -418,6 +420,7 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
         dto.Difficulty = item.Difficulty;
         dto.CognitiveType = item.CognitiveSkill;
         dto.CognitiveSkill = item.CognitiveSkill;
+        dto.AssessmentMode = AssessmentModeFor(item);
         dto.MisconceptionTarget = item.MisconceptionTarget;
         dto.EvidenceExpected = item.EvidenceExpected;
         dto.ScoringRule = item.ScoringRuleJson;
@@ -449,6 +452,13 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
         }).ToArray();
     }
 
+    private static QuizDataDto StripAnswerKey(QuizDataDto dto)
+    {
+        dto.Explanation = string.Empty;
+        dto.Options = dto.Options.Select(option => new QuizOptionDto(option.Id, option.Text, false)).ToArray();
+        return dto;
+    }
+
     private static QuizDataDto BuildQuizDataTemplate(string concept)
     {
         var label = string.IsNullOrWhiteSpace(concept) ? "bu kavram" : concept.Trim();
@@ -469,8 +479,20 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
             SkillTag = label,
             TopicPath = label,
             Difficulty = "orta",
-            CognitiveType = "conceptual"
+            CognitiveType = "conceptual",
+            AssessmentMode = "retrieval_practice",
+            SourceReadiness = "evidence_insufficient"
         };
+    }
+
+    private static string AssessmentModeFor(AssessmentItem item)
+    {
+        var cognitive = $"{item.QuestionType} {item.CognitiveSkill}".ToLowerInvariant();
+        if (cognitive.Contains("misconception") || cognitive.Contains("probe")) return "misconception_probe";
+        if (cognitive.Contains("diagnostic")) return "diagnostic_check";
+        if (cognitive.Contains("readiness")) return "readiness_check";
+        if (cognitive.Contains("review") || cognitive.Contains("retrieval")) return "retrieval_practice";
+        return "micro_quiz";
     }
 
     private static decimal ItemQualityScore(AssessmentItemStat? stat, AssessmentItem item)
@@ -558,7 +580,14 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
             QuizType = "adaptive",
             Status = "active",
             TotalQuestions = maxItems,
-            MetadataJson = JsonSerializer.Serialize(new { schemaVersion = "orka.adaptive-assessment.v1", targetConcepts, minItems, maxItems }, JsonOptions),
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                schemaVersion = "orka.adaptive-assessment.v1",
+                targetConcepts,
+                minItems,
+                maxItems,
+                assessmentMode = NormalizeAssessmentMode(request.AssessmentMode, targetConcepts.Count > 0 ? "retrieval_practice" : "diagnostic_check")
+            }, JsonOptions),
             CreatedAt = DateTime.UtcNow
         };
         var session = new AdaptiveAssessmentSession
@@ -583,7 +612,8 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
         {
             schemaVersion = "orka.adaptive-assessment.v1",
             adaptiveSessionId = session.Id,
-            targetConcepts
+            targetConcepts,
+            assessmentMode = NormalizeAssessmentMode(request.AssessmentMode, targetConcepts.Count > 0 ? "retrieval_practice" : "diagnostic_check")
         }, JsonOptions), ct: ct);
         _ = await _calibration.RunAsync(userId, topicId, ct);
         return ToDto(session);
@@ -641,6 +671,7 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
             ItemQualityScore = selected.ItemQualityScore,
             ExposurePenalty = selected.ExposurePenalty,
             DecisionReason = selected.DecisionReason,
+            AssessmentMode = selected.AssessmentMode,
             SelectedQuestionJson = JsonSerializer.Serialize(selected.Question, JsonOptions),
             CreatedAt = DateTime.UtcNow
         };
@@ -672,19 +703,22 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
         request.SessionId ??= session.SessionId;
         request.AssessmentItemId ??= decision.AssessmentItemId;
         request.ConceptKey ??= decision.ConceptKey;
-        request.SourceRefsJson = MergeAdaptiveSourceRefs(request.SourceRefsJson, session.Id, decision.Id);
+        request.AssessmentMode = NormalizeAssessmentMode(request.AssessmentMode, decision.AssessmentMode, "retrieval_practice");
+        request.SourceRefsJson = MergeAdaptiveSourceRefs(request.SourceRefsJson, session.Id, decision.Id, request.AssessmentMode);
         var result = await _recorder.RecordAsync(userId, request, ct);
 
         decision.WasAnswered = true;
         decision.QuizAttemptId = result.Attempt.Id;
         decision.AnsweredAt = DateTime.UtcNow;
         session.AnsweredCount += 1;
-        if (request.IsCorrect) session.CorrectCount += 1;
+        if (result.Attempt.IsCorrect) session.CorrectCount += 1;
         session.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         _ = await _calibration.RunAsync(userId, session.TopicId, ct);
 
-        return await GetNextAsync(userId, adaptiveSessionId, ct);
+        var next = await GetNextAsync(userId, adaptiveSessionId, ct);
+        next.LatestLearningImpact = result.LearningImpact;
+        return next;
     }
 
     private async Task<List<string>> BuildTargetConceptsAsync(Guid userId, Guid? topicId, Guid? snapshotId, CancellationToken ct)
@@ -782,12 +816,13 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
 
     private static AdaptiveAssessmentDecisionDto ToDecisionDto(AdaptiveAssessmentDecision decision)
     {
-        var question = JsonSerializer.Deserialize<QuizDataDto>(decision.SelectedQuestionJson, JsonOptions) ?? new QuizDataDto();
+        var question = StripDecisionAnswerKey(JsonSerializer.Deserialize<QuizDataDto>(decision.SelectedQuestionJson, JsonOptions) ?? new QuizDataDto());
         return new AdaptiveAssessmentDecisionDto
         {
             Id = decision.Id,
             AssessmentItemId = decision.AssessmentItemId,
             ConceptKey = decision.ConceptKey,
+            AssessmentMode = decision.AssessmentMode,
             SelectionScore = decision.SelectionScore,
             MasteryProbability = decision.MasteryProbability,
             MasteryConfidence = decision.MasteryConfidence,
@@ -798,7 +833,14 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
         };
     }
 
-    private static string MergeAdaptiveSourceRefs(string? sourceRefsJson, Guid adaptiveSessionId, Guid decisionId)
+    private static QuizDataDto StripDecisionAnswerKey(QuizDataDto dto)
+    {
+        dto.Explanation = string.Empty;
+        dto.Options = dto.Options.Select(option => new QuizOptionDto(option.Id, option.Text, false)).ToArray();
+        return dto;
+    }
+
+    private static string MergeAdaptiveSourceRefs(string? sourceRefsJson, Guid adaptiveSessionId, Guid decisionId, string? assessmentMode)
     {
         var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(sourceRefsJson))
@@ -816,13 +858,28 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
             }
             catch
             {
-                dict["rawSourceRefs"] = sourceRefsJson;
+                dict["sourceRefsParseStatus"] = "invalid_json_ignored";
             }
         }
         dict["adaptiveSessionId"] = adaptiveSessionId;
         dict["adaptiveDecisionId"] = decisionId;
-        dict["assessmentMode"] = "adaptive";
+        dict["assessmentMode"] = NormalizeAssessmentMode(assessmentMode, dict.TryGetValue("assessmentMode", out var existing) ? existing?.ToString() : null, "retrieval_practice");
         return JsonSerializer.Serialize(dict, JsonOptions);
+    }
+
+    private static string NormalizeAssessmentMode(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized is "diagnostic_check" or "micro_quiz" or "misconception_probe" or "retrieval_practice" or "readiness_check" or "review_check")
+            {
+                return normalized;
+            }
+            if (normalized is "adaptive") return "retrieval_practice";
+        }
+
+        return "retrieval_practice";
     }
 
     private static List<string> DeserializeList(string? json)

@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AdvanceQuestionReviewStageDto, AssessmentCalibrationRun, AssignQuestionReviewerDto, CentralExamBlueprintCoverageDto, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamQualityOverviewDto, CentralExamStudyHomeDto, ContentLicenseReviewDto, CreateCurriculumNodeDto, CreateCurriculumOutcomeMappingDto, CreateCurriculumVersionDto, CreateQuestionAssetDto, CreateQuestionContentBlockDto, CreateQuestionDto, CreateQuestionOptionContentBlockDto, CreateQuestionStimulusDto, CurriculumNodeDto, CurriculumOutcomeMappingDto, CurriculumOutcomeSourceDto, CurriculumVersionDto, DeprecateCurriculumVersionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, LearningMemoryLiteDto, LearningQualityReport, LearningSignalConfidenceDto, MisconceptionSignalDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, PublishQuestionContentDto, QuestionAssetDto, QuestionBankFilterDto, QuestionContentVersionDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPackageDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionImportTextAdapterRequestDto, QuestionItemAnalyticsDto, QuestionItemDto, QuestionPublishReadinessDto, QuestionQualityReviewSignalDto, QuestionReviewWorkflowDto, QuestionStimulusDto, QuestionStimulusLinkDto, RecalculateExamAnalyticsResultDto, RecalculateQuestionAnalyticsResultDto, RegisterSourceRegistryItemDto, RejectQuestionReviewDto, RemediationSeedDto, RetireQuestionDto, ReviewSourceLicenseDto, SourceQualityReportDto, SourceRegistryItemDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudyIntentPreview, SubmitQuestionReviewDto, SupersedeCurriculumVersionDto, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, TutorTraceTimeline, UpdateQuestionDto, VerifySourceRegistryItemDto } from "@/lib/types";
+import type { ActiveLessonSnapshotDto, ActiveLessonSnapshotRequestDto, AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AdvanceQuestionReviewStageDto, AgenticTrustCheckRequestDto, AgenticTrustCheckResultDto, AgenticTrustRuntimeSummaryDto, AssessmentBlueprintDto, AssessmentBlueprintRequestDto, AssessmentCalibrationRun, AssessmentQualityEvaluationDto, AssessmentQualityEvaluationRequestDto, AssignQuestionReviewerDto, CentralExamBlueprintCoverageDto, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamQualityOverviewDto, CentralExamStudyHomeDto, CitationReviewResultDto, ContentLicenseReviewDto, CreateCurriculumNodeDto, CreateCurriculumOutcomeMappingDto, CreateCurriculumVersionDto, CreateQuestionAssetDto, CreateQuestionContentBlockDto, CreateQuestionDto, CreateQuestionOptionContentBlockDto, CreateQuestionStimulusDto, CreateWikiBlockRequestDto, CurriculumNodeDto, CurriculumOutcomeMappingDto, CurriculumOutcomeSourceDto, CurriculumVersionDto, DeprecateCurriculumVersionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, KorteksConsumerContexts, KorteksEvidenceSummary, KorteksResearchSynthesis, KorteksResearchWorkflow, KorteksSynthesisIssue, LearningArtifactDto, LearningArtifactListDto, LearningArtifactRefreshRequestDto, LearningArtifactRequestDto, LearningArtifactSafetyDto, LearningMemoryLiteDto, LearningNotebookArtifactRequestDto, LearningNotebookPackDto, LearningNotebookPackListDto, LearningNotebookPackRequestDto, LearningQualityReport, LearningRuntimeCorrelationDto, LearningRuntimeFlowSummaryDto, LearningRuntimeHealthDto, LearningRuntimePrivacyCheckDto, LearningRuntimePrivacyCheckRequestDto, LearningRuntimeTraceDto, LearningRuntimeTracesResponseDto, LearningSignalConfidenceDto, MarkSourceStaleRequestDto, MisconceptionSignalDto, MultiSourceCompareRequestDto, MultiSourceCompareResultDto, NotebookExportRequestDto, NotebookExportResultDto, NotebookSlideExportPreviewDto, PlanQualityEvaluationDto, PlanQualityEvaluationRequestDto, PlanReadinessDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, PublishQuestionContentDto, QuestionAssetDto, QuestionBankFilterDto, QuestionContentVersionDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPackageDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionImportTextAdapterRequestDto, QuestionItemAnalyticsDto, QuestionItemDto, QuestionPublishReadinessDto, QuestionQualityReviewSignalDto, QuestionReviewWorkflowDto, QuestionStimulusDto, QuestionStimulusLinkDto, RecalculateExamAnalyticsResultDto, RecalculateQuestionAnalyticsResultDto, RegisterSourceRegistryItemDto, RejectQuestionReviewDto, RemediationSeedDto, RetireQuestionDto, ReviewSourceLicenseDto, SourceCitationSetValidationDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceEvidenceBundleDto, SourceEvidenceBundleRequestDto, SourceLifecycleSummaryDto, SourceNotebookDto, SourceQuestionFollowUpRequestDto, SourceQuestionRequestDto, SourceQuestionResponseDto, SourceQuestionReviewStateDto, SourceQuestionThreadDto, SourceQuestionThreadListDto, SourceQuestionThreadRequestDto, SourceQualityReportDto, SourceStudySummaryDto, SourceRegistryItemDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudentContextSnapshotDto, StudentContextSnapshotRequestDto, StudyIntentPreview, SubmitQuestionReviewDto, SupersedeCurriculumVersionDto, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, ToolGovernanceSummary, ToolRuntimeDecision, ToolRuntimeRequest, ToolRuntimeTrace, ToolRuntimeTracesResponse, TutorNextLearningActionDto, TutorResponsePolicyDto, TutorResponsePolicyRequestDto, TutorResponseQualityEvaluationDto, TutorResponseQualityEvaluationRequestDto, TutorTraceTimeline, UpdateQuestionDto, ValidateSourceCitationSetRequestDto, VerifySourceRegistryItemDto, WikiBlockDto, WikiGraphDto, WikiGraphSyncRequestDto, WikiGraphSyncResultDto, WikiKnowledgeNotebookDto } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -393,6 +393,12 @@ export interface DashboardTodayDto {
 export const WikiAPI = {
   getTopicPages: (topicId: string) => api.get(`/wiki/${topicId}`),
   getPage: (pageId: string) => api.get(`/wiki/page/${pageId}`),
+  getGraph: (topicId: string) =>
+    api.get<WikiGraphDto>(`/wiki/${topicId}/graph`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getPageGraph: (pageId: string) =>
+    api.get<WikiGraphDto>(`/wiki/page/${pageId}/graph`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  syncGraph: (topicId: string, data: WikiGraphSyncRequestDto = {}) =>
+    api.post<WikiGraphSyncResultDto>(`/wiki/${topicId}/sync-graph`, data).then((r) => r.data),
   getWorkspaceState: (topicId: string) =>
     api.get<{
       topicId: string;
@@ -411,6 +417,12 @@ export const WikiAPI = {
       recommendedActions: string[];
       generatedAt: string;
     }>(`/wiki/${topicId}/workspace-state`).then((r) => r.data),
+  getKnowledgeNotebook: (topicId: string) =>
+    api.get<WikiKnowledgeNotebookDto>(`/wiki/${topicId}/knowledge-notebook`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  refreshKnowledgeNotebook: (topicId: string) =>
+    api.post<WikiKnowledgeNotebookDto>(`/wiki/${topicId}/knowledge-notebook/refresh`).then((r) => r.data),
+  addBlock: (pageId: string, data: CreateWikiBlockRequestDto) =>
+    api.post<WikiBlockDto>(`/wiki/page/${pageId}/blocks`, data).then((r) => r.data),
   addNote: (pageId: string, data: { content: string }) =>
     api.post(`/wiki/page/${pageId}/note`, data),
   updateBlock: (blockId: string, data: { content: string }) =>
@@ -506,20 +518,82 @@ export const SourcesAPI = {
       status: string;
       createdAt: string;
     }>>(`/sources/topic/${topicId}`).then((r) => r.data),
+  getTopicNotebook: (topicId: string) =>
+    api.get<SourceNotebookDto>(`/sources/topic/${topicId}/notebook`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getSourceNotebook: (sourceId: string) =>
+    api.get<SourceNotebookDto>(`/sources/${sourceId}/notebook`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getSourceConceptLinks: (sourceId: string) =>
+    api.get<SourceConceptLinkSummaryDto>(`/sources/${sourceId}/concept-links`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  syncSourceConceptLinks: (sourceId: string) =>
+    api.post<SourceConceptLinkSummaryDto>(`/sources/${sourceId}/concept-links/sync`, {}).then((r) => r.data),
+  getTopicSourceConceptGraph: (topicId: string) =>
+    api.get<SourceConceptGraphDto>(`/sources/topic/${topicId}/concept-graph`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getWikiPageSourceLinks: (pageId: string) =>
+    api.get<SourceConceptLinkSummaryDto>(`/wiki/pages/${pageId}/source-links`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   getTopicQuality: (topicId: string) =>
     api.get<SourceQualityReportDto>(`/sources/topic/${topicId}/quality`).then((r) => r.data),
-  ask: (sourceId: string, question: string) =>
-    api.post<{
-      answer: string;
-      citations: Array<{
-        id: string;
-        pageNumber: number;
-        chunkIndex: number;
-        text: string;
-        highlightHint?: string;
-      }>;
-      metadata?: import("@/lib/types").ChatResponseMetadata | null;
-    }>(`/sources/${sourceId}/ask`, { question }).then((r) => r.data),
+  getEvidenceBundle: (topicId: string, sessionId?: string) =>
+    api.get<SourceEvidenceBundleDto>(`/sources/topic/${topicId}/evidence-bundle`, {
+      params: sessionId ? { sessionId } : undefined,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  refreshEvidenceBundle: (topicId: string, data?: SourceEvidenceBundleRequestDto) =>
+    api.post<SourceEvidenceBundleDto>(`/sources/topic/${topicId}/evidence-bundle/refresh`, data ?? {}).then((r) => r.data),
+  getLifecycleSummary: (topicId: string) =>
+    api.get<SourceLifecycleSummaryDto>(`/sources/topic/${topicId}/lifecycle-summary`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  markStale: (sourceId: string, data?: MarkSourceStaleRequestDto) =>
+    api.post(`/sources/${sourceId}/stale`, data ?? {}).then((r) => r.data),
+  invalidateEvidence: (sourceId: string, data?: MarkSourceStaleRequestDto) =>
+    api.post(`/sources/${sourceId}/invalidate-evidence`, data ?? {}).then((r) => r.data),
+  validateCitations: (data: ValidateSourceCitationSetRequestDto) =>
+    api.post<SourceCitationSetValidationDto>("/sources/citations/validate", data).then((r) => r.data),
+  compare: (data: MultiSourceCompareRequestDto) =>
+    api.post<MultiSourceCompareResultDto>("/sources/compare", data).then((r) => r.data),
+  compareTopicSources: (topicId: string, data: MultiSourceCompareRequestDto) =>
+    api.post<MultiSourceCompareResultDto>(`/sources/topic/${topicId}/compare`, {
+      ...data,
+      topicId,
+    }).then((r) => r.data),
+  getSourceCitationReview: (sourceId: string) =>
+    api.get<CitationReviewResultDto>(`/sources/${sourceId}/citation-review`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getTopicCitationReview: (topicId: string) =>
+    api.get<CitationReviewResultDto>(`/sources/topic/${topicId}/citation-review`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getSourceStudySummary: (params?: { topicId?: string; sourceId?: string; wikiPageId?: string }) =>
+    api.get<SourceStudySummaryDto>("/sources/study-summary", {
+      params,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  listQuestionThreads: (params?: { topicId?: string; sourceId?: string; wikiPageId?: string }) =>
+    api.get<SourceQuestionThreadListDto>("/sources/question-threads", {
+      params,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  getQuestionThread: (threadId: string) =>
+    api.get<SourceQuestionThreadDto>(`/sources/question-threads/${threadId}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  createQuestionThread: (data: SourceQuestionThreadRequestDto) =>
+    api.post<SourceQuestionThreadDto>("/sources/question-threads", data).then((r) => r.data),
+  askQuestionThread: (threadId: string, data: SourceQuestionFollowUpRequestDto) =>
+    api.post<SourceQuestionThreadDto>(`/sources/question-threads/${threadId}/ask`, data).then((r) => r.data),
+  reviewQuestionThread: (threadId: string, data: SourceQuestionReviewStateDto) =>
+    api.patch<SourceQuestionThreadDto>(`/sources/question-threads/${threadId}/review`, data).then((r) => r.data),
+  writeQuestionThreadWikiTrace: (threadId: string) =>
+    api.post<WikiBlockDto>(`/sources/question-threads/${threadId}/wiki-trace`, {}).then((r) => r.data),
+  ask: (sourceId: string, question: string, data?: Partial<SourceQuestionRequestDto>) =>
+    api.post<SourceQuestionResponseDto>(`/sources/${sourceId}/ask`, {
+      ...(data ?? {}),
+      sourceId,
+      question,
+      mode: data?.mode ?? "selected_source",
+    }).then((r) => r.data),
+  askTopicSources: (topicId: string, question: string, data?: Partial<SourceQuestionRequestDto>) =>
+    api.post<SourceQuestionResponseDto>(`/sources/topic/${topicId}/ask`, {
+      ...(data ?? {}),
+      topicId,
+      question,
+      mode: data?.mode ?? "source_collection",
+    }).then((r) => r.data),
+  askSources: (data: SourceQuestionRequestDto) =>
+    api.post<SourceQuestionResponseDto>("/sources/ask", data).then((r) => r.data),
   getPage: (sourceId: string, page: number) =>
     api.get<{
       sourceId: string;
@@ -592,6 +666,36 @@ export const LearningAPI = {
     api.post(`/learning-quality/topic/${topicId}/rag-evaluation/run`).then((r) => r.data),
 };
 
+export const LearningSnapshotsAPI = {
+  getActiveLesson: (params: { topicId?: string; sessionId?: string }) =>
+    api.get<ActiveLessonSnapshotDto>("/learning-snapshots/active-lesson", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  refreshActiveLesson: (data: ActiveLessonSnapshotRequestDto) =>
+    api.post<ActiveLessonSnapshotDto>("/learning-snapshots/active-lesson/refresh", data).then((r) => r.data),
+  markActiveLessonStale: (data: ActiveLessonSnapshotRequestDto, reason = "context_changed") =>
+    api.post("/learning-snapshots/active-lesson/stale", data, { params: { reason } }).then((r) => r.data),
+  getStudentContext: (params: { topicId?: string; sessionId?: string }) =>
+    api.get<StudentContextSnapshotDto>("/learning-snapshots/student-context", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  refreshStudentContext: (data: StudentContextSnapshotRequestDto) =>
+    api.post<StudentContextSnapshotDto>("/learning-snapshots/student-context/refresh", data).then((r) => r.data),
+};
+
+export const PlanQualityAPI = {
+  getReadiness: (topicId: string, sessionId?: string) =>
+    api.get<PlanReadinessDto>(`/plan-quality/topic/${topicId}/readiness`, {
+      params: sessionId ? { sessionId } : undefined,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  evaluate: (data: PlanQualityEvaluationRequestDto) =>
+    api.post<PlanQualityEvaluationDto>("/plan-quality/evaluate", data).then((r) => r.data),
+  getSnapshot: (id: string) =>
+    api.get<PlanQualityEvaluationDto>(`/plan-quality/snapshots/${id}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getLatest: (topicId: string, sessionId?: string) =>
+    api.get<PlanQualityEvaluationDto>(`/plan-quality/topic/${topicId}/latest`, {
+      params: sessionId ? { sessionId } : undefined,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+};
+
 export const TutorAPI = {
   getTopicState: (topicId: string) =>
     api.get(`/tutor/state/topic/${topicId}`).then((r) => r.data),
@@ -601,6 +705,25 @@ export const TutorAPI = {
     api.get(`/tutor/pedagogy/topic/${topicId}`).then((r) => r.data),
   getPedagogyRun: (runId: string) =>
     api.get(`/tutor/pedagogy/run/${runId}`).then((r) => r.data),
+  getSessionPolicy: (sessionId: string) =>
+    api.get<TutorResponsePolicyDto>(`/tutor/policy/session/${sessionId}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getTopicPolicy: (topicId: string, sessionId?: string) =>
+    api.get<TutorResponsePolicyDto>(`/tutor/policy/topic/${topicId}`, {
+      params: sessionId ? { sessionId } : undefined,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  evaluateResponsePolicy: (data: TutorResponseQualityEvaluationRequestDto) =>
+    api.post<TutorResponseQualityEvaluationDto>("/tutor/policy/evaluate", data).then((r) => r.data),
+  getLatestResponseQuality: (data: { topicId?: string; sessionId?: string } = {}) =>
+    api.get<TutorResponseQualityEvaluationDto | null>("/tutor/response-quality/latest", {
+      params: data,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  getNextActions: (data: TutorResponsePolicyRequestDto = {}) =>
+    api.get<TutorNextLearningActionDto[]>("/tutor/next-actions", {
+      params: data,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
   evaluateRecentPedagogy: (data: { topicId?: string; sessionId?: string }) => {
     const params = new URLSearchParams();
     if (data.topicId) params.set("topicId", data.topicId);
@@ -620,11 +743,76 @@ export const TutorAPI = {
     api.post("/tutor/style-signal", data).then((r) => r.data),
 };
 
+export const LearningArtifactsAPI = {
+  get: (artifactId: string) =>
+    api.get<LearningArtifactDto>(`/learning-artifacts/${artifactId}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  list: (data: { topicId?: string; sessionId?: string; conceptKey?: string } = {}) =>
+    api.get<LearningArtifactListDto>("/learning-artifacts", {
+      params: data,
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  create: (data: LearningArtifactRequestDto) =>
+    api.post<LearningArtifactDto>("/learning-artifacts", data).then((r) => r.data),
+  validate: (data: LearningArtifactRequestDto) =>
+    api.post<LearningArtifactSafetyDto>("/learning-artifacts/validate", data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  refreshStatus: (artifactId: string, data: LearningArtifactRefreshRequestDto = {}) =>
+    api.post<LearningArtifactDto>(`/learning-artifacts/${artifactId}/refresh-status`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+};
+
+export const NotebookStudioAPI = {
+  listPacks: (topicId: string, sessionId?: string, wikiPageId?: string, options: { surface?: string; sourceId?: string } = {}) =>
+    api.get<LearningNotebookPackListDto>(`/notebook-studio/topic/${topicId}/packs`, {
+      params: {
+        ...(sessionId ? { sessionId } : {}),
+        ...(wikiPageId ? { wikiPageId } : {}),
+        ...(options.surface ? { surface: options.surface } : {}),
+        ...(options.sourceId ? { sourceId: options.sourceId } : {}),
+      },
+      suppressErrorToast: true,
+    } as OrkaAxiosConfig).then((r) => r.data),
+  getPack: (packId: string) =>
+    api.get<LearningNotebookPackDto>(`/notebook-studio/packs/${packId}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  buildMilestonePack: (topicId: string, data: LearningNotebookPackRequestDto = {}) =>
+    api.post<LearningNotebookPackDto>(`/notebook-studio/topic/${topicId}/milestone-pack`, data).then((r) => r.data),
+  buildWikiPagePack: (pageId: string, data: LearningNotebookPackRequestDto = {}) =>
+    api.post<LearningNotebookPackDto>(`/notebook-studio/wiki-page/${pageId}/pack`, data).then((r) => r.data),
+  buildSourcePack: (sourceId: string, data: LearningNotebookPackRequestDto = {}) =>
+    api.post<LearningNotebookPackDto>(`/notebook-studio/sources/${sourceId}/pack`, data).then((r) => r.data),
+  buildTopicSourcePack: (topicId: string, data: LearningNotebookPackRequestDto = {}) =>
+    api.post<LearningNotebookPackDto>(`/notebook-studio/topic/${topicId}/source-pack`, data).then((r) => r.data),
+  refreshPack: (packId: string) =>
+    api.post<LearningNotebookPackDto>(`/notebook-studio/packs/${packId}/refresh`, {}, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  buildArtifact: (packId: string, data: LearningNotebookArtifactRequestDto) =>
+    api.post<LearningArtifactDto>(`/notebook-studio/packs/${packId}/artifact`, data).then((r) => r.data),
+  getExportPreview: (packId: string) =>
+    api.get<NotebookSlideExportPreviewDto>(`/notebook-studio/packs/${packId}/export/preview`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  exportPack: (packId: string, data: NotebookExportRequestDto = { format: "markdown" }) =>
+    api.post<NotebookExportResultDto>(`/notebook-studio/packs/${packId}/export`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+};
+
 export const AssessmentAPI = {
   getCalibration: (topicId: string) =>
     api.get<AssessmentCalibrationRun>(`/assessment/topic/${topicId}/calibration`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   runCalibration: (topicId: string) =>
     api.post<AssessmentCalibrationRun>(`/assessment/topic/${topicId}/calibration/run`).then((r) => r.data),
+  getTopicBlueprint: (topicId: string, sessionId?: string) =>
+    api.get<AssessmentBlueprintDto>(
+      `/assessment/topic/${topicId}/blueprint${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`,
+      { suppressErrorToast: true } as OrkaAxiosConfig
+    ).then((r) => r.data),
+  buildPlanStepBlueprint: (data: AssessmentBlueprintRequestDto) =>
+    api.post<AssessmentBlueprintDto>("/assessment/blueprint/plan-step", data).then((r) => r.data),
+  buildDiagnosticBlueprint: (data: AssessmentBlueprintRequestDto) =>
+    api.post<AssessmentBlueprintDto>("/assessment/blueprint/diagnostic", data).then((r) => r.data),
+  evaluateQuality: (data: AssessmentQualityEvaluationRequestDto) =>
+    api.post<AssessmentQualityEvaluationDto>("/assessment/quality/evaluate", data).then((r) => r.data),
+  getQualitySnapshot: (snapshotId: string) =>
+    api.get<AssessmentQualityEvaluationDto>(`/assessment/quality/snapshots/${snapshotId}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getLatestQuality: (topicId: string, sessionId?: string) =>
+    api.get<AssessmentQualityEvaluationDto | null>(
+      `/assessment/topic/${topicId}/quality/latest${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`,
+      { suppressErrorToast: true } as OrkaAxiosConfig
+    ).then((r) => r.data),
 };
 
 export const ClassroomAPI = {
@@ -665,8 +853,8 @@ type QuizAttemptPayload = {
   sessionId?: string;
   question: string;
   selectedOptionId: string;
-  isCorrect: boolean;
-  explanation: string;
+  isCorrect?: boolean;
+  explanation?: string;
   skillTag?: string;
   assessmentItemId?: string;
   conceptKey?: string;
@@ -684,6 +872,9 @@ type QuizAttemptPayload = {
   responseTimeMs?: number;
   wasSkipped?: boolean;
   confidenceSelfRating?: number;
+  assessmentMode?: string;
+  sourceEvidenceBundleId?: string;
+  wikiNotebookSectionKey?: string;
 };
 
 export type QuizAttemptRecordResponse = {
@@ -701,6 +892,7 @@ export type QuizAttemptRecordResponse = {
   misconceptionSignal?: MisconceptionSignalDto | null;
   learningSignalConfidence?: LearningSignalConfidenceDto | null;
   remediationSeed?: RemediationSeedDto | null;
+  learningImpact?: import("@/lib/types").QuizResultLearningImpactDto | null;
 };
 
 export const QuizAPI = {
@@ -749,6 +941,7 @@ export const QuizAPI = {
       status: string;
       answeredQuestionCount: number;
       quizQuestionCount: number;
+      learningImpact?: import("@/lib/types").QuizResultLearningImpactDto | null;
     }>(`/quiz/plan-diagnostic/${planRequestId}/attempt`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   finalizePlanDiagnostic: (planRequestId: string) =>
     api.post<{
@@ -770,7 +963,7 @@ export const QuizAPI = {
     }>(`/quiz/plan-diagnostic/${planRequestId}/skip`, {}, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   recordAttempt: (data: QuizAttemptPayload) =>
     api.post<QuizAttemptRecordResponse>("/quiz/attempt", data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
-  startAdaptive: (data: { topicId?: string; sessionId?: string; minItems?: number; maxItems?: number; targetConceptKeys?: string[] }) =>
+  startAdaptive: (data: { topicId?: string; sessionId?: string; minItems?: number; maxItems?: number; targetConceptKeys?: string[]; assessmentMode?: string }) =>
     api.post<AdaptiveAssessmentSession>("/quiz/adaptive/start", data).then((r) => r.data),
   getAdaptiveNext: (adaptiveSessionId: string) =>
     api.get<AdaptiveAssessmentNextItem>(`/quiz/adaptive/${adaptiveSessionId}/next`).then((r) => r.data),
@@ -799,11 +992,30 @@ export interface KorteksSyncResponseDto {
   providerCalls?: unknown[];
   isFallback?: boolean;
   legacySources?: string[];
+  synthesisWorkflowId?: string;
+  synthesisStatus?: string;
+  synthesis?: KorteksResearchSynthesis;
+  consumerContexts?: KorteksConsumerContexts;
+  evidenceSummary?: KorteksEvidenceSummary;
+  safetyIssues?: KorteksSynthesisIssue[];
 }
 
 export const KorteksAPI = {
   researchSync: (data: { topic: string; topicId?: string; sourceUrl?: string }) =>
     api.post<KorteksSyncResponseDto>("/korteks/research", data).then((r) => r.data),
+
+  getSynthesis: (id: string) =>
+    api.get<KorteksResearchWorkflow>(`/korteks/synthesis/${id}`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+
+  getLatestSynthesis: (params?: { topicId?: string; sessionId?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.topicId) search.set("topicId", params.topicId);
+    if (params?.sessionId) search.set("sessionId", params.sessionId);
+    const query = search.toString();
+    return api
+      .get<KorteksResearchWorkflow>(`/korteks/synthesis/latest${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
 
   // Stream topic research.
   stream: (data: { topic: string; topicId?: string; sourceUrl?: string }) => {
@@ -838,6 +1050,124 @@ export const ToolsAPI = {
     api
       .get<ToolCapability>(`/tools/capabilities/${toolId}${includeInternal ? "?includeInternal=true" : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
       .then((r) => r.data),
+  getRuntimeTraces: (params?: { topicId?: string; sessionId?: string; take?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.topicId) search.set("topicId", params.topicId);
+    if (params?.sessionId) search.set("sessionId", params.sessionId);
+    if (params?.take) search.set("take", String(params.take));
+    const query = search.toString();
+    return api
+      .get<ToolRuntimeTracesResponse>(`/tools/runtime/traces${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  getRuntimeTrace: (traceId: string) =>
+    api
+      .get<ToolRuntimeTrace>(`/tools/runtime/traces/${traceId}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  getGovernanceSummary: (params?: { topicId?: string; sessionId?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.topicId) search.set("topicId", params.topicId);
+    if (params?.sessionId) search.set("sessionId", params.sessionId);
+    const query = search.toString();
+    return api
+      .get<ToolGovernanceSummary>(`/tools/runtime/governance-summary${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  decideRuntime: (data: ToolRuntimeRequest) =>
+    api
+      .post<ToolRuntimeDecision>("/tools/runtime/decide", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+};
+
+export const LearningRuntimeAPI = {
+  getTraces: (params?: { topicId?: string; sessionId?: string; take?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.topicId) search.set("topicId", params.topicId);
+    if (params?.sessionId) search.set("sessionId", params.sessionId);
+    if (params?.take) search.set("take", String(params.take));
+    const query = search.toString();
+    return api
+      .get<LearningRuntimeTracesResponseDto>(`/learning-runtime/traces${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  getTrace: (traceId: string) =>
+    api
+      .get<LearningRuntimeTraceDto>(`/learning-runtime/traces/${traceId}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  getCorrelation: (correlationId: string) =>
+    api
+      .get<LearningRuntimeCorrelationDto>(`/learning-runtime/correlation/${encodeURIComponent(correlationId)}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  getHealth: (params?: { topicId?: string; sessionId?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.topicId) search.set("topicId", params.topicId);
+    if (params?.sessionId) search.set("sessionId", params.sessionId);
+    const query = search.toString();
+    return api
+      .get<LearningRuntimeHealthDto>(`/learning-runtime/health${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  getTopicSummary: (topicId: string, sessionId?: string) => {
+    const search = new URLSearchParams();
+    if (sessionId) search.set("sessionId", sessionId);
+    const query = search.toString();
+    return api
+      .get<LearningRuntimeFlowSummaryDto>(`/learning-runtime/topic/${topicId}/summary${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  privacyCheck: (data: LearningRuntimePrivacyCheckRequestDto) =>
+    api
+      .post<LearningRuntimePrivacyCheckDto>("/learning-runtime/privacy-check", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+};
+
+export const AgenticTrustAPI = {
+  checkUserMessage: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/user-message", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkSourceContent: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/source-content", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkToolRequest: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/tool-request", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkTutorResponse: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/tutor-response", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkMemoryWrite: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/memory-write", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkCitationSet: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/citation-set", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  checkPublicPayload: (data: AgenticTrustCheckRequestDto) =>
+    api
+      .post<AgenticTrustCheckResultDto>("/agentic-trust/check/public-payload", data, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data),
+  getSummary: (topicId?: string, sessionId?: string) => {
+    const params = new URLSearchParams();
+    if (topicId) params.set("topicId", topicId);
+    if (sessionId) params.set("sessionId", sessionId);
+    const query = params.toString();
+    return api
+      .get<AgenticTrustRuntimeSummaryDto>(`/agentic-trust/summary${query ? `?${query}` : ""}`, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
+  evaluateFixtures: (topicId?: string, sessionId?: string) => {
+    const params = new URLSearchParams();
+    if (topicId) params.set("topicId", topicId);
+    if (sessionId) params.set("sessionId", sessionId);
+    const query = params.toString();
+    return api
+      .post<AgenticTrustRuntimeSummaryDto>(`/agentic-trust/fixtures/evaluate${query ? `?${query}` : ""}`, null, { suppressErrorToast: true } as OrkaAxiosConfig)
+      .then((r) => r.data);
+  },
 };
 
 export const StandardsAPI = {

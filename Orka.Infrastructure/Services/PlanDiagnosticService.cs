@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -30,6 +31,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private readonly IAssessmentGrammarEngine _assessmentGrammar;
     private readonly IDiagnosticProfileBuilder _diagnosticProfileBuilder;
     private readonly ILearningQualityReportService? _qualityReport;
+    private readonly IActiveLessonSnapshotService? _learningSnapshots;
+    private readonly IKorteksSynthesisService? _korteksSynthesis;
+    private readonly IPlanSequencingService? _planSequencing;
     private readonly ILogger<PlanDiagnosticService> _logger;
     private readonly TavilySearchPlugin? _webSearch;
     private readonly WikipediaPlugin? _wikipedia;
@@ -50,7 +54,10 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         TavilySearchPlugin? webSearch = null,
         WikipediaPlugin? wikipedia = null,
         YouTubeTranscriptPlugin? youtube = null,
-        ILearningQualityReportService? qualityReport = null)
+        ILearningQualityReportService? qualityReport = null,
+        IActiveLessonSnapshotService? learningSnapshots = null,
+        IKorteksSynthesisService? korteksSynthesis = null,
+        IPlanSequencingService? planSequencing = null)
     {
         _db = db;
         _korteks = korteks;
@@ -67,6 +74,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         _webSearch = webSearch;
         _wikipedia = wikipedia;
         _youtube = youtube;
+        _learningSnapshots = learningSnapshots;
+        _korteksSynthesis = korteksSynthesis;
+        _planSequencing = planSequencing;
     }
 
     public async Task<StartPlanDiagnosticResponse> StartAsync(
@@ -129,6 +139,25 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 request.TopicId,
                 ct);
             var compressed = _compressor.Compress(research);
+            KorteksResearchWorkflowDto? korteksWorkflow = null;
+            if (_korteksSynthesis != null)
+            {
+                korteksWorkflow = await _korteksSynthesis.BuildAndSaveAsync(
+                    userId,
+                    research,
+                    new KorteksResearchSynthesisContextDto
+                    {
+                        TopicId = request.TopicId,
+                        SessionId = request.SessionId,
+                        PlanRequestId = planRequestId,
+                        ApprovedIntent = approvedResearchIntent,
+                        ApprovedMainTopic = approvedMainTopic,
+                        ApprovedFocusArea = approvedFocusArea,
+                        ApprovedStudyGoal = approvedStudyGoal,
+                        Purpose = "plan_diagnostic"
+                    },
+                    ct);
+            }
             var conceptGraph = await _conceptGraphBuilder.BuildOrLoadAsync(
                 userId,
                 request.TopicId,
@@ -166,6 +195,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             var learningBlueprintJson = JsonSerializer.Serialize(learningBlueprint, JsonOptions);
             var learningBlueprintHash = ComputeLegacyBlueprintHash(learningBlueprint);
             var compressedBlock = _compressor.BuildPromptBlock(compressed) +
+                                  (korteksWorkflow == null ? string.Empty : "\n" + korteksWorkflow.PromptBlock) +
                                   "\n" +
                                   BuildConceptGraphPromptBlock(conceptGraph.Graph) +
                                   "\n" +
@@ -178,6 +208,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             state.Status = PlanDiagnosticStatus.ResearchReady;
             state.CompressedResearchContextJson = JsonSerializer.Serialize(compressed, JsonOptions);
             state.CompressedResearchPromptBlock = compressedBlock;
+            state.KorteksResearchWorkflowId = korteksWorkflow?.Id;
+            state.KorteksSynthesisJson = korteksWorkflow == null ? string.Empty : JsonSerializer.Serialize(korteksWorkflow.Synthesis, JsonOptions);
+            state.KorteksSynthesisPromptBlock = korteksWorkflow?.PromptBlock ?? string.Empty;
             state.LearningBlueprintJson = learningBlueprintJson;
             state.LearningBlueprintHash = learningBlueprintHash;
             state.LearningBlueprintDomain = learningBlueprint.Domain;
@@ -207,6 +240,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 effectiveQuestionCount,
                 ct);
             var questionCount = CountQuestions(quizJson);
+            var learnerQuizJson = StripAnswerKeysForLearner(quizJson);
 
             _db.QuizRuns.Add(new QuizRun
             {
@@ -250,6 +284,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             }
             await _stateStore.SaveAsync(state, ct);
 
+            await RefreshLearningSnapshotsAsync(userId, state, ct);
+
             return new StartPlanDiagnosticResponse
             {
                 PlanRequestId = state.PlanRequestId,
@@ -257,7 +293,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 TopicId = state.TopicId,
                 TopicTitle = state.TopicTitle,
                 Status = state.Status,
-                QuestionsJson = quizJson,
+                QuestionsJson = learnerQuizJson,
                 GroundingMode = state.GroundingMode,
                 SourceCount = state.SourceCount,
                 ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
@@ -267,6 +303,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 QualityReportId = state.QualityReportId,
                 SourceBundleHash = state.SourceBundleHash,
                 SourceBundleCacheKey = state.SourceBundleCacheKey,
+                KorteksResearchWorkflowId = state.KorteksResearchWorkflowId,
+                KorteksSynthesisStatus = korteksWorkflow?.Status ?? "not_available",
+                KorteksSourceConfidence = korteksWorkflow?.SourceConfidence ?? "low",
                 QuizQuestionCount = state.QuizQuestionCount,
                 IntentRequestId = state.IntentRequestId,
                 ApprovedMainTopic = state.ApprovedMainTopic,
@@ -297,7 +336,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         request.SessionId ??= state.SessionId;
         await EnrichAttemptRequestFromAssessmentAsync(state, request, ct);
 
-        await _quizRecorder.RecordAsync(userId, request, ct);
+        var recordResult = await _quizRecorder.RecordAsync(userId, request, ct);
 
         state.AnsweredQuestionCount = await _db.QuizAttempts
             .CountAsync(a => a.UserId == userId && a.QuizRunId == state.QuizRunId, ct);
@@ -309,6 +348,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         await _stateStore.SaveAsync(state, ct);
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
 
         return new PlanDiagnosticAnswerResponse
         {
@@ -316,7 +356,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             QuizRunId = state.QuizRunId,
             Status = state.Status,
             AnsweredQuestionCount = state.AnsweredQuestionCount,
-            QuizQuestionCount = state.QuizQuestionCount
+            QuizQuestionCount = state.QuizQuestionCount,
+            LearningImpact = recordResult.LearningImpact
         };
     }
 
@@ -336,7 +377,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 PlanGenerated = true,
                 Message = "Plan was already generated.",
                 GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
-                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct)
+                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct),
+                PlanQuality = await GetLatestPlanQualityAsync(userId, state, ct)
             };
         }
 
@@ -377,6 +419,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         state.Status = PlanDiagnosticStatus.PlanGenerated;
         state.GeneratedPlanRootTopicId = state.TopicId;
         await _stateStore.SaveAsync(state, ct);
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
+        var planQuality = await EvaluatePlanQualityAsync(userId, state, planResult.Topics, ct);
 
         return new FinalizePlanDiagnosticResponse
         {
@@ -384,7 +428,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             Status = state.Status,
             PlanGenerated = true,
             GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
-            GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList(),
+            PlanQuality = planQuality
         };
     }
 
@@ -407,7 +452,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 PlanGenerated = true,
                 Message = "Plan was already generated.",
                 GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
-                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct)
+                GeneratedTopicIds = await GetGeneratedPlanTopicIdsAsync(userId, state.GeneratedPlanRootTopicId.Value, ct),
+                PlanQuality = await GetLatestPlanQualityAsync(userId, state, ct)
             };
         }
 
@@ -439,6 +485,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         state.Status = PlanDiagnosticStatus.PlanGenerated;
         state.GeneratedPlanRootTopicId = state.TopicId;
         await _stateStore.SaveAsync(state, ct);
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
+        var planQuality = await EvaluatePlanQualityAsync(userId, state, planResult.Topics, ct);
 
         return new FinalizePlanDiagnosticResponse
         {
@@ -447,7 +495,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             PlanGenerated = true,
             Message = "Diagnostic quiz skipped; beginner plan generated without fake quiz mistakes.",
             GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
-            GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList(),
+            PlanQuality = planQuality
         };
     }
 
@@ -943,6 +992,166 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             .Where(a => a.UserId == userId && a.QuizRunId == quizRunId)
             .OrderBy(a => a.CreatedAt)
             .ToListAsync(ct);
+
+    private async Task RefreshLearningSnapshotsAsync(Guid userId, PlanDiagnosticStateDto state, CancellationToken ct)
+    {
+        if (_learningSnapshots == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _learningSnapshots.BuildOrRefreshActiveLessonSnapshotAsync(userId, new ActiveLessonSnapshotRequestDto
+            {
+                TopicId = state.TopicId,
+                SessionId = state.SessionId,
+                PlanRequestId = state.PlanRequestId,
+                QuizRunId = state.QuizRunId,
+                ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
+                SourceBundleHash = state.SourceBundleHash,
+                ApprovedIntent = state.ApprovedResearchIntent,
+                ApprovedMainTopic = state.ApprovedMainTopic,
+                ApprovedFocusArea = state.ApprovedFocusArea,
+                ApprovedStudyGoal = state.ApprovedStudyGoal,
+                GroundingMode = state.GroundingMode.ToString()
+            }, ct);
+
+            await _learningSnapshots.BuildOrRefreshStudentContextSnapshotAsync(userId, new StudentContextSnapshotRequestDto
+            {
+                TopicId = state.TopicId,
+                SessionId = state.SessionId
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[PlanDiagnostic] Learning snapshot refresh skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+        }
+    }
+
+    private async Task<PlanQualityEvaluationDto?> EvaluatePlanQualityAsync(
+        Guid userId,
+        PlanDiagnosticStateDto state,
+        IReadOnlyList<Topic> generatedTopics,
+        CancellationToken ct)
+    {
+        if (_planSequencing == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var active = _learningSnapshots == null
+                ? null
+                : await _learningSnapshots.GetActiveLessonSnapshotAsync(userId, state.TopicId, state.SessionId, ct);
+            var student = _learningSnapshots == null
+                ? null
+                : await _learningSnapshots.GetStudentContextSnapshotAsync(userId, state.TopicId, state.SessionId, ct);
+            return await _planSequencing.EvaluatePlanSequenceAsync(userId, new PlanQualityEvaluationRequestDto
+            {
+                TopicId = state.TopicId,
+                SessionId = state.SessionId,
+                PlanRequestId = state.PlanRequestId,
+                ActiveLessonSnapshotId = active?.Id,
+                StudentContextSnapshotId = student?.Id,
+                PlanTitle = state.TopicTitle,
+                PlanSummary = $"Generated topic count: {generatedTopics.Count}",
+                ProposedSteps = BuildPlanStepsFromGeneratedTopics(generatedTopics, state)
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[PlanDiagnostic] Plan quality evaluation skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+            return null;
+        }
+    }
+
+    private async Task<PlanQualityEvaluationDto?> GetLatestPlanQualityAsync(Guid userId, PlanDiagnosticStateDto state, CancellationToken ct)
+    {
+        if (_planSequencing == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _planSequencing.GetLatestPlanQualitySnapshotAsync(userId, state.TopicId, state.SessionId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[PlanDiagnostic] Latest plan quality lookup skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<PlanStepContractDto> BuildPlanStepsFromGeneratedTopics(
+        IReadOnlyList<Topic> generatedTopics,
+        PlanDiagnosticStateDto state)
+    {
+        return generatedTopics
+            .OrderBy(t => t.Order)
+            .Take(12)
+            .Select((topic, index) =>
+            {
+                var conceptKey = StablePlanQualityKey(topic.PlanIntent ?? topic.Title);
+                return new PlanStepContractDto
+                {
+                    StepId = $"generated-{index + 1}-{topic.Id:N}"[..Math.Min(92, $"generated-{index + 1}-{topic.Id:N}".Length)],
+                    Title = topic.Title,
+                    Objective = $"{topic.Title} adimini olculebilir kavram kontroluyle tamamlamak.",
+                    ConceptKey = conceptKey,
+                    ConceptLabel = topic.Title,
+                    MasteryTarget = topic.PlanIntent == "Assessment" ? "micro_check_ready" : "understand_and_apply",
+                    EstimatedMinutes = 20,
+                    LearnerState = "diagnostic_profile_available",
+                    RemediationNeed = topic.PlanIntent is "Remediation" or "DeepDive" ? "medium" : "none",
+                    DifficultyBand = topic.PlanIntent == "DeepDive" ? "advanced" : "core",
+                    SequenceReason = "Bu adim DeepPlan tarafindan diagnostic, concept graph ve adaptif baglamdan sonra olusan ders sirasina gore geldi.",
+                    Evidence = new PlanStepEvidenceDto
+                    {
+                        EvidenceBasis = ["plan_diagnostic", "deep_plan", "concept_graph", "diagnostic_profile"],
+                        SourceReadiness = string.IsNullOrWhiteSpace(state.SourceBundleHash) ? "evidence_insufficient" : "source_aware",
+                        KorteksWorkflowId = state.KorteksResearchWorkflowId
+                    },
+                    QuizHook = new PlanStepAssessmentHookDto
+                    {
+                        HookType = topic.PlanIntent == "Assessment" ? "micro_quiz" : "retrieval_practice",
+                        ConceptKey = conceptKey,
+                        DifficultyBand = topic.PlanIntent == "DeepDive" ? "advanced" : "core",
+                        UserSafeReason = "Bu plan adimi kisa olcumle dogrulanabilir."
+                    },
+                    TutorHook = new PlanStepTutorHookDto
+                    {
+                        TutorMove = topic.PlanIntent switch
+                        {
+                            "Remediation" => "misconception_repair",
+                            "PracticeLab" => "example",
+                            "DeepDive" => "scaffold",
+                            _ => "explain"
+                        },
+                        ActiveConceptKey = conceptKey,
+                        UserSafeReason = "Tutor bu adimi aktif kavram ve mikro kontrolle isler."
+                    },
+                    WikiHook = new PlanStepWikiHookDto
+                    {
+                        SourceReadiness = string.IsNullOrWhiteSpace(state.SourceBundleHash) ? "evidence_insufficient" : "source_aware"
+                    },
+                    SuccessCriteria = ["Kavrami aciklar.", "Mikro kontrolu tamamlar."],
+                    NextStepTrigger = "micro_check_passed",
+                    FallbackIfEvidenceWeak = "Kaynak/ogrenci kaniti zayifsa Tutor scaffold ve diagnostic kontrol uygular."
+                };
+            })
+            .ToArray();
+    }
+
+    private static string StablePlanQualityKey(string? value)
+    {
+        var text = string.IsNullOrWhiteSpace(value) ? "plan-step" : value.Trim().ToLowerInvariant();
+        var chars = text.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray();
+        var key = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(key) ? "plan-step" : key.Length <= 80 ? key : key[..80].Trim('-');
+    }
 
     private static string BuildConceptGraphPromptBlock(ConceptGraphDto graph)
     {
@@ -1498,5 +1707,48 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         return 20;
+    }
+
+    private static string StripAnswerKeysForLearner(string quizJson)
+    {
+        try
+        {
+            var node = JsonNode.Parse(DiagnosticQuizQualityGate.ExtractJsonArray(quizJson)) as JsonArray;
+            if (node == null)
+            {
+                return quizJson;
+            }
+
+            foreach (var item in node.OfType<JsonObject>())
+            {
+                item.Remove("correctAnswer");
+                item.Remove("correct_answer");
+                item.Remove("answer");
+                item.Remove("correctOption");
+                item.Remove("correctOptionId");
+                item.Remove("correct_option_id");
+                item.Remove("explanation");
+                item.Remove("rationale");
+                item.Remove("reason");
+
+                if (item["options"] is not JsonArray options)
+                {
+                    continue;
+                }
+
+                foreach (var option in options.OfType<JsonObject>())
+                {
+                    option.Remove("isCorrect");
+                    option.Remove("is_correct");
+                    option.Remove("correct");
+                }
+            }
+
+            return node.ToJsonString(JsonOptions);
+        }
+        catch
+        {
+            return quizJson;
+        }
     }
 }

@@ -11,7 +11,7 @@ public class RecordQuizAttemptRequest
     public string? QuestionId { get; set; }
     public string? Question { get; set; }
     public string? SelectedOptionId { get; set; }
-    public bool IsCorrect { get; set; }
+    public bool? IsCorrect { get; set; }
     public string? Explanation { get; set; }
     public string? SkillTag { get; set; }
     public Guid? AssessmentItemId { get; set; }
@@ -25,6 +25,9 @@ public class RecordQuizAttemptRequest
     public string? LearningObjective { get; set; }
     public string? QuestionType { get; set; }
     public string? MistakeCategory { get; set; }
+    public string? AssessmentMode { get; set; }
+    public Guid? SourceEvidenceBundleId { get; set; }
+    public string? WikiNotebookSectionKey { get; set; }
     public string? TopicPath { get; set; }
     public string? Difficulty { get; set; }
     public string? CognitiveType { get; set; }

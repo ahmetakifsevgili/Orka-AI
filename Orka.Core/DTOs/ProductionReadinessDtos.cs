@@ -9,6 +9,7 @@ public sealed class ProductionReadinessDto
     public RedisStreamMaintenanceSummaryDto RedisStreams { get; set; } = new();
     public DbIndexAuditSummaryDto DbIndexAudit { get; set; } = new();
     public V1RegressionGateDto RegressionGate { get; set; } = new();
+    public LearningRuntimeHealthDto RuntimeTelemetry { get; set; } = new();
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

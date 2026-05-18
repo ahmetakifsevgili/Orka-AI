@@ -197,6 +197,44 @@ public class LearningSourceService : ILearningSourceService
             .ToListAsync(ct);
     }
 
+    public async Task<SourceNotebookDto?> GetTopicSourceNotebookAsync(
+        Guid userId,
+        Guid topicId,
+        CancellationToken ct = default)
+    {
+        var topicExists = await _db.Topics
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == topicId && t.UserId == userId, ct);
+        if (!topicExists) return null;
+
+        var sources = await _db.LearningSources
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.TopicId == topicId && !s.IsDeleted)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
+
+        return await BuildSourceNotebookDtoAsync(userId, topicId, sources, focusedSourceId: null, ct);
+    }
+
+    public async Task<SourceNotebookDto?> GetSourceNotebookAsync(
+        Guid userId,
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        var source = await _db.LearningSources
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
+        if (source == null || !source.TopicId.HasValue) return null;
+
+        var sources = await _db.LearningSources
+            .AsNoTracking()
+            .Where(s => s.UserId == userId && s.TopicId == source.TopicId.Value && !s.IsDeleted)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync(ct);
+
+        return await BuildSourceNotebookDtoAsync(userId, source.TopicId.Value, sources, sourceId, ct);
+    }
+
     public async Task<LearningSourceSummaryDto?> UpdateSourceAsync(
         Guid userId,
         Guid sourceId,
@@ -265,7 +303,7 @@ public class LearningSourceService : ILearningSourceService
             .AsNoTracking()
             .Where(c => c.LearningSourceId == sourceId && c.PageNumber == pageNumber && !c.IsDeleted)
             .OrderBy(c => c.ChunkIndex)
-            .Select(c => new SourceChunkDto(c.Id, c.PageNumber, c.ChunkIndex, c.Text, c.HighlightHint))
+            .Select(c => new SourceChunkDto(c.Id, c.PageNumber, c.ChunkIndex, string.Empty, null))
             .ToListAsync(ct);
 
         await _signals.RecordSignalAsync(
@@ -604,7 +642,6 @@ public class LearningSourceService : ILearningSourceService
         var dto = new SourceQualityReportDto
         {
             Id = Guid.NewGuid(),
-            UserId = userId,
             TopicId = topicId,
             QualityStatus = quality,
             RetrievalHealthStatus = retrievalHealth,
@@ -659,7 +696,11 @@ public class LearningSourceService : ILearningSourceService
         var query = _db.SourceChunks
             .AsNoTracking()
             .Include(c => c.LearningSource)
-            .Where(c => c.LearningSource.UserId == userId && !c.LearningSource.IsDeleted && !c.IsDeleted);
+            .Where(c =>
+                c.LearningSource.UserId == userId &&
+                !c.LearningSource.IsDeleted &&
+                c.LearningSource.Status == "ready" &&
+                !c.IsDeleted);
 
         TopicScope? topicScope = null;
         if (sourceId.HasValue)
@@ -1062,7 +1103,6 @@ public class LearningSourceService : ILearningSourceService
     private static SourceRetrievalRunDto ToRetrievalRunDto(SourceRetrievalRun run) => new()
     {
         Id = run.Id,
-        UserId = run.UserId,
         TopicId = run.TopicId,
         SessionId = run.SessionId,
         SourceId = run.SourceId,
@@ -1186,6 +1226,281 @@ public class LearningSourceService : ILearningSourceService
                 };
             }
         }
+    }
+
+    private async Task<SourceNotebookDto> BuildSourceNotebookDtoAsync(
+        Guid userId,
+        Guid topicId,
+        IReadOnlyList<LearningSource> sources,
+        Guid? focusedSourceId,
+        CancellationToken ct)
+    {
+        var topicTitle = await _db.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == topicId && t.UserId == userId)
+            .Select(t => t.Title)
+            .FirstOrDefaultAsync(ct);
+
+        var sourceIds = sources.Select(s => s.Id).ToHashSet();
+        var latestBundle = await _db.SourceEvidenceBundles
+            .AsNoTracking()
+            .Where(b => b.UserId == userId && b.TopicId == topicId && !b.IsDeleted)
+            .OrderByDescending(b => b.UpdatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        var linkedPages = await _db.WikiPages
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && p.TopicId == topicId && !p.IsDeleted)
+            .Where(p => p.PageType == "orkalm_source" || p.PageType == "source_note")
+            .OrderByDescending(p => p.UpdatedAt)
+            .Select(p => new SourceNotebookWikiPageDto
+            {
+                Id = p.Id,
+                Title = p.Title,
+                PageKey = p.PageKey,
+                PageType = p.PageType,
+                SourceReadiness = p.SourceReadiness,
+                EvidenceStatus = p.EvidenceStatus
+            })
+            .ToListAsync(ct);
+
+        var packs = await _db.LearningNotebookPacks
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && p.TopicId == topicId && !p.IsDeleted)
+            .Where(p =>
+                p.PackType == "source_digest" ||
+                p.PackType == "source_notebook" ||
+                p.SafeMetadataJson.Contains("sourceSurface"))
+            .OrderByDescending(p => p.UpdatedAt)
+            .Take(40)
+            .ToListAsync(ct);
+
+        if (focusedSourceId.HasValue)
+        {
+            packs = packs
+                .Where(p => TryReadPackSourceId(p.SafeMetadataJson) == focusedSourceId.Value)
+                .ToList();
+        }
+
+        var packRefs = packs
+            .Select(p => new SourceNotebookPackRefDto
+            {
+                Id = p.Id,
+                PackType = p.PackType,
+                PackStatus = p.PackStatus,
+                Title = p.Title,
+                SourceId = TryReadPackSourceId(p.SafeMetadataJson),
+                WikiPageId = p.WikiPageId,
+                SourceReadiness = p.SourceReadiness,
+                EvidenceStatus = p.EvidenceStatus,
+                UpdatedAt = new DateTimeOffset(p.UpdatedAt, TimeSpan.Zero)
+            })
+            .ToList();
+
+        var sourceDtos = sources.Select(source =>
+        {
+            var sourceReadiness = ResolveSourceReadiness(source);
+            var evidenceStatus = ResolveSourceEvidenceStatus(source, latestBundle);
+            var page = FindLinkedSourcePage(linkedPages, source);
+            var latestPack = packRefs.FirstOrDefault(p => p.SourceId == source.Id);
+            return new SourceNotebookSourceDto
+            {
+                Id = source.Id,
+                TopicId = source.TopicId,
+                SessionId = source.SessionId,
+                Title = SafeDisplay(source.Title, 120),
+                FileName = SafeFileName(source.FileName, 120),
+                Status = SafeStatus(source.Status),
+                SourceReadiness = sourceReadiness,
+                EvidenceStatus = evidenceStatus,
+                PageCount = source.PageCount,
+                ChunkCount = source.ChunkCount,
+                CitationCoverage = source.Status == "ready" && source.ChunkCount > 0
+                    ? Math.Max(latestBundle?.CitationCoverage ?? 0m, 0.65m)
+                    : 0m,
+                LinkedWikiPageId = page?.Id,
+                LinkedWikiPageTitle = page?.Title,
+                LatestPackId = latestPack?.Id,
+                Warnings = BuildSourceWarnings(source, latestBundle),
+                CreatedAt = new DateTimeOffset(source.CreatedAt, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(source.UpdatedAt, TimeSpan.Zero)
+            };
+        }).ToList();
+
+        var readyCount = sources.Count(s => string.Equals(s.Status, "ready", StringComparison.OrdinalIgnoreCase) && s.ChunkCount > 0);
+        var warnings = BuildNotebookWarnings(sources, latestBundle);
+        var focused = focusedSourceId.HasValue ? sources.FirstOrDefault(s => s.Id == focusedSourceId.Value) : null;
+        var title = focused != null
+            ? $"{SafeDisplay(focused.Title, 120)} source notebook"
+            : $"{SafeDisplay(topicTitle, 120)} source notebook";
+
+        return new SourceNotebookDto
+        {
+            TopicId = topicId,
+            SourceId = focusedSourceId,
+            Surface = focusedSourceId.HasValue ? "source" : "source_collection",
+            Title = string.IsNullOrWhiteSpace(title) ? "OrkaLM source notebook" : title,
+            SourceReadiness = ResolveNotebookReadiness(sources, latestBundle),
+            EvidenceStatus = latestBundle?.EvidenceStatus ?? (readyCount > 0 ? "source_grounded" : "evidence_insufficient"),
+            SourceCount = sources.Count,
+            ReadySourceCount = readyCount,
+            ChunkCount = sources.Sum(s => s.ChunkCount),
+            CitationCoverage = latestBundle?.CitationCoverage ?? (readyCount > 0 ? 0.65m : 0m),
+            Warnings = warnings,
+            Sources = focusedSourceId.HasValue
+                ? sourceDtos.Where(s => s.Id == focusedSourceId.Value).ToList()
+                : sourceDtos,
+            LinkedWikiPages = linkedPages,
+            Packs = packRefs,
+            NextActions = BuildSourceNotebookActions(readyCount, latestBundle?.EvidenceStatus),
+            GeneratedAt = DateTimeOffset.UtcNow
+        };
+    }
+
+    private static SourceNotebookWikiPageDto? FindLinkedSourcePage(
+        IReadOnlyList<SourceNotebookWikiPageDto> pages,
+        LearningSource source)
+    {
+        var sourceKey = source.Id.ToString("N");
+        return pages.FirstOrDefault(p =>
+            p.PageKey.Contains(sourceKey, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.Title, source.Title, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<NotebookStudioNextActionDto> BuildSourceNotebookActions(int readySourceCount, string? evidenceStatus)
+    {
+        if (readySourceCount <= 0)
+        {
+            return new[]
+            {
+                new NotebookStudioNextActionDto
+                {
+                    ActionType = "add_source",
+                    UserSafeLabel = "Add or repair a source before claiming source-backed notes.",
+                    Priority = "high"
+                }
+            };
+        }
+
+        var actions = new List<NotebookStudioNextActionDto>
+        {
+            new() { ActionType = "source_digest", UserSafeLabel = "Create a source digest.", Priority = "high" },
+            new() { ActionType = "study_guide", UserSafeLabel = "Turn this source into a study guide.", Priority = "high" },
+            new() { ActionType = "audio_script", UserSafeLabel = "Create a safe audio script or overview.", Priority = "normal" },
+            new() { ActionType = "review_quiz", UserSafeLabel = "Start a source-based review quiz.", Priority = "normal" },
+            new() { ActionType = "slide_deck_outline", UserSafeLabel = "Build a source-backed slide outline.", Priority = "normal" }
+        };
+
+        if (string.Equals(evidenceStatus, "stale", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(evidenceStatus, "degraded", StringComparison.OrdinalIgnoreCase))
+        {
+            actions.Insert(0, new NotebookStudioNextActionDto
+            {
+                ActionType = "refresh_evidence",
+                UserSafeLabel = "Refresh source evidence before relying on citations.",
+                Priority = "high"
+            });
+        }
+
+        return actions;
+    }
+
+    private static IReadOnlyList<string> BuildNotebookWarnings(IReadOnlyList<LearningSource> sources, SourceEvidenceBundle? bundle)
+    {
+        var warnings = new List<string>();
+        if (sources.Count == 0) warnings.Add("No uploaded sources are available for this notebook.");
+        if (sources.All(s => !string.Equals(s.Status, "ready", StringComparison.OrdinalIgnoreCase) || s.ChunkCount <= 0))
+            warnings.Add("No ready source evidence is available; source-backed claims are disabled.");
+        if (bundle == null) warnings.Add("No source evidence bundle has been built yet.");
+        else
+        {
+            if (bundle.StaleEvidenceCount > 0) warnings.Add("Some source evidence is stale.");
+            if (bundle.DeletedEvidenceCount > 0) warnings.Add("Some source evidence points to deleted sources.");
+            if (bundle.UnsupportedCitationCount > 0) warnings.Add("Some citations need review.");
+            if (string.Equals(bundle.EvidenceStatus, "evidence_insufficient", StringComparison.OrdinalIgnoreCase))
+                warnings.Add("Evidence is insufficient for source-grounded output.");
+        }
+
+        return warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static IReadOnlyList<string> BuildSourceWarnings(LearningSource source, SourceEvidenceBundle? bundle)
+    {
+        var warnings = new List<string>();
+        if (!string.Equals(source.Status, "ready", StringComparison.OrdinalIgnoreCase))
+            warnings.Add("Source is not ready.");
+        if (source.ChunkCount <= 0)
+            warnings.Add("Source has no indexed chunks.");
+        if (string.Equals(source.Status, "stale", StringComparison.OrdinalIgnoreCase))
+            warnings.Add("Source is stale and should be refreshed.");
+        if (bundle is { EvidenceStatus: "evidence_insufficient" })
+            warnings.Add("Current evidence bundle is insufficient.");
+        return warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string ResolveNotebookReadiness(IReadOnlyList<LearningSource> sources, SourceEvidenceBundle? bundle)
+    {
+        if (bundle != null && !string.IsNullOrWhiteSpace(bundle.EvidenceStatus))
+            return bundle.EvidenceStatus;
+        return sources.Any(s => string.Equals(s.Status, "ready", StringComparison.OrdinalIgnoreCase) && s.ChunkCount > 0)
+            ? "source_grounded"
+            : "evidence_insufficient";
+    }
+
+    private static string ResolveSourceEvidenceStatus(LearningSource source, SourceEvidenceBundle? bundle)
+    {
+        if (!string.Equals(source.Status, "ready", StringComparison.OrdinalIgnoreCase) || source.ChunkCount <= 0)
+            return "evidence_insufficient";
+        return bundle?.EvidenceStatus ?? "source_grounded";
+    }
+
+    private static string ResolveSourceReadiness(LearningSource source)
+    {
+        if (source.IsDeleted) return "deleted";
+        if (string.Equals(source.Status, "ready", StringComparison.OrdinalIgnoreCase) && source.ChunkCount > 0) return "source_grounded";
+        if (string.Equals(source.Status, "stale", StringComparison.OrdinalIgnoreCase)) return "stale";
+        if (string.Equals(source.Status, "error", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(source.Status, "failed", StringComparison.OrdinalIgnoreCase)) return "degraded";
+        return "evidence_insufficient";
+    }
+
+    private static string SafeStatus(string? status)
+    {
+        var safe = NormalizeWhitespace(status ?? "pending").ToLowerInvariant();
+        return safe.Length > 40 ? safe[..40] : safe;
+    }
+
+    private static string SafeDisplay(string? value, int maxChars)
+    {
+        var safe = NormalizeWhitespace(value ?? string.Empty);
+        return safe.Length <= maxChars ? safe : safe[..maxChars];
+    }
+
+    private static string SafeFileName(string? fileName, int maxChars)
+    {
+        var safe = Path.GetFileName(fileName ?? string.Empty);
+        return SafeDisplay(safe, maxChars);
+    }
+
+    private static Guid? TryReadPackSourceId(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.TryGetProperty("sourceId", out var sourceId) &&
+                sourceId.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(sourceId.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private async Task<string> SafeWikiAsync(Guid topicId, Guid userId)

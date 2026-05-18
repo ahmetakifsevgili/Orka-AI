@@ -6,7 +6,6 @@ export type MessageType = "text" | "quiz" | "plan" | "topic_complete";
 export interface QuizOption {
   id: string;
   text: string;
-  isCorrect: boolean;
 }
 
 export interface QuizData {
@@ -15,7 +14,7 @@ export interface QuizData {
   questionId?: string;
   question: string;
   options: QuizOption[];
-  explanation: string;
+  explanation?: string;
   topic?: string;
   skillTag?: string;
   topicPath?: string;
@@ -30,6 +29,9 @@ export interface QuizData {
   cognitiveSkill?: string;
   misconceptionTarget?: string;
   evidenceExpected?: string;
+  assessmentMode?: string;
+  sourceReadiness?: string;
+  wikiReviewHint?: string;
   scoringRule?: string;
   learningOutcomeIds?: string[];
   knowledgeTracingStateId?: string;
@@ -88,7 +90,6 @@ export interface SourceRetrievalItemDto {
 
 export interface SourceRetrievalRunDto {
   id: string;
-  userId: string;
   topicId?: string | null;
   sessionId?: string | null;
   sourceId?: string | null;
@@ -220,6 +221,353 @@ export interface LearningMemoryLiteDto {
   hasEnoughSignals: boolean;
 }
 
+export interface LearningSnapshotEvidenceSummaryDto {
+  sourceEvidenceCount: number;
+  wikiEvidenceCount: number;
+  toolEvidenceCount: number;
+  recentAttemptCount: number;
+  weakConceptCount: number;
+  evidenceStatus: string;
+}
+
+export interface LearningSnapshotConceptDto {
+  topicId?: string | null;
+  conceptKey: string;
+  label: string;
+  masteryProbability?: number | null;
+  confidence?: number | null;
+  confidenceStatus: string;
+  userSafeReason: string;
+  evidenceBasis: string[];
+}
+
+export interface LearningSnapshotRemediationDto {
+  topicId?: string | null;
+  conceptKey: string;
+  label: string;
+  reason: string;
+  confidence?: number | null;
+  confidenceStatus: string;
+  firstAction: string;
+  secondaryActions: string[];
+  evidenceBasis: string[];
+}
+
+export interface ActiveLessonSnapshotDto {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  planRequestId?: string | null;
+  quizRunId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  sourceBundleHash?: string | null;
+  snapshotVersion: number;
+  status: string;
+  activeConceptKey?: string | null;
+  activeConceptLabel?: string | null;
+  approvedIntent?: string | null;
+  approvedMainTopic?: string | null;
+  approvedFocusArea?: string | null;
+  approvedStudyGoal?: string | null;
+  groundingMode?: string | null;
+  evidenceSummary: LearningSnapshotEvidenceSummaryDto;
+  remediationNeed: string;
+  learnerState: string;
+  confidence?: number | null;
+  masteryProbability?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string | null;
+}
+
+export interface StudentContextSnapshotDto {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  snapshotVersion: number;
+  confidenceStatus: string;
+  strongConcepts: LearningSnapshotConceptDto[];
+  weakConcepts: LearningSnapshotConceptDto[];
+  recentMisconceptions: LearningSnapshotConceptDto[];
+  remediationReady: LearningSnapshotRemediationDto[];
+  reviewPressure: string[];
+  sourceReadiness: string;
+  goalReadiness: GoalReadinessDto;
+  learningMemorySummary: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string | null;
+}
+
+export interface ActiveLessonSnapshotRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  planRequestId?: string | null;
+  quizRunId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  sourceBundleHash?: string | null;
+  approvedIntent?: string | null;
+  approvedMainTopic?: string | null;
+  approvedFocusArea?: string | null;
+  approvedStudyGoal?: string | null;
+  groundingMode?: string | null;
+}
+
+export interface StudentContextSnapshotRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+}
+
+export interface PlanQualityEvaluationRequestDto {
+  topicId: string;
+  sessionId?: string | null;
+  planRequestId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  planTitle?: string | null;
+  planSummary?: string | null;
+  proposedSteps?: PlanStepContractDto[];
+}
+
+export interface PlanQualityEvaluationDto {
+  snapshotId?: string | null;
+  topicId: string;
+  sessionId?: string | null;
+  planRequestId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  qualityStatus: string;
+  specificityScore: number;
+  sequencingScore: number;
+  evidenceAlignmentScore: number;
+  assessmentAlignmentScore: number;
+  tutorAlignmentScore: number;
+  blockingIssues: PlanQualityIssueDto[];
+  warningIssues: PlanQualityIssueDto[];
+  planContract: PlanCurriculumSequenceDto;
+  generatedAt: string;
+}
+
+export interface PlanQualityIssueDto {
+  code: string;
+  severity: string;
+  message: string;
+  stepId?: string | null;
+}
+
+export interface PlanCurriculumSequenceDto {
+  topicId: string;
+  topicTitle: string;
+  confidenceStatus: string;
+  sequenceStatus: string;
+  sourceReadiness: string;
+  steps: PlanStepContractDto[];
+  sequencingGraph: PlanSequencingGraphDto;
+  generatedAt: string;
+}
+
+export interface PlanSequencingGraphDto {
+  nodes: Array<{
+    conceptKey: string;
+    label: string;
+    order: number;
+    difficultyBand: string;
+  }>;
+  edges: Array<{
+    sourceConceptKey: string;
+    targetConceptKey: string;
+    relationType: string;
+    weight: number;
+  }>;
+}
+
+export interface PlanStepContractDto {
+  stepId: string;
+  title: string;
+  objective: string;
+  conceptKey: string;
+  conceptLabel: string;
+  prerequisiteConceptKeys: string[];
+  targetMisconceptions: string[];
+  masteryTarget: string;
+  estimatedMinutes: number;
+  learnerState: string;
+  remediationNeed: string;
+  difficultyBand: string;
+  sequenceReason: string;
+  evidence: PlanStepEvidenceDto;
+  quizHook: PlanStepAssessmentHookDto;
+  tutorHook: PlanStepTutorHookDto;
+  wikiHook: PlanStepWikiHookDto;
+  successCriteria: string[];
+  nextStepTrigger: string;
+  fallbackIfEvidenceWeak: string;
+}
+
+export interface PlanStepEvidenceDto {
+  evidenceBasis: string[];
+  sourceReadiness: string;
+  sourceEvidenceBundleId?: string | null;
+  wikiNotebookSectionKey?: string | null;
+  korteksWorkflowId?: string | null;
+  warnings: string[];
+}
+
+export interface PlanStepAssessmentHookDto {
+  hookType: string;
+  conceptKey: string;
+  targetMisconceptions: string[];
+  difficultyBand: string;
+  userSafeReason: string;
+}
+
+export interface PlanStepTutorHookDto {
+  tutorMove: string;
+  activeConceptKey: string;
+  targetMisconception?: string | null;
+  userSafeReason: string;
+}
+
+export interface PlanStepWikiHookDto {
+  sectionKey?: string | null;
+  sourceReadiness: string;
+  userSafeWarning?: string | null;
+}
+
+export interface PlanReadinessDto {
+  topicId: string;
+  topicTitle: string;
+  hasConceptGraph: boolean;
+  hasKorteksSynthesis: boolean;
+  hasSourceEvidence: boolean;
+  sourceReadiness: string;
+  learnerEvidenceStatus: string;
+  recommendedFirstAction: string;
+  latestQualitySnapshotId?: string | null;
+  warnings: string[];
+}
+
+export interface AssessmentBlueprintRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  planQualitySnapshotId?: string | null;
+  planStepId?: string | null;
+  assessmentMode?: string;
+  conceptKey?: string | null;
+  misconceptionKey?: string | null;
+  itemCountTarget?: number | null;
+}
+
+export interface AssessmentBlueprintDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  planQualitySnapshotId?: string | null;
+  planStepId?: string | null;
+  assessmentMode: string;
+  userSafeModeLabel: string;
+  targetConcepts: AssessmentBlueprintConceptDto[];
+  prerequisiteConceptKeys: string[];
+  misconceptionTargets: AssessmentMisconceptionTargetDto[];
+  difficultyBand: string;
+  itemCountTarget: number;
+  cognitiveSkillMix: string[];
+  evidenceMode: string;
+  explanationRequirement: string;
+  remediationRequirement: string;
+  leakageSafetyRequirements: string[];
+  warnings: string[];
+}
+
+export interface AssessmentBlueprintConceptDto {
+  conceptKey: string;
+  label: string;
+  role: string;
+  difficultyBand: string;
+  confidenceStatus: string;
+}
+
+export interface AssessmentMisconceptionTargetDto {
+  misconceptionKey: string;
+  userSafeLabel: string;
+  conceptKey: string;
+  confidenceStatus: string;
+  rationaleRequirement: string;
+}
+
+export interface AssessmentDistractorRationaleDto {
+  optionId: string;
+  rationale: string;
+  misconceptionKey?: string | null;
+}
+
+export interface AssessmentItemContractDto {
+  itemId: string;
+  stem: string;
+  conceptKey: string;
+  cognitiveSkill: string;
+  difficultyBand: string;
+  explanation: string;
+  optionTexts: string[];
+  distractorRationales: AssessmentDistractorRationaleDto[];
+  publicDtoContainsCorrectAnswer: boolean;
+}
+
+export interface AssessmentQualityEvaluationRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  quizRunId?: string | null;
+  assessmentDraftId?: string | null;
+  planQualitySnapshotId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  blueprint: AssessmentBlueprintDto;
+  items: AssessmentItemContractDto[];
+}
+
+export interface AssessmentQualityEvaluationDto {
+  snapshotId: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  qualityStatus: string;
+  conceptCoverageScore: number;
+  misconceptionTargetingScore: number;
+  distractorQualityScore: number;
+  leakageSafetyScore: number;
+  remediationAlignmentScore: number;
+  blockingIssues: AssessmentQualityIssueDto[];
+  warningIssues: AssessmentQualityIssueDto[];
+  blueprint: AssessmentBlueprintDto;
+  createdAt: string;
+}
+
+export interface AssessmentQualityIssueDto {
+  code: string;
+  severity: string;
+  userSafeMessage: string;
+  itemId?: string | null;
+}
+
+export interface QuizResultLearningImpactDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  quizRunId?: string | null;
+  quizAttemptId?: string | null;
+  assessmentItemId?: string | null;
+  assessmentMode: string;
+  targetConceptKey: string;
+  result: string;
+  misconceptionSignal?: MisconceptionSignalDto | null;
+  misconceptionConfidence: string;
+  remediationNeed: string;
+  masteryDelta?: number | null;
+  masteryProbability?: number | null;
+  nextTutorMove: string;
+  nextPlanAction: string;
+  wikiReviewHint?: string | null;
+  sourceReadiness: string;
+  evidenceBasis: string[];
+}
+
 export interface AdaptiveStudyPlanRequestDto {
   goalType: "exam" | "career" | "general_learning" | string;
   targetDate?: string | null;
@@ -269,7 +617,6 @@ export interface AdaptiveStudyPlanDto {
 
 export interface SourceQualityReportDto {
   id: string;
-  userId: string;
   topicId?: string | null;
   sourceId?: string | null;
   qualityStatus: string;
@@ -287,6 +634,584 @@ export interface SourceQualityReportDto {
   generatedAt: string;
   recentRetrievalRuns?: SourceRetrievalRunDto[];
   recentCitationChecks?: SourceCitationCheckDto[];
+}
+
+export interface SourceEvidenceItemDto {
+  sourceId?: string | null;
+  chunkId?: string | null;
+  sourceType: string;
+  title: string;
+  label: string;
+  url?: string | null;
+  pageNumber?: number | null;
+  section?: string | null;
+  snippetSummary: string;
+  confidence: number;
+  scopeRelation: string;
+  retrievalScope: string;
+  status: string;
+  userSafeWarning?: string | null;
+}
+
+export interface SourceEvidenceBundleDto {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  bundleHash: string;
+  evidenceStatus: string;
+  sourceCount: number;
+  readySourceCount: number;
+  chunkCount: number;
+  citationCoverage: number;
+  unsupportedCitationCount: number;
+  staleEvidenceCount: number;
+  deletedEvidenceCount: number;
+  evidenceItems: SourceEvidenceItemDto[];
+  warnings: string[];
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string | null;
+}
+
+export interface SourceEvidenceBundleRequestDto {
+  sessionId?: string | null;
+  question?: string | null;
+}
+
+export interface SourceLifecycleSummaryDto {
+  topicId: string;
+  sourceCount: number;
+  readySourceCount: number;
+  staleSourceCount: number;
+  deletedSourceCount: number;
+  failedSourceCount: number;
+  activeChunkCount: number;
+  evidenceStatus: string;
+  warnings: string[];
+}
+
+export interface MarkSourceStaleRequestDto {
+  reason?: string | null;
+}
+
+export interface ValidateSourceCitationDto {
+  citationId: string;
+  sourceId?: string | null;
+  chunkId?: string | null;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+}
+
+export interface ValidateSourceCitationSetRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  citations: ValidateSourceCitationDto[];
+}
+
+export interface SourceCitationValidationResultDto {
+  citationId: string;
+  supported: boolean;
+  status: string;
+  sourceType: string;
+  userSafeWarning?: string | null;
+  sourceId?: string | null;
+  chunkId?: string | null;
+  pageNumber?: number | null;
+}
+
+export interface SourceCitationSetValidationDto {
+  totalCount: number;
+  supportedCount: number;
+  unsupportedCount: number;
+  results: SourceCitationValidationResultDto[];
+}
+
+export interface WikiNotebookSectionDto {
+  sectionKey: string;
+  title: string;
+  conceptKey?: string | null;
+  evidenceItems: SourceEvidenceItemDto[];
+  wikiBlockIds: string[];
+  sourceIds: string[];
+  status: string;
+}
+
+export interface WikiKnowledgeNotebookDto {
+  topicId: string;
+  title: string;
+  evidenceStatus: string;
+  sourceCoverage: string;
+  conceptCoverage: string;
+  sections: WikiNotebookSectionDto[];
+  sourceWarnings: string[];
+  lastUpdatedAt: string;
+}
+
+export interface SourceNotebookSourceDto {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  title: string;
+  fileName: string;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  pageCount: number;
+  chunkCount: number;
+  citationCoverage: number;
+  linkedWikiPageId?: string | null;
+  linkedWikiPageTitle?: string | null;
+  latestPackId?: string | null;
+  warnings: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SourceNotebookWikiPageDto {
+  id: string;
+  title: string;
+  pageKey: string;
+  pageType: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+}
+
+export interface SourceNotebookPackRefDto {
+  id: string;
+  packType: string;
+  packStatus: string;
+  title: string;
+  sourceId?: string | null;
+  wikiPageId?: string | null;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  updatedAt: string;
+}
+
+export interface SourceNotebookDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  surface: string;
+  title: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  sourceCount: number;
+  readySourceCount: number;
+  chunkCount: number;
+  citationCoverage: number;
+  warnings: string[];
+  sources: SourceNotebookSourceDto[];
+  linkedWikiPages: SourceNotebookWikiPageDto[];
+  packs: SourceNotebookPackRefDto[];
+  nextActions: NotebookStudioNextActionDto[];
+  generatedAt: string;
+}
+
+export interface SourceConceptLinkDto {
+  sourceId?: string | null;
+  sourceTitle: string;
+  sourcePageId?: string | null;
+  conceptKey: string;
+  conceptTitle: string;
+  wikiPageId?: string | null;
+  linkType: string;
+  confidence: "high" | "medium" | "low" | string;
+  confidenceScore?: number | null;
+  basis: string;
+  evidenceStatus: string;
+  sourceReadiness: string;
+  isSuggestion: boolean;
+  warnings: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface SourceConceptLinkSummaryDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  wikiPageId?: string | null;
+  title: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  confirmedLinkCount: number;
+  suggestedLinkCount: number;
+  links: SourceConceptLinkDto[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface SourceConceptGraphNodeDto {
+  id: string;
+  nodeType: "source_page" | "concept_page" | string;
+  label: string;
+  sourceId?: string | null;
+  wikiPageId?: string | null;
+  conceptKey?: string | null;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+}
+
+export interface SourceConceptGraphEdgeDto {
+  sourceNodeId: string;
+  targetNodeId: string;
+  linkType: string;
+  confidence: "high" | "medium" | "low" | string;
+  confidenceScore?: number | null;
+  basis: string;
+  isSuggestion: boolean;
+  warnings: string[];
+}
+
+export interface SourceConceptGraphDto {
+  topicId: string;
+  graphStatus: string;
+  nodes: SourceConceptGraphNodeDto[];
+  edges: SourceConceptGraphEdgeDto[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface SourceQuestionRequestDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  sourceIds?: string[];
+  wikiPageId?: string | null;
+  notebookPackId?: string | null;
+  question: string;
+  mode?: "selected_source" | "source_collection" | "wiki_page_sources" | "linked_concept_sources";
+  includeLearnerContext?: boolean;
+  writeWikiTrace?: boolean;
+}
+
+export interface SourceQuestionCitationDto {
+  citationId: string;
+  sourceId?: string | null;
+  sourceChunkId?: string | null;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+  label: string;
+  sourceTitle: string;
+  supportStatus: string;
+  confidence?: number | null;
+}
+
+export interface SourceQuestionSafetyDto {
+  status: string;
+  blockedTerms: string[];
+  rawPayloadRemoved: boolean;
+}
+
+export interface SourceQuestionContextDto {
+  sourceId?: string | null;
+  sourceTitle?: string | null;
+  topicId?: string | null;
+  wikiPageId?: string | null;
+  wikiPageTitle?: string | null;
+  relatedConcepts: SourceConceptLinkDto[];
+  relatedWikiPages: SourceConceptLinkDto[];
+}
+
+export interface SourceQuestionResponseDto {
+  answer: string;
+  sourceBasis: string;
+  evidenceStatus: string;
+  sourceReadiness: string;
+  citations: SourceQuestionCitationDto[];
+  relatedConcepts: SourceConceptLinkDto[];
+  relatedWikiPages: SourceConceptLinkDto[];
+  warnings: string[];
+  safety: SourceQuestionSafetyDto;
+  context: SourceQuestionContextDto;
+  traceBlockId?: string | null;
+  nextActions: string[];
+}
+
+export interface SourceQuestionThreadRequestDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  sourceIds?: string[];
+  wikiPageId?: string | null;
+  conceptKey?: string | null;
+  title?: string | null;
+  initialQuestion?: string | null;
+  mode?: string;
+  includeLearnerContext?: boolean;
+  writeWikiTrace?: boolean;
+}
+
+export interface SourceQuestionFollowUpRequestDto {
+  question: string;
+  includeLearnerContext?: boolean;
+  writeWikiTrace?: boolean;
+}
+
+export interface SourceQuestionReviewStateDto {
+  turnId?: string | null;
+  reviewStatus: string;
+  warnings?: string[];
+}
+
+export interface SourceQuestionTurnDto {
+  turnId: string;
+  question: string;
+  safeAnswerSummary: string;
+  sourceBasis: string;
+  evidenceStatus: string;
+  citations: SourceQuestionCitationDto[];
+  relatedConcepts: SourceConceptLinkDto[];
+  relatedWikiPages: SourceConceptLinkDto[];
+  reviewStatus: string;
+  warnings: string[];
+  traceBlockId?: string | null;
+  createdAt: string;
+}
+
+export interface SourceQuestionThreadDto {
+  threadId: string;
+  topicId?: string | null;
+  sourceIds: string[];
+  wikiPageId?: string | null;
+  conceptKey?: string | null;
+  title: string;
+  status: string;
+  sourceBasis: string;
+  evidenceStatus: string;
+  sourceReadiness: string;
+  citationReviewStatus: string;
+  linkedConcepts: SourceConceptLinkDto[];
+  linkedWikiPages: SourceConceptLinkDto[];
+  warnings: string[];
+  turns: SourceQuestionTurnDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SourceQuestionThreadListDto {
+  count: number;
+  items: SourceQuestionThreadDto[];
+}
+
+export interface SourceQuestionMemorySummaryDto {
+  threadCount: number;
+  turnCount: number;
+  needsReviewCount: number;
+  degradedCount: number;
+  recentQuestions: string[];
+  warnings: string[];
+}
+
+export interface SourceStudySummaryDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  wikiPageId?: string | null;
+  sourceCount: number;
+  threadCount: number;
+  turnCount: number;
+  reviewedCount: number;
+  needsReviewCount: number;
+  degradedCount: number;
+  citationWarningCount: number;
+  relatedConceptCount: number;
+  comparedSourceCount: number;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  studyStatus: string;
+  recommendedNextAction: string;
+  nextActions: string[];
+  recentQuestions: string[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface MultiSourceCompareRequestDto {
+  topicId?: string | null;
+  sourceIds: string[];
+  wikiPageId?: string | null;
+  conceptKey?: string | null;
+  includeConceptLinks?: boolean;
+  includeCitationReview?: boolean;
+  writeWikiTrace?: boolean;
+}
+
+export interface MultiSourceCompareSourceDto {
+  sourceId: string;
+  sourceTitle: string;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  pageCount: number;
+  chunkCount: number;
+  citationCoverage: number;
+  citationCheckCount: number;
+  supportedCitationCount: number;
+  unsupportedCitationCount: number;
+  missingCitationCount: number;
+  needsReviewCitationCount: number;
+  linkedConceptCount: number;
+  warnings: string[];
+}
+
+export interface MultiSourceConceptOverlapDto {
+  conceptKey: string;
+  conceptTitle: string;
+  wikiPageId?: string | null;
+  sourceIds: string[];
+  sourceTitles: string[];
+  linkConfidence: "high" | "medium" | "low" | string;
+  isSuggestion: boolean;
+  basis: string;
+  warnings: string[];
+}
+
+export interface MultiSourceCitationCoverageDto {
+  totalCitationChecks: number;
+  supportedCount: number;
+  unsupportedCount: number;
+  missingCount: number;
+  staleCount: number;
+  needsReviewCount: number;
+  coverageRatio: number;
+  coverageStatus: string;
+}
+
+export interface CitationReviewItemDto {
+  id: string;
+  citationId: string;
+  sourceId?: string | null;
+  sourceTitle: string;
+  sourceChunkId?: string | null;
+  pageNumber?: number | null;
+  chunkIndex?: number | null;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  citationStatus: string;
+  confidence?: number | null;
+  userSafeWarning: string;
+  createdAt: string;
+}
+
+export interface CitationReviewResultDto {
+  topicId?: string | null;
+  sourceId?: string | null;
+  reviewStatus: string;
+  coverage: MultiSourceCitationCoverageDto;
+  items: CitationReviewItemDto[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface MultiSourceCompareResultDto {
+  topicId?: string | null;
+  comparedSourceCount: number;
+  compareStatus: string;
+  evidenceStatus: string;
+  sourceReadiness: string;
+  sourceSummaries: MultiSourceCompareSourceDto[];
+  sharedConcepts: MultiSourceConceptOverlapDto[];
+  sourceOnlyConcepts: MultiSourceConceptOverlapDto[];
+  citationCoverage: MultiSourceCitationCoverageDto;
+  citationReviewItems: CitationReviewItemDto[];
+  warnings: string[];
+  nextActions: string[];
+  traceBlockId?: string | null;
+  safetyStatus: string;
+  generatedAt: string;
+}
+
+export interface WikiGraphPageDto {
+  id: string;
+  topicId: string;
+  parentWikiPageId?: string | null;
+  pageKey: string;
+  pageType: string;
+  conceptKey?: string | null;
+  parentConceptKey?: string | null;
+  title: string;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  safeSummary?: string | null;
+  orderIndex: number;
+  blockCount: number;
+  updatedAt: string;
+}
+
+export interface WikiGraphLinkDto {
+  id: string;
+  sourcePageId: string;
+  targetPageId?: string | null;
+  targetPageKey: string;
+  linkType: string;
+  strength: number;
+  createdBy: string;
+  safeLabel: string;
+  createdAt: string;
+}
+
+export interface WikiGraphDto {
+  topicId: string;
+  focusPageId?: string | null;
+  graphStatus: string;
+  pages: WikiGraphPageDto[];
+  links: WikiGraphLinkDto[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface WikiGraphSyncRequestDto {
+  conceptGraphSnapshotId?: string | null;
+  includeTopicTreeFallback?: boolean;
+  createSummaryBlocks?: boolean;
+}
+
+export interface WikiGraphSyncResultDto {
+  topicId: string;
+  conceptGraphSnapshotId?: string | null;
+  syncStatus: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  createdPageCount: number;
+  updatedPageCount: number;
+  createdLinkCount: number;
+  warnings: string[];
+  graph: WikiGraphDto;
+}
+
+export interface CreateWikiBlockRequestDto {
+  blockType?: string;
+  title?: string | null;
+  content: string;
+  sourceBasis?: string;
+  source?: string | null;
+  conceptKey?: string | null;
+  misconceptionKey?: string | null;
+  quizAttemptId?: string | null;
+  sourceEvidenceBundleId?: string | null;
+  learningArtifactId?: string | null;
+  tutorTurnStateId?: string | null;
+  visibility?: string;
+}
+
+export interface WikiBlockDto {
+  id: string;
+  wikiPageId: string;
+  blockType: string;
+  title: string;
+  content: string;
+  source?: string | null;
+  sourceBasis: string;
+  conceptKey?: string | null;
+  misconceptionKey?: string | null;
+  quizAttemptId?: string | null;
+  sourceEvidenceBundleId?: string | null;
+  learningArtifactId?: string | null;
+  tutorTurnStateId?: string | null;
+  visibility: string;
+  safetyWarnings: string[];
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UsedToolDto {
@@ -338,7 +1263,6 @@ export interface EvidenceSummaryDto {
 
 export interface TeachingArtifact {
   id: string;
-  userId?: string;
   topicId?: string | null;
   sessionId?: string | null;
   tutorActionTraceId?: string | null;
@@ -355,6 +1279,256 @@ export interface TeachingArtifact {
   createdAt?: string;
 }
 
+export interface LearningArtifactSafetyDto {
+  status: string;
+  warnings: string[];
+  blockingIssues: string[];
+}
+
+export interface LearningArtifactAccessibilityDto {
+  status: string;
+  altText?: string | null;
+  caption?: string | null;
+  summary?: string | null;
+  textFallback?: string | null;
+  language?: string | null;
+  issues: string[];
+}
+
+export interface LearningArtifactDto {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  teachingArtifactId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  planQualitySnapshotId?: string | null;
+  assessmentQualitySnapshotId?: string | null;
+  sourceEvidenceBundleId?: string | null;
+  wikiNotebookSectionKey?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  artifactType: string;
+  artifactStatus: string;
+  origin: string;
+  renderFormat: string;
+  title: string;
+  safeContent: string;
+  contentJson?: string | null;
+  sourceBasis: string;
+  citationIds: string[];
+  toolTraceIds: string[];
+  accessibility: LearningArtifactAccessibilityDto;
+  safety: LearningArtifactSafetyDto;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningArtifactRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  teachingArtifactId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  planQualitySnapshotId?: string | null;
+  assessmentQualitySnapshotId?: string | null;
+  sourceEvidenceBundleId?: string | null;
+  wikiNotebookSectionKey?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  artifactType: string;
+  artifactStatus?: string;
+  origin?: string;
+  renderFormat?: string;
+  title: string;
+  safeContent: string;
+  contentJson?: string | null;
+  sourceBasis?: string;
+  citationIds?: string[];
+  toolTraceIds?: string[];
+  accessibility?: Partial<LearningArtifactAccessibilityDto>;
+}
+
+export interface LearningArtifactListDto {
+  items: LearningArtifactDto[];
+  count: number;
+}
+
+export interface LearningArtifactRefreshRequestDto {
+  reason?: string | null;
+}
+
+export interface NotebookStudioNextActionDto {
+  actionType: string;
+  userSafeLabel: string;
+  priority: string;
+}
+
+export interface LearningNotebookPackDto {
+  id: string;
+  topicId: string;
+  sessionId?: string | null;
+  wikiPageId?: string | null;
+  wikiPageTitle?: string | null;
+  wikiPageKey?: string | null;
+  sourceSurface?: string | null;
+  sourceId?: string | null;
+  sourceTitle?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  sourceEvidenceBundleId?: string | null;
+  wikiNotebookSnapshotId?: string | null;
+  planQualitySnapshotId?: string | null;
+  assessmentQualitySnapshotId?: string | null;
+  packType: string;
+  packStatus: string;
+  title: string;
+  summary: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  completedConceptKeys: string[];
+  weakConceptKeys: string[];
+  misconceptionKeys: string[];
+  artifactIds: string[];
+  artifacts: LearningArtifactDto[];
+  nextActions: NotebookStudioNextActionDto[];
+  warnings: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningNotebookPackListDto {
+  count: number;
+  items: LearningNotebookPackDto[];
+}
+
+export interface LearningNotebookPackRequestDto {
+  sessionId?: string | null;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  sourceSurface?: string | null;
+  packType?: string;
+  focusConceptKey?: string | null;
+  userGoal?: string | null;
+  includeArtifacts?: boolean;
+}
+
+export interface LearningNotebookArtifactRequestDto {
+  artifactType: string;
+  conceptKey?: string | null;
+  wikiPageId?: string | null;
+}
+
+export interface NotebookExportRequestDto {
+  format?: "slide_preview" | "markdown" | "html" | "manifest_only" | "pptx_local_proof" | string;
+  slideDeckArtifactId?: string | null;
+}
+
+export interface NotebookSlideExportItemDto {
+  order: number;
+  slideId: string;
+  title: string;
+  bullets: string[];
+  hasSpeakerNotes: boolean;
+  speakerNotes?: string | null;
+  sourceLabel?: string | null;
+  visualSuggestion?: string | null;
+  checkpointQuestion?: string | null;
+  misconceptionWarning?: string | null;
+  accessibilitySummary: string;
+}
+
+export interface NotebookSlideExportPreviewDto {
+  packId: string;
+  slideDeckArtifactId?: string | null;
+  deckTitle: string;
+  slideCount: number;
+  sourceBasis: string;
+  sourceReadiness: string;
+  exportReadiness: string;
+  slides: NotebookSlideExportItemDto[];
+  warnings: string[];
+  accessibilitySummary: string;
+  generatedAt: string;
+}
+
+export interface NotebookExportSafetyDto {
+  status: string;
+  warnings: string[];
+  blockingIssues: string[];
+}
+
+export interface NotebookExportAccessibilityDto {
+  status: string;
+  summary: string;
+  hasSpeakerNotes: boolean;
+  hasCheckpointQuestions: boolean;
+  hasTextFallback: boolean;
+  issues: string[];
+}
+
+export interface NotebookExportResultDto {
+  packId: string;
+  slideDeckArtifactId?: string | null;
+  format: string;
+  status: string;
+  exportReadiness: string;
+  title: string;
+  sourceBasis: string;
+  sourceReadiness: string;
+  content: string;
+  contentType: string;
+  fileName?: string | null;
+  binaryExportAvailable: boolean;
+  pptxLocalProofAvailable: boolean;
+  preview: NotebookSlideExportPreviewDto;
+  safety: NotebookExportSafetyDto;
+  accessibility: NotebookExportAccessibilityDto;
+  warnings: string[];
+  createdAt: string;
+}
+
+export interface LearningWorkspaceCurrentPlanStep {
+  id?: string | null;
+  title?: string | null;
+  objective?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  sequenceReason?: string | null;
+  tutorMove?: string | null;
+  quizHook?: string | null;
+  sourceReadiness?: string | null;
+  fallbackIfEvidenceWeak?: string | null;
+}
+
+export interface LearningWorkspaceState {
+  topicId?: string | null;
+  sessionId?: string | null;
+  activeLessonSnapshot?: ActiveLessonSnapshotDto | null;
+  studentContextSnapshot?: StudentContextSnapshotDto | null;
+  currentPlanStep?: LearningWorkspaceCurrentPlanStep | null;
+  planQuality?: PlanQualityEvaluationDto | null;
+  planReadiness?: PlanReadinessDto | null;
+  tutorPolicy?: TutorResponsePolicyDto | null;
+  latestAssessmentImpact?: QuizResultLearningImpactDto | null;
+  sourceReadiness?: string | null;
+  sourceEvidenceBundle?: SourceEvidenceBundleDto | null;
+  wikiNotebookStatus?: WikiKnowledgeNotebookDto | null;
+  toolGovernanceSummary?: ToolGovernanceSummary | null;
+  runtimeHealth?: LearningRuntimeHealthDto | null;
+  notebookPacks?: LearningNotebookPackDto[];
+  recentArtifacts: LearningArtifactDto[];
+  nextActions: TutorNextLearningActionDto[];
+  staleWarnings: string[];
+  safetyWarnings: string[];
+  isLoading: boolean;
+  lastSyncedAt?: string | null;
+}
+
 export interface ChatResponseMetadata {
   citations?: CitationDto[];
   usedTools?: UsedToolDto[];
@@ -369,6 +1543,9 @@ export interface ChatResponseMetadata {
   tutorPolicyTraceId?: string | null;
   tutorTurnStateId?: string | null;
   tutorWorkingMemorySnapshotId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  planQualitySnapshotId?: string | null;
   tutorActionTraceId?: string | null;
   teachingMode?: string | null;
   styleMode?: string | null;
@@ -377,6 +1554,13 @@ export interface ChatResponseMetadata {
   groundingStatus?: string | null;
   masteryProbability?: number | null;
   confidence?: number | null;
+  lessonSnapshotStatus?: string | null;
+  studentContextConfidenceStatus?: string | null;
+  currentPlanStepId?: string | null;
+  currentPlanStepTitle?: string | null;
+  currentPlanTutorMove?: string | null;
+  currentPlanQuizHook?: string | null;
+  planSourceReadiness?: string | null;
   toolCallIds?: string[];
   artifactIds?: string[];
   toolStatuses?: ToolStatusDto[];
@@ -386,6 +1570,19 @@ export interface ChatResponseMetadata {
   ragQualityStatus?: string | null;
   evidenceQuality?: EvidenceQualityDto | null;
   tutorResponseMode?: string | null;
+  tutorTeachingMove?: string | null;
+  tutorResponseDepth?: string | null;
+  tutorGroundingPolicy?: string | null;
+  tutorRemediationPolicy?: string | null;
+  tutorToolPolicy?: string | null;
+  tutorNextLearningActions?: string[];
+  tutorContextUse?: string[];
+  tutorResponseQualityStatus?: string | null;
+  tutorResponseQualityWarnings?: string[];
+  activePlanStepId?: string | null;
+  latestAssessmentMode?: string | null;
+  latestMisconceptionConfidence?: string | null;
+  sourceReadiness?: string | null;
   evidencePolicy?: string | null;
   personalizationMode?: string | null;
   masteryBasis?: string | null;
@@ -401,6 +1598,84 @@ export interface ChatResponseMetadata {
   tutorPedagogyScore?: number | null;
   pedagogyWarnings?: string[];
   planDiagnostic?: PlanDiagnosticMeta;
+}
+
+export interface TutorContextUseDto {
+  contextType: string;
+  status: string;
+  userSafeSummary?: string | null;
+}
+
+export interface TutorNextLearningActionDto {
+  actionType: string;
+  userSafeLabel: string;
+  targetConceptKey?: string | null;
+  priority: string;
+}
+
+export interface TutorAnswerSafetyIssueDto {
+  code: string;
+  severity: string;
+  userSafeMessage: string;
+}
+
+export interface TutorResponseQualityIssueDto {
+  code: string;
+  severity: string;
+  userSafeMessage: string;
+}
+
+export interface TutorResponsePolicyDto {
+  teachingMove: string;
+  responseDepth: string;
+  groundingPolicy: string;
+  remediationPolicy: string;
+  toolPolicy: string;
+  answerSafety: string;
+  qualityStatus: string;
+  activeConceptKey?: string | null;
+  activePlanStepId?: string | null;
+  sourceReadiness: string;
+  latestAssessmentMode: string;
+  latestMisconceptionConfidence: string;
+  contextUse: TutorContextUseDto[];
+  nextActions: TutorNextLearningActionDto[];
+  safetyIssues: TutorAnswerSafetyIssueDto[];
+  warnings: TutorResponseQualityIssueDto[];
+  generatedAt: string;
+}
+
+export interface TutorResponsePolicyRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  userMessage?: string | null;
+  activeQuizUnsubmitted?: boolean;
+}
+
+export interface TutorResponseQualityEvaluationRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  assistantAnswer: string;
+  activeQuizUnsubmitted?: boolean;
+  policy?: TutorResponsePolicyDto | null;
+}
+
+export interface TutorResponseQualityEvaluationDto {
+  qualityStatus: string;
+  contextUseScore: number;
+  groundingScore: number;
+  pedagogyScore: number;
+  remediationScore: number;
+  safetyScore: number;
+  toolUseScore: number;
+  blockingIssues: TutorResponseQualityIssueDto[];
+  warningIssues: TutorResponseQualityIssueDto[];
+  policy: TutorResponsePolicyDto;
+  evaluatedAt: string;
 }
 
 export interface AssessmentCalibrationRun {
@@ -438,6 +1713,7 @@ export interface AdaptiveAssessmentSession {
   topicId?: string | null;
   sessionId?: string | null;
   quizRunId?: string | null;
+  assessmentMode?: string;
   status: string;
   targetConcepts: string[];
   stopReason: string;
@@ -453,10 +1729,12 @@ export interface AdaptiveAssessmentNextItem {
   status: string;
   isComplete: boolean;
   stopReason: string;
+  latestLearningImpact?: QuizResultLearningImpactDto | null;
   decision?: {
     id: string;
     assessmentItemId: string;
     conceptKey: string;
+    assessmentMode: string;
     selectionScore: number;
     masteryProbability: number;
     masteryConfidence: number;
@@ -542,8 +1820,8 @@ export interface QuizAttempt {
   sessionId?: string;
   question: string;
   selectedOptionId: string;
-  isCorrect: boolean;
-  explanation: string;
+  isCorrect?: boolean;
+  explanation?: string;
   skillTag?: string;
   assessmentItemId?: string;
   conceptKey?: string;
@@ -556,6 +1834,9 @@ export interface QuizAttempt {
   knowledgeTracingStateId?: string;
   masteryProbability?: number;
   itemQualityStatus?: string;
+  assessmentMode?: string;
+  sourceReadiness?: string;
+  wikiReviewHint?: string;
   topicPath?: string;
   difficulty?: string;
   cognitiveType?: string;
@@ -650,6 +1931,338 @@ export interface ToolCapabilitiesResponse {
   count: number;
   includeInternal: boolean;
   contract: "tool_capability_v1" | string;
+}
+
+export interface ToolRuntimeRequest {
+  toolId: string;
+  caller?: "tutor" | "korteks" | "plan" | "wiki" | "quiz" | "frontend" | "internal" | string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  purpose?: string;
+  riskLevel?: "low" | "medium" | "high" | string;
+  inputSummary?: string | null;
+}
+
+export interface ToolRuntimeDecision {
+  traceId?: string | null;
+  toolId: string;
+  allowed: boolean;
+  decision: string;
+  reasonCode: string;
+  userSafeReason: string;
+  requiredEvidenceMode: string;
+  maxResultCount?: number | null;
+  timeoutMs?: number | null;
+  canGroundClaims: boolean;
+  shouldWriteTutorMemory: boolean;
+  shouldWriteEvidence: boolean;
+  shouldRecordTelemetry: boolean;
+}
+
+export interface ToolRuntimeEvidence {
+  evidenceType: string;
+  label: string;
+  url?: string | null;
+  provider?: string | null;
+  confidence?: number | null;
+}
+
+export interface ToolRuntimeTrace {
+  id: string;
+  toolId: string;
+  caller: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  tutorTurnStateId?: string | null;
+  tutorActionTraceId?: string | null;
+  purpose: string;
+  decision: string;
+  status: string;
+  riskLevel: string;
+  canGroundClaims: boolean;
+  inputSummary?: string | null;
+  safeResultSummary?: string | null;
+  evidenceItems: ToolRuntimeEvidence[];
+  fallbackReason?: string | null;
+  errorCode?: string | null;
+  latencyMs: number;
+  createdAt: string;
+  completedAt?: string | null;
+}
+
+export interface ToolRuntimeTracesResponse {
+  traces: ToolRuntimeTrace[];
+  count: number;
+  contract: "tool_runtime_trace_v1" | string;
+}
+
+export interface ToolGovernanceSummary {
+  traceCount: number;
+  allowedCount: number;
+  deniedCount: number;
+  degradedCount: number;
+  evidenceProducingCount: number;
+  legacyToolPlanes: string[];
+  recentTraces: ToolRuntimeTrace[];
+}
+
+export interface LearningRuntimeTraceDto {
+  id: string;
+  correlationId?: string | null;
+  topicId?: string | null;
+  sessionId?: string | null;
+  category: string;
+  operation: string;
+  status: string;
+  severity: string;
+  safeMessage: string;
+  latencyMs?: number | null;
+  provider?: string | null;
+  model?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCostUsd?: number | null;
+  costStatus: string;
+  fallbackReason?: string | null;
+  errorCode?: string | null;
+  isDegraded: boolean;
+  isDenied: boolean;
+  fallbackUsed: boolean;
+  evidenceCount: number;
+  toolCount: number;
+  artifactCount: number;
+  sourceCount: number;
+  traceLinks: Record<string, string>;
+  safeMetadata: Record<string, string>;
+  createdAt: string;
+  completedAt?: string | null;
+}
+
+export interface LearningRuntimeTracesResponseDto {
+  traces: LearningRuntimeTraceDto[];
+  count: number;
+  contract: "learning_runtime_trace_v1" | string;
+}
+
+export interface LearningRuntimeCostDto {
+  status: string;
+  totalTokens?: number | null;
+  estimatedCostUsd?: number | null;
+  userSafeMessage: string;
+}
+
+export interface LearningRuntimeServiceHealthDto {
+  service: string;
+  status: string;
+  traceCount: number;
+  degradedCount: number;
+  failedCount: number;
+  averageLatencyMs?: number | null;
+  userSafeMessage: string;
+}
+
+export interface LearningRuntimeHealthDto {
+  status: string;
+  traceCount: number;
+  correlatedTraceCount: number;
+  missingCorrelationCount: number;
+  degradedCount: number;
+  deniedCount: number;
+  failedCount: number;
+  fallbackCount: number;
+  costSummary: LearningRuntimeCostDto;
+  services: LearningRuntimeServiceHealthDto[];
+  userSafeWarnings: string[];
+  generatedAt: string;
+}
+
+export interface LearningRuntimeCorrelationDto {
+  correlationId: string;
+  status: string;
+  participatedServices: string[];
+  degradedServices: string[];
+  fallbackReasons: string[];
+  costSummary: LearningRuntimeCostDto;
+  traces: LearningRuntimeTraceDto[];
+  userSafeWarnings: string[];
+}
+
+export interface LearningRuntimeFlowSummaryDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  correlationId: string;
+  latestTraceAt?: string | null;
+  status: string;
+  participatedServices: string[];
+  degradedServices: string[];
+  fallbackReasons: string[];
+  costSummary: LearningRuntimeCostDto;
+  planQuizTutorSyncStatus: string;
+  evidenceCount: number;
+  toolCount: number;
+  artifactCount: number;
+  sourceCount: number;
+  userSafeWarnings: string[];
+}
+
+export interface LearningRuntimePrivacyCheckRequestDto {
+  metadataJson?: string | null;
+  metadata?: Record<string, string> | null;
+}
+
+export interface LearningRuntimePrivacyCheckDto {
+  status: string;
+  isSafe: boolean;
+  blockedTerms: string[];
+  safeMetadata: Record<string, string>;
+  userSafeMessage: string;
+}
+
+export interface AgenticTrustIssueDto {
+  category: string;
+  severity: string;
+  affectedSurface: string;
+  userSafeLabel: string;
+  userSafeRemediation: string;
+  detectedAt: string;
+}
+
+export interface AgenticTrustCheckRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  correlationId?: string | null;
+  surface?: string;
+  content?: string | null;
+  toolId?: string | null;
+  caller?: string | null;
+  purpose?: string | null;
+  riskLevel?: string | null;
+  activeQuizUnsubmitted?: boolean;
+  citations?: ValidateSourceCitationDto[];
+  metadata?: Record<string, string> | null;
+  metadataJson?: string | null;
+}
+
+export interface AgenticTrustCheckResultDto {
+  surface: string;
+  decision: string;
+  status: string;
+  allowed: boolean;
+  issues: AgenticTrustIssueDto[];
+  userSafeWarnings: string[];
+  runtimeTraceId?: string | null;
+  checkedAt: string;
+}
+
+export interface AgenticTrustRuntimeSummaryDto {
+  status: string;
+  checkCount: number;
+  blockedCount: number;
+  degradedCount: number;
+  issuesByCategory: Record<string, number>;
+  recentIssues: AgenticTrustIssueDto[];
+  generatedAt: string;
+}
+
+export interface KorteksSourceEvidence {
+  provider: string;
+  toolName?: string;
+  url: string;
+  title: string;
+  snippet?: string | null;
+  publishedAt?: string | null;
+  retrievedAt?: string;
+  relevanceScore?: number | null;
+  sourceType?: string | null;
+  externalId?: string | null;
+  warning?: string | null;
+}
+
+export interface KorteksSynthesisItem {
+  kind: string;
+  text: string;
+  confidence: string;
+  evidenceBasis: string;
+}
+
+export interface KorteksEvidenceSummary {
+  groundingStatus: string;
+  sourceConfidence: string;
+  sourceCount: number;
+  successfulToolCallCount: number;
+  failedToolCallCount: number;
+  hasUrlBackedEvidence: boolean;
+  isFallback: boolean;
+}
+
+export interface KorteksSynthesisIssue {
+  code: string;
+  severity: string;
+  userSafeMessage: string;
+}
+
+export interface KorteksResearchSynthesis {
+  topic: string;
+  sourceConfidence: string;
+  keyFacts: KorteksSynthesisItem[];
+  learningRoute: KorteksSynthesisItem[];
+  prerequisites: KorteksSynthesisItem[];
+  misconceptions: KorteksSynthesisItem[];
+  practiceOrder: KorteksSynthesisItem[];
+  quizScope: KorteksSynthesisItem[];
+  tutorTeachingHints: KorteksSynthesisItem[];
+  wikiNotebookSeeds: KorteksSynthesisItem[];
+  sources: KorteksSourceEvidence[];
+  providerWarnings: string[];
+  generatedAt: string;
+}
+
+export interface KorteksConsumerContext {
+  consumer: string;
+  usagePolicy: string;
+  promptBlock: string;
+  mustUse: string[];
+  mayUse: string[];
+  mustNotUse: string[];
+}
+
+export interface KorteksConsumerContexts {
+  plan: KorteksConsumerContext;
+  quiz: KorteksConsumerContext;
+  tutor: KorteksConsumerContext;
+  wiki: KorteksConsumerContext;
+}
+
+export interface KorteksResearchWorkflow {
+  id: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  planRequestId?: string | null;
+  activeLessonSnapshotId?: string | null;
+  studentContextSnapshotId?: string | null;
+  topic: string;
+  status: string;
+  workflowVersion: string;
+  groundingMode: string;
+  sourceConfidence: string;
+  sourceCount: number;
+  toolCallCount: number;
+  canGroundTutorClaims: boolean;
+  evidenceSummary: KorteksEvidenceSummary;
+  synthesis: KorteksResearchSynthesis;
+  consumerContexts: KorteksConsumerContexts;
+  safetyIssues: KorteksSynthesisIssue[];
+  promptBlock: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
 }
 
 /** Global Stats for Dashboard */
@@ -958,6 +2571,7 @@ export interface ProductionReadiness {
       userSafeMessage: string;
     }>;
   };
+  runtimeTelemetry: LearningRuntimeHealthDto;
   audioRetention: {
     status: string;
     readyAudioCount: number;

@@ -17,6 +17,9 @@ function addCheck(name, pass, detail = "") {
 const helper = read("src/lib/contentSafety.tsx");
 const chat = read("src/components/ChatMessage.tsx");
 const richMarkdown = read("src/components/RichMarkdown.tsx");
+const wiki = read("src/components/WikiMainPanel.tsx");
+const api = read("src/services/api.ts");
+const types = read("src/lib/types.ts");
 
 const requiredGuards = [
   ["script removal", "script, foreignObject, iframe, object, embed"],
@@ -62,6 +65,13 @@ addCheck("Mermaid renders in strict mode", chat.includes("securityLevel: \"stric
 addCheck("Mermaid HTML labels stay disabled", chat.includes("htmlLabels: false") && richMarkdown.includes("htmlLabels: false"));
 addCheck("Mermaid SVG output is sanitized", chat.includes("sanitizeMermaidSvg") && richMarkdown.includes("sanitizeMermaidSvg"));
 addCheck("ReactMarkdown surfaces use safe link/image components", helper.includes("safeMarkdownComponents") && richMarkdown.includes("CitationLink") && richMarkdown.includes("isAllowedRemoteImage"));
+addCheck("Ask-source frontend avoids raw chunk rendering", wiki.includes("sourceQuestionResponse") && wiki.includes("Citation chips") && !wiki.includes("{chunk.text}") && !wiki.includes("chunk.text.slice"));
+addCheck("Ask-source API uses safe DTO contract", api.includes("SourceQuestionResponseDto") && api.includes("SourceQuestionRequestDto") && api.includes("/sources/ask"));
+addCheck("Compare/review frontend avoids raw chunks and fake agreement", wiki.includes("sourceCompare") && wiki.includes("Citation review") && !wiki.includes("{chunk.text}") && wiki.includes("semantic agreement iddiasi uretmez"));
+addCheck("Compare/review API uses safe DTO contract", api.includes("MultiSourceCompareResultDto") && api.includes("CitationReviewResultDto") && api.includes("/citation-review") && api.includes("/compare"));
+addCheck("Source Q&A memory frontend avoids raw chunk rendering", wiki.includes("Source Q&A memory") && wiki.includes("safeAnswerSummary") && !wiki.includes("{chunk.text}") && !wiki.includes("rawSourceChunk"));
+addCheck("Source Q&A memory API uses safe DTO contract", api.includes("SourceQuestionThreadDto") && api.includes("SourceQuestionFollowUpRequestDto") && api.includes("/sources/question-threads") && !api.includes("rawProviderPayload") && !api.includes("rawSourceChunk"));
+addCheck("Source study summary avoids raw payload storage", wiki.includes("Source study status") && api.includes("SourceStudySummaryDto") && api.includes("/sources/study-summary") && !types.includes("rawSourceChunk") && !types.includes("rawProviderPayload"));
 
 if (failures.length > 0) {
   console.error(`\nSecurity smoke failed:\n- ${failures.join("\n- ")}`);

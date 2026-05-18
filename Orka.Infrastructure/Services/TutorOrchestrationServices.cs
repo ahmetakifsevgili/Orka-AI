@@ -259,6 +259,11 @@ public sealed class TutorWorkingMemoryService : ITutorWorkingMemoryService
             state.AffectiveState,
             state.CognitiveLoad,
             state.GroundingStatus,
+            state.CurrentPlanStepId,
+            state.CurrentPlanStepTitle,
+            state.CurrentPlanTutorMove,
+            state.CurrentPlanQuizHook,
+            state.PlanSourceReadiness,
             state.DirectAnswerRisk,
             state.CreatedAt
         });
@@ -384,15 +389,21 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
     private readonly OrkaDbContext _db;
     private readonly ILearnerProfileService _learnerProfile;
     private readonly ITutorWorkingMemoryService _workingMemory;
+    private readonly IActiveLessonSnapshotService? _learningSnapshots;
+    private readonly IPlanSequencingService? _planSequencing;
 
     public TutorTurnStateAssembler(
         OrkaDbContext db,
         ILearnerProfileService learnerProfile,
-        ITutorWorkingMemoryService workingMemory)
+        ITutorWorkingMemoryService workingMemory,
+        IActiveLessonSnapshotService? learningSnapshots = null,
+        IPlanSequencingService? planSequencing = null)
     {
         _db = db;
         _learnerProfile = learnerProfile;
         _workingMemory = workingMemory;
+        _learningSnapshots = learningSnapshots;
+        _planSequencing = planSequencing;
     }
 
     public async Task<TutorTurnStateDto> BuildAsync(
@@ -473,6 +484,16 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
         var activeKt = ktStates.FirstOrDefault(s => s.ConceptKey == activeKey);
         var activeMastery = masteries.FirstOrDefault(m => m.ConceptKey == activeKey);
         var profile = await _learnerProfile.BuildOrUpdateAsync(userId, topicId, sessionId, userMessage, learningSignalContext, ideContext, ct);
+        var activeLessonSnapshot = _learningSnapshots == null
+            ? null
+            : await _learningSnapshots.GetActiveLessonSnapshotAsync(userId, topicId, sessionId, ct);
+        var studentContextSnapshot = _learningSnapshots == null
+            ? null
+            : await _learningSnapshots.GetStudentContextSnapshotAsync(userId, topicId, sessionId, ct);
+        var latestPlanQuality = topicId.HasValue && _planSequencing != null
+            ? await _planSequencing.GetLatestPlanQualitySnapshotAsync(userId, topicId.Value, sessionId, ct)
+            : null;
+        var currentPlanStep = latestPlanQuality?.PlanContract.Steps.FirstOrDefault();
         var masteryProbability = activeKt?.MasteryProbability ?? (activeMastery?.MasteryScore / 100m);
         var confidence = activeKt?.Confidence ?? activeMastery?.Confidence;
         var learnerState = ApplyLearningLoopState(
@@ -494,10 +515,15 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             TopicId = topicId,
             SessionId = sessionId,
             ConceptGraphSnapshotId = graph?.Id ?? policyContext.ConceptGraphSnapshotId,
+            ActiveLessonSnapshotId = activeLessonSnapshot?.Id,
+            StudentContextSnapshotId = studentContextSnapshot?.Id,
+            PlanQualitySnapshotId = latestPlanQuality?.SnapshotId,
             UserMessage = userMessage,
             ActiveConceptKey = activeKey,
             ActiveConceptLabel = activeLabel,
             LearnerState = learnerState,
+            LessonSnapshotStatus = activeLessonSnapshot?.Status ?? "not_available",
+            StudentContextConfidenceStatus = studentContextSnapshot?.ConfidenceStatus ?? "none",
             MasteryProbability = masteryProbability,
             Confidence = confidence,
             RemediationNeed = remediationNeed,
@@ -512,6 +538,16 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             LearningSignalConfidence = learningLoopSignal?.Confidence,
             RemediationSeed = learningLoopSignal?.RemediationSeed,
             LearningLoopStatus = learningLoopSignal?.Status ?? "signal_pending",
+            CurrentPlanStepId = currentPlanStep?.StepId,
+            CurrentPlanStepTitle = currentPlanStep?.Title,
+            CurrentPlanTutorMove = currentPlanStep?.TutorHook.TutorMove,
+            CurrentPlanQuizHook = currentPlanStep?.QuizHook.HookType,
+            PlanSourceReadiness = currentPlanStep?.Evidence.SourceReadiness ?? latestPlanQuality?.PlanContract.SourceReadiness,
+            LatestAssessmentMode = currentPlanStep?.QuizHook.HookType ?? "unknown",
+            LatestMisconceptionConfidence = learningLoopSignal?.Confidence?.Status ?? "none",
+            SourceReadiness = currentPlanStep?.Evidence.SourceReadiness
+                ?? latestPlanQuality?.PlanContract.SourceReadiness
+                ?? policyContext.GroundingStatus,
             DirectAnswerRisk = policyContext.DirectAnswerRisk || TutorSignalHeuristics.ContainsAny(TutorSignalHeuristics.Normalize(userMessage), "cevabı ver", "direkt cevap", "sonucu söyle", "çözümü ver"),
             HasIdeContext = !string.IsNullOrWhiteSpace(ideContext),
             HasNotebookContext = !string.IsNullOrWhiteSpace(notebookContext),
@@ -563,7 +599,10 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
                 ["learnerState"] = state.LearnerState,
                 ["styleMode"] = state.StyleMode,
                 ["groundingStatus"] = state.GroundingStatus,
-                ["learningLoopStatus"] = state.LearningLoopStatus
+                ["learningLoopStatus"] = state.LearningLoopStatus,
+                ["planQualitySnapshotId"] = state.PlanQualitySnapshotId?.ToString() ?? "none",
+                ["currentPlanStepId"] = state.CurrentPlanStepId ?? "none",
+                ["currentPlanQuizHook"] = state.CurrentPlanQuizHook ?? "none"
             }, ct);
         }
 
@@ -581,6 +620,16 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             [TUTOR TURN STATE v3 - AKTIF CALISMA BELLEGI]
             - tutorTurnStateId: {state.Id}
             - workingMemorySnapshotId: {state.WorkingMemorySnapshotId}
+            - activeLessonSnapshotId: {state.ActiveLessonSnapshotId?.ToString() ?? "none"} ({state.LessonSnapshotStatus})
+            - studentContextSnapshotId: {state.StudentContextSnapshotId?.ToString() ?? "none"} ({state.StudentContextConfidenceStatus})
+            - planQualitySnapshotId: {state.PlanQualitySnapshotId?.ToString() ?? "none"}
+            - currentPlanStep: {state.CurrentPlanStepId ?? "none"} / {state.CurrentPlanStepTitle ?? "none"}
+            - currentPlanTutorMove: {state.CurrentPlanTutorMove ?? "none"}
+            - currentPlanQuizHook: {state.CurrentPlanQuizHook ?? "none"}
+            - planSourceReadiness: {state.PlanSourceReadiness ?? "unknown"}
+            - sourceReadiness: {state.SourceReadiness ?? "unknown"}
+            - latestAssessmentMode: {state.LatestAssessmentMode ?? "unknown"}
+            - latestMisconceptionConfidence: {state.LatestMisconceptionConfidence ?? "none"}
             - activeConcept: {state.ActiveConceptKey} / {state.ActiveConceptLabel}
             - learnerState: {state.LearnerState}
             - masteryProbability: {state.MasteryProbability?.ToString("0.00") ?? "unknown"}
@@ -606,6 +655,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             [TUTOR STATE KURALI]
             Bu turda cevabi yukaridaki aktif kavram, mastery/confidence ve duygu-yuk sinyaline gore kur. 
             Kaynak yoksa kaynak iddiasinda bulunma. Evidence limited ise temkinli ve kisa konus; confidence dusukse "ogrendin" deme; kanit yetersiz modunda mikro kontrol sor.
+            currentPlanStep varsa onu pedagojik rota olarak kullan; plan adimi yanit metnini kilitlemez ama kavram, quiz hook ve Tutor move icin oncelikli baglamdir.
             learningLoopStatus remediation_ready ise bu turu profesyonel telafi turu olarak ele al: once yanilgi ihtimalini nazikce sinirla, sonra remediationSeed aksiyonuna gore kisa ve adim adim duzeltme yap.
             """;
     }
@@ -823,6 +873,13 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         _db.TutorActionTraces.Add(trace);
         await _db.SaveChangesAsync(ct);
 
+        var professionalPolicy = TutorResponsePolicyService.BuildPolicy(
+            turnState,
+            trace,
+            latestAttempt: null,
+            latestBundle: null,
+            toolCalls: Array.Empty<TutorToolCall>());
+
         var plan = new TutorActionPlanDto
         {
             Id = trace.Id,
@@ -837,6 +894,12 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             DirectAnswerPolicy = directAnswerPolicy,
             GroundingPolicy = groundingPolicy,
             TutorResponseMode = responsePolicy.TutorResponseMode,
+            TutorTeachingMove = professionalPolicy.TeachingMove,
+            TutorResponseDepth = professionalPolicy.ResponseDepth,
+            TutorGroundingPolicy = professionalPolicy.GroundingPolicy,
+            TutorRemediationPolicy = professionalPolicy.RemediationPolicy,
+            TutorToolPolicy = professionalPolicy.ToolPolicy,
+            TutorNextLearningActions = professionalPolicy.NextActions.Select(a => a.ActionType).ToArray(),
             PersonalizationMode = responsePolicy.PersonalizationMode,
             MasteryBasis = responsePolicy.MasteryBasis,
             WeakConceptHints = responsePolicy.WeakConceptHints,
@@ -855,6 +918,12 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             plan.DirectAnswerPolicy,
             plan.GroundingPolicy,
             plan.TutorResponseMode,
+            plan.TutorTeachingMove,
+            plan.TutorResponseDepth,
+            plan.TutorGroundingPolicy,
+            plan.TutorRemediationPolicy,
+            plan.TutorToolPolicy,
+            plan.TutorNextLearningActions,
             plan.PersonalizationMode,
             plan.MasteryBasis,
             plan.WeakConceptHints,
@@ -872,7 +941,9 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
                 ["teachingMode"] = plan.TeachingMode,
                 ["activeConceptKey"] = plan.ActiveConceptKey,
                 ["toolCount"] = toolPlans.Count.ToString(),
-                ["artifactCount"] = artifactPlans.Count.ToString()
+                ["artifactCount"] = artifactPlans.Count.ToString(),
+                ["tutorTeachingMove"] = plan.TutorTeachingMove ?? "unknown",
+                ["tutorGroundingPolicy"] = plan.TutorGroundingPolicy ?? "unknown"
             }, ct);
         }
 
@@ -1022,6 +1093,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
     private readonly IMarketDataProvider _marketData;
     private readonly IVisualArtifactProvider _visuals;
     private readonly IRealWorldEvidenceService? _realWorldEvidence;
+    private readonly IUnifiedToolRuntimeService? _toolRuntime;
 
     public TutorToolOrchestrator(
         OrkaDbContext db,
@@ -1032,7 +1104,8 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         IGeocodingProvider geocoding,
         IMarketDataProvider marketData,
         IVisualArtifactProvider visuals,
-        IRealWorldEvidenceService? realWorldEvidence = null)
+        IRealWorldEvidenceService? realWorldEvidence = null,
+        IUnifiedToolRuntimeService? toolRuntime = null)
     {
         _db = db;
         _workingMemory = workingMemory;
@@ -1043,6 +1116,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         _marketData = marketData;
         _visuals = visuals;
         _realWorldEvidence = realWorldEvidence;
+        _toolRuntime = toolRuntime;
     }
 
     public async Task<IReadOnlyList<TutorToolCallDto>> RunAsync(
@@ -1065,7 +1139,36 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
             }
 
             var sw = Stopwatch.StartNew();
-            var outcome = await ExecuteAsync(plan, turnState, actionPlan.Id, ct);
+            ToolRuntimeDecisionDto? runtimeDecision = null;
+            if (_toolRuntime != null)
+            {
+                runtimeDecision = await _toolRuntime.DecideAsync(turnState.UserId, new ToolRuntimeRequestDto
+                {
+                    ToolId = plan.ToolId,
+                    Caller = "tutor",
+                    TopicId = turnState.TopicId,
+                    SessionId = turnState.SessionId,
+                    ActiveLessonSnapshotId = turnState.ActiveLessonSnapshotId,
+                    StudentContextSnapshotId = turnState.StudentContextSnapshotId,
+                    TutorTurnStateId = turnState.Id,
+                    TutorActionTraceId = actionPlan.Id,
+                    Purpose = plan.Reason,
+                    RiskLevel = plan.RiskLevel,
+                    InputSummary = BuildRuntimeInputSummary(plan, turnState)
+                }, ct);
+            }
+
+            var outcome = runtimeDecision is { Allowed: false }
+                ? ToolExecutionOutcome.Local(
+                    runtimeDecision.Decision == "degrade" ? "degraded" : "blocked",
+                    false,
+                    "orka_runtime",
+                    null,
+                    runtimeDecision.ReasonCode,
+                    runtimeDecision.UserSafeReason,
+                    null,
+                    0)
+                : await ExecuteAsync(plan, turnState, actionPlan.Id, ct);
             sw.Stop();
             var finishedAt = DateTime.UtcNow;
 
@@ -1111,6 +1214,31 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
             };
 
             _db.TutorToolCalls.Add(entity);
+            if (_toolRuntime != null)
+            {
+                await _toolRuntime.RecordResultAsync(turnState.UserId, new ToolRuntimeResultDto
+                {
+                    TraceId = runtimeDecision?.TraceId,
+                    ToolId = plan.ToolId,
+                    Caller = "tutor",
+                    TopicId = turnState.TopicId,
+                    SessionId = turnState.SessionId,
+                    ActiveLessonSnapshotId = turnState.ActiveLessonSnapshotId,
+                    StudentContextSnapshotId = turnState.StudentContextSnapshotId,
+                    TutorTurnStateId = turnState.Id,
+                    TutorActionTraceId = actionPlan.Id,
+                    Status = outcome.Status,
+                    Success = outcome.Success,
+                    SafeMessage = outcome.SafeMessage,
+                    EvidenceItems = BuildRuntimeEvidence(outcome),
+                    Citations = outcome.Citations,
+                    FallbackReason = outcome.FallbackReason,
+                    Confidence = outcome.Confidence,
+                    SourceCount = outcome.SourceCount,
+                    LatencyMs = sw.ElapsedMilliseconds
+                }, ct);
+            }
+
             if (IsRealWorldEvidenceTool(plan.ToolId))
             {
                 var evidenceRows = await _db.TeachingEvidenceItems
@@ -1172,6 +1300,40 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         }
 
         return results;
+    }
+
+    private static string BuildRuntimeInputSummary(TutorToolPlanDto plan, TutorTurnStateDto state)
+    {
+        var concept = string.IsNullOrWhiteSpace(state.ActiveConceptLabel)
+            ? state.ActiveConceptKey
+            : state.ActiveConceptLabel;
+        return $"tool={plan.ToolId}; required={plan.Required}; concept={concept}; learnerState={state.LearnerState}; sourceEvidence={state.SourceEvidenceCount}";
+    }
+
+    private static IReadOnlyList<ToolRuntimeEvidenceDto> BuildRuntimeEvidence(ToolExecutionOutcome outcome)
+    {
+        var evidence = new List<ToolRuntimeEvidenceDto>();
+        if (!string.IsNullOrWhiteSpace(outcome.Evidence))
+        {
+            evidence.Add(new ToolRuntimeEvidenceDto
+            {
+                EvidenceType = "summary",
+                Label = outcome.Evidence,
+                Provider = outcome.Provider,
+                Confidence = outcome.Confidence
+            });
+        }
+
+        evidence.AddRange(outcome.Citations.Select(c => new ToolRuntimeEvidenceDto
+        {
+            EvidenceType = "citation",
+            Label = c.Label,
+            Url = c.Url,
+            Provider = c.SourceName,
+            Confidence = c.Confidence
+        }));
+
+        return evidence.Take(10).ToList();
     }
 
     private async Task<ToolExecutionOutcome> ExecuteAsync(TutorToolPlanDto plan, TutorTurnStateDto state, Guid tutorActionTraceId, CancellationToken ct)
@@ -1477,15 +1639,18 @@ public sealed class TeachingArtifactService : ITeachingArtifactService
     private readonly OrkaDbContext _db;
     private readonly ITutorWorkingMemoryService _workingMemory;
     private readonly IVisualArtifactProvider _visuals;
+    private readonly ILearningArtifactService _learningArtifacts;
 
     public TeachingArtifactService(
         OrkaDbContext db,
         ITutorWorkingMemoryService workingMemory,
-        IVisualArtifactProvider visuals)
+        IVisualArtifactProvider visuals,
+        ILearningArtifactService learningArtifacts)
     {
         _db = db;
         _workingMemory = workingMemory;
         _visuals = visuals;
+        _learningArtifacts = learningArtifacts;
     }
 
     public async Task<IReadOnlyList<TeachingArtifactDto>> BuildArtifactsAsync(
@@ -1494,6 +1659,7 @@ public sealed class TeachingArtifactService : ITeachingArtifactService
         CancellationToken ct = default)
     {
         var artifacts = new List<TeachingArtifactDto>();
+        var entities = new List<TeachingArtifact>();
         foreach (var plan in actionPlan.ArtifactPlans)
         {
             var artifact = await BuildAsync(plan.ArtifactType, actionPlan, turnState, ct);
@@ -1526,10 +1692,22 @@ public sealed class TeachingArtifactService : ITeachingArtifactService
             };
 
             _db.TeachingArtifacts.Add(entity);
+            entities.Add(entity);
             artifacts.Add(artifact);
         }
 
         await _db.SaveChangesAsync(ct);
+
+        foreach (var entity in entities)
+        {
+            await _learningArtifacts.MirrorTeachingArtifactAsync(
+                turnState.UserId,
+                entity,
+                turnState,
+                actionPlan,
+                "tutor",
+                ct);
+        }
 
         if (turnState.SessionId.HasValue)
         {

@@ -160,10 +160,24 @@ public sealed class QuizLearningPipelineTests
         await using var factory = CreateFactory();
         var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "quiz-misconception");
         var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Misconception");
+        var (quizRunId, assessmentItemId) = await CoordinationTestHelpers.SeedDurableAssessmentItemAsync(
+            factory,
+            user.UserId,
+            tree.LessonId,
+            questionId: "q-pack3",
+            question: "Index neden kullanilir?",
+            conceptKey: "indexes",
+            correctOptionId: "A",
+            correctOptionText: "Okuma hizini iyilestirmek icin",
+            wrongOptionId: "B",
+            wrongOptionText: "Tabloyu silmek icin",
+            explanation: "Kavram mantigi karismis; index okuma hizini iyilestirir.");
 
         var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
         {
+            quizRunId,
             topicId = tree.LessonId,
+            assessmentItemId,
             questionId = "q-pack3",
             question = "Index neden kullanılır?",
             selectedOptionId = "B) Tabloyu silmek için",

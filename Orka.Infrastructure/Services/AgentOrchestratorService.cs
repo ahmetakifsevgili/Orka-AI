@@ -46,6 +46,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly ITopicProgressPropagator _topicProgress;
     private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ITutorPolicyTraceService? _policyTrace;
+    private readonly IWikiLearningTraceWriter? _wikiTraceWriter;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -71,7 +72,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITopicProgressPropagator topicProgress,
         ITopicScopeResolver topicScopeResolver,
         ILogger<AgentOrchestratorService> logger,
-        ITutorPolicyTraceService? policyTrace = null)
+        ITutorPolicyTraceService? policyTrace = null,
+        IWikiLearningTraceWriter? wikiTraceWriter = null)
     {
         _db = db;
         _tutorAgent = tutorAgent;
@@ -95,6 +97,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _topicProgress = topicProgress;
         _topicScopeResolver = topicScopeResolver;
         _policyTrace = policyTrace;
+        _wikiTraceWriter = wikiTraceWriter;
         _logger = logger;
     }
 
@@ -334,6 +337,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 session.CurrentState,
                 isStream: true);
             var metadata = await BuildTutorMetadataAsync(userId, session, fullResponse);
+            await AppendTutorTurnToWikiAsync(userId, session, content, fullResponse, msgId, metadata, "TutorAgent", MessageType.General);
             yield return System.Text.Json.JsonSerializer.Serialize(new
             {
                 type = "metadata",
@@ -607,19 +611,33 @@ public class AgentOrchestratorService : IAgentOrchestrator
             {
                 using var researchScope = _scopeFactory.CreateScope();
                 var korteks = researchScope.ServiceProvider.GetRequiredService<IKorteksAgent>();
+                var synthesisService = researchScope.ServiceProvider.GetService<IKorteksSynthesisService>();
 
                 string researchContext;
                 try
                 {
                     var researchResult = await korteks.RunResearchWithEvidenceAsync(content, userId, session.TopicId);
-                    researchContext = KorteksResearchContextFormatter.FormatForTutor(researchResult);
+                    var synthesis = synthesisService == null
+                        ? null
+                        : await synthesisService.BuildAndSaveAsync(
+                            userId,
+                            researchResult,
+                            new Orka.Core.DTOs.Korteks.KorteksResearchSynthesisContextDto
+                            {
+                                TopicId = session.TopicId,
+                                SessionId = session.Id,
+                                Purpose = "tutor_research_route"
+                            });
+                    researchContext = synthesis?.ConsumerContexts.Tutor.PromptBlock
+                                      ?? KorteksResearchContextFormatter.FormatForTutor(researchResult);
 
                     _logger.LogInformation(
-                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}",
+                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}, SynthesisWorkflowId={SynthesisWorkflowId}",
                         researchResult.GroundingMode,
                         researchResult.IsFallback,
                         researchResult.SourceCount,
-                        researchResult.ProviderCalls.Count(c => c.Invoked));
+                        researchResult.ProviderCalls.Count(c => c.Invoked),
+                        synthesis?.Id);
                 }
                 catch (Exception ex)
                 {
@@ -679,6 +697,14 @@ public class AgentOrchestratorService : IAgentOrchestrator
             entryState,
             isStream: false);
 
+        var metadata = await BuildTutorMetadataAsync(userId, session, aiResponse);
+        var tutorWikiPageId = await AppendTutorTurnToWikiAsync(userId, session, content, aiResponse, aiMsg.Id, metadata, responseAgentRole, aiMsg.MessageType);
+        if (tutorWikiPageId.HasValue)
+        {
+            wikiUpdated = true;
+            activeWikiPageId ??= tutorWikiPageId;
+        }
+
         return new ChatMessageResponse
         {
             MessageId   = aiMsg.Id,
@@ -694,7 +720,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             WikiPageId  = activeWikiPageId,
             IsNewTopic  = isNewTopic,
             TopicTitle  = isNewTopic ? (await _db.Topics.FindAsync(session.TopicId))?.Title : null,
-            Metadata    = await BuildTutorMetadataAsync(userId, session, aiResponse)
+            Metadata    = metadata
         };
     }
 
@@ -755,6 +781,16 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 turnStateDto = System.Text.Json.JsonSerializer.Deserialize<TutorTurnStateDto>(turnState.StateJson);
                 metadata.MasteryProbability = turnStateDto?.MasteryProbability;
                 metadata.Confidence = turnStateDto?.Confidence;
+                metadata.ActiveLessonSnapshotId = turnStateDto?.ActiveLessonSnapshotId;
+                metadata.StudentContextSnapshotId = turnStateDto?.StudentContextSnapshotId;
+                metadata.PlanQualitySnapshotId = turnStateDto?.PlanQualitySnapshotId;
+                metadata.LessonSnapshotStatus = turnStateDto?.LessonSnapshotStatus;
+                metadata.StudentContextConfidenceStatus = turnStateDto?.StudentContextConfidenceStatus;
+                metadata.CurrentPlanStepId = turnStateDto?.CurrentPlanStepId;
+                metadata.CurrentPlanStepTitle = turnStateDto?.CurrentPlanStepTitle;
+                metadata.CurrentPlanTutorMove = turnStateDto?.CurrentPlanTutorMove;
+                metadata.CurrentPlanQuizHook = turnStateDto?.CurrentPlanQuizHook;
+                metadata.PlanSourceReadiness = turnStateDto?.PlanSourceReadiness;
                 metadata.MisconceptionSignal ??= turnStateDto?.MisconceptionSignal;
                 metadata.LearningSignalConfidence ??= turnStateDto?.LearningSignalConfidence;
                 metadata.RemediationSeed ??= turnStateDto?.RemediationSeed;
@@ -846,12 +882,231 @@ public class AgentOrchestratorService : IAgentOrchestrator
         return metadata;
     }
 
+    private async Task<Guid?> AppendTutorTurnToWikiAsync(
+        Guid userId,
+        Session session,
+        string userContent,
+        string assistantContent,
+        Guid assistantMessageId,
+        ChatResponseMetadata metadata,
+        string agentRole,
+        MessageType messageType)
+    {
+        if (!session.TopicId.HasValue ||
+            !string.Equals(agentRole, "TutorAgent", StringComparison.OrdinalIgnoreCase) ||
+            messageType != MessageType.General ||
+            string.IsNullOrWhiteSpace(assistantContent))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (LooksLikeQuizOrRawPayload(assistantContent))
+            {
+                return null;
+            }
+
+            if (metadata.TutorTurnStateId.HasValue)
+            {
+                var alreadyCaptured = await _db.WikiBlocks.AsNoTracking().AnyAsync(b =>
+                    b.TutorTurnStateId == metadata.TutorTurnStateId.Value &&
+                    !b.IsDeleted &&
+                    !b.WikiPage.IsDeleted &&
+                    b.WikiPage.UserId == userId);
+                if (alreadyCaptured) return null;
+            }
+
+            var topicScope = await _topicScopeResolver.ResolveAsync(userId, session.TopicId.Value);
+            if (!topicScope.IsValid) return null;
+
+            var readTopicIds = topicScope.TreeTopicIds.Count > 0
+                ? topicScope.TreeTopicIds
+                : new[] { session.TopicId.Value };
+            var pages = await _db.WikiPages
+                .AsNoTracking()
+                .Where(p => p.UserId == userId && readTopicIds.Contains(p.TopicId) && !p.IsDeleted)
+                .OrderBy(p => p.TopicId == session.TopicId.Value ? 0 : 1)
+                .ThenBy(p => p.OrderIndex)
+                .ThenBy(p => p.CreatedAt)
+                .Take(200)
+                .ToListAsync();
+            if (pages.Count == 0) return null;
+
+            var conceptKey = FirstNonEmpty(
+                metadata.ActiveConceptKey,
+                metadata.RemediationSeed?.ConceptKey,
+                metadata.MisconceptionSignal?.ConceptKey);
+            var page = !string.IsNullOrWhiteSpace(conceptKey)
+                ? pages.FirstOrDefault(p => string.Equals(p.ConceptKey, conceptKey, StringComparison.OrdinalIgnoreCase))
+                : null;
+            page ??= pages.FirstOrDefault(p => string.Equals(p.PageType, "topic_root", StringComparison.OrdinalIgnoreCase));
+            page ??= pages.FirstOrDefault();
+            if (page == null) return null;
+
+            var blockType = TutorWikiBlockType(metadata);
+            var artifactId = metadata.ArtifactIds.FirstOrDefault();
+            Guid? capturedPageId = null;
+
+            if (!string.IsNullOrWhiteSpace(userContent) && !LooksLikeQuizOrRawPayload(userContent))
+            {
+                var questionBlock = _wikiTraceWriter != null
+                    ? await _wikiTraceWriter.RecordStudentQuestionAsync(new WikiLearningTraceRequestDto
+                    {
+                        UserId = userId,
+                        TopicId = session.TopicId,
+                        SessionId = session.Id,
+                        ActiveWikiPageId = page.Id,
+                        ConceptKey = conceptKey,
+                        MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
+                        TutorTurnStateId = metadata.TutorTurnStateId,
+                        TraceType = "student_question",
+                        Title = "Ogrenci sorusu",
+                        SafeContent = $"Ogrenci sorusu: {Limit(userContent, 1200)}",
+                        SourceBasis = "student_manual",
+                        CreatedBy = "student",
+                        Visibility = "normal"
+                    })
+                    : await _wikiService.AddWikiBlockAsync(page.Id, userId, new CreateWikiBlockRequestDto
+                {
+                    BlockType = "student_question",
+                    Title = "Ogrenci sorusu",
+                    Content = $"Ogrenci sorusu: {Limit(userContent, 1200)}",
+                    Source = "student",
+                    SourceBasis = "model_assisted",
+                    ConceptKey = conceptKey,
+                    MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
+                    TutorTurnStateId = metadata.TutorTurnStateId,
+                    Visibility = "normal"
+                });
+                capturedPageId = questionBlock?.WikiPageId;
+            }
+
+            var block = _wikiTraceWriter != null
+                ? await _wikiTraceWriter.RecordTutorExplanationAsync(new WikiLearningTraceRequestDto
+                {
+                    UserId = userId,
+                    TopicId = session.TopicId,
+                    SessionId = session.Id,
+                    ActiveWikiPageId = page.Id,
+                    ConceptKey = conceptKey,
+                    MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
+                    TutorTurnStateId = metadata.TutorTurnStateId,
+                    LearningArtifactId = artifactId == Guid.Empty ? null : artifactId,
+                    TraceType = blockType,
+                    Title = TutorWikiBlockTitle(metadata),
+                    SafeContent = BuildTutorWikiBlockContent(userContent, assistantContent, metadata),
+                    SourceBasis = TutorWikiSourceBasis(metadata),
+                    CreatedBy = "tutor",
+                    Visibility = blockType == "repair_note" ? "highlighted" : "normal"
+                })
+                : await _wikiService.AddWikiBlockAsync(page.Id, userId, new CreateWikiBlockRequestDto
+            {
+                BlockType = blockType,
+                Title = TutorWikiBlockTitle(metadata),
+                Content = BuildTutorWikiBlockContent(userContent, assistantContent, metadata),
+                Source = "tutor",
+                SourceBasis = TutorWikiSourceBasis(metadata),
+                ConceptKey = conceptKey,
+                MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
+                TutorTurnStateId = metadata.TutorTurnStateId,
+                LearningArtifactId = artifactId == Guid.Empty ? null : artifactId,
+                Visibility = blockType == "repair_note" ? "highlighted" : "normal"
+            });
+
+            return block?.WikiPageId ?? capturedPageId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[WikiCapture] Tutor turn could not be appended to Wiki. UserId={UserId} SessionId={SessionId} MessageId={MessageId}", userId, session.Id, assistantMessageId);
+            return null;
+        }
+    }
+
+    private static string TutorWikiBlockType(ChatResponseMetadata metadata)
+    {
+        var move = FirstNonEmpty(metadata.TutorTeachingMove, metadata.TeachingMode, metadata.TutorRemediationPolicy, metadata.NextPedagogicalMove) ?? string.Empty;
+        var normalized = move.ToLowerInvariant();
+        if (normalized.Contains("repair") || normalized.Contains("remediation") || normalized.Contains("prerequisite"))
+            return "repair_note";
+        if (normalized.Contains("source"))
+            return "source_note";
+        if (normalized.Contains("check") || normalized.Contains("retrieval"))
+            return "checkpoint";
+        return "tutor_explanation";
+    }
+
+    private static string TutorWikiBlockTitle(ChatResponseMetadata metadata)
+    {
+        var move = FirstNonEmpty(metadata.TutorTeachingMove, metadata.TeachingMode, metadata.NextPedagogicalMove);
+        return string.IsNullOrWhiteSpace(move)
+            ? "Tutor aciklamasi"
+            : $"Tutor: {Limit(move, 80)}";
+    }
+
+    private static string TutorWikiSourceBasis(ChatResponseMetadata metadata)
+    {
+        var status = FirstNonEmpty(metadata.SourceReadiness, metadata.GroundingStatus, metadata.GroundingMode, metadata.TutorGroundingPolicy) ?? string.Empty;
+        var normalized = status.ToLowerInvariant();
+        if (normalized.Contains("wiki")) return "wiki_backed";
+        if (normalized.Contains("insufficient") || normalized.Contains("degraded") || normalized.Contains("stale")) return "evidence_insufficient";
+        return "model_assisted";
+    }
+
+    private static string BuildTutorWikiBlockContent(string userContent, string assistantContent, ChatResponseMetadata metadata)
+    {
+        var lines = new List<string>
+        {
+            $"Ogrenci sorusu: {Limit(userContent, 500)}",
+            $"Tutor notu: {Limit(assistantContent, 1600)}"
+        };
+        if (!string.IsNullOrWhiteSpace(metadata.ActiveConceptKey)) lines.Add($"Kavram: {metadata.ActiveConceptKey}");
+        if (!string.IsNullOrWhiteSpace(metadata.TutorTeachingMove)) lines.Add($"Ogretim hamlesi: {metadata.TutorTeachingMove}");
+        if (!string.IsNullOrWhiteSpace(metadata.TutorRemediationPolicy)) lines.Add($"Remediation politikasi: {metadata.TutorRemediationPolicy}");
+        if (metadata.MisconceptionSignal != null)
+        {
+            lines.Add($"Takilma sinyali: {FirstNonEmpty(metadata.MisconceptionSignal.UserSafeLabel, metadata.MisconceptionSignal.SafeHint, metadata.MisconceptionSignal.Category) ?? "dusuk guvenli sinyal"}");
+            lines.Add($"Takilma guveni: {FirstNonEmpty(metadata.LatestMisconceptionConfidence, metadata.MisconceptionSignal.ConfidenceStatus) ?? "observed_only"}");
+        }
+        if (!string.IsNullOrWhiteSpace(metadata.SourceReadiness)) lines.Add($"Kaynak hazirligi: {metadata.SourceReadiness}");
+        if (metadata.TutorNextLearningActions.Count > 0) lines.Add($"Sonraki aksiyon: {Limit(string.Join(", ", metadata.TutorNextLearningActions.Take(3)), 240)}");
+        return string.Join("\n", lines);
+    }
+
+    private static bool LooksLikeQuizOrRawPayload(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        var normalized = content.Trim().ToLowerInvariant();
+        return normalized.Contains("```json") ||
+               normalized.Contains("```quiz") ||
+               (normalized.Contains("\"question\"") && normalized.Contains("\"options\"")) ||
+               normalized.Contains("rawproviderpayload") ||
+               normalized.Contains("rawtoolpayload") ||
+               normalized.Contains("hiddenprompt");
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string Limit(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var cleaned = value.Trim();
+        return cleaned.Length <= maxLength ? cleaned : cleaned[..maxLength];
+    }
+
     private static void EnrichTutorResponsePolicy(ChatResponseMetadata metadata, TutorTurnStateDto? turnState, TutorActionTrace? actionTrace)
     {
         if (turnState != null)
         {
             turnState.EvidenceQuality = metadata.EvidenceQuality ?? turnState.EvidenceQuality;
             var decision = TutorResponsePolicy.Decide(turnState);
+            var professionalPolicy = TutorResponsePolicyService.BuildPolicy(
+                turnState,
+                actionTrace,
+                latestAttempt: null,
+                latestBundle: null,
+                toolCalls: Array.Empty<TutorToolCall>());
             metadata.TutorResponseMode ??= decision.TutorResponseMode;
             metadata.EvidencePolicy ??= decision.EvidencePolicy;
             metadata.PersonalizationMode ??= decision.PersonalizationMode;
@@ -860,6 +1115,25 @@ public class AgentOrchestratorService : IAgentOrchestrator
             metadata.MisconceptionSignal ??= turnState.MisconceptionSignal;
             metadata.LearningSignalConfidence ??= turnState.LearningSignalConfidence;
             metadata.RemediationSeed ??= turnState.RemediationSeed;
+            metadata.TutorTeachingMove ??= professionalPolicy.TeachingMove;
+            metadata.TutorResponseDepth ??= professionalPolicy.ResponseDepth;
+            metadata.TutorGroundingPolicy ??= professionalPolicy.GroundingPolicy;
+            metadata.TutorRemediationPolicy ??= professionalPolicy.RemediationPolicy;
+            metadata.TutorToolPolicy ??= professionalPolicy.ToolPolicy;
+            metadata.TutorNextLearningActions = metadata.TutorNextLearningActions.Count > 0
+                ? metadata.TutorNextLearningActions
+                : professionalPolicy.NextActions.Select(a => a.ActionType).ToArray();
+            metadata.TutorContextUse = metadata.TutorContextUse.Count > 0
+                ? metadata.TutorContextUse
+                : professionalPolicy.ContextUse.Select(c => $"{c.ContextType}:{c.Status}").ToArray();
+            metadata.TutorResponseQualityStatus ??= professionalPolicy.QualityStatus;
+            metadata.TutorResponseQualityWarnings = metadata.TutorResponseQualityWarnings.Count > 0
+                ? metadata.TutorResponseQualityWarnings
+                : professionalPolicy.Warnings.Select(w => w.UserSafeMessage).ToArray();
+            metadata.ActivePlanStepId ??= turnState.CurrentPlanStepId;
+            metadata.LatestAssessmentMode ??= professionalPolicy.LatestAssessmentMode;
+            metadata.LatestMisconceptionConfidence ??= professionalPolicy.LatestMisconceptionConfidence;
+            metadata.SourceReadiness ??= professionalPolicy.SourceReadiness;
         }
         else
         {

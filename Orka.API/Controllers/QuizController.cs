@@ -84,6 +84,7 @@ public class QuizController : ControllerBase
 
         try
         {
+            StripClientSuppliedAnswerKey(request);
             var result = await _quizRecorder.RecordAsync(userId, request, HttpContext.RequestAborted);
             var attempt = result.Attempt;
             var xpResult = result.Xp;
@@ -112,7 +113,8 @@ public class QuizController : ControllerBase
                 mistake = result.Mistake,
                 misconceptionSignal = result.MisconceptionSignal,
                 learningSignalConfidence = result.LearningSignalConfidence,
-                remediationSeed = result.RemediationSeed
+                remediationSeed = result.RemediationSeed,
+                learningImpact = result.LearningImpact
             });
         }
         catch (Exception ex)
@@ -170,6 +172,7 @@ public class QuizController : ControllerBase
 
         try
         {
+            StripClientSuppliedAnswerKey(request);
             var result = await _adaptiveAssessment.RecordAnswerAsync(userId, adaptiveSessionId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
@@ -240,6 +243,7 @@ public class QuizController : ControllerBase
 
         try
         {
+            StripClientSuppliedAnswerKey(request);
             var result = await _planDiagnostic.RecordAnswerAsync(userId, planRequestId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
@@ -320,6 +324,9 @@ public class QuizController : ControllerBase
                 LearningObjective = ExtractMetadata(a.SourceRefsJson, "learningObjective"),
                 QuestionType = ExtractMetadata(a.SourceRefsJson, "questionType"),
                 MistakeCategory = ExtractMetadata(a.SourceRefsJson, "mistakeCategory"),
+                AssessmentMode = ExtractMetadata(a.SourceRefsJson, "assessmentMode"),
+                SourceReadiness = ExtractMetadata(a.SourceRefsJson, "sourceReadiness"),
+                WikiReviewHint = ExtractMetadata(a.SourceRefsJson, "wikiNotebookSectionKey"),
                 TopicPath = a.TopicPath,
                 Difficulty = a.Difficulty,
                 CognitiveType = a.CognitiveType,
@@ -415,6 +422,12 @@ public class QuizController : ControllerBase
 
     private static Guid? TryGuid(string? value) =>
         Guid.TryParse(value?.Trim('"'), out var id) ? id : null;
+
+    private static void StripClientSuppliedAnswerKey(RecordQuizAttemptRequest request)
+    {
+        request.IsCorrect = null;
+        request.Explanation = null;
+    }
 
     private static decimal? TryDecimal(string? value) =>
         decimal.TryParse(value?.Trim('"'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var result)

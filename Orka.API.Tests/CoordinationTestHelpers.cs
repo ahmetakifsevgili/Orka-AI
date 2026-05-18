@@ -230,6 +230,81 @@ internal static class CoordinationTestHelpers
         return await db.LearningSources.CountAsync(s => s.UserId == userId && s.TopicId == topicId && !s.IsDeleted);
     }
 
+    public static async Task<(Guid QuizRunId, Guid AssessmentItemId)> SeedDurableAssessmentItemAsync(
+        ApiSmokeFactory factory,
+        Guid userId,
+        Guid topicId,
+        string questionId,
+        string question,
+        string conceptKey,
+        string correctOptionId = "A",
+        string correctOptionText = "Correct answer",
+        string wrongOptionId = "B",
+        string wrongOptionText = "Wrong answer",
+        string explanation = "Server-safe explanation.")
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+        var snapshotId = Guid.NewGuid();
+        var quizRunId = Guid.NewGuid();
+        var assessmentItemId = Guid.NewGuid();
+
+        db.ConceptGraphSnapshots.Add(new ConceptGraphSnapshot
+        {
+            Id = snapshotId,
+            UserId = userId,
+            TopicId = topicId,
+            IntentHash = Guid.NewGuid().ToString("N"),
+            ApprovedResearchIntent = "durable assessment test",
+            TopicTitle = "durable assessment test",
+            Domain = "test",
+            SourceConfidence = "low",
+            GraphJson = "{}",
+            CreatedAt = now
+        });
+        db.QuizRuns.Add(new QuizRun
+        {
+            Id = quizRunId,
+            UserId = userId,
+            TopicId = topicId,
+            QuizType = "micro_quiz",
+            Status = "active",
+            TotalQuestions = 1,
+            CreatedAt = now
+        });
+        db.AssessmentItems.Add(new AssessmentItem
+        {
+            Id = assessmentItemId,
+            UserId = userId,
+            TopicId = topicId,
+            QuizRunId = quizRunId,
+            ConceptGraphSnapshotId = snapshotId,
+            AssessmentItemKey = $"test:{questionId}",
+            ConceptKey = conceptKey,
+            ConceptLabel = conceptKey,
+            QuestionType = "micro_quiz",
+            CognitiveSkill = "conceptual",
+            Difficulty = "kolay",
+            EvidenceExpected = "server evaluates selected option",
+            GeneratedQuestionJson = JsonSerializer.Serialize(new
+            {
+                questionId,
+                question,
+                options = new[]
+                {
+                    new { id = correctOptionId, text = correctOptionText, isCorrect = true },
+                    new { id = wrongOptionId, text = wrongOptionText, isCorrect = false }
+                },
+                correctAnswer = correctOptionId,
+                explanation
+            }),
+            CreatedAt = now
+        });
+        await db.SaveChangesAsync();
+        return (quizRunId, assessmentItemId);
+    }
+
     private static Topic NewTopic(Guid userId, string title, Guid? parentTopicId, int order, DateTime now) => new()
     {
         Id = Guid.NewGuid(),

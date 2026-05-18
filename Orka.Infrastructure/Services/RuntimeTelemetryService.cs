@@ -61,7 +61,7 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
                 ErrorCode = Truncate(request.ErrorCode, 128),
                 FallbackUsed = request.FallbackUsed,
                 CorrelationId = Truncate(request.CorrelationId, 128),
-                MetadataJson = Truncate(request.MetadataJson, MetadataLimit)
+                MetadataJson = TelemetryPrivacyGuard.SanitizeJson(request.MetadataJson, MetadataLimit)
             });
 
             await _db.SaveChangesAsync(ct);
@@ -101,7 +101,7 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
                 EstimatedCostUsd = Math.Max(0m, request.EstimatedCostUsd),
                 Success = request.Success,
                 ErrorCode = Truncate(request.ErrorCode, 128),
-                MetadataJson = Truncate(request.MetadataJson, MetadataLimit)
+                MetadataJson = TelemetryPrivacyGuard.SanitizeJson(request.MetadataJson, MetadataLimit)
             });
 
             await _db.SaveChangesAsync(ct);

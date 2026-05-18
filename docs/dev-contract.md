@@ -109,8 +109,10 @@ return without calling an external provider.
 
 Feature work must follow the current roadmap in
 `docs/project-state/current-roadmap.md` and the constitutions in
-`docs/codex-skills/`. Stage 6B Central Exams is closed; the current phase is
-post-6B productization / frontend-content readiness.
+`docs/codex-skills/`. Stage 6B Central Exams and Post-6B Professionalization are
+closed. The current phase is Main Learning OS Professionalization; Tutor,
+Korteks, RAG/Wiki, Quiz, Plan, Tool, Memory, Telemetry, and Frontend work must
+also read `docs/architecture/orka-learning-os-contract-map.md`.
 
 Central Exams is an integrated Orka module, not a standalone KPSS app. It must
 reuse Orka's exam framework, question bank, import pipeline, practice,
@@ -119,16 +121,28 @@ architecture. Do not add teacher/classroom/dershane workflows, official exam
 claims without verified metadata, success guarantees, scraped content
 assumptions, or auto-published generated/imported content.
 
+Main Learning OS guard:
+
+- Tutor is the pedagogical owner.
+- Korteks researches; `KorteksResearchWorkflow` / synthesis contracts decide
+  bounded educational use for plan, quiz, Tutor, and Wiki consumers.
+- Semantic Kernel may bridge LLM plugins/tools, but Orka tool runtime owns
+  policy, ledger, user/session/topic/correlation, fallback, and telemetry.
+- RAG/Wiki must distinguish sourced, wiki-backed, degraded, and model-fallback
+  claims.
+- Quiz must measure concepts/misconceptions, not Orka UI/product labels.
+
 Default flow:
 
 1. Read `docs/project-state/current-roadmap.md`.
-2. Read `docs/codex-skills/README.md`.
-3. Read the applicable constitution files before planning:
+2. Read `docs/architecture/orka-learning-os-contract-map.md` for Tutor/Korteks/RAG/Wiki/Quiz/Tool/Plan work.
+3. Read `docs/codex-skills/README.md`.
+4. Read the applicable constitution files before planning:
    - backend/API/data: `backend-feature-constitution.md`
    - AI/RAG/Wiki/Chat/Korteks/source/citation: `ai-rag-feature-constitution.md`
    - frontend API/types/stream/UI contract: `frontend-contract-constitution.md`
    - persistent data/cache/session/delete/privacy: `data-lifecycle-constitution.md`
    - every feature: `testing-gate-constitution.md`
-4. Use `feature-prompt-template.md` for new feature prompts.
-5. Use `feature-completion-report-template.md` for final reports.
-6. Do not stage or commit unless explicitly requested.
+5. Use `feature-prompt-template.md` for new feature prompts.
+6. Use `feature-completion-report-template.md` for final reports.
+7. Do not stage or commit unless explicitly requested.

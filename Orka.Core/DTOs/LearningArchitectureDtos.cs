@@ -1,4 +1,5 @@
 using Orka.Core.DTOs.Korteks;
+using System.Text.Json.Serialization;
 
 namespace Orka.Core.DTOs;
 
@@ -416,6 +417,7 @@ public sealed class AdaptiveAssessmentStartRequest
     public int? MinItems { get; set; }
     public int? MaxItems { get; set; }
     public IReadOnlyList<string>? TargetConceptKeys { get; set; }
+    public string? AssessmentMode { get; set; }
 }
 
 public sealed class AdaptiveAssessmentAnswerRequest : RecordQuizAttemptRequest
@@ -437,6 +439,7 @@ public sealed class AdaptiveAssessmentSessionDto
     public int MaxItems { get; set; }
     public int AnsweredCount { get; set; }
     public int CorrectCount { get; set; }
+    public string AssessmentMode { get; set; } = "retrieval_practice";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -447,6 +450,7 @@ public sealed class AdaptiveAssessmentNextItemDto
     public bool IsComplete { get; set; }
     public string StopReason { get; set; } = string.Empty;
     public AdaptiveAssessmentDecisionDto? Decision { get; set; }
+    public QuizResultLearningImpactDto? LatestLearningImpact { get; set; }
 }
 
 public sealed class AdaptiveAssessmentDecisionDto
@@ -460,6 +464,7 @@ public sealed class AdaptiveAssessmentDecisionDto
     public decimal ItemQualityScore { get; set; }
     public decimal ExposurePenalty { get; set; }
     public string DecisionReason { get; set; } = string.Empty;
+    public string AssessmentMode { get; set; } = "retrieval_practice";
     public QuizDataDto Question { get; set; } = new();
 }
 
@@ -481,14 +486,20 @@ public sealed class QuizDataDto
     public string? ConceptKey { get; set; }
     public string? ConceptTag { get; set; }
     public string? CognitiveSkill { get; set; }
+    public string? AssessmentMode { get; set; }
     public string? MisconceptionTarget { get; set; }
     public string? EvidenceExpected { get; set; }
     public string? ScoringRule { get; set; }
     public IReadOnlyList<string> LearningOutcomeIds { get; set; } = Array.Empty<string>();
+    public string? SourceReadiness { get; set; }
+    public string? WikiReviewHint { get; set; }
     public string? QuestionHash { get; set; }
 }
 
-public sealed record QuizOptionDto(string Id, string Text, bool IsCorrect);
+public sealed record QuizOptionDto(
+    string Id,
+    string Text,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool IsCorrect);
 
 public sealed class KnowledgeTracingStateDto
 {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Orka.Core.DTOs;
@@ -10,6 +11,7 @@ public sealed class PluginTelemetryFilter : IFunctionInvocationFilter
 {
     private readonly IRuntimeTelemetryService _telemetry;
     private readonly ILogger<PluginTelemetryFilter> _logger;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public PluginTelemetryFilter(IRuntimeTelemetryService telemetry, ILogger<PluginTelemetryFilter> logger)
     {
@@ -52,7 +54,15 @@ public sealed class PluginTelemetryFilter : IFunctionInvocationFilter
                 ErrorCode: success ? null : "plugin_invocation_failed",
                 FallbackUsed: !success,
                 CorrelationId: null,
-                MetadataJson: null));
+                MetadataJson: JsonSerializer.Serialize(new
+                {
+                    caller = "semantic_kernel_plugin",
+                    governance = "bounded_telemetry_only",
+                    plugin = context.Function.PluginName ?? "unknown",
+                    function = context.Function.Name ?? "unknown",
+                    rawArgumentsStored = false,
+                    rawResultStored = false
+                }, JsonOptions)));
         }
     }
 }

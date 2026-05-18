@@ -69,9 +69,14 @@ addCheck("Classroom speaker guard", classroom.includes("ASISTAN") && classroom.i
 addCheck("Classroom assistant never disappears", classroom.includes("ensureClassroomDialogue") && classroom.includes("!hasAssistant"));
 
 const api = read("src/services/api.ts");
+const types = read("src/lib/types.ts");
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
+addCheck("Learning snapshot API exposed", api.includes("LearningSnapshotsAPI") && api.includes("/learning-snapshots/active-lesson") && api.includes("/learning-snapshots/student-context"));
+addCheck("Plan quality API exposed", api.includes("PlanQualityAPI") && api.includes("/plan-quality/topic/") && api.includes("/plan-quality/evaluate") && api.includes("PlanQualityEvaluationDto"));
 addCheck("Learning quality API exposed", api.includes("/learning-quality/topic") && api.includes("getTopicQuality"));
 addCheck("Assessment calibration API exposed", api.includes("/assessment/topic") && api.includes("runCalibration"));
+addCheck("Assessment blueprint and quality API exposed", api.includes("buildPlanStepBlueprint") && api.includes("/assessment/blueprint/plan-step") && api.includes("/assessment/quality/evaluate") && types.includes("AssessmentBlueprintDto") && types.includes("AssessmentQualityEvaluationDto"));
+addCheck("Quiz learning impact metadata is typed safely", types.includes("QuizResultLearningImpactDto") && types.includes("assessmentMode") && types.includes("misconceptionConfidence") && types.includes("nextTutorMove") && !types.includes("rawEvaluatorPayload") && !types.includes("rawProviderPayload"));
 addCheck("Adaptive quiz API exposed", api.includes("/quiz/adaptive/start") && api.includes("getAdaptiveNext") && api.includes("answerAdaptive"));
 addCheck("Tutor timeline API exposed", api.includes("/tutor/events/session") && api.includes("getSessionTimeline"));
 addCheck("Standards alignment API exposed", api.includes("/standards/topic") && api.includes("StandardsAPI"));
@@ -83,6 +88,21 @@ addCheck("Central exams API exposed", api.includes("CentralExamsAPI") && api.inc
 addCheck("Question quality analytics API exposed", api.includes("QuestionQualityAPI") && api.includes("/question-quality/questions/") && api.includes("/question-quality/central-exams/") && api.includes("QuestionItemAnalyticsDto") && api.includes("CentralExamBlueprintCoverageDto"));
 addCheck("Production readiness API exposed", api.includes("/production-readiness/v1") && api.includes("ProductionReadinessAPI"));
 addCheck("Tool capability API exposed", api.includes("/tools/capabilities") && api.includes("ToolsAPI"));
+addCheck("Tool runtime API exposed", api.includes("/tools/runtime/traces") && api.includes("/tools/runtime/governance-summary") && api.includes("/tools/runtime/decide") && api.includes("ToolRuntimeTrace"));
+addCheck("Learning runtime telemetry API exposed", api.includes("LearningRuntimeAPI") && api.includes("/learning-runtime/traces") && api.includes("/learning-runtime/health") && api.includes("/learning-runtime/privacy-check") && types.includes("LearningRuntimeHealthDto"));
+addCheck("Agentic trust API exposed", api.includes("AgenticTrustAPI") && api.includes("/agentic-trust/check/user-message") && api.includes("/agentic-trust/check/public-payload") && api.includes("/agentic-trust/summary") && types.includes("AgenticTrustCheckResultDto") && types.includes("issuesByCategory"));
+addCheck("Learning artifact lifecycle API exposed", api.includes("LearningArtifactsAPI") && api.includes("/learning-artifacts") && api.includes("/learning-artifacts/validate") && api.includes("refresh-status") && types.includes("LearningArtifactDto") && types.includes("sourceBasis") && types.includes("accessibility"));
+addCheck("Learning artifact contract stays safe", types.includes("safeContent") && types.includes("LearningArtifactSafetyDto") && !types.includes("rawProviderPayload") && !types.includes("rawToolPayload") && !types.includes("rawSourceChunk"));
+addCheck("Notebook Studio API exposed", api.includes("NotebookStudioAPI") && api.includes("/notebook-studio/topic/") && api.includes("/milestone-pack") && api.includes("/artifact") && types.includes("LearningNotebookPackDto") && types.includes("NotebookStudioNextActionDto"));
+addCheck("OrkaLM source notebook API exposed", api.includes("getTopicNotebook") && api.includes("/sources/topic/") && api.includes("/notebook") && api.includes("buildSourcePack") && api.includes("/notebook-studio/sources/") && types.includes("SourceNotebookDto") && types.includes("sourceSurface"));
+addCheck("OrkaLM source-concept graph API exposed", api.includes("getSourceConceptLinks") && api.includes("syncSourceConceptLinks") && api.includes("/concept-links/sync") && api.includes("getTopicSourceConceptGraph") && api.includes("/concept-graph") && api.includes("getWikiPageSourceLinks") && types.includes("SourceConceptGraphDto") && types.includes("SourceConceptLinkSummaryDto"));
+addCheck("OrkaLM ask-source API exposed", api.includes("askTopicSources") && api.includes("askSources") && api.includes("/sources/ask") && api.includes("/ask") && types.includes("SourceQuestionRequestDto") && types.includes("SourceQuestionResponseDto") && types.includes("SourceQuestionCitationDto"));
+addCheck("OrkaLM multi-source compare API exposed", api.includes("compareTopicSources") && api.includes("/compare") && api.includes("getTopicCitationReview") && api.includes("/citation-review") && types.includes("MultiSourceCompareResultDto") && types.includes("CitationReviewItemDto"));
+addCheck("OrkaLM source Q&A thread API exposed", api.includes("listQuestionThreads") && api.includes("createQuestionThread") && api.includes("askQuestionThread") && api.includes("reviewQuestionThread") && api.includes("writeQuestionThreadWikiTrace") && api.includes("/sources/question-threads") && types.includes("SourceQuestionThreadDto") && types.includes("SourceQuestionTurnDto"));
+addCheck("OrkaLM source study summary API exposed", api.includes("getSourceStudySummary") && api.includes("/sources/study-summary") && types.includes("SourceStudySummaryDto") && types.includes("recommendedNextAction"));
+const workspaceHook = read("src/hooks/useLearningWorkspaceState.ts");
+addCheck("Learning workspace state helper exists", workspaceHook.includes("useLearningWorkspaceState") && workspaceHook.includes("Promise.all") && workspaceHook.includes("LearningSnapshotsAPI.getActiveLesson") && workspaceHook.includes("PlanQualityAPI.getLatest") && workspaceHook.includes("TutorAPI.getTopicPolicy") && workspaceHook.includes("LearningArtifactsAPI.list") && workspaceHook.includes("NotebookStudioAPI.listPacks") && workspaceHook.includes("ToolsAPI.getGovernanceSummary") && workspaceHook.includes("LearningRuntimeAPI.getHealth"));
+addCheck("Learning workspace state degrades safely", workspaceHook.includes("quiet(") && workspaceHook.includes("catch") && workspaceHook.includes("staleWarnings") && workspaceHook.includes("safetyWarnings"));
 addCheck("Learning APIs exposed", api.includes("FlashcardsAPI") && api.includes("ReviewAPI") && api.includes("DailyChallengeAPI") && api.includes("BookmarksAPI"));
 addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePlanIntent") && api.includes("/quiz/plan-diagnostic/intent"));
 addCheck("Stream APIs use authenticated fetch wrapper", api.includes("export const authenticatedFetch") && api.includes("ChatAPI") && api.includes('authenticatedFetch("/api/chat/stream"') && api.includes('authenticatedFetch("/api/korteks/research-stream"') && api.includes('authenticatedFetch("/api/korteks/research-file"'));
@@ -91,6 +111,7 @@ addCheck("Auth fetch and axios requests include refresh cookie credentials", api
 addCheck("Auth logout API and scoped cleanup are exposed", api.includes("logout: (refreshToken?: string)") && api.includes("/auth/logout") && api.includes("storage.clear") && !api.includes("localStorage.clear()"));
 addCheck("Dashboard coordination contract is typed", api.includes("coordinationScope?:") && api.includes("coordinationHealth?:") && api.includes("activeLessonTopicId"));
 addCheck("Korteks sync and stream contracts are separate", api.includes("KorteksSyncResponseDto") && api.includes("researchSync") && api.includes("/api/korteks/research-stream"));
+addCheck("Korteks synthesis contract exposed", api.includes("synthesisWorkflowId") && api.includes("getLatestSynthesis") && api.includes("/korteks/synthesis/latest") && types.includes("KorteksResearchWorkflow"));
 addCheck("Auth cleanup is scoped to Orka keys", api.includes("storage.clear") && !api.includes("localStorage.clear()"));
 
 const toolContext = read("src/contexts/ToolCapabilitiesContext.tsx");
@@ -110,19 +131,48 @@ addCheck("Dashboard source coverage coach is visible", dashboard.includes("Kayna
 
 const healthHud = read("src/components/SystemHealthHUD.tsx");
 addCheck("Admin HUD shows learning bridges", healthHud.includes("learningBridge") && healthHud.includes("Agent bridge monitor"));
+const runtimeWorkspace = read("src/components/AgenticWorkspace.tsx");
+addCheck("Agentic workspace shows safe runtime health", runtimeWorkspace.includes("Runtime sagligi") && runtimeWorkspace.includes("runtimeHealth") && runtimeWorkspace.includes("fallbackCount") && !runtimeWorkspace.includes("rawProviderPayload") && !runtimeWorkspace.includes("rawToolPayload"));
 
 const wiki = read("src/components/WikiMainPanel.tsx");
+const notebookStudio = read("src/components/NotebookStudioPanel.tsx");
 addCheck("Wiki actions create learning signals", wiki.includes("recordWikiAction") && wiki.includes("WikiActionClicked"));
 addCheck("Wiki remains active while OrkaLM reuses notebook source surface", wiki.includes('mode?: "wiki" | "orkalm"') && wiki.includes("OrkaLM Kaynak Notebook") && wiki.includes("Notebook Kaynak"));
+addCheck("OrkaLM dedicated source notebook UI visible", wiki.includes("OrkaLM source notebook") && wiki.includes("activeSourceNotebook") && wiki.includes("sourceNotebook") && notebookStudio.includes("Source Pack") && notebookStudio.includes("source_notebook"));
+addCheck("OrkaLM source-to-concept graph UI visible", wiki.includes("Source-to-concept graph") && wiki.includes("sourceConceptLinks") && wiki.includes("sourceConceptGraph") && wiki.includes("handleSyncSourceConceptLinks") && wiki.includes("Link sync"));
+addCheck("Wiki concept supporting-source UI visible", wiki.includes("Supporting sources") && wiki.includes("activePageSourceLinks") && wiki.includes("getWikiPageSourceLinks"));
+addCheck("OrkaLM ask-source UX visible", wiki.includes("handleAskSource") && wiki.includes("handleAskSourceCollection") && wiki.includes("Ask selected source") && wiki.includes("Ask source collection") && wiki.includes("Citation chips") && wiki.includes("Related concept pages") && wiki.includes("sourceQuestionResponse"));
+addCheck("OrkaLM multi-source compare UX visible", wiki.includes("handleCompareSources") && wiki.includes("Multi-source compare") && wiki.includes("Compare selected") && wiki.includes("Shared linked concepts") && wiki.includes("Citation review") && wiki.includes("semantic agreement iddiasi uretmez"));
+addCheck("OrkaLM source Q&A memory UX visible", wiki.includes("Source Q&A memory") && wiki.includes("Save source Q&A thread") && wiki.includes("Ask follow-up") && wiki.includes("Mark needs review") && wiki.includes("Write to Wiki") && wiki.includes("activeQuestionThread"));
+addCheck("OrkaLM source study summary UX visible", wiki.includes("Source study status") && wiki.includes("sourceStudySummary") && wiki.includes("recommendedNextAction") && wiki.includes("citationWarningCount") && wiki.includes("linked concepts"));
+addCheck("OrkaLM ask-source UI is payload-safe", !wiki.includes("rawProviderPayload") && !wiki.includes("rawSourceChunk") && !wiki.includes("hiddenPrompt") && !wiki.includes("correctAnswer") && !wiki.includes("chunk.text.slice") && !wiki.includes("{chunk.text}"));
+addCheck("OrkaLM compare UI avoids fake agreement claims", !wiki.includes("semantic agreement") || wiki.includes("semantic agreement iddiasi uretmez"));
 addCheck("Notebook tools refresh after source activity", wiki.includes("notebookRefreshTick") && wiki.includes("setNotebookRefreshTick"));
 addCheck("Wiki source graph visible", wiki.includes("Kaynak graf") && wiki.includes("sourceGraph"));
 addCheck("Wiki source evidence panel visible", wiki.includes("Kaynak Kan") && wiki.includes("sourceCitations") && wiki.includes("handleSourcePageNav"));
+addCheck("Wiki source viewer avoids raw chunk rendering", wiki.includes("Raw kaynak parçası burada gösterilmez") && !wiki.includes("{chunk.text}</p>") && !wiki.includes("chunk.text.slice"));
 addCheck("Wiki source evidence trust strip visible", wiki.includes("source-evidence-trust-strip") && wiki.includes("Citation trail") && wiki.includes("Kaynak güveni"));
 addCheck("Wiki citation chips expose scope summaries", wiki.includes("citationScopeSummary") && wiki.includes("citationDisplayTitle") && wiki.includes("citationPrimaryLabel"));
 addCheck("Wiki source coverage coach is visible", wiki.includes("Kaynak kapsaması") && wiki.includes("Bu konu için kaynaklar hazır.") && wiki.includes("RAG yanıtları için yeterli kaynak bulunamayabilir") && wiki.includes("buildWikiSourceCoverageCoach"));
 addCheck("Wiki learning trace summary is user-facing", wiki.includes("WikiLearningTraceSummary") && wiki.includes("Orka bu turda") && wiki.includes("Bu cevap kaynaklarla desteklendi.") && wiki.includes("Quiz/pratik kanıtı güncellendi."));
 addCheck("Wiki study pack entry is visible", wiki.includes("Wiki Çalışma Paketi") && wiki.includes("Bu konuyu çalış") && wiki.includes("Özeti oku") && wiki.includes("Kavramları gözden geçir") && wiki.includes("Kartlarla çalış"));
 addCheck("Wiki weak queue context is visible", wiki.includes("Bu konuda çalışma kuyruğu sinyali var.") && wiki.includes("Zayıf kavramı Wiki’den tekrar edebilir") && wiki.includes("wiki-study-reinforcement"));
+addCheck("Wiki learning workspace state is synchronized", wiki.includes("useLearningWorkspaceState") && wiki.includes("Learning workspace") && wiki.includes("workspaceState.recentArtifacts") && wiki.includes("workspaceState.sourceReadiness"));
+addCheck("Wiki Vault page tree and filters are visible", wiki.includes("Wiki Vault") && wiki.includes("Page tree / list") && wiki.includes("wikiVaultQuery") && wiki.includes("wikiVaultFilter") && wiki.includes("Sayfa, concept veya kaynak ara"));
+addCheck("Wiki Vault graph context is visible", wiki.includes("Backlinks / local graph") && wiki.includes("Geri linkler") && wiki.includes("Cikis linkleri") && wiki.includes("Local komsular") && wiki.includes("activeBacklinks") && wiki.includes("activeOutgoingLinks"));
+addCheck("Wiki Vault block grouping is visible", wiki.includes("Blok gruplari") && wiki.includes("blockGroupFor") && wiki.includes("Ogrenci sorulari") && wiki.includes("Takilma ve onarim"));
+addCheck("Wiki Vault page-aware Notebook context is preserved", wiki.includes("NotebookStudioPanel") && wiki.includes("wikiPageId={isOrkaLm ? undefined : activePage?.id}") && wiki.includes("wikiPageTitle={isOrkaLm ? undefined : activePage?.title}"));
+addCheck("Notebook Studio panel is wired into Wiki", wiki.includes("NotebookStudioPanel") && notebookStudio.includes("Milestone Pack") && notebookStudio.includes("audio_overview") && notebookStudio.includes("mind_map") && notebookStudio.includes("review_quiz"));
+addCheck("Notebook Studio production states are visible", notebookStudio.includes("Kaynak hazirlik") && notebookStudio.includes("Notebook Studio paketleri yuklenemedi") && notebookStudio.includes("script-only") && notebookStudio.includes("Henuz cikti yok."));
+addCheck("Notebook Studio advanced media/export actions are visible", notebookStudio.includes("video_ready_package") && notebookStudio.includes("slide_export_manifest") && notebookStudio.includes("audio_transcript") && notebookStudio.includes("caption_track") && notebookStudio.includes("Export readiness"));
+addCheck("Notebook Studio media copy avoids fake export claims", notebookStudio.includes("Video-ready paket") && notebookStudio.includes("Slide export manifest") && !notebookStudio.includes("PPTX indir") && !notebookStudio.includes("Video hazir"));
+addCheck("Notebook Studio slide export contract is wired", api.includes("getExportPreview") && api.includes("/export/preview") && api.includes("exportPack") && api.includes("/export") && types.includes("NotebookExportResultDto") && types.includes("NotebookSlideExportPreviewDto"));
+addCheck("Notebook Studio export UX is honest", notebookStudio.includes("Slide export paketi") && notebookStudio.includes("pptx_not_enabled") && notebookStudio.includes("Safe HTML") && !/fake video|fake pptx|pptx indir/i.test(notebookStudio));
+addCheck("Notebook Studio export preview is useful", notebookStudio.includes("Slayt listesi") && notebookStudio.includes("Kaynak temeli") && notebookStudio.includes("Erisilebilirlik") && notebookStudio.includes("Checkpoint var") && notebookStudio.includes("Speaker notes var"));
+addCheck("Notebook Studio PPTX disabled copy is explicit", notebookStudio.includes("PPTX etkin degil") && notebookStudio.includes("escaped HTML") && !notebookStudio.includes("PPTX hazir") && !notebookStudio.includes("PPTX indir"));
+addCheck("Notebook Studio UI stays payload-safe", !notebookStudio.includes("rawProviderPayload") && !notebookStudio.includes("rawSourceChunk") && !notebookStudio.includes("hiddenPrompt") && !notebookStudio.includes("correctAnswer"));
+const notebookMojibake = new RegExp("[\\u00c2\\u00c3\\u00c4\\u00c5\\ufffd]");
+addCheck("Notebook Studio UI copy is readable", !notebookMojibake.test(notebookStudio) && notebookStudio.includes("Calisma rehberi") && notebookStudio.includes("Zayif alan") && notebookStudio.includes("Sesli anlatim"));
 
 const sidebar = read("src/components/LeftSidebar.tsx");
 addCheck("Topic readiness badges are visible", sidebar.includes("TopicReadinessBadge") && sidebar.includes("Hazır") && sidebar.includes("Dikkat") && sidebar.includes("Yeni") && sidebar.includes("getTopicReadinessBadge"));
@@ -166,7 +216,13 @@ addCheck("Chat learning trace summary is user-facing", chatMessage.includes("Lea
 addCheck("Live tutor trace timeline is rendered", chatMessage.includes("LiveTutorTrace") && chatMessage.includes("TutorAPI.getSessionTimeline") && chatMessage.includes("Tutor izi"));
 addCheck("Plan mode requires intent confirmation before learning research", chatPanel.includes("pendingPlanIntent") && chatPanel.includes("Onayla ve araştır") && chatPanel.includes("approvedResearchIntent"));
 addCheck("Plan diagnostic preserves quality metadata", api.includes("conceptGraphQualityStatus") && chatPanel.includes("qualityReportId"));
+addCheck("Plan quality metadata stays safe", types.includes("PlanStepContractDto") && types.includes("sequenceReason") && types.includes("quizHook") && types.includes("tutorHook") && types.includes("planSourceReadiness") && !types.includes("rawProviderPayload"));
 addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayrılıyor") && chatPanel.includes("Bağlam taranıyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Öğrenme yolu üretiliyor"));
+
+addCheck("Tutor response policy closure metadata is typed and rendered", types.includes("TutorResponsePolicyDto") && types.includes("tutorTeachingMove") && types.includes("tutorGroundingPolicy") && chatMessage.includes("tutorTeachingMove") && chatMessage.includes("tutorGroundingPolicy") && api.includes("/tutor/policy/evaluate") && api.includes("/tutor/next-actions"));
+const agenticWorkspace = read("src/components/AgenticWorkspace.tsx");
+addCheck("Frontend learning workspace state drives chat rail", chatPanel.includes("useLearningWorkspaceState") && chatPanel.includes("workspaceState.recentArtifacts") && chatPanel.includes("workspaceState={workspaceState}") && agenticWorkspace.includes("workspaceState?.currentPlanStep") && agenticWorkspace.includes("workspaceState?.sourceReadiness"));
+addCheck("Frontend artifact canvas renders Pack 8 artifacts safely", agenticWorkspace.includes("learningArtifacts?: LearningArtifactDto[]") && agenticWorkspace.includes("artifact.safeContent") && agenticWorkspace.includes("safeMarkdownComponents") && agenticWorkspace.includes("artifact.sourceBasis") && agenticWorkspace.includes("artifact.accessibility"));
 
 const packageJson = read("package.json");
 const onboarding = read("src/components/PremiumOnboardingTour.tsx");
@@ -189,6 +245,7 @@ const quiz = read("src/components/QuizCard.tsx");
 const quizParser = read("src/lib/quizParser.ts");
 addCheck("Quiz raw JSON leak guard", !quiz.includes("JSON.stringify(quiz") && !quiz.includes("{JSON.stringify"));
 addCheck("Quiz stays out of chat command flow", !quiz.includes("Quiz Cevab") && !quiz.includes("[SKIP_QUIZ]") && !quiz.includes("crypto.randomUUID") && quiz.includes("Quiz akışı tamamlandı"));
+addCheck("Quiz pre-submit path does not depend on client answer key", !quiz.includes("option.isCorrect") && !quiz.includes("activeQuiz.explanation") && !quiz.includes("isCorrect: attempt.isCorrect") && !quiz.includes("explanation: activeQuiz.explanation") && !quizParser.includes("correctHint") && !quizParser.includes("isCorrect ="));
 addCheck("Quiz feedback copy is pedagogical", quiz.includes("Tekrar edilmesi iyi olur") && quiz.includes("Bu cevap doğru değil") && !quiz.includes("Harika gidiyorsun"));
 addCheck("Quiz wrong answer recovery CTA is visible", quiz.includes("Toparlanma adımı") && quiz.includes("Tutor’a sor") && quiz.includes("Wiki’de tekrar et") && quiz.includes("Benzer pratik çöz"));
 addCheck("Pack 3 misconception remediation stays user-safe", quiz.includes("Yanılgı sinyali") && quiz.includes("Kanıt durumu") && dashboard.includes("remediationSeed") && chatMessage.includes("Yanılgı sinyali güvenli şekilde işlendi"));

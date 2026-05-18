@@ -1,0 +1,243 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Orka.Core.Entities;
+using Orka.Infrastructure.Data;
+using Xunit;
+
+namespace Orka.API.Tests;
+
+public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
+{
+    private readonly ApiSmokeFactory _factory;
+
+    public LearningSnapshotTests(ApiSmokeFactory factory)
+    {
+        _factory = factory;
+    }
+
+    [Fact]
+    public async Task ActiveLessonSnapshot_CombinesPlanSourceWikiAttemptAndWeakConceptContext()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "snapshot-active");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Snapshot Algebra");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, user.UserId, topicId, DateTime.UtcNow);
+        await CoordinationTestHelpers.SeedSourceAsync(_factory, user.UserId, topicId, "Snapshot source", "Evidence text");
+        await CoordinationTestHelpers.SeedWikiPageAsync(_factory, user.UserId, topicId, "Snapshot wiki", "Wiki evidence");
+        await SeedWeakConceptAsync(user.UserId, topicId, "fractions", "Fractions");
+        await SeedTutorToolCallAsync(user.UserId, topicId, sessionId);
+        await SeedQuizAttemptAsync(user.UserId, topicId, sessionId);
+
+        var response = await user.Client.PostAsJsonAsync("/api/learning-snapshots/active-lesson/refresh", new
+        {
+            topicId,
+            sessionId,
+            planRequestId = Guid.NewGuid(),
+            approvedIntent = "learn",
+            approvedMainTopic = "Algebra",
+            approvedFocusArea = "Fractions",
+            approvedStudyGoal = "practice",
+            groundingMode = "source_grounded"
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+
+        Assert.Equal("active", root.GetProperty("status").GetString());
+        Assert.Equal("fractions", root.GetProperty("activeConceptKey").GetString());
+        Assert.Equal("remediation", root.GetProperty("learnerState").GetString());
+        Assert.Equal("usable", root.GetProperty("evidenceSummary").GetProperty("evidenceStatus").GetString());
+        Assert.True(root.GetProperty("evidenceSummary").GetProperty("sourceEvidenceCount").GetInt32() >= 1);
+        Assert.True(root.GetProperty("evidenceSummary").GetProperty("wikiEvidenceCount").GetInt32() >= 1);
+        Assert.True(root.GetProperty("evidenceSummary").GetProperty("toolEvidenceCount").GetInt32() >= 1);
+        Assert.True(root.GetProperty("evidenceSummary").GetProperty("recentAttemptCount").GetInt32() >= 1);
+
+        var publicJson = root.GetRawText();
+        Assert.DoesNotContain(user.UserId.ToString(), publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("snapshotJson", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw", publicJson, StringComparison.OrdinalIgnoreCase);
+
+        var get = await user.Client.GetAsync($"/api/learning-snapshots/active-lesson?topicId={topicId}&sessionId={sessionId}");
+        get.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task StudentContextSnapshot_ExposesBoundedMemoryAndReviewPressureOnlyForCaller()
+    {
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "snapshot-student");
+        var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "snapshot-other");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, owner.UserId, "Snapshot Memory");
+        await SeedWeakConceptAsync(owner.UserId, topicId, "derivatives", "Derivatives");
+        await SeedReviewPressureAsync(owner.UserId, topicId, "derivatives");
+
+        var response = await owner.Client.PostAsJsonAsync("/api/learning-snapshots/student-context/refresh", new
+        {
+            topicId
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+
+        Assert.Equal("usable", root.GetProperty("confidenceStatus").GetString());
+        Assert.NotEmpty(root.GetProperty("weakConcepts").EnumerateArray());
+        Assert.Contains("derivatives", root.GetProperty("reviewPressure").EnumerateArray().Select(x => x.GetString()));
+        Assert.DoesNotContain(owner.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("payloadJson", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+
+        var crossUserRefresh = await other.Client.PostAsJsonAsync("/api/learning-snapshots/student-context/refresh", new
+        {
+            topicId
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, crossUserRefresh.StatusCode);
+
+        var crossUserGet = await other.Client.GetAsync($"/api/learning-snapshots/student-context?topicId={topicId}");
+        Assert.Equal(HttpStatusCode.NotFound, crossUserGet.StatusCode);
+    }
+
+    [Fact]
+    public async Task QuizAttempt_RefreshesStudentContextAndStalesActiveLessonSnapshot()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "snapshot-quiz");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Snapshot Quiz");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, user.UserId, topicId, DateTime.UtcNow);
+
+        var active = await user.Client.PostAsJsonAsync("/api/learning-snapshots/active-lesson/refresh", new
+        {
+            topicId,
+            sessionId,
+            approvedIntent = "learn",
+            approvedMainTopic = "Quiz",
+            approvedFocusArea = "Basics"
+        });
+        active.EnsureSuccessStatusCode();
+        var (quizRunId, assessmentItemId) = await CoordinationTestHelpers.SeedDurableAssessmentItemAsync(
+            _factory,
+            user.UserId,
+            topicId,
+            questionId: "snapshot-quiz-q",
+            question: "What is the key idea?",
+            conceptKey: "base-concept",
+            correctOptionId: "A",
+            correctOptionText: "Use the base concept",
+            wrongOptionId: "B",
+            wrongOptionText: "Skip the base concept",
+            explanation: "Review the base concept.");
+
+        var attempt = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId,
+            sessionId,
+            quizRunId,
+            assessmentItemId,
+            questionId = "snapshot-quiz-q",
+            question = "What is the key idea?",
+            selectedOptionId = "B) Skip the base concept",
+            isCorrect = false,
+            explanation = "Review the base concept.",
+            skillTag = "base-concept",
+            conceptKey = "base-concept",
+            conceptTag = "base-concept",
+            learningObjective = "base-concept",
+            topicPath = "Snapshot Quiz > Basics",
+            questionHash = Guid.NewGuid().ToString("N")
+        });
+        attempt.EnsureSuccessStatusCode();
+
+        var staleGet = await user.Client.GetAsync($"/api/learning-snapshots/active-lesson?topicId={topicId}&sessionId={sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, staleGet.StatusCode);
+
+        var studentGet = await user.Client.GetAsync($"/api/learning-snapshots/student-context?topicId={topicId}&sessionId={sessionId}");
+        studentGet.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(await studentGet.Content.ReadAsStreamAsync());
+        Assert.NotEmpty(body.RootElement.GetProperty("weakConcepts").EnumerateArray());
+    }
+
+    private async Task SeedWeakConceptAsync(Guid userId, Guid topicId, string conceptKey, string label)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+        db.KnowledgeTracingStates.Add(new KnowledgeTracingState
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ConceptKey = conceptKey,
+            Label = label,
+            MasteryProbability = 0.25m,
+            Confidence = 0.80m,
+            EvidenceCount = 3,
+            IncorrectCount = 2,
+            RemediationNeed = "high",
+            PracticeReadiness = "guided",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedReviewPressureAsync(Guid userId, Guid topicId, string conceptKey)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+        db.ReviewItems.Add(new ReviewItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ReviewKey = conceptKey,
+            SkillTag = conceptKey,
+            ConceptTag = conceptKey,
+            SourceType = "test",
+            DueAt = now,
+            Status = "active",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedTutorToolCallAsync(Guid userId, Guid topicId, Guid sessionId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.TutorToolCalls.Add(new TutorToolCall
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = sessionId,
+            ToolId = "source_search",
+            Status = "completed",
+            Success = true,
+            Evidence = "safe evidence",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedQuizAttemptAsync(Guid userId, Guid topicId, Guid sessionId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.QuizAttempts.Add(new QuizAttempt
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = sessionId,
+            Question = "Seed question",
+            UserAnswer = "A",
+            IsCorrect = false,
+            Explanation = "Seed explanation",
+            SkillTag = "fractions",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+}

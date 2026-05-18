@@ -18,16 +18,22 @@ public class WikiController : ControllerBase
     private readonly IWikiService _wikiService;
     private readonly IWikiLearningAssistant _wikiLearningAssistant;
     private readonly IWikiEvidenceService _wikiEvidenceService;
+    private readonly ISourceEvidenceLifecycleService _sourceLifecycle;
+    private readonly ISourceConceptLinkingService _sourceConceptLinks;
     private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
 
     public WikiController(
         IWikiService wikiService,
         IWikiLearningAssistant wikiLearningAssistant,
-        IWikiEvidenceService wikiEvidenceService)
+        IWikiEvidenceService wikiEvidenceService,
+        ISourceEvidenceLifecycleService sourceLifecycle,
+        ISourceConceptLinkingService sourceConceptLinks)
     {
         _wikiService = wikiService;
         _wikiLearningAssistant = wikiLearningAssistant;
         _wikiEvidenceService = wikiEvidenceService;
+        _sourceLifecycle = sourceLifecycle;
+        _sourceConceptLinks = sourceConceptLinks;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -42,6 +48,14 @@ public class WikiController : ControllerBase
             id = p.Id,
             title = p.Title,
             status = p.Status,
+            pageKey = string.IsNullOrWhiteSpace(p.PageKey) ? p.Id.ToString("N") : p.PageKey,
+            pageType = string.IsNullOrWhiteSpace(p.PageType) ? "concept" : p.PageType,
+            conceptKey = p.ConceptKey,
+            parentConceptKey = p.ParentConceptKey,
+            parentWikiPageId = p.ParentWikiPageId,
+            sourceReadiness = p.SourceReadiness,
+            evidenceStatus = p.EvidenceStatus,
+            safeSummary = p.SafeSummary,
             orderIndex = p.OrderIndex,
             blockCount = p.Blocks?.Count ?? 0
         }));
@@ -56,16 +70,98 @@ public class WikiController : ControllerBase
 
         return Ok(new
         {
-            page = new { page.Id, page.Title, page.Status, page.OrderIndex, page.CreatedAt, page.UpdatedAt },
-            blocks = page.Blocks?.OrderBy(b => b.OrderIndex).Select(b => new
+            page = new
             {
-                b.Id, type = b.BlockType, b.Title, b.Content, b.Source, b.OrderIndex, b.CreatedAt
+                page.Id,
+                page.Title,
+                page.Status,
+                page.PageKey,
+                page.PageType,
+                page.ConceptKey,
+                page.ParentConceptKey,
+                page.ParentWikiPageId,
+                page.SourceReadiness,
+                page.EvidenceStatus,
+                page.SafeSummary,
+                page.OrderIndex,
+                page.CreatedAt,
+                page.UpdatedAt
+            },
+            blocks = page.Blocks?.Where(b => !b.IsDeleted).OrderBy(b => b.OrderIndex).Select(b => new
+            {
+                b.Id,
+                type = b.BlockType,
+                b.Title,
+                b.Content,
+                b.Source,
+                b.SourceBasis,
+                b.ConceptKey,
+                b.MisconceptionKey,
+                b.QuizAttemptId,
+                b.SourceEvidenceBundleId,
+                b.LearningArtifactId,
+                b.TutorTurnStateId,
+                b.Visibility,
+                b.OrderIndex,
+                b.CreatedAt
             }),
             sources = page.Sources?.Select(s => new
             {
                 s.Id, s.Type, s.Title, s.Url, s.IsWatched
             })
         });
+    }
+
+    [HttpPost("page/{pageId}/blocks")]
+    public async Task<IActionResult> AddBlock(Guid pageId, [FromBody] CreateWikiBlockRequestDto request)
+    {
+        var userId = GetUserId();
+        var block = await _wikiService.AddWikiBlockAsync(pageId, userId, request);
+        return block == null
+            ? BadRequest(new { message = "Wiki blogu olusturulamadi." })
+            : Ok(block);
+    }
+
+    [HttpGet("{topicId}/graph")]
+    public async Task<IActionResult> GetWikiGraph(Guid topicId)
+    {
+        var userId = GetUserId();
+        var graph = await _wikiService.GetWikiGraphAsync(topicId, userId);
+        return Ok(graph);
+    }
+
+    [HttpGet("page/{pageId}/graph")]
+    public async Task<IActionResult> GetLocalWikiGraph(Guid pageId)
+    {
+        var userId = GetUserId();
+        var graph = await _wikiService.GetLocalWikiGraphAsync(pageId, userId);
+        return graph == null ? NotFound(new { message = "Sayfa bulunamadi." }) : Ok(graph);
+    }
+
+    [HttpGet("pages/{pageId:guid}/source-links")]
+    public async Task<IActionResult> GetWikiPageSourceLinks(Guid pageId)
+    {
+        var userId = GetUserId();
+        var links = await _sourceConceptLinks.GetWikiPageSourceLinksAsync(userId, pageId, HttpContext.RequestAborted);
+        return links == null ? NotFound(new { message = "Sayfa kaynak linkleri bulunamadi." }) : Ok(links);
+    }
+
+    [HttpPost("links")]
+    public async Task<IActionResult> CreateWikiLink([FromBody] CreateWikiLinkRequestDto request)
+    {
+        var userId = GetUserId();
+        var link = await _wikiService.LinkWikiPagesAsync(userId, request);
+        return link == null ? BadRequest(new { message = "Wiki link olusturulamadi." }) : Ok(link);
+    }
+
+    [HttpPost("{topicId}/sync-graph")]
+    public async Task<IActionResult> SyncWikiGraph(Guid topicId, [FromBody] WikiGraphSyncRequestDto? request)
+    {
+        var userId = GetUserId();
+        var result = await _wikiService.SyncWikiGraphAsync(topicId, userId, request ?? new WikiGraphSyncRequestDto());
+        return result.SyncStatus == "not_found"
+            ? NotFound(new { message = "Konu bulunamadi veya kullanici kapsaminda degil.", result })
+            : Ok(result);
     }
 
     [HttpPost("page/{pageId}/note")]
@@ -279,6 +375,23 @@ public class WikiController : ControllerBase
         var userId = GetUserId();
         var state = await _wikiEvidenceService.GetWorkspaceStateAsync(userId, topicId, HttpContext.RequestAborted);
         return Ok(state);
+    }
+
+    [HttpGet("{topicId}/knowledge-notebook")]
+    public async Task<IActionResult> GetKnowledgeNotebook(Guid topicId)
+    {
+        var userId = GetUserId();
+        var notebook = await _sourceLifecycle.GetLatestWikiKnowledgeNotebookAsync(userId, topicId, HttpContext.RequestAborted)
+                       ?? await _sourceLifecycle.BuildWikiKnowledgeNotebookAsync(userId, topicId, HttpContext.RequestAborted);
+        return Ok(notebook);
+    }
+
+    [HttpPost("{topicId}/knowledge-notebook/refresh")]
+    public async Task<IActionResult> RefreshKnowledgeNotebook(Guid topicId)
+    {
+        var userId = GetUserId();
+        var notebook = await _sourceLifecycle.BuildWikiKnowledgeNotebookAsync(userId, topicId, HttpContext.RequestAborted);
+        return Ok(notebook);
     }
 
     /// <summary>

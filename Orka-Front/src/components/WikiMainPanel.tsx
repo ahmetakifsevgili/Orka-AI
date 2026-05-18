@@ -19,6 +19,7 @@ import {
   Clock,
   Lightbulb,
   ListChecks,
+  Search,
   Upload,
   FileText,
   Headphones,
@@ -31,20 +32,37 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
+import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 import { tryParseQuiz } from "@/lib/quizParser";
-import type { ChatResponseMetadata, CitationDto, SourceQualityReportDto, TeachingArtifact } from "@/lib/types";
+import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiGraphDto, WikiGraphPageDto } from "@/lib/types";
 import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
+import { userSafeStatus } from "@/lib/userSafeStatus";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
+import NotebookStudioPanel from "./NotebookStudioPanel";
 
 interface WikiPage {
   id: string;
   title: string;
+  pageKey?: string;
+  pageType?: string;
+  conceptKey?: string | null;
+  parentConceptKey?: string | null;
+  parentWikiPageId?: string | null;
+  sourceReadiness?: string;
+  evidenceStatus?: string;
+  safeSummary?: string | null;
+  orderIndex?: number;
+  blockCount?: number;
   blocks?: Array<{
     id: string;
     type: string;
     content: string;
     title?: string;
+    sourceBasis?: string;
+    conceptKey?: string | null;
+    misconceptionKey?: string | null;
+    visibility?: string;
   }>;
 }
 
@@ -90,8 +108,8 @@ interface SourceCitation {
   id: string;
   pageNumber: number;
   chunkIndex: number;
-  text: string;
-  highlightHint?: string;
+  label?: string;
+  supportStatus?: string;
 }
 
 interface MindMapNode {
@@ -125,6 +143,7 @@ const sourceQualityLabel = (status?: string | null) => {
 
 type SourceCoverageCoachTone = "ready" | "watch" | "empty";
 type WikiStudySection = "briefing" | "reinforcement" | "sources" | "glossary" | "cards";
+type WikiVaultFilter = "all" | "weak" | "source_ready" | "evidence_insufficient" | "stale" | "misconception" | "source_pages";
 
 interface WikiStudyPackItem {
   id: string;
@@ -133,6 +152,63 @@ interface WikiStudyPackItem {
   section: WikiStudySection;
   tone: "ready" | "watch" | "empty";
 }
+const wikiVaultFilters: Array<{ id: WikiVaultFilter; label: string }> = [
+  { id: "all", label: "Tum sayfalar" },
+  { id: "weak", label: "Zayif / review" },
+  { id: "source_ready", label: "Kaynakli" },
+  { id: "evidence_insufficient", label: "Kaniti zayif" },
+  { id: "stale", label: "Stale / degraded" },
+  { id: "misconception", label: "Takilma / repair" },
+  { id: "source_pages", label: "Source pages" },
+];
+
+const normalizeVaultText = (value?: string | null) =>
+  (value ?? "").toLocaleLowerCase("tr-TR");
+
+const pageMatchesVaultFilter = (page: WikiGraphPageDto, filter: WikiVaultFilter) => {
+  const haystack = normalizeVaultText([
+    page.title,
+    page.pageType,
+    page.status,
+    page.sourceReadiness,
+    page.evidenceStatus,
+    page.safeSummary,
+    page.conceptKey,
+    page.parentConceptKey,
+  ].filter(Boolean).join(" "));
+
+  if (filter === "all") return true;
+  if (filter === "weak") return /weak|zayif|needs_review|review|developing/.test(haystack);
+  if (filter === "source_ready") return /source_grounded|source_ready|wiki_backed|mixed|ready/.test(haystack);
+  if (filter === "evidence_insufficient") return /evidence_insufficient|insufficient|unsupported|missing/.test(haystack);
+  if (filter === "stale") return /stale|degraded|deleted|outdated/.test(haystack);
+  if (filter === "misconception") return /misconception|repair|takil|yanlis|remediation/.test(haystack);
+  if (filter === "source_pages") return /source|orkalm/.test(normalizeVaultText(page.pageType));
+  return true;
+};
+
+const pageBadgeTone = (value?: string | null) => {
+  const normalized = normalizeVaultText(value);
+  if (/source_grounded|ready|strong|wiki_backed|mixed/.test(normalized)) {
+    return "border-[#8fb7a2]/24 bg-[#f2faf5]/85 text-[#47725d]";
+  }
+  if (/stale|degraded|insufficient|weak|misconception|repair|review/.test(normalized)) {
+    return "border-[#e8c46f]/28 bg-[#fff8ee]/85 text-[#8a6a33]";
+  }
+  return "border-[#526d82]/14 bg-[#f7f9fa]/75 text-[#667085]";
+};
+
+const blockGroupFor = (blockType?: string | null) => {
+  const type = normalizeVaultText(blockType);
+  if (/student_question|question|soru/.test(type)) return { id: "questions", label: "Ogrenci sorulari" };
+  if (/source/.test(type)) return { id: "sources", label: "Kaynak notlari" };
+  if (/misconception|repair|remediation/.test(type)) return { id: "repair", label: "Takilma ve onarim" };
+  if (/quiz|review|checkpoint/.test(type)) return { id: "quiz", label: "Quiz ve tekrar" };
+  if (/artifact|flashcard|retrieval/.test(type)) return { id: "artifacts", label: "Artifact ve pratik" };
+  if (/example|worked/.test(type)) return { id: "examples", label: "Ornekler" };
+  if (/manual|note|summary/.test(type)) return { id: "notes", label: "Notlar ve ozet" };
+  return { id: "explanations", label: "Tutor anlatimi" };
+};
 
 function buildWikiSourceCoverageCoach(input: {
   sourceCount: number;
@@ -237,7 +313,6 @@ function SourceCoverageCoach({
     </div>
   );
 }
-
 function buildWikiStudyPackItems(input: {
   hasBriefing: boolean;
   isBriefingLoading: boolean;
@@ -407,6 +482,11 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [wikiGraph, setWikiGraph] = useState<WikiGraphDto | null>(null);
+  const [wikiGraphLoading, setWikiGraphLoading] = useState(false);
+  const [wikiGraphSyncing, setWikiGraphSyncing] = useState(false);
+  const [wikiVaultQuery, setWikiVaultQuery] = useState("");
+  const [wikiVaultFilter, setWikiVaultFilter] = useState<WikiVaultFilter>("all");
   const pollAttemptsRef = useRef(0);
   const [expandedBlocks, setExpandedBlocks] = useState<
     Record<string, boolean>
@@ -432,9 +512,24 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [activeSource, setActiveSource] = useState<LearningSource | null>(null);
   const [sourceQuestion, setSourceQuestion] = useState("");
   const [sourceAnswer, setSourceAnswer] = useState("");
-  const [sourceAnswerMetadata, setSourceAnswerMetadata] = useState<ChatResponseMetadata | null>(null);
+  const [sourceQuestionResponse, setSourceQuestionResponse] = useState<SourceQuestionResponseDto | null>(null);
   const [sourceQuality, setSourceQuality] = useState<SourceQualityReportDto | null>(null);
+  const [sourceNotebook, setSourceNotebook] = useState<SourceNotebookDto | null>(null);
+  const [activeSourceNotebook, setActiveSourceNotebook] = useState<SourceNotebookDto | null>(null);
+  const [sourceConceptLinks, setSourceConceptLinks] = useState<SourceConceptLinkSummaryDto | null>(null);
+  const [sourceConceptGraph, setSourceConceptGraph] = useState<SourceConceptGraphDto | null>(null);
+  const [activePageSourceLinks, setActivePageSourceLinks] = useState<SourceConceptLinkSummaryDto | null>(null);
+  const [sourceConceptSyncing, setSourceConceptSyncing] = useState(false);
   const [sourceAsking, setSourceAsking] = useState(false);
+  const [selectedCompareSourceIds, setSelectedCompareSourceIds] = useState<string[]>([]);
+  const [sourceCompare, setSourceCompare] = useState<MultiSourceCompareResultDto | null>(null);
+  const [citationReview, setCitationReview] = useState<CitationReviewResultDto | null>(null);
+  const [sourceComparing, setSourceComparing] = useState(false);
+  const [sourceQuestionThreads, setSourceQuestionThreads] = useState<SourceQuestionThreadDto[]>([]);
+  const [activeQuestionThread, setActiveQuestionThread] = useState<SourceQuestionThreadDto | null>(null);
+  const [sourceStudySummary, setSourceStudySummary] = useState<SourceStudySummaryDto | null>(null);
+  const [threadFollowUp, setThreadFollowUp] = useState("");
+  const [threadLoading, setThreadLoading] = useState(false);
   const [sourceCitations, setSourceCitations] = useState<SourceCitation[]>([]);
   const [sourcePage, setSourcePage] = useState<SourcePage | null>(null);
   const [sourcePageLoading, setSourcePageLoading] = useState(false);
@@ -515,12 +610,44 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const applyGraphPages = (graph: WikiGraphDto) => {
+    const graphPages = graph.pages.map((page) => ({
+      id: page.id,
+      title: page.title,
+      pageKey: page.pageKey,
+      pageType: page.pageType,
+      conceptKey: page.conceptKey,
+      parentConceptKey: page.parentConceptKey,
+      parentWikiPageId: page.parentWikiPageId,
+      sourceReadiness: page.sourceReadiness,
+      evidenceStatus: page.evidenceStatus,
+      safeSummary: page.safeSummary,
+      orderIndex: page.orderIndex,
+      blockCount: page.blockCount,
+    }));
+
+    if (graphPages.length > 0) {
+      setPages((prev) => {
+        const byId = new Map(prev.map((page) => [page.id, page]));
+        return graphPages.map((page) => ({ ...page, blocks: byId.get(page.id)?.blocks }));
+      });
+      setActivePage((current) => {
+        const currentGraphPage = current ? graphPages.find((page) => page.id === current.id) : null;
+        return currentGraphPage ? { ...currentGraphPage, blocks: current?.blocks } : graphPages[0];
+      });
+      setIsPolling(false);
+    }
+  };
+
   // Fetch wiki pages (initial)
   useEffect(() => {
     setLoading(true);
     setError(false);
     setPages([]);
     setActivePage(null);
+    setWikiGraph(null);
+    setWikiVaultQuery("");
+    setWikiVaultFilter("all");
     setIsPolling(false);
     pollAttemptsRef.current = 0;
 
@@ -537,6 +664,20 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
+  }, [topicId]);
+
+  useEffect(() => {
+    setWikiGraphLoading(true);
+    WikiAPI.getGraph(topicId)
+      .then((graph) => {
+        setWikiGraph(graph);
+        if (pages.length === 0 && graph.pages.length > 0) {
+          applyGraphPages(graph);
+        }
+      })
+      .catch(() => setWikiGraph(null))
+      .finally(() => setWikiGraphLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
 
   // Polling: wiki hazır olana kadar 3 saniyede bir kontrol et (max 60s)
@@ -612,16 +753,19 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const refreshSources = async () => {
     setSourcesLoading(true);
     try {
-      const [data, quality] = await Promise.all([
+      const [data, quality, notebook] = await Promise.all([
         SourcesAPI.getTopicSources(topicId),
         SourcesAPI.getTopicQuality(topicId).catch(() => null),
+        SourcesAPI.getTopicNotebook(topicId).catch(() => null),
       ]);
       setSources(data);
       setSourceQuality(quality);
+      setSourceNotebook(notebook);
       if (!activeSource && data.length > 0) setActiveSource(data[0]);
     } catch {
       setSources([]);
       setSourceQuality(null);
+      setSourceNotebook(null);
     } finally {
       setSourcesLoading(false);
     }
@@ -631,6 +775,133 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     refreshSources();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
+
+  useEffect(() => {
+    const sourceIds = new Set(sources.map((source) => source.id));
+    setSelectedCompareSourceIds((current) => {
+      const kept = current.filter((id) => sourceIds.has(id));
+      if (kept.length > 0) return kept;
+      return sources.slice(0, 2).map((source) => source.id);
+    });
+  }, [sources]);
+
+  useEffect(() => {
+    if (mode !== "orkalm" || sources.length === 0) {
+      setCitationReview(null);
+      return;
+    }
+    let cancelled = false;
+    SourcesAPI.getTopicCitationReview(topicId)
+      .then((review) => {
+        if (!cancelled) setCitationReview(review);
+      })
+      .catch(() => {
+        if (!cancelled) setCitationReview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, sources.length, topicId]);
+
+  const refreshQuestionThreads = async () => {
+    if (mode !== "orkalm") {
+      setSourceQuestionThreads([]);
+      setActiveQuestionThread(null);
+      setSourceStudySummary(null);
+      return;
+    }
+    setThreadLoading(true);
+    try {
+      const params = {
+        topicId,
+        sourceId: activeSource?.id,
+        wikiPageId: activePage?.id,
+      };
+      const [result, summary] = await Promise.all([
+        SourcesAPI.listQuestionThreads(params),
+        SourcesAPI.getSourceStudySummary(params).catch(() => null),
+      ]);
+      setSourceQuestionThreads(result.items ?? []);
+      setSourceStudySummary(summary);
+      setActiveQuestionThread((current) => {
+        if (current && result.items.some((item) => item.threadId === current.threadId)) {
+          return result.items.find((item) => item.threadId === current.threadId) ?? current;
+        }
+        return result.items[0] ?? null;
+      });
+    } catch {
+      setSourceQuestionThreads([]);
+      setActiveQuestionThread(null);
+      setSourceStudySummary(null);
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshQuestionThreads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, topicId, activeSource?.id, activePage?.id]);
+
+  useEffect(() => {
+    if (!activeSource) {
+      setActiveSourceNotebook(null);
+      setSourceConceptLinks(null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      SourcesAPI.getSourceNotebook(activeSource.id).catch(() => null),
+      SourcesAPI.getSourceConceptLinks(activeSource.id).catch(() => null),
+    ])
+      .then(([notebook, conceptLinks]) => {
+        if (!cancelled) {
+          setActiveSourceNotebook(notebook);
+          setSourceConceptLinks(conceptLinks);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setActiveSourceNotebook(null);
+          setSourceConceptLinks(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSource?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    SourcesAPI.getTopicSourceConceptGraph(topicId)
+      .then((graph) => {
+        if (!cancelled) setSourceConceptGraph(graph);
+      })
+      .catch(() => {
+        if (!cancelled) setSourceConceptGraph(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [topicId, sourceConceptSyncing]);
+
+  useEffect(() => {
+    if (!activePage?.id) {
+      setActivePageSourceLinks(null);
+      return;
+    }
+    let cancelled = false;
+    SourcesAPI.getWikiPageSourceLinks(activePage.id)
+      .then((links) => {
+        if (!cancelled) setActivePageSourceLinks(links);
+      })
+      .catch(() => {
+        if (!cancelled) setActivePageSourceLinks(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePage?.id, sourceConceptSyncing]);
 
   useEffect(() => {
     if (!activePage?.blocks || activePage.blocks.length === 0) {
@@ -687,16 +958,28 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     setSourceAsking(true);
     setSourceAnswer("");
     setSourceCitations([]);
-    setSourceAnswerMetadata(null);
+    setSourceQuestionResponse(null);
     try {
-      const result = await SourcesAPI.ask(activeSource.id, sourceQuestion.trim());
+      const result = await SourcesAPI.ask(activeSource.id, sourceQuestion.trim(), {
+        topicId,
+        wikiPageId: activePage?.id,
+        mode: "selected_source",
+        includeLearnerContext: true,
+        writeWikiTrace: true,
+      });
       setSourceAnswer(result.answer);
-      setSourceCitations(result.citations ?? []);
-      setSourceAnswerMetadata(result.metadata ?? null);
+      setSourceQuestionResponse(result);
+      setSourceCitations((result.citations ?? []).map((citation) => ({
+        id: citation.sourceChunkId ?? citation.citationId,
+        pageNumber: citation.pageNumber ?? 1,
+        chunkIndex: citation.chunkIndex ?? 0,
+        label: citation.label,
+        supportStatus: citation.supportStatus,
+      })));
       const firstCitation = result.citations?.[0];
-      if (firstCitation) {
+      if (firstCitation?.pageNumber) {
         await openSourcePage(activeSource.id, firstCitation.pageNumber, {
-          focusChunkId: firstCitation.id,
+          focusChunkId: firstCitation.sourceChunkId ?? undefined,
           action: "source-answer-first-citation",
         });
       }
@@ -706,6 +989,163 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       toast.error("Kaynaklı cevap üretilemedi.");
     } finally {
       setSourceAsking(false);
+    }
+  };
+
+  const handleAskSourceCollection = async () => {
+    if (!sourceQuestion.trim() || sourceAsking) return;
+    setSourceAsking(true);
+    setSourceAnswer("");
+    setSourceCitations([]);
+    setSourceQuestionResponse(null);
+    try {
+      const result = await SourcesAPI.askTopicSources(topicId, sourceQuestion.trim(), {
+        sourceIds: activeSource ? [activeSource.id] : undefined,
+        wikiPageId: activePage?.id,
+        mode: activeSource ? "selected_source" : "source_collection",
+        includeLearnerContext: true,
+        writeWikiTrace: true,
+      });
+      setSourceAnswer(result.answer);
+      setSourceQuestionResponse(result);
+      setSourceCitations((result.citations ?? []).map((citation) => ({
+        id: citation.sourceChunkId ?? citation.citationId,
+        pageNumber: citation.pageNumber ?? 1,
+        chunkIndex: citation.chunkIndex ?? 0,
+        label: citation.label,
+        supportStatus: citation.supportStatus,
+      })));
+      if (result.context?.sourceId && !activeSource) {
+        const matched = sources.find((source) => source.id === result.context.sourceId);
+        if (matched) setActiveSource(matched);
+      }
+      SourcesAPI.getTopicQuality(topicId).then(setSourceQuality).catch(() => undefined);
+      setNotebookRefreshTick((tick) => tick + 1);
+    } catch {
+      toast.error("Kaynak defteri cevabi uretilemedi.");
+    } finally {
+      setSourceAsking(false);
+    }
+  };
+
+  const handleCreateQuestionThread = async () => {
+    if (!sourceQuestion.trim() || threadLoading) return;
+    setThreadLoading(true);
+    try {
+      const thread = await SourcesAPI.createQuestionThread({
+        topicId,
+        sourceId: activeSource?.id,
+        sourceIds: activeSource ? [activeSource.id] : selectedCompareSourceIds,
+        wikiPageId: activePage?.id,
+        conceptKey: activePage?.conceptKey ?? undefined,
+        initialQuestion: sourceQuestion.trim(),
+        mode: activeSource ? "selected_source" : "source_collection",
+        includeLearnerContext: true,
+        writeWikiTrace: false,
+      });
+      setActiveQuestionThread(thread);
+      await refreshQuestionThreads();
+      setNotebookRefreshTick((tick) => tick + 1);
+      toast.success("Source Q&A thread kaydedildi.");
+    } catch {
+      toast.error("Source Q&A thread olusturulamadi.");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const handleAskThreadFollowUp = async () => {
+    if (!activeQuestionThread || !threadFollowUp.trim() || threadLoading) return;
+    setThreadLoading(true);
+    try {
+      const thread = await SourcesAPI.askQuestionThread(activeQuestionThread.threadId, {
+        question: threadFollowUp.trim(),
+        includeLearnerContext: true,
+        writeWikiTrace: false,
+      });
+      setActiveQuestionThread(thread);
+      setThreadFollowUp("");
+      await refreshQuestionThreads();
+      setNotebookRefreshTick((tick) => tick + 1);
+    } catch {
+      toast.error("Follow-up kaydedilemedi.");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const handleReviewThread = async (reviewStatus: string) => {
+    if (!activeQuestionThread || threadLoading) return;
+    setThreadLoading(true);
+    try {
+      const thread = await SourcesAPI.reviewQuestionThread(activeQuestionThread.threadId, {
+        reviewStatus,
+        warnings: reviewStatus === "needs_review" ? ["student_marked_for_review"] : [],
+      });
+      setActiveQuestionThread(thread);
+      await refreshQuestionThreads();
+    } catch {
+      toast.error("Thread review durumu guncellenemedi.");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const handleWriteThreadTrace = async () => {
+    if (!activeQuestionThread || threadLoading) return;
+    setThreadLoading(true);
+    try {
+      await SourcesAPI.writeQuestionThreadWikiTrace(activeQuestionThread.threadId);
+      const thread = await SourcesAPI.getQuestionThread(activeQuestionThread.threadId);
+      setActiveQuestionThread(thread);
+      await refreshQuestionThreads();
+      setNotebookRefreshTick((tick) => tick + 1);
+      toast.success("Thread Wiki notuna baglandi.");
+    } catch {
+      toast.error("Wiki trace yazilamadi.");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const toggleCompareSource = (sourceId: string) => {
+    setSelectedCompareSourceIds((current) =>
+      current.includes(sourceId)
+        ? current.filter((id) => id !== sourceId)
+        : [...current, sourceId].slice(0, 8)
+    );
+  };
+
+  const handleCompareSources = async () => {
+    const sourceIds = selectedCompareSourceIds.filter(Boolean);
+    if (sourceIds.length < 2 || sourceComparing) return;
+    setSourceComparing(true);
+    try {
+      const result = await SourcesAPI.compareTopicSources(topicId, {
+        topicId,
+        sourceIds,
+        wikiPageId: activePage?.id,
+        conceptKey: activePage?.conceptKey ?? undefined,
+        includeConceptLinks: true,
+        includeCitationReview: true,
+        writeWikiTrace: true,
+      });
+      setSourceCompare(result);
+      setCitationReview({
+        topicId,
+        sourceId: null,
+        reviewStatus: result.citationCoverage.coverageStatus,
+        coverage: result.citationCoverage,
+        items: result.citationReviewItems,
+        warnings: result.warnings,
+        generatedAt: result.generatedAt,
+      });
+      toast.success("Kaynak karsilastirma hazir.");
+      setNotebookRefreshTick((tick) => tick + 1);
+    } catch {
+      toast.error("Kaynaklar karsilastirilamadi.");
+    } finally {
+      setSourceComparing(false);
     }
   };
 
@@ -843,6 +1283,75 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     setInput(`${label} konusunu kaynaklara göre açıkla ve ilişkili noktaları göster.`);
   };
 
+  const handleSyncWikiGraph = async () => {
+    if (wikiGraphSyncing) return;
+    setWikiGraphSyncing(true);
+    try {
+      const result = await WikiAPI.syncGraph(topicId, {
+        includeTopicTreeFallback: true,
+        createSummaryBlocks: true,
+      });
+      setWikiGraph(result.graph);
+      applyGraphPages(result.graph);
+      recordWikiAction("wiki-graph-synced", result.syncStatus, {
+        createdPageCount: result.createdPageCount,
+        updatedPageCount: result.updatedPageCount,
+        createdLinkCount: result.createdLinkCount,
+        evidenceStatus: result.evidenceStatus,
+      });
+      toast.success(result.createdPageCount > 0 ? "Wiki sayfa haritasi hazirlandi." : "Wiki sayfa haritasi guncellendi.");
+    } catch {
+      toast.error("Wiki sayfa haritasi senkronize edilemedi.");
+    } finally {
+      setWikiGraphSyncing(false);
+    }
+  };
+
+  const handleSyncSourceConceptLinks = async () => {
+    if (!activeSource || sourceConceptSyncing) return;
+    setSourceConceptSyncing(true);
+    try {
+      const result = await SourcesAPI.syncSourceConceptLinks(activeSource.id);
+      setSourceConceptLinks(result);
+      const graph = await SourcesAPI.getTopicSourceConceptGraph(topicId).catch(() => null);
+      setSourceConceptGraph(graph);
+      recordWikiAction("source-concept-links-synced", result.title, {
+        sourceId: activeSource.id,
+        confirmedLinkCount: result.confirmedLinkCount,
+        suggestedLinkCount: result.suggestedLinkCount,
+      });
+      toast.success(result.confirmedLinkCount > 0 ? "Kaynak-kavram baglari guncellendi." : "Oneri baglari hazirlandi.");
+    } catch {
+      toast.error("Kaynak-kavram baglari guncellenemedi.");
+    } finally {
+      setSourceConceptSyncing(false);
+    }
+  };
+
+  const selectGraphPage = (page: WikiGraphPageDto) => {
+    const existing = pages.find((candidate) => candidate.id === page.id);
+    const nextPage: WikiPage = existing ?? {
+      id: page.id,
+      title: page.title,
+      pageKey: page.pageKey,
+      pageType: page.pageType,
+      conceptKey: page.conceptKey,
+      parentConceptKey: page.parentConceptKey,
+      parentWikiPageId: page.parentWikiPageId,
+      sourceReadiness: page.sourceReadiness,
+      evidenceStatus: page.evidenceStatus,
+      safeSummary: page.safeSummary,
+      orderIndex: page.orderIndex,
+      blockCount: page.blockCount,
+    };
+    setActivePage(nextPage);
+    recordWikiAction("wiki-graph-page-selected", page.title, {
+      pageType: page.pageType,
+      conceptKey: page.conceptKey,
+      sourceReadiness: page.sourceReadiness,
+    });
+  };
+
   const rootNodes = mindMap?.nodes.filter((node) => !node.parentId) ?? [];
   const childNodes = (parentId: string) =>
     mindMap?.nodes.filter((node) => node.parentId === parentId).sort((a, b) => a.depth - b.depth || a.label.localeCompare(b.label, "tr")) ?? [];
@@ -864,6 +1373,109 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     totalChunks: sourceGraph.totalChunks,
     quality: sourceQuality,
   });
+  const activeGraphPage = useMemo(
+    () => wikiGraph?.pages.find((page) => page.id === activePage?.id) ?? null,
+    [activePage?.id, wikiGraph],
+  );
+  const wikiGraphPageById = useMemo(() => {
+    const map = new Map<string, WikiGraphPageDto>();
+    for (const page of wikiGraph?.pages ?? []) map.set(page.id, page);
+    return map;
+  }, [wikiGraph]);
+  const wikiVaultPages = useMemo<WikiGraphPageDto[]>(() => {
+    const graphPages = wikiGraph?.pages ?? [];
+    const pageMap = new Map<string, WikiGraphPageDto>();
+
+    for (const page of graphPages) pageMap.set(page.id, page);
+    for (const page of pages) {
+      if (pageMap.has(page.id)) continue;
+      pageMap.set(page.id, {
+        id: page.id,
+        topicId,
+        parentWikiPageId: page.parentWikiPageId,
+        pageKey: page.pageKey ?? page.id,
+        pageType: page.pageType ?? "page",
+        conceptKey: page.conceptKey,
+        parentConceptKey: page.parentConceptKey,
+        title: page.title,
+        status: "ready",
+        sourceReadiness: page.sourceReadiness ?? "evidence_insufficient",
+        evidenceStatus: page.evidenceStatus ?? "evidence_insufficient",
+        safeSummary: page.safeSummary,
+        orderIndex: page.orderIndex ?? 0,
+        blockCount: page.blockCount ?? page.blocks?.length ?? 0,
+        updatedAt: "",
+      });
+    }
+
+    return Array.from(pageMap.values()).sort((a, b) => a.orderIndex - b.orderIndex || a.title.localeCompare(b.title, "tr"));
+  }, [pages, topicId, wikiGraph]);
+  const wikiVaultFilteredPages = useMemo(() => {
+    const query = normalizeVaultText(wikiVaultQuery.trim());
+    return wikiVaultPages.filter((page) => {
+      if (!pageMatchesVaultFilter(page, wikiVaultFilter)) return false;
+      if (!query) return true;
+      return normalizeVaultText([
+        page.title,
+        page.pageKey,
+        page.pageType,
+        page.conceptKey,
+        page.safeSummary,
+        page.sourceReadiness,
+        page.evidenceStatus,
+      ].filter(Boolean).join(" ")).includes(query);
+    });
+  }, [wikiVaultFilter, wikiVaultPages, wikiVaultQuery]);
+  const wikiVaultTreeRows = useMemo(() => {
+    const filteredIds = new Set(wikiVaultFilteredPages.map((page) => page.id));
+    const roots = wikiVaultFilteredPages.filter((page) => !page.parentWikiPageId || !filteredIds.has(page.parentWikiPageId));
+    const childrenByParent = new Map<string, WikiGraphPageDto[]>();
+    for (const page of wikiVaultFilteredPages) {
+      if (!page.parentWikiPageId || !filteredIds.has(page.parentWikiPageId)) continue;
+      const current = childrenByParent.get(page.parentWikiPageId) ?? [];
+      current.push(page);
+      childrenByParent.set(page.parentWikiPageId, current);
+    }
+
+    const rows: Array<{ page: WikiGraphPageDto; depth: number }> = [];
+    const visit = (page: WikiGraphPageDto, depth: number) => {
+      rows.push({ page, depth });
+      for (const child of childrenByParent.get(page.id) ?? []) visit(child, depth + 1);
+    };
+    roots.forEach((page) => visit(page, 0));
+    return rows;
+  }, [wikiVaultFilteredPages]);
+  const activeOutgoingLinks = useMemo(
+    () => wikiGraph?.links.filter((link) => link.sourcePageId === activePage?.id) ?? [],
+    [activePage?.id, wikiGraph],
+  );
+  const activeBacklinks = useMemo(
+    () => wikiGraph?.links.filter((link) => link.targetPageId === activePage?.id) ?? [],
+    [activePage?.id, wikiGraph],
+  );
+  const wikiBlockGroups = useMemo(() => {
+    const blocks = activePage?.blocks ?? [];
+    const groups = new Map<string, { id: string; label: string; blocks: NonNullable<WikiPage["blocks"]> }>();
+    for (const block of blocks) {
+      const group = blockGroupFor(block.type);
+      const current = groups.get(group.id) ?? { ...group, blocks: [] };
+      current.blocks.push(block);
+      groups.set(group.id, current);
+    }
+    return Array.from(groups.values());
+  }, [activePage?.blocks]);
+  const relatedGraphPages = useMemo(() => {
+    if (!wikiGraph || !activePage) return [];
+    const relatedIds = new Set(
+      wikiGraph.links
+        .filter((link) => link.sourcePageId === activePage.id || link.targetPageId === activePage.id)
+        .flatMap((link) => [link.sourcePageId, link.targetPageId].filter(Boolean) as string[])
+        .filter((id) => id !== activePage.id)
+    );
+    return wikiGraph.pages.filter((page) => relatedIds.has(page.id)).slice(0, 8);
+  }, [activePage, wikiGraph]);
+  const wikiGraphWarnings = wikiGraph?.warnings ?? [];
+  const workspaceState = useLearningWorkspaceState({ topicId });
   const hasSourceQualityConcern =
     sourceCoverageCoach.tone === "watch" ||
     sourceQuality?.retrievalHealthStatus === "degraded" ||
@@ -1045,6 +1657,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
           </div>
           {/* Sadece kapatıp sohbet listesine dönmek istenebileceği ihtimali için ufak buton */}
           <button
+            type="button"
+            onClick={handleSyncWikiGraph}
+            disabled={wikiGraphSyncing}
+            className="mr-2 inline-flex items-center gap-2 rounded-lg border border-[#526d82]/15 bg-white/62 px-3 py-2 text-xs font-black text-[#344054] transition hover:bg-[#dcecf3]/70 disabled:opacity-50"
+            title="Wiki sayfa haritasini senkronize et"
+          >
+            {wikiGraphSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+            Harita
+          </button>
+          <button
             onClick={onClose}
             className="text-[#667085] hover:text-[#344054] hover:bg-[#dcecf3]/70 transition-colors duration-150 p-2 rounded-lg"
             title="Dersi Kapat"
@@ -1090,6 +1712,339 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 <h1 className="text-2xl md:text-3xl font-extrabold text-[#172033] tracking-tight">
                   {activePage.title}
                 </h1>
+              </div>
+
+              <div className="mb-6 rounded-2xl border border-[#526d82]/16 bg-white/72 p-4 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+                      <BookOpen className="h-4 w-4" />
+                      Wiki Vault
+                    </div>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-[#667085]">
+                      Sayfa agaci, aktif sayfa baglami, backlink ve Notebook Studio ciktilari ayni calisma kasasinda izlenir.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.status ?? "ready")}`}>
+                      {userSafeStatus(activeGraphPage?.status ?? "ready")}
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.evidenceStatus ?? activePage.evidenceStatus)}`}>
+                      {userSafeStatus(activeGraphPage?.evidenceStatus ?? activePage.evidenceStatus ?? "evidence_insufficient")}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[1.25fr_0.9fr_0.95fr]">
+                  <div className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/70 p-3">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">
+                        Page tree / list
+                      </div>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                        {wikiVaultFilteredPages.length}/{wikiVaultPages.length} sayfa
+                      </span>
+                    </div>
+                    <label className="mb-3 flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/78 px-3 py-2">
+                      <Search className="h-4 w-4 shrink-0 text-[#98a2b3]" />
+                      <input
+                        value={wikiVaultQuery}
+                        onChange={(event) => setWikiVaultQuery(event.target.value)}
+                        placeholder="Sayfa, concept veya kaynak ara"
+                        className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[#172033] outline-none placeholder:text-[#98a2b3]"
+                      />
+                    </label>
+                    <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1 sidebar-scrollbar">
+                      {wikiVaultFilters.map((filter) => (
+                        <button
+                          key={filter.id}
+                          type="button"
+                          onClick={() => setWikiVaultFilter(filter.id)}
+                          className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                            wikiVaultFilter === filter.id
+                              ? "border-[#172033]/18 bg-white text-[#172033]"
+                              : "border-[#526d82]/12 bg-[#f7f9fa]/70 text-[#667085] hover:bg-white"
+                          }`}
+                        >
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1 sidebar-scrollbar">
+                      {wikiVaultTreeRows.length === 0 ? (
+                        <div className="rounded-xl border border-[#526d82]/12 bg-white/64 px-3 py-3 text-xs font-semibold text-[#667085]">
+                          Bu filtre icin sayfa bulunamadi.
+                        </div>
+                      ) : (
+                        wikiVaultTreeRows.slice(0, 40).map(({ page, depth }) => (
+                          <button
+                            key={page.id}
+                            type="button"
+                            onClick={() => selectGraphPage(page)}
+                            className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                              activePage.id === page.id
+                                ? "border-[#172033]/20 bg-white text-[#172033]"
+                                : "border-[#526d82]/10 bg-white/55 text-[#344054] hover:border-[#9ec7d9]/45 hover:bg-white"
+                            }`}
+                            style={{ paddingLeft: `${12 + Math.min(depth, 3) * 14}px` }}
+                          >
+                            <div className="flex min-w-0 items-center justify-between gap-2">
+                              <span className="truncate text-xs font-black">{page.title}</span>
+                              <span className="shrink-0 rounded-full bg-[#f7f9fa] px-1.5 py-0.5 text-[9px] font-bold text-[#667085]">
+                                {page.blockCount}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${pageBadgeTone(page.pageType)}`}>
+                                {userSafeStatus(page.pageType)}
+                              </span>
+                              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${pageBadgeTone(page.sourceReadiness)}`}>
+                                {userSafeStatus(page.sourceReadiness)}
+                              </span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/70 p-3">
+                    <div className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">
+                      Aktif sayfa baglami
+                    </div>
+                    <div className="space-y-2 text-xs">
+                      <div className="rounded-xl bg-white/72 px-3 py-2">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#98a2b3]">Sayfa</div>
+                        <div className="mt-1 font-black text-[#172033]">{activePage.title}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.pageType ?? activePage.pageType)}`}>
+                          {userSafeStatus(activeGraphPage?.pageType ?? activePage.pageType ?? "page")}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.sourceReadiness ?? activePage.sourceReadiness)}`}>
+                          {userSafeStatus(activeGraphPage?.sourceReadiness ?? activePage.sourceReadiness ?? "evidence_insufficient")}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.evidenceStatus ?? activePage.evidenceStatus)}`}>
+                          {userSafeStatus(activeGraphPage?.evidenceStatus ?? activePage.evidenceStatus ?? "evidence_insufficient")}
+                        </span>
+                      </div>
+                      {(activeGraphPage?.conceptKey ?? activePage.conceptKey) && (
+                        <div className="rounded-xl border border-[#526d82]/10 bg-white/64 px-3 py-2">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#98a2b3]">Concept</div>
+                          <div className="mt-1 font-mono text-[11px] font-bold text-[#52768a]">
+                            {activeGraphPage?.conceptKey ?? activePage.conceptKey}
+                          </div>
+                        </div>
+                      )}
+                      {(activeGraphPage?.parentWikiPageId ?? activePage.parentWikiPageId) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const parent = wikiGraphPageById.get((activeGraphPage?.parentWikiPageId ?? activePage.parentWikiPageId)!);
+                            if (parent) selectGraphPage(parent);
+                          }}
+                          className="w-full rounded-xl border border-[#526d82]/10 bg-white/64 px-3 py-2 text-left transition hover:border-[#9ec7d9]/45"
+                        >
+                          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#98a2b3]">Parent page</div>
+                          <div className="mt-1 truncate text-xs font-black text-[#344054]">
+                            {wikiGraphPageById.get((activeGraphPage?.parentWikiPageId ?? activePage.parentWikiPageId)!)?.title ?? "Ust sayfa"}
+                          </div>
+                        </button>
+                      )}
+                      {(activeGraphPage?.safeSummary ?? activePage.safeSummary) && (
+                        <p className="rounded-xl border border-[#526d82]/10 bg-white/64 px-3 py-2 text-[11px] leading-5 text-[#667085]">
+                          {activeGraphPage?.safeSummary ?? activePage.safeSummary}
+                        </p>
+                      )}
+                      {activePageSourceLinks && (
+                        <div className="rounded-xl border border-[#526d82]/10 bg-white/64 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#98a2b3]">Supporting sources</div>
+                            <span className="rounded-full bg-[#f7f9fa] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                              {activePageSourceLinks.confirmedLinkCount}
+                            </span>
+                          </div>
+                          {activePageSourceLinks.links.length > 0 ? (
+                            <div className="mt-2 space-y-1.5">
+                              {activePageSourceLinks.links.slice(0, 4).map((link) => (
+                                <button
+                                  key={`${link.sourceId ?? link.sourcePageId}-${link.linkType}`}
+                                  type="button"
+                                  onClick={() => {
+                                    const source = sources.find((item) => item.id === link.sourceId);
+                                    if (source) handleSelectSource(source);
+                                  }}
+                                  className="w-full rounded-lg border border-[#526d82]/10 bg-[#f7f4ec]/62 px-2.5 py-2 text-left text-[11px] transition hover:border-[#9ec7d9]/45"
+                                >
+                                  <span className="block truncate font-black text-[#344054]">{link.sourceTitle || "Source"}</span>
+                                  <span className="mt-0.5 block truncate font-semibold text-[#667085]">
+                                    {userSafeStatus(link.linkType)} / {userSafeStatus(link.confidence)} / {userSafeStatus(link.evidenceStatus)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] font-semibold text-[#667085]">Bu concept sayfasi icin bagli kaynak yok.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/70 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">
+                        Backlinks / local graph
+                      </div>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                        {activeBacklinks.length + activeOutgoingLinks.length} link
+                      </span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      <div>
+                        <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#52768a]">Geri linkler</div>
+                        <div className="space-y-1.5">
+                          {activeBacklinks.length === 0 ? (
+                            <p className="rounded-lg bg-white/62 px-2.5 py-2 text-[11px] text-[#667085]">Bu sayfaya gelen link yok.</p>
+                          ) : (
+                            activeBacklinks.slice(0, 5).map((link) => {
+                              const source = wikiGraphPageById.get(link.sourcePageId);
+                              return (
+                                <button
+                                  key={link.id}
+                                  type="button"
+                                  onClick={() => source && selectGraphPage(source)}
+                                  className="w-full rounded-lg border border-[#526d82]/10 bg-white/66 px-2.5 py-2 text-left text-[11px] transition hover:border-[#9ec7d9]/45"
+                                >
+                                  <span className="block truncate font-black text-[#344054]">{source?.title ?? userSafeStatus(link.targetPageKey)}</span>
+                                  <span className="mt-0.5 block truncate font-semibold text-[#667085]">{userSafeStatus(link.linkType)} - {link.safeLabel}</span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#52768a]">Cikis linkleri</div>
+                        <div className="space-y-1.5">
+                          {activeOutgoingLinks.length === 0 ? (
+                            <p className="rounded-lg bg-white/62 px-2.5 py-2 text-[11px] text-[#667085]">Bu sayfadan cikan link yok.</p>
+                          ) : (
+                            activeOutgoingLinks.slice(0, 5).map((link) => {
+                              const target = link.targetPageId ? wikiGraphPageById.get(link.targetPageId) : null;
+                              return (
+                                <button
+                                  key={link.id}
+                                  type="button"
+                                  onClick={() => target && selectGraphPage(target)}
+                                  className="w-full rounded-lg border border-[#526d82]/10 bg-white/66 px-2.5 py-2 text-left text-[11px] transition hover:border-[#9ec7d9]/45 disabled:opacity-70"
+                                  disabled={!target}
+                                >
+                                  <span className="block truncate font-black text-[#344054]">{target?.title ?? userSafeStatus(link.targetPageKey)}</span>
+                                  <span className="mt-0.5 block truncate font-semibold text-[#667085]">{userSafeStatus(link.linkType)} - {link.safeLabel}</span>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {relatedGraphPages.length > 0 && (
+                      <div className="mt-3 rounded-xl border border-[#526d82]/10 bg-white/58 px-3 py-2">
+                        <div className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#98a2b3]">Local komsular</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {relatedGraphPages.slice(0, 6).map((page) => (
+                            <button
+                              key={page.id}
+                              type="button"
+                              onClick={() => selectGraphPage(page)}
+                              className="max-w-[150px] truncate rounded-full border border-[#526d82]/12 bg-[#f7f9fa] px-2 py-1 text-[10px] font-bold text-[#667085] transition hover:bg-white hover:text-[#172033]"
+                            >
+                              {page.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-6 rounded-2xl border border-[#526d82]/16 bg-white/68 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+                      <Network className="h-4 w-4" />
+                      Wiki sayfa grafi
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-[#667085]">
+                      {wikiGraphLoading
+                        ? "Sayfa iliskileri yukleniyor..."
+                        : wikiGraph
+                          ? `${wikiGraph.pages.length} sayfa, ${wikiGraph.links.length} iliski.`
+                          : "Bu konu icin graph bilgisi henuz okunamadi."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncWikiGraph}
+                    disabled={wikiGraphSyncing}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/75 px-3 py-2 text-xs font-black text-[#344054] transition hover:bg-[#dcecf3]/70 disabled:opacity-50"
+                  >
+                    {wikiGraphSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Network className="h-4 w-4" />}
+                    Senkronize et
+                  </button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#344054]">
+                    {userSafeStatus(activeGraphPage?.pageType ?? activePage.pageType ?? "page")}
+                  </span>
+                  {(activeGraphPage?.conceptKey ?? activePage.conceptKey) && (
+                    <span className="rounded-full border border-sky-500/18 bg-sky-500/8 px-2.5 py-1 text-[10px] font-bold text-[#52768a]">
+                      {activeGraphPage?.conceptKey ?? activePage.conceptKey}
+                    </span>
+                  )}
+                  <span className="rounded-full border border-[#8fb7a2]/22 bg-[#f2faf5]/80 px-2.5 py-1 text-[10px] font-bold text-[#47725d]">
+                    {userSafeStatus(activeGraphPage?.sourceReadiness ?? activePage.sourceReadiness ?? "evidence_insufficient")}
+                  </span>
+                  <span className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+                    {activeGraphPage?.blockCount ?? activePage.blockCount ?? activePage.blocks?.length ?? 0} blok
+                  </span>
+                </div>
+
+                {(activeGraphPage?.safeSummary ?? activePage.safeSummary) && (
+                  <p className="mt-3 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/64 px-3 py-2 text-xs leading-5 text-[#667085]">
+                    {activeGraphPage?.safeSummary ?? activePage.safeSummary}
+                  </p>
+                )}
+
+                {relatedGraphPages.length > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">Bagli sayfalar</div>
+                    <div className="flex flex-wrap gap-2">
+                      {relatedGraphPages.map((page) => (
+                        <button
+                          key={page.id}
+                          type="button"
+                          onClick={() => selectGraphPage(page)}
+                          className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 px-3 py-2 text-left text-xs font-bold text-[#344054] transition hover:border-[#9ec7d9]/50 hover:bg-white"
+                        >
+                          <span className="block max-w-[220px] truncate">{page.title}</span>
+                          <span className="mt-0.5 block text-[10px] font-semibold text-[#667085]">
+                            {userSafeStatus(page.pageType)} - {userSafeStatus(page.sourceReadiness)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {wikiGraphWarnings.length > 0 && (
+                  <p className="mt-3 text-[11px] font-semibold leading-5 text-[#8a6a33]">
+                    {wikiGraphWarnings.slice(0, 2).map(userSafeStatus).join(" - ")}
+                  </p>
+                )}
               </div>
 
               <div className="mb-8 rounded-2xl border border-[#526d82]/16 bg-[#f7f9fa]/72 p-4 shadow-sm">
@@ -1326,6 +2281,129 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         }
                       }}
                     />
+                    {(workspaceState.sourceReadiness || workspaceState.recentArtifacts.length > 0 || workspaceState.staleWarnings.length > 0) && (
+                      <div className="rounded-2xl border border-[#526d82]/14 bg-white/64 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#52768a]">Learning workspace</div>
+                            <p className="mt-1 text-[11px] text-[#667085]">
+                              Wiki, kaynak ve artifact durumu ayni konu baglaminda izlenir.
+                            </p>
+                          </div>
+                          {workspaceState.sourceReadiness && (
+                            <span className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#344054]">
+                              {userSafeStatus(workspaceState.sourceReadiness)}
+                            </span>
+                          )}
+                        </div>
+                        {workspaceState.recentArtifacts.length > 0 && (
+                          <div className="space-y-2">
+                            {workspaceState.recentArtifacts.slice(0, 3).map((artifact) => (
+                              <div key={artifact.id} className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/70 px-3 py-2">
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="font-black text-[#172033]">{artifact.title || userSafeStatus(artifact.artifactType)}</span>
+                                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                                    {userSafeStatus(artifact.sourceBasis)}
+                                  </span>
+                                </div>
+                                {(artifact.safety?.warnings?.length > 0 || artifact.accessibility?.issues?.length > 0) && (
+                                  <p className="mt-1 text-[11px] font-semibold text-[#8a6a33]">
+                                    {[...(artifact.safety?.warnings ?? []), ...(artifact.accessibility?.issues ?? [])].slice(0, 1).map(userSafeStatus).join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {workspaceState.staleWarnings.length > 0 && (
+                          <p className="mt-2 text-[11px] font-semibold text-[#8a6a33]">
+                            {workspaceState.staleWarnings.slice(0, 2).map(userSafeStatus).join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {isOrkaLm && sourceNotebook && (
+                      <div className="rounded-2xl border border-amber-500/16 bg-[#fff8ee]/66 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8a6a33]">OrkaLM source notebook</div>
+                            <p className="mt-1 text-[11px] text-[#667085]">
+                              {sourceNotebook.readySourceCount}/{sourceNotebook.sourceCount} hazir kaynak · {sourceNotebook.chunkCount} indeks parçası · %{Math.round((sourceNotebook.citationCoverage ?? 0) * 100)} citation destek
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-amber-500/18 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#8a6a33]">
+                            {userSafeStatus(sourceNotebook.evidenceStatus)}
+                          </span>
+                        </div>
+                        {(activeSourceNotebook ?? sourceNotebook).warnings.length > 0 && (
+                          <p className="mb-2 rounded-lg border border-amber-500/16 bg-white/54 px-2 py-1.5 text-[11px] font-semibold leading-5 text-[#8a6a33]">
+                            {(activeSourceNotebook ?? sourceNotebook).warnings.slice(0, 2).map(userSafeStatus).join(" · ")}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {(activeSourceNotebook ?? sourceNotebook).nextActions.slice(0, 5).map((action) => (
+                            <span key={`${action.actionType}-${action.userSafeLabel}`} className="rounded-full border border-[#526d82]/12 bg-white/62 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+                              {action.userSafeLabel}
+                            </span>
+                          ))}
+                        </div>
+                        {(activeSourceNotebook ?? sourceNotebook).linkedWikiPages.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold text-[#667085]">
+                            {(activeSourceNotebook ?? sourceNotebook).linkedWikiPages.slice(0, 4).map((page) => (
+                              <span key={page.id} className="rounded-full bg-white/60 px-2 py-0.5">
+                                {page.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {activeSource && (
+                          <div className="mt-3 rounded-xl border border-[#526d82]/12 bg-white/58 p-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#526d82]">Source-to-concept graph</div>
+                                <p className="mt-1 text-[11px] text-[#667085]">
+                                  {(sourceConceptLinks?.confirmedLinkCount ?? 0)} onayli bag / {(sourceConceptLinks?.suggestedLinkCount ?? 0)} onerilen bag / {sourceConceptGraph?.edges.length ?? 0} graph kenari
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleSyncSourceConceptLinks}
+                                disabled={sourceConceptSyncing}
+                                className="rounded-full border border-[#526d82]/15 bg-[#f7f9fa] px-2.5 py-1 text-[10px] font-black text-[#172033] transition hover:border-[#526d82]/30 disabled:opacity-60"
+                              >
+                                {sourceConceptSyncing ? "Sync..." : "Link sync"}
+                              </button>
+                            </div>
+                            {sourceConceptLinks?.warnings?.length ? (
+                              <p className="mt-2 rounded-lg border border-amber-500/16 bg-[#fff8ee] px-2 py-1 text-[11px] font-semibold text-[#8a6a33]">
+                                {sourceConceptLinks.warnings.slice(0, 2).map(userSafeStatus).join(" / ")}
+                              </p>
+                            ) : null}
+                            {sourceConceptLinks?.links?.length ? (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {sourceConceptLinks.links.slice(0, 6).map((link) => (
+                                  <button
+                                    key={`${link.wikiPageId ?? link.conceptKey}-${link.linkType}`}
+                                    type="button"
+                                    onClick={() => {
+                                      const page = wikiVaultPages.find((candidate) => candidate.id === link.wikiPageId);
+                                      if (page) selectGraphPage(page);
+                                    }}
+                                    className="rounded-full border border-[#526d82]/12 bg-[#f7f4ec]/72 px-2 py-0.5 text-[10px] font-bold text-[#667085] hover:text-[#172033]"
+                                  >
+                                    {link.conceptTitle || link.conceptKey} / {userSafeStatus(link.confidence)}{link.isSuggestion ? " suggestion" : ""}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-[11px] font-semibold text-[#667085]">
+                                Bu kaynak icin concept baglari henuz sync edilmedi.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {!sourcesLoading && sources.length === 0 && (
                       <p className="text-sm text-[#667085]">
                         {isOrkaLm
@@ -1377,6 +2455,121 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                             </button>
                           ))}
                         </div>
+                        {isOrkaLm && sources.length > 1 && (
+                          <div className="mt-3 rounded-xl border border-[#526d82]/12 bg-white/55 p-2">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#526d82]">Multi-source compare</div>
+                                <p className="mt-1 text-[11px] text-[#667085]">
+                                  {selectedCompareSourceIds.length} kaynak secildi. Compare coverage/concept overlap gosterir; semantic agreement iddiasi uretmez.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleCompareSources}
+                                disabled={sourceComparing || selectedCompareSourceIds.length < 2}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/15 bg-[#f7f9fa]/80 px-3 py-2 text-[11px] font-black text-[#172033] transition hover:border-amber-500/30 disabled:opacity-45"
+                              >
+                                {sourceComparing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Network className="h-3.5 w-3.5" />}
+                                Compare selected
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {sources.map((source) => {
+                                const selected = selectedCompareSourceIds.includes(source.id);
+                                return (
+                                  <button
+                                    key={`compare-${source.id}`}
+                                    type="button"
+                                    onClick={() => toggleCompareSource(source.id)}
+                                    className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                                      selected
+                                        ? "border-amber-500/35 bg-amber-500/12 text-[#8a6a33]"
+                                        : "border-[#526d82]/12 bg-[#f7f9fa]/68 text-[#667085] hover:text-[#172033]"
+                                    }`}
+                                  >
+                                    {selected ? "Selected" : "Add"} / {source.fileName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {sourceCompare && (
+                              <div className="mt-3 space-y-2">
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  <div className="rounded-lg border border-[#526d82]/10 bg-[#f7f9fa]/70 px-2.5 py-2 text-[11px] text-[#667085]">
+                                    <span className="font-bold text-[#344054]">Coverage:</span> %{Math.round((sourceCompare.citationCoverage.coverageRatio ?? 0) * 100)} / {userSafeStatus(sourceCompare.citationCoverage.coverageStatus)}
+                                  </div>
+                                  <div className="rounded-lg border border-[#526d82]/10 bg-[#f7f9fa]/70 px-2.5 py-2 text-[11px] text-[#667085]">
+                                    <span className="font-bold text-[#344054]">Shared concepts:</span> {sourceCompare.sharedConcepts.length}
+                                  </div>
+                                  <div className="rounded-lg border border-[#526d82]/10 bg-[#f7f9fa]/70 px-2.5 py-2 text-[11px] text-[#667085]">
+                                    <span className="font-bold text-[#344054]">Review needed:</span> {sourceCompare.citationCoverage.needsReviewCount}
+                                  </div>
+                                </div>
+                                {sourceCompare.warnings.length > 0 && (
+                                  <p className="rounded-lg border border-amber-500/16 bg-[#fff8ee]/72 px-2.5 py-1.5 text-[11px] font-semibold text-[#8a6a33]">
+                                    {sourceCompare.warnings.slice(0, 4).map(userSafeStatus).join(" / ")}
+                                  </p>
+                                )}
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {sourceCompare.sourceSummaries.slice(0, 6).map((summary) => (
+                                    <div key={summary.sourceId} className="rounded-xl border border-[#526d82]/12 bg-white/62 p-2">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <div className="truncate text-xs font-bold text-[#172033]">{summary.sourceTitle}</div>
+                                          <p className="mt-1 text-[10px] text-[#667085]">
+                                            {userSafeStatus(summary.sourceReadiness)} / {userSafeStatus(summary.evidenceStatus)}
+                                          </p>
+                                        </div>
+                                        <span className="rounded-full bg-[#f7f9fa] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                                          %{Math.round((summary.citationCoverage ?? 0) * 100)}
+                                        </span>
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-semibold text-[#667085]">
+                                        <span>{summary.supportedCitationCount} supported</span>
+                                        <span>{summary.needsReviewCitationCount} review</span>
+                                        <span>{summary.linkedConceptCount} concepts</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {sourceCompare.sharedConcepts.length > 0 && (
+                                  <div className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/58 p-2">
+                                    <div className="mb-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#667085]">Shared linked concepts</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {sourceCompare.sharedConcepts.slice(0, 8).map((concept) => (
+                                        <button
+                                          key={`${concept.wikiPageId ?? concept.conceptKey}-shared`}
+                                          type="button"
+                                          onClick={() => {
+                                            const page = concept.wikiPageId ? wikiGraphPageById.get(concept.wikiPageId) : null;
+                                            if (page) selectGraphPage(page);
+                                          }}
+                                          className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-[#344054] transition hover:border-amber-500/30"
+                                        >
+                                          {concept.conceptTitle || concept.conceptKey} / {userSafeStatus(concept.linkConfidence)}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {sourceCompare.citationReviewItems.length > 0 && (
+                                  <div className="rounded-xl border border-[#526d82]/12 bg-white/58 p-2">
+                                    <div className="mb-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#667085]">Citation review</div>
+                                    <div className="space-y-1.5">
+                                      {sourceCompare.citationReviewItems.slice(0, 5).map((item) => (
+                                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#f7f9fa]/70 px-2 py-1.5 text-[11px] text-[#667085]">
+                                          <span className="font-semibold text-[#344054]">{item.sourceTitle} / {item.citationId}</span>
+                                          <span>{userSafeStatus(item.citationStatus)}{item.pageNumber ? ` / page ${item.pageNumber}` : ""}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                     {sourceQuality && (
@@ -1405,6 +2598,26 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         </div>
                       </div>
                     )}
+                    {isOrkaLm && citationReview && !sourceCompare && (
+                      <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Citation review</div>
+                            <p className="mt-1 text-[11px] text-[#344054]">
+                              {citationReview.coverage.totalCitationChecks} citation check / {userSafeStatus(citationReview.coverage.coverageStatus)}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#344054]">
+                            {citationReview.coverage.needsReviewCount} review
+                          </span>
+                        </div>
+                        {citationReview.warnings.length > 0 && (
+                          <p className="mt-2 rounded-lg border border-amber-500/16 bg-[#fff8ee]/70 px-2 py-1.5 text-[11px] font-semibold text-[#8a6a33]">
+                            {citationReview.warnings.slice(0, 3).map(userSafeStatus).join(" / ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {activeSource && (
                       <div className="pt-3 border-t border-[#526d82]/15 space-y-3">
                         <div className="flex items-center justify-between gap-2 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/58 px-3 py-2">
@@ -1423,22 +2636,197 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                             Sil
                           </button>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <input
                             value={sourceQuestion}
                             onChange={(e) => setSourceQuestion(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleAskSource()}
                             placeholder={`${activeSource.fileName} hakkında soru sor...`}
-                            className="flex-1 bg-[#f7f9fa]/62 border border-[#526d82]/15 focus:border-[#e8c46f]/55 rounded-lg px-3 py-2 text-sm text-[#172033] placeholder-zinc-600 outline-none"
+                            className="min-w-[180px] flex-1 bg-[#f7f9fa]/62 border border-[#526d82]/15 focus:border-[#e8c46f]/55 rounded-lg px-3 py-2 text-sm text-[#172033] placeholder-zinc-600 outline-none"
                           />
                           <button
                             onClick={handleAskSource}
                             disabled={sourceAsking || !sourceQuestion.trim()}
-                            className="p-2 rounded-lg bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-40"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-bold text-[#8a6a33] hover:bg-amber-500/20 transition disabled:opacity-40"
                           >
                             {sourceAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            Ask selected source
+                          </button>
+                          <button
+                            onClick={handleAskSourceCollection}
+                            disabled={sourceAsking || !sourceQuestion.trim()}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/15 bg-[#f7f9fa]/70 px-3 py-2 text-xs font-bold text-[#344054] transition hover:border-amber-500/25 hover:text-[#8a6a33] disabled:opacity-40"
+                          >
+                            Ask source collection
+                          </button>
+                          <button
+                            onClick={handleCreateQuestionThread}
+                            disabled={threadLoading || !sourceQuestion.trim()}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#526d82]/15 bg-white/68 px-3 py-2 text-xs font-bold text-[#344054] transition hover:border-amber-500/25 hover:text-[#8a6a33] disabled:opacity-40"
+                          >
+                            Save source Q&A thread
                           </button>
                         </div>
+                        {isOrkaLm && (
+                          <div className="space-y-3">
+                          {sourceStudySummary && (
+                            <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Source study status</div>
+                                  <p className="mt-1 text-[11px] text-[#344054]">
+                                    {userSafeStatus(sourceStudySummary.studyStatus)} / {userSafeStatus(sourceStudySummary.sourceReadiness)} / {userSafeStatus(sourceStudySummary.evidenceStatus)}
+                                  </p>
+                                </div>
+                                <span className="rounded-full border border-[#526d82]/14 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#344054]">
+                                  Next: {userSafeStatus(sourceStudySummary.recommendedNextAction)}
+                                </span>
+                              </div>
+                              <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                                <div className="rounded-lg bg-white/62 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                                  <span className="font-bold text-[#344054]">{sourceStudySummary.threadCount}</span> threads / {sourceStudySummary.turnCount} turns
+                                </div>
+                                <div className="rounded-lg bg-white/62 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                                  <span className="font-bold text-[#344054]">{sourceStudySummary.needsReviewCount}</span> review
+                                </div>
+                                <div className="rounded-lg bg-white/62 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                                  <span className="font-bold text-[#344054]">{sourceStudySummary.citationWarningCount}</span> citation warnings
+                                </div>
+                                <div className="rounded-lg bg-white/62 px-2.5 py-1.5 text-[11px] text-[#667085]">
+                                  <span className="font-bold text-[#344054]">{sourceStudySummary.relatedConceptCount}</span> linked concepts
+                                </div>
+                              </div>
+                              {sourceStudySummary.nextActions.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {sourceStudySummary.nextActions.slice(0, 6).map((action) => (
+                                    <span key={`study-action-${action}`} className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                                      {userSafeStatus(action)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {sourceStudySummary.warnings.length > 0 && (
+                                <p className="mt-2 rounded-lg border border-amber-500/16 bg-[#fff8ee]/70 px-2 py-1.5 text-[11px] font-semibold text-[#8a6a33]">
+                                  {sourceStudySummary.warnings.slice(0, 4).map(userSafeStatus).join(" / ")}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <div className="rounded-xl border border-[#526d82]/14 bg-white/58 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Source Q&A memory</div>
+                                <p className="mt-1 text-[11px] text-[#344054]">
+                                  {threadLoading ? "Loading reviewed threads..." : `${sourceQuestionThreads.length} thread / ${activeQuestionThread?.turns.length ?? 0} active turns`}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewThread("needs_review")}
+                                  disabled={!activeQuestionThread || threadLoading}
+                                  className="rounded-full border border-amber-500/20 bg-[#fff8ee]/70 px-2.5 py-1 text-[10px] font-bold text-[#8a6a33] disabled:opacity-40"
+                                >
+                                  Mark needs review
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleWriteThreadTrace}
+                                  disabled={!activeQuestionThread || threadLoading}
+                                  className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#344054] disabled:opacity-40"
+                                >
+                                  Write to Wiki
+                                </button>
+                              </div>
+                            </div>
+                            {sourceQuestionThreads.length > 0 && (
+                              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                                {sourceQuestionThreads.slice(0, 8).map((thread) => (
+                                  <button
+                                    key={thread.threadId}
+                                    type="button"
+                                    onClick={() => setActiveQuestionThread(thread)}
+                                    className={`max-w-[180px] shrink-0 rounded-lg border px-2.5 py-1.5 text-left text-[10px] transition ${
+                                      activeQuestionThread?.threadId === thread.threadId
+                                        ? "border-amber-500/35 bg-[#fff8ee]/80 text-[#8a6a33]"
+                                        : "border-[#526d82]/12 bg-[#f7f9fa]/70 text-[#667085] hover:border-amber-500/25"
+                                    }`}
+                                  >
+                                    <div className="truncate font-bold">{thread.title}</div>
+                                    <div className="truncate">{userSafeStatus(thread.citationReviewStatus)} / {thread.turns.length} turns</div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {activeQuestionThread ? (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex flex-wrap gap-1.5 text-[10px] font-bold text-[#667085]">
+                                  <span className="rounded-full bg-[#f7f9fa]/80 px-2 py-0.5">{userSafeStatus(activeQuestionThread.status)}</span>
+                                  <span className="rounded-full bg-[#f7f9fa]/80 px-2 py-0.5">{userSafeStatus(activeQuestionThread.sourceBasis)}</span>
+                                  <span className="rounded-full bg-[#f7f9fa]/80 px-2 py-0.5">{userSafeStatus(activeQuestionThread.citationReviewStatus)}</span>
+                                </div>
+                                {activeQuestionThread.warnings.length > 0 && (
+                                  <p className="rounded-lg border border-amber-500/16 bg-[#fff8ee]/70 px-2 py-1.5 text-[11px] font-semibold text-[#8a6a33]">
+                                    {activeQuestionThread.warnings.slice(0, 4).map(userSafeStatus).join(" / ")}
+                                  </p>
+                                )}
+                                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                                  {activeQuestionThread.turns.slice(-4).map((turn) => (
+                                    <div key={turn.turnId} className="rounded-lg border border-[#526d82]/10 bg-[#f7f9fa]/70 p-2 text-[11px] text-[#344054]">
+                                      <div className="font-bold text-[#172033]">{turn.question}</div>
+                                      <p className="mt-1 leading-relaxed">{turn.safeAnswerSummary}</p>
+                                      <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] font-semibold text-[#667085]">
+                                        <span>{userSafeStatus(turn.sourceBasis)}</span>
+                                        <span>{userSafeStatus(turn.reviewStatus)}</span>
+                                        <span>{turn.citations.length} citations</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {activeQuestionThread.linkedConcepts.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {activeQuestionThread.linkedConcepts.slice(0, 6).map((link) => (
+                                      <button
+                                        key={`${link.conceptKey}-${link.wikiPageId ?? "thread"}`}
+                                        type="button"
+                                        onClick={() => {
+                                          const page = link.wikiPageId ? wikiGraphPageById.get(link.wikiPageId) : null;
+                                          if (page) selectGraphPage(page);
+                                        }}
+                                        className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5 text-[10px] font-bold text-[#344054]"
+                                      >
+                                        {link.conceptTitle || link.conceptKey}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <input
+                                    value={threadFollowUp}
+                                    onChange={(e) => setThreadFollowUp(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && handleAskThreadFollowUp()}
+                                    placeholder="Continue this source Q&A thread..."
+                                    className="min-w-[180px] flex-1 rounded-lg border border-[#526d82]/15 bg-white/70 px-3 py-2 text-sm text-[#172033] placeholder-zinc-500 outline-none focus:border-[#e8c46f]/55"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleAskThreadFollowUp}
+                                    disabled={threadLoading || !threadFollowUp.trim()}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-bold text-[#8a6a33] transition hover:bg-amber-500/20 disabled:opacity-40"
+                                  >
+                                    {threadLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                    Ask follow-up
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-2 rounded-lg border border-dashed border-[#526d82]/18 bg-[#f7f9fa]/58 px-3 py-2 text-[11px] text-[#667085]">
+                                Ask a source question, then save it as a thread to revisit citations, review state, and safe follow-ups later.
+                              </p>
+                            )}
+                          </div>
+                          </div>
+                        )}
                         {sourceAnswer && (
                           <div className="rounded-lg border border-[#526d82]/15 bg-[#f7f9fa]/62 px-4 py-3 space-y-3">
                             <RichMarkdown
@@ -1447,18 +2835,18 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                               onCitationClick={handleCitationClick}
                               className="prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-p:text-[#344054]"
                             />
-                            {sourceAnswerMetadata && (
+                            {sourceQuestionResponse && (
                               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#526d82]/12 bg-white/60 px-3 py-2 text-[11px] text-[#667085]">
                                 <span className="font-bold text-[#344054]">Kaynak durumu:</span>
-                                <span>{sourceAnswerMetadata.evidenceQuality ? evidenceQualityLabel(sourceAnswerMetadata.evidenceQuality) : sourceQualityLabel(sourceAnswerMetadata.sourceQualityStatus ?? sourceAnswerMetadata.groundingStatus ?? sourceAnswerMetadata.groundingMode)}</span>
-                                {sourceAnswerMetadata.ragQualityStatus && (
-                                  <span>RAG {sourceQualityLabel(sourceAnswerMetadata.ragQualityStatus)}</span>
-                                )}
-                                {(sourceAnswerMetadata.unsupportedCitationCount || sourceAnswerMetadata.citationMissingCount) ? (
-                                  <span>{(sourceAnswerMetadata.unsupportedCitationCount ?? 0) + (sourceAnswerMetadata.citationMissingCount ?? 0)} citation sorunu</span>
+                                <span>{userSafeStatus(sourceQuestionResponse.sourceBasis)}</span>
+                                <span>{userSafeStatus(sourceQuestionResponse.evidenceStatus)}</span>
+                                <span>{userSafeStatus(sourceQuestionResponse.sourceReadiness)}</span>
+                                {sourceQuestionResponse.traceBlockId ? <span>Wiki trace yazildi</span> : null}
+                                {sourceQuestionResponse.safety?.status && sourceQuestionResponse.safety.status !== "safe" ? (
+                                  <span>{userSafeStatus(sourceQuestionResponse.safety.status)}</span>
                                 ) : null}
-                                {sourceAnswerMetadata.providerWarnings?.length ? (
-                                  <span>{sourceAnswerMetadata.providerWarnings.map(sourceQualityLabel).join(", ")}</span>
+                                {sourceQuestionResponse.warnings.length > 0 ? (
+                                  <span>{sourceQuestionResponse.warnings.slice(0, 3).map(userSafeStatus).join(", ")}</span>
                                 ) : null}
                               </div>
                             )}
@@ -1466,9 +2854,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                               <div className="rounded-xl border border-amber-500/18 bg-[#fff8ee]/70 p-3">
                                 <div className="mb-2 flex items-center justify-between gap-2">
                                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8a6a33]">
-                                    Kanıt citationları
+                                    Citation chips
                                   </span>
-                                  <span className="text-[10px] font-semibold text-[#667085]">{sourceCitations.length} parça</span>
+                                  <span className="text-[10px] font-semibold text-[#667085]">{sourceCitations.length} citation</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   {sourceCitations.slice(0, 8).map((citation, idx) => (
@@ -1484,14 +2872,34 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                           ? "border-amber-500/40 bg-amber-500/15 text-[#8a6a33]"
                                           : "border-[#526d82]/14 bg-[#f7f9fa]/70 text-[#667085] hover:border-amber-500/30 hover:text-[#8a6a33]"
                                       }`}
-                                      title={citation.text}
+                                      title={`Page ${citation.pageNumber}, citation ${citation.chunkIndex + 1}`}
                                     >
-                                      [doc:p{citation.pageNumber}] parça {citation.chunkIndex + 1}
+                                      {citation.label || `[doc:p${citation.pageNumber}]`} / {userSafeStatus(citation.supportStatus)}
                                     </button>
                                   ))}
                                 </div>
                               </div>
                             )}
+                            {sourceQuestionResponse?.relatedConcepts?.length ? (
+                              <div className="rounded-xl border border-[#526d82]/12 bg-white/55 p-3">
+                                <div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#667085]">Related concept pages</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {sourceQuestionResponse.relatedConcepts.slice(0, 8).map((link) => (
+                                    <button
+                                      key={`${link.wikiPageId ?? link.conceptKey}-${link.linkType}`}
+                                      type="button"
+                                      onClick={() => {
+                                        const page = link.wikiPageId ? wikiGraphPageById.get(link.wikiPageId) : null;
+                                        if (page) selectGraphPage(page);
+                                      }}
+                                      className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[11px] font-semibold text-[#344054] transition hover:border-amber-500/30 hover:text-[#8a6a33]"
+                                    >
+                                      {link.conceptTitle || link.conceptKey} / {userSafeStatus(link.confidence)}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         )}
                         {(sourcePage || sourcePageLoading) && (
@@ -1557,7 +2965,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                 <div className="rounded-xl border border-[#526d82]/14 bg-[#f7f9fa]/70 px-3 py-2">
                                   <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">Pekiştir</div>
                                   <div className="mt-1 text-[11px] font-semibold text-[#344054]">
-                                    {sourcePage.chunks.length} parça Copilot'a gönderilebilir
+                                    {sourcePage.chunks.length} parça güvenli citation özeti
                                   </div>
                                 </div>
                               </div>
@@ -1599,13 +3007,15 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                             {chunk.highlightHint}
                                           </p>
                                         )}
-                                        <p className="text-xs leading-relaxed text-[#344054]">{chunk.text}</p>
+                                        <p className="text-xs leading-relaxed text-[#344054]">
+                                          Raw kaynak parçası burada gösterilmez; güvenli citation etiketi ve kısa highlight kullanılır.
+                                        </p>
                                         <button
                                           type="button"
-                                          onClick={() => handleSuggestedQuestion(`Bu kaynak parçasını kullanarak kısa bir pekiştirme anlatımı yap, sonra 2 mikro soru sor:\n\n${chunk.text.slice(0, 900)}`)}
+                                          onClick={() => handleSuggestedQuestion(`Sayfa ${chunk.pageNumber}, parça ${chunk.chunkIndex + 1} citation bağlamını kullanarak kısa bir pekiştirme anlatımı yap, sonra 2 mikro soru sor.`)}
                                           className="mt-2 rounded-full border border-[#526d82]/12 bg-[#f7f9fa]/68 px-2.5 py-1 text-[10px] font-bold text-[#667085] transition hover:border-amber-500/30 hover:text-[#8a6a33]"
                                         >
-                                          Bu parçayla pekiştir
+                                          Bu citation ile pekiştir
                                         </button>
                                       </div>
                                     );
@@ -1622,6 +3032,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </div>
 
                 <div className="space-y-4">
+                  <NotebookStudioPanel
+                    topicId={topicId}
+                    wikiPageId={isOrkaLm ? undefined : activePage?.id}
+                    wikiPageTitle={isOrkaLm ? undefined : activePage?.title}
+                    surface={isOrkaLm && activeSource ? "source_notebook" : activePage ? "wiki_page" : "milestone"}
+                    sourceId={isOrkaLm ? activeSource?.id : undefined}
+                    sourceTitle={isOrkaLm ? activeSource?.title || activeSource?.fileName : undefined}
+                    sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
+                  />
+
                   <div id="wiki-study-glossary" className="scroll-mt-6 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2">
@@ -1855,6 +3275,27 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
 
               {activePage?.blocks && activePage.blocks.length > 0 ? (
                 <div className="space-y-6">
+                  <div className="rounded-2xl border border-[#526d82]/14 bg-white/62 p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#52768a]">
+                        <ListChecks className="h-4 w-4" />
+                        Blok gruplari
+                      </div>
+                      <span className="rounded-full bg-[#f7f9fa] px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+                        {activePage.blocks.length} blok
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {wikiBlockGroups.map((group) => (
+                        <span
+                          key={group.id}
+                          className="rounded-full border border-[#526d82]/12 bg-[#f7f9fa]/75 px-3 py-1 text-[10px] font-bold text-[#667085]"
+                        >
+                          {group.label}: {group.blocks.length}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                   {activePage.blocks.map((block, idx) => {
                     const parsedQuiz = tryParseQuiz(block.content);
                     const isQuiz = block.type === "Quiz" || block.type === "quiz" || !!parsedQuiz;

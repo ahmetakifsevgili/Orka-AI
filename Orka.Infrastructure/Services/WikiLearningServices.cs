@@ -171,8 +171,8 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         var evidence = await BuildAsync(request, ct);
         var pageStats = await _db.WikiPages
             .AsNoTracking()
-            .Where(p => p.UserId == userId && p.TopicId == topicId)
-            .Select(p => new { BlockCount = p.Blocks.Count })
+            .Where(p => p.UserId == userId && p.TopicId == topicId && !p.IsDeleted)
+            .Select(p => new { BlockCount = p.Blocks.Count(b => !b.IsDeleted) })
             .ToListAsync(ct);
 
         return new WikiWorkspaceStateDto
@@ -203,7 +203,11 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         var query = _db.WikiBlocks
             .AsNoTracking()
             .Include(b => b.WikiPage)
-            .Where(b => b.WikiPage.TopicId == request.TopicId && b.WikiPage.UserId == request.UserId);
+            .Where(b =>
+                b.WikiPage.TopicId == request.TopicId &&
+                b.WikiPage.UserId == request.UserId &&
+                !b.IsDeleted &&
+                !b.WikiPage.IsDeleted);
 
         if (request.ActivePageId.HasValue)
         {
@@ -455,10 +459,12 @@ public sealed class WikiCitationGuard : IWikiCitationGuard
 public sealed class WikiArtifactService : IWikiArtifactService
 {
     private readonly OrkaDbContext _db;
+    private readonly ILearningArtifactService _learningArtifacts;
 
-    public WikiArtifactService(OrkaDbContext db)
+    public WikiArtifactService(OrkaDbContext db, ILearningArtifactService learningArtifacts)
     {
         _db = db;
+        _learningArtifacts = learningArtifacts;
     }
 
     public async Task<IReadOnlyList<TeachingArtifactDto>> BuildArtifactsAsync(
@@ -493,6 +499,7 @@ public sealed class WikiArtifactService : IWikiArtifactService
 
         _db.TeachingArtifacts.Add(artifact);
         await _db.SaveChangesAsync(ct);
+        await _learningArtifacts.MirrorTeachingArtifactAsync(request.UserId, artifact, origin: "wiki", ct: ct);
 
         return new[]
         {

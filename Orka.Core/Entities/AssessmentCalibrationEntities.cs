@@ -84,6 +84,7 @@ public sealed class AdaptiveAssessmentDecision
     public decimal ItemQualityScore { get; set; }
     public decimal ExposurePenalty { get; set; }
     public string DecisionReason { get; set; } = string.Empty;
+    public string AssessmentMode { get; set; } = "retrieval_practice";
     public string SelectedQuestionJson { get; set; } = "{}";
     public bool WasAnswered { get; set; }
     public Guid? QuizAttemptId { get; set; }

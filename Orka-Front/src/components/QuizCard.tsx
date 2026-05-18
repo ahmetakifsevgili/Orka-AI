@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { BookOpen, CheckCircle2, XCircle, ChevronRight, Loader2, Sparkles, Code2, MessageSquareText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
-import type { AdaptiveAssessmentNextItem, LearningSignalConfidenceDto, MisconceptionSignalDto, PlanDiagnosticMeta, QuizAttempt, QuizData, RemediationSeedDto } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, LearningSignalConfidenceDto, MisconceptionSignalDto, PlanDiagnosticMeta, QuizAttempt, QuizData, QuizResultLearningImpactDto, RemediationSeedDto } from "@/lib/types";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
-import { QuizAPI } from "@/services/api";
+import { QuizAPI, type QuizAttemptRecordResponse } from "@/services/api";
 
 interface QuizCardProps {
   quiz: QuizData | QuizData[];
@@ -36,6 +36,15 @@ interface QuizCardProps {
 const OPTION_LABELS = ["A", "B", "C", "D", "E", "F"];
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type SubmittedAnswer = {
+  isCorrect: boolean;
+  isVerified: boolean;
+  result: string;
+  explanation?: string | null;
+  skill?: string;
+  learningImpact?: QuizResultLearningImpactDto | null;
+};
 
 const stableQuestionHash = (quiz: QuizData) =>
   quiz.questionHash ??
@@ -106,14 +115,16 @@ export default function QuizCard({
   const [signalConfidence, setSignalConfidence] = useState<LearningSignalConfidenceDto | null>(null);
   const [remediationSeed, setRemediationSeed] = useState<RemediationSeedDto | null>(null);
   const [confirmingZeroStart, setConfirmingZeroStart] = useState(false);
-  const [answers, setAnswers] = useState<Array<{ isCorrect: boolean; skill?: string }>>([]);
+  const [answers, setAnswers] = useState<SubmittedAnswer[]>([]);
   const [questionStartedAt, setQuestionStartedAt] = useState(() => Date.now());
   const { addQuizAttempt } = useQuizHistory();
 
   const activeQuiz = quizArray[currentQuestionIdx] ?? currentQuiz;
   const quizRunId = planDiagnostic?.quizRunId ?? quizArray.find((item) => item.quizRunId && GUID_RE.test(item.quizRunId))?.quizRunId;
   const selectedOption = activeQuiz.options.find((option) => option.id === selectedId);
-  const isCorrectAnswer = selectedOption?.isCorrect ?? false;
+  const submittedAnswer = answers[currentQuestionIdx];
+  const isCorrectAnswer = submittedAnswer?.isCorrect ?? false;
+  const hasVerifiedResult = Boolean(submittedAnswer?.isVerified);
   const isLastQuestion = currentQuestionIdx >= totalQuestions - 1;
   const recoveryTopicId = planDiagnostic?.topicId ?? topicId;
   const recoveryTopicTitle = activeQuiz.topicPath ?? activeQuiz.topic ?? activeQuiz.skillTag ?? "bu konu";
@@ -136,8 +147,6 @@ export default function QuizCard({
       sessionId,
       question: activeQuiz.question,
       selectedOptionId: `${label}) ${selectedOption.text}`,
-      isCorrect: selectedOption.isCorrect,
-      explanation: activeQuiz.explanation,
       skillTag: activeQuiz.skillTag ?? activeQuiz.topic,
       assessmentItemId: activeQuiz.assessmentItemId,
       conceptKey: activeQuiz.conceptKey,
@@ -170,8 +179,6 @@ export default function QuizCard({
       sessionId: attempt.sessionId,
       question: attempt.question,
       selectedOptionId: attempt.selectedOptionId,
-      isCorrect: attempt.isCorrect,
-      explanation: attempt.explanation,
       skillTag: attempt.skillTag,
       assessmentItemId: attempt.assessmentItemId,
       conceptKey: attempt.conceptKey,
@@ -199,14 +206,36 @@ export default function QuizCard({
     }
 
     if (planDiagnostic) {
-      await QuizAPI.recordPlanDiagnosticAttempt(planDiagnostic.planRequestId, payload);
+      return await QuizAPI.recordPlanDiagnosticAttempt(planDiagnostic.planRequestId, payload);
     } else {
       return await QuizAPI.recordAttempt(payload);
     }
-    return null;
   };
 
-  const finalizePlanIfNeeded = async (nextAnswers: Array<{ isCorrect: boolean; skill?: string }>) => {
+  const toSubmittedAnswer = (
+    attempt: QuizAttempt,
+    response: QuizAttemptRecordResponse | AdaptiveAssessmentNextItem | { learningImpact?: QuizResultLearningImpactDto | null } | null
+  ): SubmittedAnswer => {
+    const learningImpact =
+      response && "learningImpact" in response
+        ? response.learningImpact
+        : response && "latestLearningImpact" in response
+          ? response.latestLearningImpact
+          : null;
+    const result = (learningImpact?.result ?? "unverified").toLowerCase();
+    const isCorrect = result === "correct";
+    const isVerified = result === "correct" || result === "wrong" || result === "blank" || result === "partial";
+    return {
+      isCorrect,
+      isVerified,
+      result,
+      explanation: undefined,
+      skill: attempt.skillTag,
+      learningImpact,
+    };
+  };
+
+  const finalizePlanIfNeeded = async (nextAnswers: SubmittedAnswer[]) => {
     if (!planDiagnostic || !isLastQuestion) return;
     const result = await QuizAPI.finalizePlanDiagnostic(planDiagnostic.planRequestId);
     const score = nextAnswers.filter((answer) => answer.isCorrect).length;
@@ -231,26 +260,31 @@ export default function QuizCard({
     await wait(350);
 
     try {
-      addQuizAttempt(attempt);
-      const adaptiveResult = await recordAttempt(attempt);
-      if (!attempt.isCorrect && adaptiveResult && "remediationSeed" in adaptiveResult) {
-        setMisconceptionSignal(adaptiveResult.misconceptionSignal ?? null);
-        setSignalConfidence(adaptiveResult.learningSignalConfidence ?? null);
-        setRemediationSeed(adaptiveResult.remediationSeed ?? null);
+      const attemptResult = await recordAttempt(attempt);
+      const submitted = toSubmittedAnswer(attempt, attemptResult);
+      if (!submitted.isCorrect && attemptResult && "remediationSeed" in attemptResult) {
+        setMisconceptionSignal(attemptResult.misconceptionSignal ?? null);
+        setSignalConfidence(attemptResult.learningSignalConfidence ?? null);
+        setRemediationSeed(attemptResult.remediationSeed ?? null);
       }
-      const nextAnswers = [...answers, { isCorrect: attempt.isCorrect, skill: attempt.skillTag }];
+      addQuizAttempt({
+        ...attempt,
+        isCorrect: submitted.isCorrect,
+        explanation: submitted.explanation ?? "",
+      });
+      const nextAnswers = [...answers, submitted];
       setAnswers(nextAnswers);
       setSubmitState("done");
-      if (adaptiveResult && "isComplete" in adaptiveResult && adaptiveAssessment?.onResult) {
-        adaptiveAssessment.onResult(adaptiveResult);
-        if (adaptiveResult.isComplete) {
+      if (attemptResult && "isComplete" in attemptResult && adaptiveAssessment?.onResult) {
+        adaptiveAssessment.onResult(attemptResult);
+        if (attemptResult.isComplete) {
           setCompletionNote("Adaptif pratik tamamlandı. Orka yeni kanıtı mastery hesabına ekledi.");
         }
       }
       await finalizePlanIfNeeded(nextAnswers);
     } catch {
       setSubmitState("done");
-      const nextAnswers = [...answers, { isCorrect: attempt.isCorrect, skill: attempt.skillTag }];
+      const nextAnswers = [...answers, { isCorrect: false, isVerified: false, result: "unverified", skill: attempt.skillTag }];
       setAnswers(nextAnswers);
       setRecordError("Quiz kaydı backend'e ulaşamadı; cevap ekranda kaldı, chat'e komut basılmadı.");
     }
@@ -290,14 +324,15 @@ export default function QuizCard({
     }
   };
 
-  const getOptionStyle = (optionId: string, isCorrect: boolean) => {
+  const getOptionStyle = (optionId: string) => {
     if (submitState !== "done") {
       return selectedId === optionId
         ? "border-[#9ec7d9] bg-[#dcecf3]/70 shadow-sm"
         : "border-[#526d82]/14 hover:border-[#9ec7d9]/70 hover:bg-white/80";
     }
-    if (isCorrect) return "border-[#8fb7a2]/55 bg-[#f2faf5]/90";
-    if (optionId === selectedId && !isCorrect) return "border-[#e8c46f]/60 bg-[#fff8ee]/95";
+    if (optionId === selectedId && isCorrectAnswer) return "border-[#8fb7a2]/55 bg-[#f2faf5]/90";
+    if (optionId === selectedId && !hasVerifiedResult) return "border-[#9ec7d9] bg-[#dcecf3]/70 shadow-sm";
+    if (optionId === selectedId && !isCorrectAnswer) return "border-[#e8c46f]/60 bg-[#fff8ee]/95";
     return "border-[#526d82]/10 opacity-60";
   };
 
@@ -347,12 +382,12 @@ export default function QuizCard({
                 key={option.id}
                 onClick={() => submitState === "idle" && setSelectedId(option.id)}
                 disabled={submitState !== "idle"}
-                className={`flex w-full items-center gap-3.5 rounded-lg border px-4 py-3 text-left transition-all duration-200 ${getOptionStyle(option.id, option.isCorrect)}`}
+                className={`flex w-full items-center gap-3.5 rounded-lg border px-4 py-3 text-left transition-all duration-200 ${getOptionStyle(option.id)}`}
               >
                 <span className="flex-shrink-0">
-                  {submitState === "done" && option.isCorrect ? (
+                  {submitState === "done" && option.id === selectedId && isCorrectAnswer ? (
                     <CheckCircle2 className="h-5 w-5 text-[#47725d]" />
-                  ) : submitState === "done" && option.id === selectedId && !option.isCorrect ? (
+                  ) : submitState === "done" && option.id === selectedId && hasVerifiedResult && !isCorrectAnswer ? (
                     <XCircle className="h-5 w-5 text-amber-500" />
                   ) : (
                     <span
@@ -380,19 +415,21 @@ export default function QuizCard({
           >
             <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#667085]">
               <Sparkles className="h-3 w-3" />
-              {isCorrectAnswer ? "Doğru cevap" : "Tekrar edilmesi iyi olur"}
+              {isCorrectAnswer ? "Doğru cevap" : hasVerifiedResult ? "Tekrar edilmesi iyi olur" : "Güvenli pratik olarak kaydedildi"}
             </p>
             <p className="text-sm leading-relaxed text-[#344054]">
               {isCorrectAnswer
                 ? "Bu kavramı doğru bağlamda kullandın."
-                : "Bu cevap doğru değil. Orka bunu öğrenme baskısına çevirebilir; panik değil, bir sonraki küçük tekrar noktası."}
+                : !hasVerifiedResult
+                  ? "Bu eski quiz akışı server tarafından doğrulanamadı. Orka bunu mastery kanıtı gibi kullanmadı; gerekirse server tarafından üretilen yeni bir mikro quiz ile ölçebilir."
+                  : "Bu cevap doğru değil. Orka bunu öğrenme baskısına çevirebilir; panik değil, bir sonraki küçük tekrar noktası."}
             </p>
-            {activeQuiz.explanation && (
+            {submittedAnswer?.explanation && (
               <div className="mt-3 text-sm leading-relaxed text-[#344054] prose prose-sm max-w-none prose-p:my-1">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>{activeQuiz.explanation}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={safeMarkdownUrlTransform} components={safeMarkdownComponents}>{submittedAnswer.explanation}</ReactMarkdown>
               </div>
             )}
-            {!isCorrectAnswer && (
+            {hasVerifiedResult && !isCorrectAnswer && (
               <div className="mt-4 rounded-xl border border-[#e8c46f]/28 bg-white/58 p-3">
                 <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#8a641f]">
                   Toparlanma adımı

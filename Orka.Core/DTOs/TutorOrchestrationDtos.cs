@@ -10,10 +10,15 @@ public sealed class TutorTurnStateDto
     public Guid? SessionId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
     public Guid? WorkingMemorySnapshotId { get; set; }
+    public Guid? ActiveLessonSnapshotId { get; set; }
+    public Guid? StudentContextSnapshotId { get; set; }
+    public Guid? PlanQualitySnapshotId { get; set; }
     public string UserMessage { get; set; } = string.Empty;
     public string ActiveConceptKey { get; set; } = string.Empty;
     public string ActiveConceptLabel { get; set; } = string.Empty;
     public string LearnerState { get; set; } = "unknown";
+    public string LessonSnapshotStatus { get; set; } = "not_available";
+    public string StudentContextConfidenceStatus { get; set; } = "none";
     public decimal? MasteryProbability { get; set; }
     public decimal? Confidence { get; set; }
     public string RemediationNeed { get; set; } = "unknown";
@@ -33,6 +38,14 @@ public sealed class TutorTurnStateDto
     public LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
     public RemediationSeedDto? RemediationSeed { get; set; }
     public string LearningLoopStatus { get; set; } = "signal_pending";
+    public string? CurrentPlanStepId { get; set; }
+    public string? CurrentPlanStepTitle { get; set; }
+    public string? CurrentPlanTutorMove { get; set; }
+    public string? CurrentPlanQuizHook { get; set; }
+    public string? PlanSourceReadiness { get; set; }
+    public string? LatestAssessmentMode { get; set; }
+    public string? LatestMisconceptionConfidence { get; set; }
+    public string? SourceReadiness { get; set; }
     public bool DirectAnswerRisk { get; set; }
     public bool HasIdeContext { get; set; }
     public bool HasNotebookContext { get; set; }
@@ -58,6 +71,12 @@ public sealed class TutorActionPlanDto
     public string DirectAnswerPolicy { get; set; } = "scaffold";
     public string GroundingPolicy { get; set; } = "model_ok_no_source_claim";
     public string? TutorResponseMode { get; set; }
+    public string? TutorTeachingMove { get; set; }
+    public string? TutorResponseDepth { get; set; }
+    public string? TutorGroundingPolicy { get; set; }
+    public string? TutorRemediationPolicy { get; set; }
+    public string? TutorToolPolicy { get; set; }
+    public IReadOnlyList<string> TutorNextLearningActions { get; set; } = Array.Empty<string>();
     public string? PersonalizationMode { get; set; }
     public string? MasteryBasis { get; set; }
     public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 
@@ -18,6 +19,7 @@ public sealed class TutorController : ControllerBase
     private readonly ITeachingArtifactService _artifacts;
     private readonly ITutorPedagogyEvaluationService _pedagogy;
     private readonly ITutorTraceProjectionService _traceProjection;
+    private readonly ITutorResponsePolicyService _responsePolicy;
 
     public TutorController(
         OrkaDbContext db,
@@ -25,7 +27,8 @@ public sealed class TutorController : ControllerBase
         IRedisMemoryService redis,
         ITeachingArtifactService artifacts,
         ITutorPedagogyEvaluationService pedagogy,
-        ITutorTraceProjectionService traceProjection)
+        ITutorTraceProjectionService traceProjection,
+        ITutorResponsePolicyService responsePolicy)
     {
         _db = db;
         _styleSignals = styleSignals;
@@ -33,6 +36,7 @@ public sealed class TutorController : ControllerBase
         _artifacts = artifacts;
         _pedagogy = pedagogy;
         _traceProjection = traceProjection;
+        _responsePolicy = responsePolicy;
     }
 
     [HttpGet("state/topic/{topicId:guid}")]
@@ -64,6 +68,74 @@ public sealed class TutorController : ControllerBase
             workingMemory = memory,
             latestTurnState = latestTurn
         });
+    }
+
+    [HttpGet("policy/session/{sessionId:guid}")]
+    public async Task<IActionResult> GetSessionPolicy(Guid sessionId, CancellationToken ct)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var ownsSession = await _db.Sessions
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == sessionId && s.UserId == userId, ct);
+        if (!ownsSession) return NotFound();
+
+        var policy = await _responsePolicy.BuildPolicyAsync(userId, new TutorResponsePolicyRequestDto { SessionId = sessionId }, ct);
+        return Ok(policy);
+    }
+
+    [HttpGet("policy/topic/{topicId:guid}")]
+    public async Task<IActionResult> GetTopicPolicy(Guid topicId, [FromQuery] Guid? sessionId, CancellationToken ct)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var ownsTopic = await _db.Topics
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == topicId && t.UserId == userId, ct);
+        if (!ownsTopic) return NotFound();
+
+        var policy = await _responsePolicy.BuildPolicyAsync(userId, new TutorResponsePolicyRequestDto { TopicId = topicId, SessionId = sessionId }, ct);
+        return Ok(policy);
+    }
+
+    [HttpPost("policy/evaluate")]
+    public async Task<IActionResult> EvaluateTutorResponsePolicy([FromBody] TutorResponseQualityEvaluationRequestDto request, CancellationToken ct)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (request.TopicId.HasValue)
+        {
+            var ownsTopic = await _db.Topics.AsNoTracking().AnyAsync(t => t.Id == request.TopicId && t.UserId == userId, ct);
+            if (!ownsTopic) return NotFound();
+        }
+
+        var result = await _responsePolicy.EvaluateTutorResponseAsync(userId, request, ct);
+        return Ok(result);
+    }
+
+    [HttpGet("response-quality/latest")]
+    public async Task<IActionResult> GetLatestResponseQuality([FromQuery] Guid? topicId, [FromQuery] Guid? sessionId, CancellationToken ct)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (topicId.HasValue)
+        {
+            var ownsTopic = await _db.Topics.AsNoTracking().AnyAsync(t => t.Id == topicId && t.UserId == userId, ct);
+            if (!ownsTopic) return NotFound();
+        }
+
+        var result = await _responsePolicy.GetLatestResponseQualityAsync(userId, topicId, sessionId, ct);
+        return result == null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("next-actions")]
+    public async Task<IActionResult> GetTutorNextActions([FromQuery] Guid? topicId, [FromQuery] Guid? sessionId, CancellationToken ct)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (topicId.HasValue)
+        {
+            var ownsTopic = await _db.Topics.AsNoTracking().AnyAsync(t => t.Id == topicId && t.UserId == userId, ct);
+            if (!ownsTopic) return NotFound();
+        }
+
+        var result = await _responsePolicy.GetTutorNextLearningActionsAsync(userId, topicId, sessionId, ct);
+        return Ok(result);
     }
 
     [HttpGet("trace/{traceId:guid}")]
@@ -146,7 +218,25 @@ public sealed class TutorController : ControllerBase
         var artifact = await _db.TeachingArtifacts
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == artifactId && a.UserId == userId, ct);
-        return artifact == null ? NotFound() : Ok(artifact);
+        return artifact == null
+            ? NotFound()
+            : Ok(new
+            {
+                artifact.Id,
+                artifact.TopicId,
+                artifact.SessionId,
+                artifact.TutorActionTraceId,
+                artifact.ArtifactType,
+                artifact.Title,
+                artifact.Content,
+                artifact.RenderFormat,
+                artifact.Status,
+                artifact.Provider,
+                artifact.ExternalUrl,
+                artifact.RenderError,
+                artifact.RenderedAt,
+                artifact.CreatedAt
+            });
     }
 
     [HttpPost("artifacts/{artifactId:guid}/rendered")]

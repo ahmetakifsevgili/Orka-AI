@@ -178,9 +178,89 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
 - `Database:AutoMigrateOnStartup=true` sadece local Development override olarak kullanilir.
 - Staging ve Production'da startup auto-migration yasaktir; yanlislikla acilirsa API fail-fast eder.
 - Deploy oncesi migration script'i review edilir.
+
+## OrkaLM Phase 17 Source Notebook Gate
+
+Phase 17 dogrulamasinda ek olarak kontrol edilir:
+
+- `GET /api/sources/topic/{topicId}/notebook` user-scoped ve raw chunk/prompt/provider/local path sizdirmaz.
+- `GET /api/sources/{sourceId}/notebook` baska kullanici kaynagini dondurmez.
+- `POST /api/notebook-studio/sources/{sourceId}/pack` source-centered pack uretir ve `sourceSurface/sourceId` DTO alanlarini doldurur.
+- Source pack ayni source icin duplicate source page spam'i yapmaz; `WikiPage.PageType=orkalm_source` kullanir.
+- Frontend OrkaLM mode source readiness/evidence/citation warning gosterir.
+- Source evidence panel raw `chunk.text` render etmez ve raw chunk'i Tutor prompt'una tasimaz.
+- Yeni provider/Google Cloud/PPTX/video entegrasyonu eklenmez.
 - Destructive migration (`DROP COLUMN`, `DROP TABLE`, geri alinamaz data rewrite) varsa DB backup/snapshot zorunludur.
 - Rollback destructive migrationlarda sadece kod revert degildir; DB restore veya explicit rollback script gerekir.
 - Migration apply sonrasi `/health/ready` kontrol edilir; `ef-migrations` check'i pending migration birakmamalidir.
+
+## OrkaLM Phase 18 Source-to-Concept Graph Gate
+
+Phase 18 dogrulamasinda ek olarak kontrol edilir:
+
+- `GET /api/sources/{sourceId}/concept-links` user-scoped ve raw chunk/prompt/provider/local path/owner id sizdirmaz.
+- `POST /api/sources/{sourceId}/concept-links/sync` idempotent calisir; ayni source/concept icin duplicate `WikiLink` uretmez.
+- Exact concept key veya guclu title match high/medium confidence link uretir; dusuk confidence sonuc suggestion olarak kalir.
+- Stale/deleted/insufficient source evidence source-backed claim'e donusmez; warning/degraded state gorunur.
+- `GET /api/sources/topic/{topicId}/concept-graph` safe source/concept/page node ve edge DTO'lari dondurur.
+- `GET /api/wiki/pages/{pageId}/source-links` concept page destekleyen source'lari user-scoped dondurur.
+- Source ve Wiki page Notebook pack'leri linked concept/source context'i safe metadata olarak tasir.
+- Frontend OrkaLM mode related concept pages, confidence label, sync action ve graph summary gosterir.
+- Wiki concept page supporting sources gosterir; Tutor-generated note ile source-grounded note karistirilmaz.
+- Yeni provider/Google Cloud/graph canvas/PPTX/video entegrasyonu eklenmez.
+
+## OrkaLM Phase 19 Ask-Source UX Gate
+
+Phase 19 dogrulamasinda ek olarak kontrol edilir:
+
+- `POST /api/sources/{sourceId}/ask` user-scoped calisir; baska kullanici kaynagi NotFound/forbidden davranisi verir.
+- `POST /api/sources/topic/{topicId}/ask` sadece kullanicinin kendi topic/source collection baglamini kullanir.
+- `POST /api/sources/ask` sourceId/topicId baglamindan safe ask-source sonucu dondurur.
+- Public `SourceQuestionResponseDto` raw chunk/highlight, prompt, provider/tool/debug payload, local path, owner id, secret veya answer key sizdirmaz.
+- Citation label'lari kullanici guvenli etiketlerdir; raw source excerpt/chunk metni olarak render edilmez.
+- Missing/stale/insufficient evidence `source_grounded` claim'e donusmez; `evidence_insufficient`, `mixed` veya `degraded` olarak gorunur.
+- `writeWikiTrace=true` ise safe `student_question` ve source answer Wiki block'lari yazilir; trace failure ask-source cevabini bozmaz.
+- Frontend OrkaLM mode selected-source ve source-collection ask action'larini, source basis/evidence/readiness label'larini, citation chips'i ve related concept/page linklerini gosterir.
+- Yeni provider/Google Cloud/NotebookLM clone/multi-source compare/PPTX/video entegrasyonu eklenmez.
+
+## OrkaLM Phase 20 Multi-source Compare & Citation Review Gate
+
+Phase 20 dogrulamasinda ek olarak kontrol edilir:
+
+- `POST /api/sources/compare` ve `POST /api/sources/topic/{topicId}/compare` sadece kullanicinin kendi kaynaklarini karsilastirir; baska kullanici kaynagi NotFound/forbidden davranisi verir.
+- Compare sonucu source readiness, evidence status, citation coverage, shared/source-only concept overlap, warnings ve next actions dondurur.
+- Compare semantic agreement/contradiction iddiasi uretmez; yalnizca deterministic coverage/overlap/review-needed state gosterir.
+- `GET /api/sources/{sourceId}/citation-review` ve `GET /api/sources/topic/{topicId}/citation-review` supported/unsupported/missing/stale/needs_review durumlarini raw answer/claim/chunk olmadan dondurur.
+- Public compare/review DTO'lari raw source chunk, prompt, provider/tool/debug payload, local path, owner id, secret veya answer key sizdirmaz.
+- `writeWikiTrace=true` ise safe compare/review Wiki block'u yazilir; trace failure compare sonucunu bozmaz.
+- Frontend OrkaLM mode source selection, compare selected action, compared source cards, citation review panel, readiness/evidence/citation warnings ve shared concept linklerini gosterir.
+- Yeni provider/Google Cloud/full semantic compare/citation manager/PPTX/video entegrasyonu eklenmez.
+
+## OrkaLM Phase 21 Source Q&A Memory Gate
+
+Phase 21 dogrulamasinda ek olarak kontrol edilir:
+
+- `GET /api/sources/question-threads`, `GET /api/sources/question-threads/{threadId}`, `POST /api/sources/question-threads`, `POST /api/sources/question-threads/{threadId}/ask`, `PATCH /api/sources/question-threads/{threadId}/review` ve `POST /api/sources/question-threads/{threadId}/wiki-trace` user-scoped calisir.
+- Source Q&A thread memory `source_question_thread` LearningArtifact olarak saklanir; yeni provider/Google Cloud veya ayri chat app eklenmez.
+- Thread DTO'lari safe question, safe answer summary, source basis, evidence status, citation label/status, related concept/page, review status ve warnings dondurur.
+- Thread DTO/artifact/Wiki trace raw source chunk, prompt, provider/tool/debug payload, local path, owner id, secret veya answer key sizdirmaz.
+- Follow-up context yalnizca bounded safe prior summary kullanir; raw chunk veya raw hidden prompt context kullanmaz.
+- Unsupported/missing/stale citation review state source-grounded claim'e yukseltilmez.
+- `writeWikiTrace` veya thread Wiki trace action safe student question/source answer summary block'u yazar; trace failure source Q&A memory akisini bozmaz.
+- Source Notebook pack summary/metadata ilgili safe Q&A memory count/review warning bilgisini tasir.
+- Frontend OrkaLM mode source Q&A thread list, active thread, prior question/summary cards, follow-up action, citation review label, unresolved/degraded warning ve write-to-Wiki action gosterir.
+- Full NotebookLM clone, raw transcript store, CRM-style review queue, manual citation manager, PPTX/video entegrasyonu eklenmez.
+
+## OrkaLM Phase 22-23 Source Study Workflow Gate
+
+Phase 22-23 dogrulamasinda ek olarak kontrol edilir:
+
+- `GET /api/sources/study-summary` user-scoped calisir ve topic/source/wiki page context disina veri sizdirmaz.
+- Source study summary mevcut `source_question_thread` artifact'leri, citation check state, source readiness ve source-to-concept linklerinden deterministic olarak turetilir; yeni provider/Google Cloud/migration eklenmez.
+- Summary thread/turn/review/degraded/citation warning/related concept/compare-ready source count, study status ve recommended next action dondurur.
+- Summary DTO raw source chunk, prompt, provider/tool/debug payload, local path, owner id, secret veya answer key sizdirmaz.
+- Frontend OrkaLM mode `Source study status` bandini, review/degraded/citation warning count'larini, linked concept count'ini ve next action etiketlerini gosterir.
+- Source study workflow fake schedule/due date, semantic agreement/contradiction claim, manual citation manager, graph canvas, PPTX/video entegrasyonu veya NotebookLM parity iddiasi eklemez.
 
 ## Production/Staging CORS ve Environment Gates
 
@@ -219,6 +299,178 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
   powershell -ExecutionPolicy Bypass -File scripts\reset-dev-db.ps1
   ```
 
+## OrkaLM / Wiki-aware Notebook Studio Closure Validation
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|WikiGraphContractTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|QuizAttemptSafetyTests|AssessmentQualityMisconceptionTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+scripts\quick-coordination.ps1
+scripts\quick-backend.ps1
+cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+git diff --check
+```
+
+- Notebook Studio must stay Wiki page-aware and source-evidence-aware.
+- `source_digest` cannot claim source grounding unless evidence is ready or mixed.
+- Review quiz artifacts cannot expose answer keys before submit.
+- Audio overview must prefer Notebook pack context when a pack exists and degrade to script-only safely when TTS is unavailable.
+- Frontend Notebook Studio copy should stay readable Turkish/ASCII and must not render raw prompt/provider/source/tool/debug payloads.
+
+## OrkaLM Phase 11 Advanced Media / Export Gate
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+```
+
+- `video_ready_package` is an outline/manifest artifact only; it must not claim a generated video exists.
+- `slide_export_manifest` is an export-ready data artifact only; it must not claim PPTX generation/download exists.
+- Audio transcript/caption artifacts must remain text fallback artifacts with no raw source chunks, prompts, provider payloads, local paths, answer keys, or debug traces.
+- Notebook Studio UI must show media/export readiness labels without adding fake media players or fake PPTX download copy.
+
+## OrkaLM Phase 12 Slide Export MVP Gate
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+```
+
+- Slide export must transform existing `slide_deck_outline` / `slide_export_manifest` artifacts only; it must not call AI or generate new learning content.
+- Supported export outputs are preview, Markdown, escaped HTML, and manifest-only.
+- `pptx_local_proof` must return an honest unsupported / `pptx_not_enabled` result unless a safe local dependency is explicitly approved.
+- Export DTOs must not expose raw prompt/provider/source/tool/debug payloads, local paths, owner ids, answer keys, or stack traces.
+- Notebook Studio UI must show export readiness and PPTX-disabled status without fake download copy.
+
+## OrkaLM Phase 13 Advanced Deck UX / Export Decision Gate
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+```
+
+- PPTX decision must be evidence-based: keep `pptx_local_proof` unsupported unless Orka itself has an approved safe presentation export dependency.
+- Export preview must show deck title, slide count, source basis/readiness, warnings, accessibility summary, slide list, checkpoints, speaker-note availability, and source labels.
+- Markdown, escaped HTML, and manifest-only exports must remain deterministic transformations of existing safe artifacts; no AI calls or new learning generation.
+- Export payloads must not expose raw prompt/provider/source/tool/debug payloads, local paths, owner ids, answer keys, stack traces, or secrets.
+- Notebook Studio UI must show preview/Markdown/HTML/manifest availability and PPTX-disabled status without fake download, generated video, or official/success copy.
+
+## OrkaLM Phase 14 Final Professional Audit Gate
+
+Closure doc: `docs/project-state/orka-notebook-studio-final-audit.md`
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|WikiGraphContractTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|QuizAttemptSafetyTests|AssessmentQualityMisconceptionTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+scripts\quick-coordination.ps1
+scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+git status --short
+```
+
+- Final PASS requires no score 0-2, no core Wiki/OrkaLM/safety/export score 3, and no safety/trust/privacy score below 4.
+- Wiki must remain page-aware: page graph, page blocks/questions/repair notes, source links, packs, and artifacts must connect.
+- Export must remain deterministic and honest: preview, Markdown, escaped HTML, manifest-only, and `pptx_not_enabled` unless a safe runtime dependency is explicitly approved.
+- Public DTOs/frontend must not expose raw prompt/provider/source/tool/debug payloads, local paths, owner ids, answer keys, stack traces, or secrets.
+- Browser screenshot proof is preferred when Browser/Playwright is available; otherwise typecheck, smoke, build, and backend tests are the closure proof.
+
+## OrkaLM Phase 15 Wiki Vault UX Gate
+
+Before closing Wiki Vault UX productization:
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|WikiGraphContractTests|SourceEvidenceLifecycleTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+scripts\quick-coordination.ps1
+scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+git status --short
+```
+
+- `WikiMainPanel` must show a student-facing Wiki Vault surface: page tree/list, search/filter, active page context badges, backlinks, outgoing links, local graph neighbors, and block group summaries.
+- `NotebookStudioPanel` must remain page-aware through the active `wikiPageId` and must not leak packs across selected Wiki pages.
+- Phase 15 must not add AI calls, Google Cloud, a full Obsidian clone, complex graph canvas editing, real PPTX export, or video generation.
+- Public UI must not expose raw prompt/provider/source/tool/debug payloads, local paths, owner ids, answer keys, stack traces, secrets, official/success claims, or teacher/classroom/dershane copy.
+
+## OrkaLM Phase 16 Tutor-Wiki Trace Writer Gate
+
+Before closing Tutor-Wiki learning trace writing:
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|WikiGraphContractTests|TutorPedagogyPolicyTests|QuizAttemptSafetyTests|AssessmentQualityMisconceptionTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|AgenticSecurityTrustTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+scripts\quick-coordination.ps1
+scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+git status --short
+```
+
+- `IWikiLearningTraceWriter` must remain the canonical path for Tutor/student/quiz/repair/source/artifact trace blocks.
+- Trace writing must be page-aware, user-scoped, deduped, and non-blocking for chat, quiz, artifact, and source flows.
+- Trace blocks must not store raw prompt/provider/source/tool/debug payloads, local paths, owner ids, pre-submit answer keys, stack traces, or secrets.
+- Quiz traces must be post-submit only and must not trust client-provided correctness.
+- Phase 16 must not add AI calls, Google Cloud, frontend redesign, hidden admin tooling, or teacher/classroom/dershane workflows.
+
+## OrkaLM Phase 24-25 Final Safety / Product Closure Gate
+
+Before closing final OrkaLM safety/privacy/product audit:
+
+```powershell
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "SourceEvidenceLifecycleTests|SourceRegressionGuardTests|WikiGraphContractTests|LearningNotebookStudioTests|LearningArtifactsEngineTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+scripts\quick-coordination.ps1
+scripts\quick-backend.ps1
+cd Orka-Front
+npm run typecheck
+npm run quick:smoke
+npm run quick:build
+cd ..
+git diff --check
+git status --short
+git diff --cached --name-only
+```
+
+- Source notebook, ask-source, Q&A memory, compare/citation review, source-study summary, Wiki trace, Notebook packs, artifacts, and export surfaces must remain user-scoped.
+- Public OrkaLM DTOs and frontend surfaces must not expose owner/user ids, raw source chunks, raw highlights, prompts, provider/tool/debug payloads, local paths, secrets, stack traces, or pre-submit answer keys.
+- Source-grounded labels require ready/mixed evidence; stale/deleted/insufficient sources must degrade source Q&A, compare, study summary, packs, artifacts, and supporting-source UI.
+- Multi-source compare remains deterministic trust/coverage/concept-overlap review, not semantic agreement or contradiction detection.
+- PPTX/video remain honestly disabled unless a future explicit local proof adds product runtime support.
+- Phase 24-25 is audit/closure only. Phase 26 should only prepare user-directed selective staging/commit.
+
 ## System Closure Gate
 
 Frontend baseline oncesi deterministic kapanis hatti:
@@ -240,6 +492,16 @@ git diff --check
 - `dist`, `node_modules`, pasted image ve local report dosyalari commit'e alinmaz.
 - Linux/container CI icin `ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION` verilebilir. Test disposable database adini kendisi ekler.
 - SQL Server yoksa `quick-backend.ps1` bilincli fail eder; bu testler sessizce skip edilmemeli.
+
+## Main Learning OS Final Audit Gate
+
+- Closure doc: `docs/project-state/main-learning-os-professionalization-closure.md`
+- Pack 0-11 validation green olsa bile final closure PASS sayilmaz; profesyonel
+  kalite scorecard da gecmeli.
+- Legacy chat/general quiz answer-key mini-fix tamamlandi: aktif/pre-submit
+  `QuizCard` answer key tasimaz, public `/api/quiz/attempt` client correctness'e
+  guvenmez, durable item yoksa sonuc observed-only kalir.
+- Final selective staging/commit artik kullanici yonlendirmesiyle yapilabilir.
 
 ## Production Safety Lite Gate
 
@@ -265,9 +527,10 @@ git status --short
 
 ## Codex Skills Gate
 
-Feature isleri `docs/project-state/current-roadmap.md` ve `docs/codex-skills/`
-anayasalarini takip eder. Stage 6B Central Exams kapandi; current phase
-post-6B productization / frontend-content readiness'tir.
+Feature isleri `docs/project-state/current-roadmap.md`, `docs/architecture/orka-learning-os-contract-map.md`
+ve `docs/codex-skills/` anayasalarini takip eder. Stage 6B Central Exams ve
+Post-6B Professionalization kapandi; current phase Main Learning OS
+Professionalization'dir.
 
 Stage 6B closure guard:
 
@@ -280,6 +543,7 @@ Stage 6B closure guard:
 Before planning/coding:
 
 - `docs/project-state/current-roadmap.md` okunur.
+- Tutor/Korteks/RAG/Wiki/Quiz/Tool/Plan isi varsa `docs/architecture/orka-learning-os-contract-map.md` okunur.
 - `docs/codex-skills/README.md` okunur.
 - Her feature icin `testing-gate-constitution.md` okunur.
 - Backend/API/data degisiyorsa `backend-feature-constitution.md` okunur.
@@ -336,3 +600,24 @@ $env:ORKA_API_URL="http://localhost:5065"; pytest contract_tests/
 ```
 
 `5101` is legacy audit history only; do not use it as a new active default.
+
+## OrkaLM / Notebook Studio Phase 10 Gate
+
+Before closing OrkaLM production hardening:
+
+- Confirm `LearningNotebookPack` entity, `OrkaDbContext`, `AddLearningNotebookStudio` migration, and `OrkaDbContextModelSnapshot` are aligned.
+- Confirm Wiki page packs can be created, listed by `wikiPageId`, refreshed, and hidden when soft-deleted.
+- Confirm topic/milestone packs still work after Wiki page filtering.
+- Confirm Notebook Studio UI shows source readiness, evidence status, stale/degraded/insufficient warnings, grouped artifacts, audio fallback/player, and next actions.
+- Confirm frontend smoke guards payload safety, answer-key safety, official/success/teacher/classroom copy, and Notebook Studio mojibake.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningNotebookStudioTests|WikiGraphContractTests|LearningArtifactsEngineTests|SourceEvidenceLifecycleTests|QuizAttemptSafetyTests|AssessmentQualityMisconceptionTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|SourceRegressionGuardTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  ```
+- If Browser or local Playwright tooling is available, capture WikiMainPanel / NotebookStudioPanel screenshots for selected pack, empty state, artifact list, audio fallback, and slide/mind-map/review actions.

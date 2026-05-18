@@ -11,6 +11,9 @@ public sealed class ChatResponseMetadata
     public Guid? TutorPolicyTraceId { get; set; }
     public Guid? TutorTurnStateId { get; set; }
     public Guid? TutorWorkingMemorySnapshotId { get; set; }
+    public Guid? ActiveLessonSnapshotId { get; set; }
+    public Guid? StudentContextSnapshotId { get; set; }
+    public Guid? PlanQualitySnapshotId { get; set; }
     public Guid? TutorActionTraceId { get; set; }
     public string? TeachingMode { get; set; }
     public string? StyleMode { get; set; }
@@ -19,6 +22,13 @@ public sealed class ChatResponseMetadata
     public string? GroundingStatus { get; set; }
     public decimal? MasteryProbability { get; set; }
     public decimal? Confidence { get; set; }
+    public string? LessonSnapshotStatus { get; set; }
+    public string? StudentContextConfidenceStatus { get; set; }
+    public string? CurrentPlanStepId { get; set; }
+    public string? CurrentPlanStepTitle { get; set; }
+    public string? CurrentPlanTutorMove { get; set; }
+    public string? CurrentPlanQuizHook { get; set; }
+    public string? PlanSourceReadiness { get; set; }
     public IReadOnlyList<Guid> ToolCallIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<Guid> ArtifactIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<ToolStatusDto> ToolStatuses { get; set; } = Array.Empty<ToolStatusDto>();
@@ -28,6 +38,19 @@ public sealed class ChatResponseMetadata
     public string? RagQualityStatus { get; set; }
     public EvidenceQualityDto? EvidenceQuality { get; set; }
     public string? TutorResponseMode { get; set; }
+    public string? TutorTeachingMove { get; set; }
+    public string? TutorResponseDepth { get; set; }
+    public string? TutorGroundingPolicy { get; set; }
+    public string? TutorRemediationPolicy { get; set; }
+    public string? TutorToolPolicy { get; set; }
+    public IReadOnlyList<string> TutorNextLearningActions { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> TutorContextUse { get; set; } = Array.Empty<string>();
+    public string? TutorResponseQualityStatus { get; set; }
+    public IReadOnlyList<string> TutorResponseQualityWarnings { get; set; } = Array.Empty<string>();
+    public string? ActivePlanStepId { get; set; }
+    public string? LatestAssessmentMode { get; set; }
+    public string? LatestMisconceptionConfidence { get; set; }
+    public string? SourceReadiness { get; set; }
     public string? EvidencePolicy { get; set; }
     public string? PersonalizationMode { get; set; }
     public string? MasteryBasis { get; set; }

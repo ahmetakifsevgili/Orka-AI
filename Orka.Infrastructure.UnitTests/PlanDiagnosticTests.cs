@@ -113,8 +113,12 @@ public sealed class PlanDiagnosticTests
 
         Assert.InRange(response.QuizQuestionCount, 15, 25);
         Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
-        Assert.Contains("```java", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("assessmentItemId", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctAnswer", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("isCorrect", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("explanation", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        var generatedItems = await harness.Db.AssessmentItems.Select(i => i.GeneratedQuestionJson).ToListAsync();
+        Assert.Contains(generatedItems, json => json!.Contains("```java", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain("```csharp", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Visual Studio", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
@@ -602,7 +606,7 @@ public sealed class PlanDiagnosticTests
                 QuestionId = request.QuestionId,
                 Question = request.Question ?? "",
                 UserAnswer = request.SelectedOptionId ?? "",
-                IsCorrect = request.IsCorrect,
+                IsCorrect = request.IsCorrect ?? false,
                 Explanation = request.Explanation ?? "",
                 SkillTag = request.SkillTag,
                 AssessmentItemId = request.AssessmentItemId,
@@ -722,4 +726,3 @@ public sealed class PlanDiagnosticTests
         return System.Text.Json.JsonSerializer.Serialize(questions, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
     }
 }
-

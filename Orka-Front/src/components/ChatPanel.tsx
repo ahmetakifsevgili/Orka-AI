@@ -28,6 +28,7 @@ import OrcaLogo from "./OrcaLogo";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import { AgentStatusRail, ArtifactCanvas } from "./AgenticWorkspace";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 
 type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
 
@@ -848,6 +849,16 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
+  const assistantMessages = messages.filter((message) => message.role === "ai");
+  const latestAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : null;
+  const latestMetadata = latestAssistantMessage?.metadata ?? null;
+  const canvasArtifacts = assistantMessages.flatMap((message) => message.artifacts ?? []).slice(-4);
+  const workspaceState = useLearningWorkspaceState({
+    topicId: activeTopic?.id,
+    sessionId: sessionId ?? undefined,
+    metadata: latestMetadata,
+  });
+
   // ── Session loading spinner ────────────────────────────────────────────
   if (sessionLoading) {
     return (
@@ -865,10 +876,6 @@ export default function ChatPanel({
     );
   }
 
-  const assistantMessages = messages.filter((message) => message.role === "ai");
-  const latestAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : null;
-  const latestMetadata = latestAssistantMessage?.metadata ?? null;
-  const canvasArtifacts = assistantMessages.flatMap((message) => message.artifacts ?? []).slice(-4);
   const setCommandPrompt = (prompt: string) => {
     setInput(prompt);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -1131,12 +1138,13 @@ export default function ChatPanel({
         </div>
 
         <aside className="hidden min-h-0 w-[360px] shrink-0 border-l border-[#526d82]/10 bg-[#fbfcfd] 2xl:flex">
-          <ArtifactCanvas artifacts={canvasArtifacts} />
+          <ArtifactCanvas artifacts={canvasArtifacts} learningArtifacts={workspaceState.recentArtifacts} />
         </aside>
         <AgentStatusRail
           metadata={latestMetadata}
           sessionId={sessionId ?? undefined}
           topicTitle={activeTopic?.title}
+          workspaceState={workspaceState}
         />
       </div>
     </div>

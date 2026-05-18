@@ -17,6 +17,7 @@ public class OrkaDbContext : DbContext
     public DbSet<Message> Messages { get; set; } = null!;
     public DbSet<WikiPage> WikiPages { get; set; } = null!;
     public DbSet<WikiBlock> WikiBlocks { get; set; } = null!;
+    public DbSet<WikiLink> WikiLinks { get; set; } = null!;
     public DbSet<Source> Sources { get; set; } = null!;
     public DbSet<QuizAttempt> QuizAttempts { get; set; } = null!;
     public DbSet<QuizRun> QuizRuns { get; set; } = null!;
@@ -41,6 +42,8 @@ public class OrkaDbContext : DbContext
     public DbSet<Bookmark> Bookmarks { get; set; } = null!;
     public DbSet<PushSubscription> PushSubscriptions { get; set; } = null!;
     public DbSet<ToolTelemetryEvent> ToolTelemetryEvents { get; set; } = null!;
+    public DbSet<ToolRuntimeTrace> ToolRuntimeTraces { get; set; } = null!;
+    public DbSet<KorteksResearchWorkflow> KorteksResearchWorkflows { get; set; } = null!;
     public DbSet<CostRecord> CostRecords { get; set; } = null!;
     public DbSet<ConceptGraphSnapshot> ConceptGraphSnapshots { get; set; } = null!;
     public DbSet<LearningConcept> LearningConcepts { get; set; } = null!;
@@ -53,6 +56,7 @@ public class OrkaDbContext : DbContext
     public DbSet<LearningEvent> LearningEvents { get; set; } = null!;
     public DbSet<ConceptGraphQualityRun> ConceptGraphQualityRuns { get; set; } = null!;
     public DbSet<AssessmentQualityRun> AssessmentQualityRuns { get; set; } = null!;
+    public DbSet<AssessmentQualitySnapshot> AssessmentQualitySnapshots { get; set; } = null!;
     public DbSet<AssessmentItemStat> AssessmentItemStats { get; set; } = null!;
     public DbSet<KnowledgeTracingState> KnowledgeTracingStates { get; set; } = null!;
     public DbSet<TutorPolicyTrace> TutorPolicyTraces { get; set; } = null!;
@@ -61,6 +65,9 @@ public class OrkaDbContext : DbContext
     public DbSet<LearningQualityReport> LearningQualityReports { get; set; } = null!;
     public DbSet<TutorWorkingMemorySnapshot> TutorWorkingMemorySnapshots { get; set; } = null!;
     public DbSet<TutorTurnState> TutorTurnStates { get; set; } = null!;
+    public DbSet<ActiveLessonSnapshot> ActiveLessonSnapshots { get; set; } = null!;
+    public DbSet<StudentContextSnapshot> StudentContextSnapshots { get; set; } = null!;
+    public DbSet<LearningPlanQualitySnapshot> LearningPlanQualitySnapshots { get; set; } = null!;
     public DbSet<TutorMemoryPatch> TutorMemoryPatches { get; set; } = null!;
     public DbSet<LearnerProfile> LearnerProfiles { get; set; } = null!;
     public DbSet<LearningStyleSignal> LearningStyleSignals { get; set; } = null!;
@@ -69,6 +76,8 @@ public class OrkaDbContext : DbContext
     public DbSet<TutorActionTrace> TutorActionTraces { get; set; } = null!;
     public DbSet<TutorToolCall> TutorToolCalls { get; set; } = null!;
     public DbSet<TeachingArtifact> TeachingArtifacts { get; set; } = null!;
+    public DbSet<LearningArtifact> LearningArtifacts { get; set; } = null!;
+    public DbSet<LearningNotebookPack> LearningNotebookPacks { get; set; } = null!;
     public DbSet<TutorReflectionUpdate> TutorReflectionUpdates { get; set; } = null!;
     public DbSet<TutorPolicyViolationV2> TutorPolicyViolationsV2 { get; set; } = null!;
     public DbSet<TutorMemoryFragment> TutorMemoryFragments { get; set; } = null!;
@@ -80,6 +89,9 @@ public class OrkaDbContext : DbContext
     public DbSet<SourceRetrievalItem> SourceRetrievalItems { get; set; } = null!;
     public DbSet<SourceCitationCheck> SourceCitationChecks { get; set; } = null!;
     public DbSet<SourceQualityReport> SourceQualityReports { get; set; } = null!;
+    public DbSet<SourceEvidenceBundle> SourceEvidenceBundles { get; set; } = null!;
+    public DbSet<SourceLifecycleEvent> SourceLifecycleEvents { get; set; } = null!;
+    public DbSet<WikiKnowledgeNotebookSnapshot> WikiKnowledgeNotebookSnapshots { get; set; } = null!;
     public DbSet<TutorPedagogyEvaluationRun> TutorPedagogyEvaluationRuns { get; set; } = null!;
     public DbSet<TutorPedagogyEvaluationItem> TutorPedagogyEvaluationItems { get; set; } = null!;
     public DbSet<TutorPedagogyRubricScore> TutorPedagogyRubricScores { get; set; } = null!;
@@ -221,6 +233,218 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<ToolTelemetryEvent>()
             .HasIndex(t => new { t.UserId, t.OccurredAt });
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(t => t.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<Topic>()
+            .WithMany()
+            .HasForeignKey(t => t.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<Session>()
+            .WithMany()
+            .HasForeignKey(t => t.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<ActiveLessonSnapshot>()
+            .WithMany()
+            .HasForeignKey(t => t.ActiveLessonSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<StudentContextSnapshot>()
+            .WithMany()
+            .HasForeignKey(t => t.StudentContextSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<TutorTurnState>()
+            .WithMany()
+            .HasForeignKey(t => t.TutorTurnStateId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasOne<TutorActionTrace>()
+            .WithMany()
+            .HasForeignKey(t => t.TutorActionTraceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.ToolId)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.Caller)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.Purpose)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.Decision)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.RiskLevel)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.InputSummary)
+            .HasMaxLength(1000);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.SafeResultSummary)
+            .HasMaxLength(1000);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.EvidenceJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.FallbackReason)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .Property(t => t.ErrorCode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasIndex(t => new { t.UserId, t.CreatedAt });
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasIndex(t => new { t.UserId, t.TopicId, t.CreatedAt });
+
+        modelBuilder.Entity<ToolRuntimeTrace>()
+            .HasIndex(t => new { t.UserId, t.SessionId, t.CreatedAt });
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(w => w.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasOne<Topic>()
+            .WithMany()
+            .HasForeignKey(w => w.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasOne<Session>()
+            .WithMany()
+            .HasForeignKey(w => w.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasOne<ActiveLessonSnapshot>()
+            .WithMany()
+            .HasForeignKey(w => w.ActiveLessonSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasOne<StudentContextSnapshot>()
+            .WithMany()
+            .HasForeignKey(w => w.StudentContextSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.Topic)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.ApprovedIntent)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.ApprovedMainTopic)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.ApprovedFocusArea)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.ApprovedStudyGoal)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.WorkflowVersion)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.GroundingMode)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.SourceConfidence)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.EvidenceSummaryJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.SynthesisJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.PlanContextJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.QuizContextJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.TutorContextJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.WikiContextJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.SafetyIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .Property(w => w.PromptBlock)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasIndex(w => new { w.UserId, w.CreatedAt });
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasIndex(w => new { w.UserId, w.TopicId, w.CreatedAt });
+
+        modelBuilder.Entity<KorteksResearchWorkflow>()
+            .HasIndex(w => new { w.UserId, w.SessionId, w.CreatedAt });
 
         modelBuilder.Entity<CostRecord>()
             .Property(c => c.AgentRole)
@@ -766,6 +990,96 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<AssessmentQualityRun>()
             .HasIndex(q => q.AssessmentDraftId);
 
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.Session)
+            .WithMany()
+            .HasForeignKey(s => s.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.QuizRun)
+            .WithMany()
+            .HasForeignKey(s => s.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.PlanQualitySnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.PlanQualitySnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.ActiveLessonSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ActiveLessonSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasOne(s => s.StudentContextSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.StudentContextSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.ConceptCoverageScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.MisconceptionTargetingScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.DistractorQualityScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.LeakageSafetyScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.RemediationAlignmentScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.BlockingIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.WarningIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .Property(s => s.AssessmentContractJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.SessionId, s.CreatedAt });
+
+        modelBuilder.Entity<AssessmentQualitySnapshot>()
+            .HasIndex(s => s.PlanQualitySnapshotId);
+
         modelBuilder.Entity<AssessmentItemStat>()
             .HasOne(s => s.AssessmentItem)
             .WithMany()
@@ -1103,6 +1417,172 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<TutorTurnState>()
             .HasIndex(s => new { s.UserId, s.SessionId, s.CreatedAt });
 
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasOne(s => s.Session)
+            .WithMany()
+            .HasForeignKey(s => s.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasOne(s => s.QuizRun)
+            .WithMany()
+            .HasForeignKey(s => s.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasOne(s => s.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ActiveConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ActiveConceptLabel)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.SourceBundleHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ApprovedIntent)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ApprovedMainTopic)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ApprovedFocusArea)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.ApprovedStudyGoal)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.GroundingMode)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.Status)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.RemediationNeed)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.LearnerState)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.Confidence)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.MasteryProbability)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.EvidenceSummaryJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .Property(s => s.SnapshotJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.Status, s.UpdatedAt });
+
+        modelBuilder.Entity<ActiveLessonSnapshot>()
+            .HasIndex(s => new { s.UserId, s.SessionId, s.Status, s.UpdatedAt });
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .HasOne(s => s.Session)
+            .WithMany()
+            .HasForeignKey(s => s.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.ConfidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.SourceReadiness)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.StrongConceptsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.WeakConceptsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.RecentMisconceptionsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.RemediationReadyJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.ReviewPressureJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.GoalReadinessJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.LearningMemoryJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .Property(s => s.SnapshotJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.UpdatedAt });
+
+        modelBuilder.Entity<StudentContextSnapshot>()
+            .HasIndex(s => new { s.UserId, s.SessionId, s.UpdatedAt });
+
         modelBuilder.Entity<TutorMemoryPatch>()
             .Property(p => p.PatchJson)
             .HasColumnType("nvarchar(max)");
@@ -1213,6 +1693,144 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<TeachingArtifact>()
             .HasIndex(a => new { a.UserId, a.TopicId, a.CreatedAt });
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ArtifactType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ArtifactStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.Origin)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.RenderFormat)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.Title)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.SafeContent)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ContentJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.SourceBasis)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ConceptKey)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ConceptLabel)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.WikiNotebookSectionKey)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.CitationIdsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.ToolTraceIdsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.AccessibilityJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .Property(a => a.SafetyWarningsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningArtifact>()
+            .HasIndex(a => new { a.UserId, a.TopicId, a.SessionId, a.CreatedAt });
+
+        modelBuilder.Entity<LearningArtifact>()
+            .HasIndex(a => new { a.UserId, a.ConceptKey, a.ArtifactStatus });
+
+        modelBuilder.Entity<LearningArtifact>()
+            .HasIndex(a => new { a.UserId, a.TeachingArtifactId });
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.PackType)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.PackStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.Title)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.WikiPageTitle)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.WikiPageKey)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.Summary)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.SourceReadiness)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.EvidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.CompletedConceptKeysJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.WeakConceptKeysJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.MisconceptionKeysJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.ArtifactIdsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.NextActionsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.WarningsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .Property(p => p.SafeMetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .HasIndex(p => new { p.UserId, p.TopicId, p.SessionId, p.UpdatedAt });
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .HasIndex(p => new { p.UserId, p.WikiPageId, p.UpdatedAt });
+
+        modelBuilder.Entity<LearningNotebookPack>()
+            .HasIndex(p => new { p.UserId, p.PackType, p.PackStatus });
 
         modelBuilder.Entity<TutorReflectionUpdate>()
             .Property(r => r.ReflectionJson)
@@ -1585,6 +2203,167 @@ public class OrkaDbContext : DbContext
             .IsRequired(false)
             .OnDelete(DeleteBehavior.NoAction);
 
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .Property(b => b.BundleHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .Property(b => b.EvidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .Property(b => b.CitationCoverage)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .Property(b => b.EvidenceJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .HasIndex(b => new { b.UserId, b.TopicId, b.SessionId, b.CreatedAt });
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .HasOne(b => b.Topic)
+            .WithMany()
+            .HasForeignKey(b => b.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceEvidenceBundle>()
+            .HasOne(b => b.Session)
+            .WithMany()
+            .HasForeignKey(b => b.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .Property(e => e.EventType)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .Property(e => e.Reason)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .Property(e => e.SafeSummary)
+            .HasMaxLength(1000);
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .HasIndex(e => new { e.UserId, e.TopicId, e.CreatedAt });
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .HasIndex(e => new { e.UserId, e.SourceId, e.CreatedAt });
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .HasOne(e => e.Topic)
+            .WithMany()
+            .HasForeignKey(e => e.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SourceLifecycleEvent>()
+            .HasOne(e => e.Source)
+            .WithMany()
+            .HasForeignKey(e => e.SourceId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .Property(n => n.EvidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .Property(n => n.SourceCoverage)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .Property(n => n.ConceptCoverage)
+            .HasMaxLength(96);
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .Property(n => n.SectionsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .Property(n => n.SourceWarningsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .HasIndex(n => new { n.UserId, n.TopicId, n.CreatedAt });
+
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>()
+            .HasOne(n => n.Topic)
+            .WithMany()
+            .HasForeignKey(n => n.TopicId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.QualityStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.SpecificityScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.SequencingScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.EvidenceAlignmentScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.AssessmentAlignmentScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.TutorAlignmentScore)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.BlockingIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.WarningIssuesJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .Property(s => s.PlanContractJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .HasIndex(s => new { s.UserId, s.TopicId, s.SessionId, s.CreatedAt });
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .HasOne(s => s.Topic)
+            .WithMany()
+            .HasForeignKey(s => s.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .HasOne(s => s.Session)
+            .WithMany()
+            .HasForeignKey(s => s.SessionId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .HasOne(s => s.ActiveLessonSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.ActiveLessonSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<LearningPlanQualitySnapshot>()
+            .HasOne(s => s.StudentContextSnapshot)
+            .WithMany()
+            .HasForeignKey(s => s.StudentContextSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
         modelBuilder.Entity<RemediationPlan>()
             .HasOne(r => r.User)
             .WithMany()
@@ -1676,6 +2455,108 @@ public class OrkaDbContext : DbContext
             .Property(w => w.Content)
             .HasColumnType("nvarchar(max)");
 
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.PageKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.PageType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.ParentConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.SourceReadiness)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.EvidenceStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.SafeSummary)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiPage>()
+            .Property(w => w.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiBlock>()
+            .Property(b => b.SourceBasis)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiBlock>()
+            .Property(b => b.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiBlock>()
+            .Property(b => b.MisconceptionKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiBlock>()
+            .Property(b => b.Visibility)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiBlock>()
+            .Property(b => b.SafetyWarningsJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.TargetPageKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.LinkType)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.CreatedBy)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.SafeLabel)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.MetadataJson)
+            .HasColumnType("nvarchar(max)");
+
+        modelBuilder.Entity<WikiLink>()
+            .Property(l => l.Strength)
+            .HasPrecision(6, 4);
+
+        modelBuilder.Entity<WikiLink>()
+            .HasOne(l => l.User)
+            .WithMany()
+            .HasForeignKey(l => l.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<WikiLink>()
+            .HasOne(l => l.Topic)
+            .WithMany()
+            .HasForeignKey(l => l.TopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<WikiLink>()
+            .HasOne(l => l.SourcePage)
+            .WithMany()
+            .HasForeignKey(l => l.SourcePageId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<WikiLink>()
+            .HasOne(l => l.TargetPage)
+            .WithMany()
+            .HasForeignKey(l => l.TargetPageId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
         // Decimal precision
         modelBuilder.Entity<Session>()
             .Property(s => s.TotalCostUSD)
@@ -1708,6 +2589,21 @@ public class OrkaDbContext : DbContext
         // WikiPage: konu bazlı wiki içerik yükleme
         modelBuilder.Entity<WikiPage>()
             .HasIndex(w => w.TopicId);
+
+        modelBuilder.Entity<WikiPage>()
+            .HasIndex(w => new { w.UserId, w.TopicId, w.PageKey, w.IsDeleted });
+
+        modelBuilder.Entity<WikiPage>()
+            .HasIndex(w => new { w.UserId, w.TopicId, w.ConceptKey, w.IsDeleted });
+
+        modelBuilder.Entity<WikiBlock>()
+            .HasIndex(b => new { b.WikiPageId, b.BlockType, b.IsDeleted });
+
+        modelBuilder.Entity<WikiLink>()
+            .HasIndex(l => new { l.UserId, l.TopicId, l.LinkType, l.IsDeleted });
+
+        modelBuilder.Entity<WikiLink>()
+            .HasIndex(l => new { l.SourcePageId, l.TargetPageId, l.LinkType, l.IsDeleted });
 
         // NotebookLM sources: topic/session scoped documents with retrievable chunks
         modelBuilder.Entity<LearningSource>()
@@ -2312,6 +3208,10 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<AdaptiveAssessmentDecision>()
             .Property(d => d.ConceptKey)
             .HasMaxLength(450);
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .Property(d => d.AssessmentMode)
+            .HasMaxLength(64);
 
         modelBuilder.Entity<AdaptiveAssessmentDecision>()
             .Property(d => d.MasteryProbability)

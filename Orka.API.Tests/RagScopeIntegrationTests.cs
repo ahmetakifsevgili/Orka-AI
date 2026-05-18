@@ -141,7 +141,8 @@ public sealed class RagScopeIntegrationTests
         var page = await sources.GetPageAsync(user.UserId, rootSourceId, 1);
         Assert.NotNull(page);
         Assert.Single(page!.Chunks);
-        Assert.Contains("exact root source text", page.Chunks[0].Text);
+        Assert.Equal(string.Empty, page.Chunks[0].Text);
+        Assert.Null(page.Chunks[0].HighlightHint);
 
         var crossUserPage = await sources.GetPageAsync(other.UserId, rootSourceId, 1);
         Assert.Null(crossUserPage);
