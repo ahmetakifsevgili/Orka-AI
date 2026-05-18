@@ -64,9 +64,49 @@ public sealed class TutorController : ControllerBase
         return Ok(new
         {
             topicId,
-            learnerProfile = profile,
-            workingMemory = memory,
-            latestTurnState = latestTurn
+            learnerProfile = profile == null ? null : new
+            {
+                profile.Id,
+                profile.TopicId,
+                profile.PreferredStyleMode,
+                profile.StyleConfidence,
+                profile.AffectiveState,
+                profile.CognitiveLoad,
+                profile.EvidenceCount,
+                profile.CreatedAt,
+                profile.UpdatedAt
+            },
+            workingMemory = memory == null ? null : new
+            {
+                memory.Id,
+                memory.TopicId,
+                memory.SessionId,
+                memory.WorkingMemoryVersion,
+                memory.ActiveConceptKey,
+                memory.TeachingMode,
+                memory.StyleMode,
+                memory.AffectiveState,
+                memory.CognitiveLoad,
+                memory.Source,
+                memory.IsDegraded,
+                memory.CreatedAt,
+                memory.ExpiresAt
+            },
+            latestTurnState = latestTurn == null ? null : new
+            {
+                latestTurn.Id,
+                latestTurn.TopicId,
+                latestTurn.SessionId,
+                latestTurn.WorkingMemorySnapshotId,
+                latestTurn.ConceptGraphSnapshotId,
+                latestTurn.ActiveConceptKey,
+                latestTurn.TeachingMode,
+                latestTurn.StyleMode,
+                latestTurn.AffectiveState,
+                latestTurn.CognitiveLoad,
+                latestTurn.GroundingStatus,
+                latestTurn.CreatedAt
+            }
         });
     }
 
@@ -184,7 +224,131 @@ public sealed class TutorController : ControllerBase
             .OrderBy(s => s.RubricKey)
             .ToListAsync(ct);
 
-        return Ok(new { trace, tools, artifacts, evidence, reflections, pedagogyRuns, pedagogyScores });
+        return Ok(new
+        {
+            trace = new
+            {
+                trace.Id,
+                trace.TopicId,
+                trace.SessionId,
+                trace.TutorTurnStateId,
+                trace.TeachingMode,
+                trace.ActiveConceptKey,
+                trace.StyleMode,
+                trace.DirectAnswerPolicy,
+                trace.GroundingPolicy,
+                trace.NextCheckPrompt,
+                trace.CreatedAt
+            },
+            tools = tools.Select(tool => new
+            {
+                tool.Id,
+                tool.TopicId,
+                tool.SessionId,
+                tool.TutorActionTraceId,
+                tool.ToolId,
+                tool.Provider,
+                tool.Status,
+                tool.Success,
+                tool.RiskLevel,
+                tool.Evidence,
+                tool.FallbackReason,
+                tool.ErrorCode,
+                tool.SafeMessage,
+                tool.Confidence,
+                tool.SourceCount,
+                tool.LatencyMs,
+                tool.StartedAt,
+                tool.FinishedAt
+            }),
+            artifacts = artifacts.Select(artifact => new
+            {
+                artifact.Id,
+                artifact.TopicId,
+                artifact.SessionId,
+                artifact.TutorActionTraceId,
+                artifact.ArtifactType,
+                artifact.Title,
+                artifact.Content,
+                artifact.RenderFormat,
+                artifact.Status,
+                artifact.Provider,
+                artifact.ExternalUrl,
+                artifact.RenderError,
+                artifact.RenderedAt,
+                artifact.CreatedAt
+            }),
+            evidence = evidence.Select(item => new
+            {
+                item.Id,
+                item.TopicId,
+                item.SessionId,
+                item.TutorTurnStateId,
+                item.TutorActionTraceId,
+                item.TutorToolCallId,
+                item.EvidenceType,
+                item.Provider,
+                item.ConceptKey,
+                item.Title,
+                item.Summary,
+                item.FactualClaim,
+                item.AnalogyCandidate,
+                item.CitationUrl,
+                item.CitationLabel,
+                item.Confidence,
+                item.Freshness,
+                item.RiskLevel,
+                item.Status,
+                item.CreatedAt,
+                item.ExpiresAt
+            }),
+            reflections = reflections.Select(reflection => new
+            {
+                reflection.Id,
+                reflection.TopicId,
+                reflection.SessionId,
+                reflection.TutorActionTraceId,
+                reflection.TutorTurnStateId,
+                reflection.PolicyApplied,
+                reflection.SourceClaimWithoutSource,
+                reflection.DirectAnswerRiskHandled,
+                reflection.ArtifactRendered,
+                reflection.MicroCheckAsked,
+                reflection.CreatedAt
+            }),
+            pedagogyRuns = pedagogyRuns.Select(run => new
+            {
+                run.Id,
+                run.TopicId,
+                run.SessionId,
+                run.TutorTurnStateId,
+                run.TutorActionTraceId,
+                run.TutorReflectionUpdateId,
+                run.Status,
+                run.OverallScore,
+                run.HasCriticalViolation,
+                run.WarningCount,
+                run.CriticalViolationCount,
+                run.LlmJudgeUsed,
+                run.Summary,
+                run.Recommendation,
+                run.CreatedAt
+            }),
+            pedagogyScores = pedagogyScores.Select(score => new
+            {
+                score.Id,
+                score.EvaluationRunId,
+                score.TopicId,
+                score.TutorActionTraceId,
+                score.RubricKey,
+                score.Score,
+                score.Severity,
+                score.IsCritical,
+                score.Evidence,
+                score.Recommendation,
+                score.CreatedAt
+            })
+        });
     }
 
     [HttpGet("pedagogy/topic/{topicId:guid}")]

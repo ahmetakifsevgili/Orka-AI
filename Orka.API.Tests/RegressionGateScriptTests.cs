@@ -1,4 +1,6 @@
 using Xunit;
+using System.Text.Json;
+using Orka.Core.DTOs;
 
 namespace Orka.API.Tests;
 
@@ -125,6 +127,55 @@ public sealed class RegressionGateScriptTests
         Assert.Contains("testing-gate-constitution.md", checklist);
         Assert.Contains("feature-prompt-template.md", checklist);
         Assert.Contains("feature-completion-report-template.md", checklist);
+    }
+
+    [Fact]
+    public void PublicLearningQualityDtosDoNotSerializeOwnerIdsOrRawPayloadHashes()
+    {
+        var payloads = new[]
+        {
+            JsonSerializer.Serialize(new LearningQualityReportDto { Id = Guid.NewGuid(), UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new AssessmentCalibrationRunDto { Id = Guid.NewGuid(), UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new AdaptiveAssessmentSessionDto { Id = Guid.NewGuid(), UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new StandardsSummaryDto { UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new StandardsValidationRunDto { Id = Guid.NewGuid(), UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new StandardsExportRunDto { Id = Guid.NewGuid(), UserId = Guid.NewGuid() }),
+            JsonSerializer.Serialize(new TeachingEvidenceCardDto
+            {
+                Id = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
+                Title = "Safe public evidence card",
+                RawPayloadHash = "hash_should_stay_internal"
+            })
+        };
+
+        foreach (var payload in payloads)
+        {
+            Assert.DoesNotContain("userId", payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("ownerId", payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("rawPayloadHash", payload, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("hash_should_stay_internal", payload, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void TutorPublicTraceEndpointsUseSafeProjections()
+    {
+        var controller = Read("Orka.API/Controllers/TutorController.cs");
+
+        Assert.Contains("learnerProfile = profile == null ? null : new", controller);
+        Assert.Contains("workingMemory = memory == null ? null : new", controller);
+        Assert.Contains("latestTurnState = latestTurn == null ? null : new", controller);
+        Assert.DoesNotContain("learnerProfile = profile,", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("workingMemory = memory,", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("latestTurnState = latestTurn", controller.Replace("latestTurnState = latestTurn == null ? null : new", string.Empty), StringComparison.Ordinal);
+        Assert.DoesNotContain("return Ok(new { trace, tools, artifacts, evidence, reflections, pedagogyRuns, pedagogyScores })", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("RawPayloadJson", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("RawPayloadHash", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("StateJson", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("SnapshotJson", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunJson", controller, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResultJson", controller, StringComparison.Ordinal);
     }
 
     private static string Read(string relativePath)

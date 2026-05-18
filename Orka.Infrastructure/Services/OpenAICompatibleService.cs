@@ -73,9 +73,8 @@ public abstract class OpenAICompatibleService
 
             if (!response.IsSuccessStatusCode)
             {
-                if (!ReferenceEquals(response, null)) throw AiProviderFailureMapper.FromResponse(providerTag, Model, response, body);
                 Logger.LogError("[{Provider}] API Hatası: {Status} - {Body}", providerTag, response.StatusCode, body);
-                throw new HttpRequestException($"{providerTag} API hatası: {response.StatusCode} — {body}");
+                throw AiProviderFailureMapper.FromResponse(providerTag, Model, response, body);
             }
 
             using var doc = JsonDocument.Parse(body);
@@ -89,9 +88,8 @@ public abstract class OpenAICompatibleService
         catch (Exception ex)
         {
             AiDebugLogger.LogError(providerTag, ex.Message);
-            if (!ReferenceEquals(ex, null)) throw AiProviderFailureMapper.FromException(providerTag, Model, ex);
             Logger.LogError(ex, "[{Provider}] İstek başarısız.", providerTag);
-            throw new HttpRequestException($"{providerTag} isteği başarısız: {ex.Message}", ex);
+            throw AiProviderFailureMapper.FromException(providerTag, Model, ex);
         }
     }
 

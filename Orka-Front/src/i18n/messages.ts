@@ -3,7 +3,7 @@ import type { Locale } from "./languages";
 type Messages = Record<string, string>;
 
 const tr: Messages = {
-  app_tagline: "Kişisel AI öğretmen ve çalışma koçu",
+  app_tagline: "Kisisel AI Tutor ve calisma kocu",
   settings: "Ayarlar",
   login: "Giriş Yap",
   profile: "Profil",
@@ -113,13 +113,13 @@ const tr: Messages = {
   small_step_weak: "Tutor'dan bu beceri için 5 dakikalık mini pratik iste.",
   audio_lesson: "AI Sesli Ders",
   listen: "Sesli dinle",
-  teacher: "HOCA",
+  teacher: "TUTOR",
   assistant: "ASİSTAN",
   guest: "KONUK",
   narrator: "ANLATICI",
   audio_mode_badge: "Sesli Ders",
   audio_helper:
-    "Bu canlı sınıf değil; Orka cevabı hoca-asistan anlatımına çeviren AI destekli sesli ders modudur.",
+    "Bu canlı sınıf değil; Orka cevabı Tutor-asistan anlatımına çeviren AI destekli sesli ders modudur.",
   audio_browser_unsupported: "Tarayıcın Web Speech API desteklemiyor. Lütfen Chrome, Edge veya Safari kullan.",
   pause: "Duraklat",
   play: "Oynat",
@@ -128,13 +128,13 @@ const tr: Messages = {
   stop: "Durdur",
   ask_segment: "Bu bölümü sor",
   confused: "Anlamadım",
-  ask_teacher_placeholder: "Anlamadığın yeri hocaya sor...",
+  ask_teacher_placeholder: "Anlamadigin yeri Tutor'a sor...",
   ask: "Sor",
 };
 
 const en: Messages = {
   ...tr,
-  app_tagline: "Personal AI teacher and study coach",
+  app_tagline: "Personal AI tutor and study coach",
   settings: "Settings",
   login: "Log in",
   profile: "Profile",
@@ -228,13 +228,13 @@ const en: Messages = {
   small_step_weak: "Ask Tutor for a 5-minute mini practice on this skill.",
   audio_lesson: "AI Audio Lesson",
   listen: "Listen",
-  teacher: "TEACHER",
+  teacher: "TUTOR",
   assistant: "ASSISTANT",
   guest: "GUEST",
   narrator: "NARRATOR",
   audio_mode_badge: "Audio Lesson",
   audio_helper:
-    "This is not a live classroom. Orka turns the answer into an AI-supported teacher-assistant audio lesson.",
+    "This is not a live classroom. Orka turns the answer into an AI-supported Tutor-assistant audio lesson.",
   audio_browser_unsupported: "Your browser does not support Web Speech API. Please use Chrome, Edge, or Safari.",
   pause: "Pause",
   play: "Play",
@@ -243,7 +243,7 @@ const en: Messages = {
   stop: "Stop",
   ask_segment: "Ask about this part",
   confused: "I did not get it",
-  ask_teacher_placeholder: "Ask the teacher about the part you did not understand...",
+  ask_teacher_placeholder: "Ask Tutor about the part you did not understand...",
   ask: "Ask",
 };
 

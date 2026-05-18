@@ -1680,7 +1680,6 @@ export interface TutorResponseQualityEvaluationDto {
 
 export interface AssessmentCalibrationRun {
   id: string;
-  userId: string;
   topicId?: string | null;
   conceptGraphSnapshotId?: string | null;
   calibrationStatus: string;
@@ -1709,7 +1708,6 @@ export interface AssessmentCalibrationRun {
 
 export interface AdaptiveAssessmentSession {
   id: string;
-  userId: string;
   topicId?: string | null;
   sessionId?: string | null;
   quizRunId?: string | null;
@@ -1859,7 +1857,6 @@ export interface ApiTopic {
   parentTopicId?: string;
   createdAt: string;
   updatedAt?: string;
-  userId?: string;
   order?: number;
   subLessons?: SubLesson[];
   currentPhase?: number;
@@ -2372,7 +2369,6 @@ export interface ApiQuizHistoryItem {
 
 export interface LearningQualityReport {
   id: string;
-  userId: string;
   topicId?: string | null;
   conceptGraphSnapshotId?: string | null;
   planRequestId?: string | null;
@@ -2496,7 +2492,6 @@ export interface LearningQualityReport {
 }
 
 export interface StandardsSummary {
-  userId: string;
   topicId?: string | null;
   conceptGraphSnapshotId?: string | null;
   standardsAlignmentStatus: string;
@@ -2514,7 +2509,6 @@ export interface StandardsSummary {
 
 export interface StandardsValidationRun {
   id: string;
-  userId: string;
   topicId?: string | null;
   conceptGraphSnapshotId?: string | null;
   status: string;
@@ -2539,7 +2533,6 @@ export interface StandardsValidationItem {
 
 export interface StandardsExportRun {
   id: string;
-  userId: string;
   topicId?: string | null;
   conceptGraphSnapshotId?: string | null;
   exportType: string;

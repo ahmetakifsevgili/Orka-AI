@@ -389,7 +389,7 @@ export default function SystemHealthHUD() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard icon={Server} label="Redis" value={data.redis.status} hint={`${data.redis.pingMs}ms ping · ${data.redis.endpointCount} endpoint`} tone={redisTone} />
             <MetricCard icon={CheckCircle2} label="Auth/Swagger" value={endpointHealth?.swagger.enabled ? "Hazir" : "Dev only"} hint={endpointHealth ? `${endpointHealth.apiBaseUrl} · ${endpointHealth.swagger.json}` : "Endpoint kontrati bekleniyor"} tone={endpointHealth?.health.database.canConnect === false ? "red" : "emerald"} />
-            <MetricCard icon={Cpu} label="Ajan online" value={`${onlineAgents}/${data.agents.length}`} hint="Yeni Quiz, Diagnostic, Remedial, Visual ve Classroom rolleri dahil." tone="emerald" />
+            <MetricCard icon={Cpu} label="Ajan online" value={`${onlineAgents}/${data.agents.length}`} hint="Yeni Quiz, Diagnostic, Remedial, Visual ve sesli ders rolleri dahil." tone="emerald" />
             <MetricCard icon={Database} label="Cache hit rate" value={`%${data.cache.hitRatePct}`} hint={`${data.cache.totalHits} hit · ${data.cache.totalMisses} miss`} tone={data.cache.hitRatePct >= 50 ? "emerald" : data.cache.hitRatePct > 0 ? "amber" : "zinc"} />
             <MetricCard icon={Brain} label="Learning signal" value={data.learningOps.totalSignals} hint={`Son ${data.learningOps.windowDays} gun · ${data.learningOps.quizAttempts} quiz cevabi`} tone="sky" />
             <MetricCard icon={Sparkles} label="EducatorCore" value={educatorCore?.status ?? "idle"} hint={`P6 sinyal ${educatorCore?.signals ?? 0} · citation eksigi ${educatorCore?.citationMissing ?? 0}`} tone={educatorTone} />
@@ -404,7 +404,7 @@ export default function SystemHealthHUD() {
                       <div>
                         <div className="text-[10px] font-black uppercase tracking-[0.22em] text-[#52768a]">Agent bridge monitor</div>
                         <p className="mt-1 text-xs text-[#667085]">
-                          Quiz, Wiki/Notebook, Sesli Sınıf, IDE ve telafi sinyalleri aynı öğrenme hafızasına bağlanıyor mu?
+                          Quiz, Wiki/Notebook, Sesli Ders, IDE ve telafi sinyalleri aynı öğrenme hafızasına bağlanıyor mu?
                         </p>
                       </div>
                       <div className="flex gap-2 text-[10px] font-black uppercase tracking-wider">

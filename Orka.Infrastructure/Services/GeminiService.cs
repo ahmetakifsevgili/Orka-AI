@@ -148,10 +148,9 @@ public class GeminiService : IGeminiService
 
             if (!response.IsSuccessStatusCode)
             {
-                if (!ReferenceEquals(response, null)) throw AiProviderFailureMapper.FromResponse("Gemini", model, response, respStr);
                 _logger.LogError("Gemini API Hatası: {Status} — {Error}", response.StatusCode,
                     respStr[..Math.Min(respStr.Length, 300)]);
-                throw new HttpRequestException($"Gemini API hatası: {response.StatusCode} — {respStr[..Math.Min(respStr.Length, 200)]}");
+                throw AiProviderFailureMapper.FromResponse("Gemini", model, response, respStr);
             }
 
             using var doc = JsonDocument.Parse(respStr);
@@ -166,9 +165,8 @@ public class GeminiService : IGeminiService
         catch (Exception ex)
         {
             AiDebugLogger.LogError("GEMINI", ex.Message);
-            if (!ReferenceEquals(ex, null)) throw AiProviderFailureMapper.FromException("Gemini", model, ex);
             _logger.LogError(ex, "Gemini API çağrısı başarısız.");
-            throw new HttpRequestException($"Gemini servis hatası: {ex.Message}", ex);
+            throw AiProviderFailureMapper.FromException("Gemini", model, ex);
         }
     }
 

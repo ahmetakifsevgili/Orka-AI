@@ -380,6 +380,7 @@ public sealed class AssessmentItemStatDto
 public sealed class AssessmentCalibrationRunDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -428,6 +429,7 @@ public sealed class AdaptiveAssessmentAnswerRequest : RecordQuizAttemptRequest
 public sealed class AdaptiveAssessmentSessionDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
@@ -504,6 +506,7 @@ public sealed record QuizOptionDto(
 public sealed class KnowledgeTracingStateDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -527,6 +530,7 @@ public sealed class KnowledgeTracingStateDto
 public sealed class TutorPolicyTraceDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
@@ -568,6 +572,7 @@ public sealed class ResourceConceptAlignmentDto
 public sealed class LearningQualityReportDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -620,6 +625,7 @@ public sealed class LearningQualityReportDto
 
 public sealed class StandardsSummaryDto
 {
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -639,6 +645,7 @@ public sealed class StandardsSummaryDto
 public sealed class StandardsValidationRunDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -666,6 +673,7 @@ public sealed class StandardsValidationItemDto
 public sealed class StandardsExportRunDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }
@@ -682,6 +690,7 @@ public sealed class StandardsExportRunDto
 public sealed class RagEvaluationRunDto
 {
     public Guid Id { get; set; }
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? ConceptGraphSnapshotId { get; set; }

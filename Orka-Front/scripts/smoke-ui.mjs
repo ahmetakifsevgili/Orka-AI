@@ -47,7 +47,7 @@ addCheck("Turkish mojibake guard", dirty.length === 0, dirty.map((file) => path.
 
 const landing = read("src/pages/Landing.tsx");
 addCheck("Landing has real ORKA module copy", landing.includes("Öğrenci sinyali yakalandı") && landing.includes("NotebookLM") && landing.includes("QA ve sistem güveni"));
-addCheck("Landing keeps P4 product depth", landing.includes("Plan") && landing.includes("Wiki") && landing.includes("Quiz") && landing.includes("Sesli Sınıf") && landing.includes("IDE"));
+addCheck("Landing keeps P4 product depth", landing.includes("Plan") && landing.includes("Wiki") && landing.includes("Quiz") && landing.includes("Sesli Ders") && landing.includes("IDE"));
 
 const css = read("src/index.css");
 addCheck("Mist Comfort utilities exist", css.includes(".orka-surface") && css.includes(".orka-panel") && css.includes(".orka-focus"));

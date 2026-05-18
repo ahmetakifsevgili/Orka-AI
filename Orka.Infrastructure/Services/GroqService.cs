@@ -247,11 +247,10 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         catch (Exception ex)
         {
             // ADIM 1 (Diagnostic): Gerçek hata tipini konsola yaz
-            if (!ReferenceEquals(ex, null)) throw AiProviderFailureMapper.FromException("Groq", _model, ex);
             Console.WriteLine($"[GROQ-EXCEPTION] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
             AiDebugLogger.LogError("GROQ", $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             _logger.LogError(ex, "Groq API çağrısı başarısız. Tip: {ExType}", ex.GetType().Name);
-            return "Zihnim biraz karıştı, hemen kendime geliyorum. Lütfen tekrar sor.";
+            throw AiProviderFailureMapper.FromException("Groq", _model, ex);
         }
     }
 
@@ -286,10 +285,8 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(ct);
-            if (!ReferenceEquals(response, null)) throw AiProviderFailureMapper.FromResponse("Groq", _model, response, err);
             _logger.LogError("Groq Stream API Hatası: {Status} - {Error}", response.StatusCode, err);
-            yield return "Bir hata oluştu, lütfen tekrar deneyin.";
-            yield break;
+            throw AiProviderFailureMapper.FromResponse("Groq", _model, response, err);
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);

@@ -431,6 +431,7 @@ The implementation pack count is fixed unless explicitly changed by the user lat
 - YouTube is pedagogy/reference, not factual grounding unless verified transcript/source evidence exists.
 - Tools must be governed, traceable, capability-checked, and safe on fallback.
 - No hidden provider/debug payload in public DTOs.
+- Public student-facing API responses must use safe DTOs/projections; entities with `UserId`, owner ids, raw state JSON, prompt/tool/provider payloads, raw source chunks, or raw evidence payload hashes must not be returned directly.
 - Quiz measures concepts and misconceptions, not product labels, UI terms, or internal Orka plumbing.
 - Plans must be topic-specific, concept-aware, prerequisite-aware, and remediation-aware.
 - RAG answers must distinguish sourced, wiki-backed, degraded, and model-fallback claims.

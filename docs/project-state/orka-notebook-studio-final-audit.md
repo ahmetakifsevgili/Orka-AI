@@ -462,3 +462,19 @@ Phase 22-23 closes the source-study workflow polish layer.
 - Notebook source packs continue to include safe Q&A review warnings without making unsupported answers source-grounded.
 
 Phase 22-23 remains bounded: it does not add provider calls, raw source chunk storage, a scheduler, semantic agreement/contradiction detection, manual citation annotation, graph canvas editing, real PPTX export, video generation, or NotebookLM parity claims.
+
+## Post-closure Phase 27 Note
+
+Phase 27 is a post-closure polish/audit layer, not new OrkaLM product scope.
+
+Closed behavior:
+
+- Public learning-quality/evidence DTO serialization no longer exposes owner/user ids or raw payload hashes.
+- Tutor state/trace endpoints now project safe public response shapes instead of returning raw entity objects with `UserId`, state JSON, result JSON, or raw evidence payload fields.
+- Legacy student-facing classroom wording was narrowed to personal `AI Audio Lesson` / `Tutor` language where touched; existing compatibility endpoints/services remain in place.
+- Provider nullable warnings were reduced by replacing unreachable null-check/fallback branches with direct mapped provider failure throws that preserve the effective current behavior.
+- Browser visual E2E was attempted with authenticated seeded local data: a topic plus two ready TXT sources verified OrkaLM source notebook, source readiness, source graph, multi-source compare entry, citation review labels, Notebook Studio source pack context, and no raw payload/answer-key markers in checked DOM.
+- Phase 27 fixed a small OrkaLM UX gap found during Browser proof: source notebook mode now opens a frontend-only source notebook fallback page when Wiki pages are empty, so uploaded sources are not hidden behind Wiki generation polling.
+- Mobile Browser smoke was attempted; narrow viewports now force the sidebar into compact icon mode so OrkaLM source notebook content remains reachable without broad shell redesign.
+
+Phase 27 does not add provider calls, Google Cloud, real PPTX export, video generation, interactive Realtime voice, graph canvas editing, semantic multi-source synthesis, or teacher/classroom/dershane workflows.

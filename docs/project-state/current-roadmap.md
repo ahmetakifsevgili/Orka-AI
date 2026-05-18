@@ -238,6 +238,7 @@ Final audit:
   - Phase 20 adds deterministic multi-source compare and citation review: selected sources are compared by readiness, evidence status, citation coverage, and source-to-concept overlap; citation review exposes supported/unsupported/missing/stale states without raw answer, claim, chunk, provider, or path payloads.
   - Phase 21 adds source Q&A conversation memory: selected-source/source-collection questions can be stored as bounded `source_question_thread` LearningArtifacts, continued with safe prior summaries, reviewed/degraded by citation state, written to Wiki on request, and included in source Notebook pack summaries without raw chunk/provider/prompt/debug payloads.
   - Phase 22-23 adds a compact source-study workflow layer: OrkaLM now exposes a safe source study summary over Q&A threads, citation review, source readiness, and source-to-concept links so the UI can show review/degraded/citation-warning counts, linked concept counts, compare readiness, and next actions without new AI calls or raw source storage.
+  - Phase 27 is post-closure polish, not new OrkaLM scope: it performs a global public DTO/API projection privacy sweep, aligns legacy classroom wording with personal audio lesson language, attempts Browser visual E2E where tooling/auth allows it, reviews frontend bundle output, and cleans behaviorless provider nullable warnings.
 - Safety:
   - raw source chunks, prompts, provider payloads, raw tool payloads, debug traces, local paths, secrets, and pre-submit answer keys are not exposed.
   - official curriculum/exam readiness and success guarantees remain blocked.
@@ -272,6 +273,10 @@ Final audit:
   memory, citation checks, compare/source graph context, and source lifecycle;
   it adds no scheduler, raw transcript store, semantic contradiction detector,
   or provider call.
+- Phase 27 post-closure polish may only fix privacy/copy/build/warning issues;
+  it must not add product scope, provider calls, real PPTX/video generation,
+  interactive voice, graph canvas editing, or teacher/classroom/dershane
+  workflows.
 - Central Exams pilot productization readiness onceki faz olarak tamamlanmistir.
 - Yeni ara asama icat edilmeyecek.
 - Stage 6C, global exam implementation veya teacher/institutional feature kullanici onayi olmadan baslatilmayacak.

@@ -368,3 +368,13 @@ Phase 19 also requires:
 - Richer semantic source comparison, manual citation annotation, long-term source Q&A study scheduling, and source Q&A citation-cluster graph UX remain backlog.
 - Full automatic pack generation on every plan transition is intentionally avoided to prevent noisy artifact spam.
 - Broad deletion/consolidation of legacy services is intentionally avoided until references and runtime behavior are audited in a cleanup-only phase.
+
+## Phase 27 Post-closure Polish Gate
+
+- Global public DTO/API privacy sweep must confirm no student-facing response exposes owner/user ids, raw source chunks, raw prompts, raw provider/tool/debug payloads, local paths, secrets, or pre-submit answer keys.
+- Legacy classroom wording may remain in backend compatibility names, but student-facing copy should describe a personal AI audio lesson/Tutor mode rather than a live classroom or institutional workflow.
+- Browser visual E2E should be attempted when local tooling and authenticated seeded data are available; otherwise report the limitation and rely on deterministic tests, typecheck, smoke, and build.
+- Seeded Browser proof should include at least one topic and ready uploaded sources; OrkaLM source mode must not stay blocked by empty Wiki page polling when source notebook data is available.
+- Narrow viewport smoke should verify source notebook content remains reachable; compact shell behavior is acceptable, full mobile redesign remains outside Phase 27.
+- Provider nullable cleanup is allowed only when it is behaviorless and does not add or reroute provider calls.
+- Phase 27 remains polish only: no new AI/provider calls, no real PPTX/video, no interactive voice, no graph canvas editor, and no teacher/classroom/dershane workflows.

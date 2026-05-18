@@ -72,6 +72,7 @@ addCheck("Compare/review API uses safe DTO contract", api.includes("MultiSourceC
 addCheck("Source Q&A memory frontend avoids raw chunk rendering", wiki.includes("Source Q&A memory") && wiki.includes("safeAnswerSummary") && !wiki.includes("{chunk.text}") && !wiki.includes("rawSourceChunk"));
 addCheck("Source Q&A memory API uses safe DTO contract", api.includes("SourceQuestionThreadDto") && api.includes("SourceQuestionFollowUpRequestDto") && api.includes("/sources/question-threads") && !api.includes("rawProviderPayload") && !api.includes("rawSourceChunk"));
 addCheck("Source study summary avoids raw payload storage", wiki.includes("Source study status") && api.includes("SourceStudySummaryDto") && api.includes("/sources/study-summary") && !types.includes("rawSourceChunk") && !types.includes("rawProviderPayload"));
+addCheck("Global frontend public types avoid owner ids", !types.includes("userId: string") && !types.includes("ownerId: string") && !types.includes("userId?: string") && !types.includes("ownerId?: string"));
 
 if (failures.length > 0) {
   console.error(`\nSecurity smoke failed:\n- ${failures.join("\n- ")}`);

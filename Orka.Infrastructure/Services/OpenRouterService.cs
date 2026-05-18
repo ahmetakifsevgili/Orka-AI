@@ -84,16 +84,7 @@ public class OpenRouterService : IOpenRouterService
 
             _logger.LogWarning("OpenRouter API Hatası. Status: {Status}, Model: {Model}, Error: {Error}",
                 response.StatusCode, targetModel, responseString);
-            if (!ReferenceEquals(response, null)) throw AiProviderFailureMapper.FromResponse("OpenRouter", targetModel, response, responseString);
-
-            // Fallback: Haiku üzerinden dene (sadece varsayılan key ile)
-            if (targetModel != "anthropic/claude-3-5-haiku")
-            {
-                _logger.LogInformation("Claude Haiku fallback'e geçiliyor...");
-                return await ChatCompletionWithKeyAsync(systemPrompt, userMessage, "anthropic/claude-3-5-haiku", null);
-            }
-
-            throw new HttpRequestException($"OpenRouter API hatası: {response.StatusCode} — {responseString}");
+            throw AiProviderFailureMapper.FromResponse("OpenRouter", targetModel, response, responseString);
         }
         catch (HttpRequestException)
         {
@@ -102,9 +93,8 @@ public class OpenRouterService : IOpenRouterService
         catch (Exception ex)
         {
             AiDebugLogger.LogError("OPENROUTER", ex.Message);
-            if (!ReferenceEquals(ex, null)) throw AiProviderFailureMapper.FromException("OpenRouter", targetModel, ex);
             _logger.LogError(ex, "OpenRouter çağrısı başarısız. Model: {Model}", targetModel);
-            throw new HttpRequestException($"OpenRouter isteği başarısız: {ex.Message}", ex);
+            throw AiProviderFailureMapper.FromException("OpenRouter", targetModel, ex);
         }
     }
 

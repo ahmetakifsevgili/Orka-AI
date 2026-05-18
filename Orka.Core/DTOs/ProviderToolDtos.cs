@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Orka.Core.DTOs;
 
 public sealed record ProviderCitationDto(
@@ -79,6 +81,7 @@ public sealed record VisualArtifactResultDto(
 
 public sealed class TeachingEvidenceRequestDto
 {
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
@@ -93,6 +96,7 @@ public sealed class TeachingEvidenceRequestDto
 public sealed class TeachingEvidenceCardDto
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    [JsonIgnore]
     public Guid UserId { get; set; }
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
@@ -113,6 +117,7 @@ public sealed class TeachingEvidenceCardDto
     public double Confidence { get; set; } = 0.50;
     public string Freshness { get; set; } = "static";
     public string RiskLevel { get; set; } = "low";
+    [JsonIgnore]
     public string RawPayloadHash { get; set; } = string.Empty;
     public string Status { get; set; } = "ready";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

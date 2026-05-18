@@ -133,7 +133,10 @@ export default function LeftSidebar({
   const { isEnabled, isVisibleForUser } = useToolCapabilities();
   const [isPinned, setIsPinned] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
-  const isExpanded = isPinned || isHovered;
+  const [isNarrowViewport, setIsNarrowViewport] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 640px)").matches : false
+  );
+  const isExpanded = !isNarrowViewport && (isPinned || isHovered);
   const [topics, setTopics] = useState<ApiTopic[]>(initialTopics);
   const [topicsLoading, setTopicsLoading] = useState(initialLoading);
 
@@ -165,6 +168,15 @@ export default function LeftSidebar({
     setTopicsLoading(initialLoading);
   }, [initialLoading]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 640px)");
+    const sync = () => setIsNarrowViewport(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+
   // refreshTrigger her değiştiğinde topic listesini yenile
   useEffect(() => {
     if (refreshTrigger === 0) return;
@@ -190,7 +202,6 @@ export default function LeftSidebar({
       category: "Genel",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      userId: "", // Placeholder
     };
 
     // Optimistic update

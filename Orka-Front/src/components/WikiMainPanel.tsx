@@ -72,6 +72,19 @@ interface WikiMainPanelProps {
   mode?: "wiki" | "orkalm";
 }
 
+const buildOrkaLmFallbackPage = (topicId: string): WikiPage => ({
+  id: `orkalm-source-${topicId}`,
+  title: "OrkaLM Source Notebook",
+  pageKey: `orkalm-source-${topicId}`,
+  pageType: "orkalm_source",
+  sourceReadiness: "source_notebook",
+  evidenceStatus: "evidence_insufficient",
+  safeSummary: "Source notebook view; Wiki pages appear when learning traces exist.",
+  orderIndex: 0,
+  blockCount: 0,
+  blocks: [],
+});
+
 interface CopilotMessage {
   role: "user" | "assistant" | "system";
   content: string;
@@ -659,12 +672,19 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
           setActivePage(data[0]);
         } else {
           // Wiki henüz oluşmadı — arka plan görevi tamamlanana kadar poll et
-          setIsPolling(true);
+          if (mode === "orkalm") {
+            const fallbackPage = buildOrkaLmFallbackPage(topicId);
+            setPages([fallbackPage]);
+            setActivePage(fallbackPage);
+            setIsPolling(false);
+          } else {
+            setIsPolling(true);
+          }
         }
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [topicId]);
+  }, [mode, topicId]);
 
   useEffect(() => {
     setWikiGraphLoading(true);

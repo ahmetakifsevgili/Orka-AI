@@ -33,7 +33,7 @@ const slide = (x: number, delay = 0) => ({
   transition: { duration: 0.62, delay, ease: "easeOut" as const },
 });
 
-const modules = ["Plan", "Wiki", "Quiz", "NotebookLM/OrkaLM", "Tutor", "Sesli Sınıf", "IDE"];
+const modules = ["Plan", "Wiki", "Quiz", "NotebookLM/OrkaLM", "Tutor", "Sesli Ders", "IDE"];
 
 const featureCards = [
   {
@@ -67,7 +67,7 @@ const featureCards = [
   {
     icon: Mic2,
     title: "Çoklu-Ajan Senkronizasyonu",
-    text: "Hoca, Asistan ve Konuk rollerine sahip otonom ajanlar eş zamanlı çalışır. Sorduğunuz anlık bir soru, sınıfın tüm bağlamına entegre olur.",
+    text: "Tutor, Asistan ve Konuk anlatım rolleri eş zamanlı çalışır. Sorduğunuz anlık bir soru, kişisel sesli ders bağlamına entegre olur.",
     meta: "Swarm Intelligence: Senkronize Temsilciler",
     className: "orka-panel",
   },
@@ -92,7 +92,7 @@ const pipeline = [
 const trustItems = [
   ["Proaktif Sistem Doğrulaması", "Tüm API endpoint'leri ve yetkilendirme katmanları, her dağıtım öncesi sentetik ajanlar tarafından otonom testlere tabi tutulur."],
   ["Yapısal Veri Koruması", "LLM'den dönen karmaşık JSON çıktıları, katı şema doğrulayıcılarla (schema validators) kontrol edilerek arayüze kusursuz yansıtılır."],
-  ["Ajan Durum Senkronizasyonu", "Swarm içindeki rollerin (Hoca, Asistan) hafıza sızıntısı olmadan ve tam bağlamla sürece katılımı güvence altındadır."],
+  ["Ajan Durum Senkronizasyonu", "Tutor ve Asistan rollerinin hafıza sızıntısı olmadan ve tam bağlamla sürece katılımı güvence altındadır."],
   ["Güvenli Yürütme Hattı", "Kod analizleri ve hata ayıklama süreçleri, izole bir kapsayıcıda işlenir ve ajanlara doğrudan yapısal veri olarak beslenir."],
 ];
 
@@ -173,7 +173,7 @@ export default function Landing() {
               {[
                 ["20", "tanı sorusu"],
                 ["24s", "Wiki cache"],
-                ["3", "sınıf rolü"],
+                ["3", "sesli ders rolü"],
               ].map(([value, label]) => (
                 <div key={label} className="orka-card rounded-2xl px-4 py-3">
                   <p className="text-xl font-extrabold text-[#172033]">{value}</p>

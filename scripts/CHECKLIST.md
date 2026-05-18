@@ -621,3 +621,28 @@ Before closing OrkaLM production hardening:
   git diff --check
   ```
 - If Browser or local Playwright tooling is available, capture WikiMainPanel / NotebookStudioPanel screenshots for selected pack, empty state, artifact list, audio fallback, and slide/mind-map/review actions.
+
+## Phase 27 Post-closure Polish Gate
+
+Before release-polish closure:
+
+- Confirm `git status --short` before and after the phase; do not stage/commit without explicit user approval.
+- Run a global public DTO/API privacy sweep for `userId`, `ownerId`, raw source chunks, prompt/provider/tool/debug payloads, local paths, secrets, and answer keys.
+- Confirm public Tutor/source/Wiki/Notebook endpoints use safe DTOs or explicit projections rather than raw entities with owner ids or raw JSON payloads.
+- Confirm touched frontend copy describes personal Tutor/audio lesson flows, not live classroom, teacher dashboard, dershane, or institutional workflows.
+- Attempt Browser visual E2E for Wiki Vault, OrkaLM source notebook, source-study summary, source Q&A memory, compare/citation review, Notebook Studio, and export preview when local tooling/auth data allows it.
+- For Browser proof, use seeded data where possible: create/select a topic and upload at least one safe source file before judging OrkaLM source notebook UX.
+- Verify OrkaLM source mode renders source notebook data even when Wiki pages are empty; it must not remain stuck on Wiki generation polling.
+- Check one narrow viewport smoke pass; compact sidebar behavior is acceptable, broad mobile redesign is not part of this gate.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "SourceEvidenceLifecycleTests|SourceRegressionGuardTests|WikiGraphContractTests|LearningNotebookStudioTests|LearningArtifactsEngineTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```

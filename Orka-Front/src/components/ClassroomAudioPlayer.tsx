@@ -385,7 +385,7 @@ export default function ClassroomAudioPlayer({
         window.setTimeout(() => speakLine(startIndex, queuedLines), 0);
       }
     } catch {
-      setAskError("Soru sınıf bağlamına iletilemedi; browser TTS akışı devam ediyor.");
+      setAskError("Soru sesli ders bağlamına iletilemedi; browser TTS akışı devam ediyor.");
     } finally {
       setIsAsking(false);
     }
@@ -396,8 +396,8 @@ export default function ClassroomAudioPlayer({
     const activeLine = lines[Math.min(Math.max(currentIdx, 0), Math.max(lines.length - 1, 0))];
     setQuestion(
       activeLine
-        ? `Bu kısmı anlamadım: "${activeLine.text.slice(0, 160)}". Hocayla asistan daha basit bir örnekle tekrar anlatabilir mi?`
-        : "Bu kısmı anlamadım. Hocayla asistan daha basit bir örnekle tekrar anlatabilir mi?"
+        ? `Bu kısmı anlamadım: "${activeLine.text.slice(0, 160)}". Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?`
+        : "Bu kısmı anlamadım. Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?"
     );
   };
 
