@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.Enums;
@@ -55,6 +56,17 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(_environmentName);
+
+        builder.ConfigureLogging(logging =>
+        {
+            logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+            logging.AddFilter("LuckyPennySoftware.MediatR.License", LogLevel.None);
+            logging.AddFilter("Orka.Infrastructure.Services.BackgroundTaskQueue", LogLevel.Warning);
+            logging.AddFilter("Orka.Infrastructure.Services.RetentionCleanupWorker", LogLevel.Warning);
+            logging.AddFilter("Orka.Infrastructure.Services.RedisStreamMaintenanceWorker", LogLevel.Warning);
+            logging.AddFilter("Orka.Infrastructure.Services.SrsReminderWorker", LogLevel.Warning);
+            logging.AddFilter("Orka.Infrastructure.Services.DailyChallengeWorker", LogLevel.Warning);
+        });
 
         builder.ConfigureAppConfiguration((_, config) =>
         {

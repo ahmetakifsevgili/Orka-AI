@@ -179,8 +179,23 @@ public sealed class LearningMemoryLiteDto
     public string SourceReadiness { get; set; } = "unknown";
     public IReadOnlyList<string> RecentProgressSignals { get; set; } = Array.Empty<string>();
     public GoalReadinessDto GoalReadiness { get; set; } = new();
+    public LearningMemoryHygieneDto Hygiene { get; set; } = new();
     public DateTimeOffset LastUpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool HasEnoughSignals { get; set; }
+}
+
+public sealed class LearningMemoryHygieneDto
+{
+    public string MemoryStatus { get; set; } = "observed_only";
+    public int RetainedSignalCount { get; set; }
+    public int MergedWeakConceptCount { get; set; }
+    public int RepairPendingCount { get; set; }
+    public int StaleSignalCount { get; set; }
+    public IReadOnlyList<string> RetainedSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> MergedSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string StudentVisibleSummary { get; set; } = "Ogrenme hafizasi guvenli ozetlerle tutuluyor.";
+    public string NextAction { get; set; } = "continue_learning";
 }
 
 public sealed class LearningMemoryTopicDto

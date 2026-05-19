@@ -27,7 +27,61 @@ public sealed class WikiGraphPageDto
     public string? SafeSummary { get; set; }
     public int OrderIndex { get; set; }
     public int BlockCount { get; set; }
+    public WikiCurationSummaryDto Curation { get; set; } = new();
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class WikiCurationSummaryDto
+{
+    public Guid? PageId { get; set; }
+    public string? PageKey { get; set; }
+    public string? ConceptKey { get; set; }
+    public string CurationStatus { get; set; } = "clean";
+    public int RetainedSignalCount { get; set; }
+    public int MergedSignalCount { get; set; }
+    public int SuppressedSignalCount { get; set; }
+    public int StaleSignalCount { get; set; }
+    public IReadOnlyList<string> RetainedSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> MergedSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SuppressedSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> StaleSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string StudentVisibleSummary { get; set; } = "Wiki sayfasi temiz ve okunabilir durumda.";
+    public string NextAction { get; set; } = "continue_learning";
+}
+
+public sealed class WikiCopilotContextDto
+{
+    public Guid? PageId { get; set; }
+    public string? PageKey { get; set; }
+    public string? ConceptKey { get; set; }
+    public string PageTitle { get; set; } = string.Empty;
+    public string PageType { get; set; } = "concept";
+    public string CurationStatus { get; set; } = "clean";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string MasteryStatus { get; set; } = "unknown";
+    public IReadOnlyList<string> WeakConcepts { get; set; } = Array.Empty<string>();
+    public string RepairState { get; set; } = "none";
+    public int ArtifactCount { get; set; }
+    public string NotebookPackStatus { get; set; } = "not_requested";
+    public WikiCopilotActionDto? PrimaryAction { get; set; }
+    public IReadOnlyList<WikiCopilotActionDto> SuggestedActions { get; set; } = Array.Empty<WikiCopilotActionDto>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string StudentVisibleSummary { get; set; } = "Bu sayfa icin guvenli Wiki yardimi hazir.";
+    public string NextAction { get; set; } = "continue_learning";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class WikiCopilotActionDto
+{
+    public string ActionType { get; set; } = "no_action";
+    public string UserSafeLabel { get; set; } = "Devam et";
+    public string UserSafeDescription { get; set; } = string.Empty;
+    public string TargetSurface { get; set; } = "wiki";
+    public string Availability { get; set; } = "available";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SafetyWarnings { get; set; } = Array.Empty<string>();
 }
 
 public sealed class WikiGraphLinkDto

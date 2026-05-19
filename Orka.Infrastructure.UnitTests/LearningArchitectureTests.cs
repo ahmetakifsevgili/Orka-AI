@@ -481,6 +481,19 @@ public sealed class LearningArchitectureTests
 
         Assert.Equal("remediate", plan.TeachingMode);
         Assert.Equal("hint_first_then_scaffold", plan.DirectAnswerPolicy);
+        Assert.NotNull(plan.ToolDecision);
+        Assert.Equal("start_remediation", plan.ToolDecision!.SelectedAction);
+        Assert.Contains("learner_needs_repair", plan.ToolDecision.ReasonCodes);
+        Assert.NotNull(plan.LessonDelivery);
+        Assert.Equal("prerequisite_repair", plan.LessonDelivery!.DeliveryMode);
+        Assert.Equal("beginner", plan.LessonDelivery.LearnerLevel);
+        Assert.True(plan.LessonDelivery.RubricSignals.IncludesRepairStep);
+        Assert.True(plan.LessonDelivery.RubricSignals.IncludesCheckpoint);
+        Assert.NotNull(plan.RemediationLesson);
+        Assert.Equal("prerequisite_repair", plan.RemediationLesson!.RepairType);
+        Assert.Equal("student_confused", plan.RemediationLesson.Trigger.TriggerType);
+        Assert.True(plan.RemediationLesson.Checkpoint.AvoidsPreSubmitReveal);
+        Assert.Equal("do_not_overstate_mastery", plan.RemediationLesson.Outcome.MasteryPolicy);
         Assert.Contains(plan.ArtifactPlans, a => a.ArtifactType == "worked_example");
         Assert.Contains(plan.ArtifactPlans, a => a.ArtifactType == "micro_quiz");
         Assert.Equal(1, await db.TutorActionTraces.CountAsync());
@@ -513,8 +526,158 @@ public sealed class LearningArchitectureTests
 
         Assert.Equal("evidence_limited", plan.TutorResponseMode);
         Assert.Equal("model_ok_no_source_claim", plan.GroundingPolicy);
+        Assert.Equal("explain", plan.TeachingMode);
+        Assert.NotNull(plan.ToolDecision);
+        Assert.Equal("ask_clarifying_question", plan.ToolDecision!.SelectedAction);
+        Assert.Contains("ask_source", plan.ToolDecision.BlockedTools);
+        Assert.Contains("source_grounded_route_blocked", plan.ToolDecision.SafetyWarnings);
+        Assert.NotNull(plan.LessonDelivery);
+        Assert.Equal("ask_clarifying_question", plan.LessonDelivery!.DeliveryMode);
+        Assert.Contains("source_evidence_limited", plan.LessonDelivery.Warnings);
         Assert.Contains("kaynak", plan.NextCheckPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("evidence_limited", plan.PromptBlock);
+        Assert.Contains("selectedToolAction: ask_clarifying_question", plan.PromptBlock);
+        Assert.Contains("lessonDeliveryMode: ask_clarifying_question", plan.PromptBlock);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_ReadySourceIntentSelectsAskSourceSafely()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Bu dokumana gore anlatir misin?",
+            ActiveConceptKey = "http",
+            ActiveConceptLabel = "HTTP",
+            LearnerState = "ready",
+            MasteryProbability = 0.64m,
+            Confidence = 0.66m,
+            SourceEvidenceCount = 2,
+            SourceReadiness = "source_grounded",
+            GroundingStatus = "source_grounded",
+            EvidenceQuality = new EvidenceQualityDto { Status = "strong", ReadySourceCount = 1 }
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("source_grounded_answer", plan.TeachingMode);
+        Assert.NotNull(plan.ToolDecision);
+        Assert.Equal("ask_source", plan.ToolDecision!.SelectedAction);
+        Assert.Contains("source_search", plan.ToolDecision.AllowedTools);
+        Assert.DoesNotContain("ask_source", plan.ToolDecision.BlockedTools);
+        Assert.NotNull(plan.LessonDelivery);
+        Assert.Equal("source_grounded_explanation", plan.LessonDelivery!.DeliveryMode);
+        Assert.True(plan.LessonDelivery.RubricSignals.UsesSourceEvidence);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_ToolDecisionDtoStaysSafeAndBounded()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Kaynak yoksa da rawPrompt ve rawSourceChunk ile cevap verme.",
+            ActiveConceptKey = "safety",
+            ActiveConceptLabel = "Safety",
+            LearnerState = "unknown",
+            SourceEvidenceCount = 0,
+            GroundingStatus = "model_only",
+            EvidenceQuality = new EvidenceQualityDto { Status = "missing" }
+        };
+
+        var plan = await planner.PlanAsync(state);
+        var json = JsonSerializer.Serialize(new { plan.ToolDecision, plan.LessonDelivery, plan.RemediationLesson });
+
+        Assert.DoesNotContain(userId.ToString(), json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawPrompt", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawSourceChunk", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hiddenPrompt", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawProviderPayload", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("debugTrace", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_BlankQuizImpactChoosesPrerequisiteRepairDelivery()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Soruyu bos biraktim, nereden baslamaliyim?",
+            ActiveConceptKey = "joins",
+            ActiveConceptLabel = "Joins",
+            LearnerState = "needs_remediation",
+            LatestAssessmentMode = "skipped",
+            RemediationNeed = "medium",
+            MasteryProbability = 0.34m,
+            Confidence = 0.26m,
+            RemediationSeed = new RemediationSeedDto
+            {
+                ConceptKey = "joins",
+                FirstAction = "prerequisite_review",
+                Reason = "Eksik onkosul icin guided repair gerekir."
+            }
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("start_remediation", plan.ToolDecision?.SelectedAction);
+        Assert.NotNull(plan.LessonDelivery);
+        Assert.Equal("prerequisite_repair", plan.LessonDelivery!.DeliveryMode);
+        Assert.True(plan.LessonDelivery.RubricSignals.UsesQuizSignal);
+        Assert.True(plan.LessonDelivery.RubricSignals.IncludesRepairStep);
+        Assert.NotNull(plan.RemediationLesson);
+        Assert.Equal("prerequisite_repair", plan.RemediationLesson!.RepairType);
+        Assert.Equal("skipped_answer", plan.RemediationLesson.Trigger.TriggerType);
+        Assert.Contains("remediation_seed", plan.RemediationLesson.Basis);
+        Assert.Contains("remediationRepairType: prerequisite_repair", plan.PromptBlock);
+        Assert.Contains(plan.LessonDelivery.Steps, step => step.StepType == "repair_step");
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_HighMasteryExplanationChoosesCheckpointDelivery()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Bunu kisaca kontrol ederek ilerleyelim.",
+            ActiveConceptKey = "transactions",
+            ActiveConceptLabel = "Transactions",
+            LearnerState = "ready",
+            MasteryProbability = 0.84m,
+            Confidence = 0.74m,
+            PracticeReadiness = "exam_ready"
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.NotNull(plan.LessonDelivery);
+        Assert.Equal("checkpoint_question", plan.LessonDelivery!.DeliveryMode);
+        Assert.Equal("exam_ready", plan.LessonDelivery.LearnerLevel);
+        Assert.True(plan.LessonDelivery.RubricSignals.IncludesCheckpoint);
     }
 
     [Fact]

@@ -154,6 +154,8 @@ builder.Services.AddScoped<IDataLifecycleService, DataLifecycleService>();
 builder.Services.AddScoped<IContextBuilder, ContextBuilder>();
 builder.Services.AddScoped<IWikiService, WikiService>();
 builder.Services.AddScoped<IWikiLearningTraceWriter, WikiLearningTraceWriter>();
+builder.Services.AddScoped<IWikiAutoCurationService, WikiAutoCurationService>();
+builder.Services.AddScoped<IWikiCopilotService, WikiCopilotService>();
 builder.Services.AddScoped<ITopicDetectorService, TopicDetectorService>();
 builder.Services.AddScoped<SessionService>();
 

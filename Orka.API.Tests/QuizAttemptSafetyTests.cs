@@ -164,6 +164,61 @@ public sealed class QuizAttemptSafetyTests : IClassFixture<ApiSmokeFactory>
         Assert.DoesNotContain("client-provided", block.Content, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task QuizAttempt_BlankAnswerCreatesPrerequisiteRepairWithoutMisconceptionCertainty()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-blank-repair");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Blank Repair Quiz");
+        var (_, assessmentItemId) = await SeedAssessmentItemAsync(user.UserId, topicId);
+        var wikiPageId = await SeedWikiConceptPageAsync(user.UserId, topicId, "server-authority");
+
+        var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId,
+            assessmentItemId,
+            questionId = "q-auth",
+            question = "Server hangi secenegi dogrular?",
+            selectedOptionId = "skip",
+            wasSkipped = true,
+            skillTag = "server-authority",
+            conceptKey = "server-authority",
+            assessmentMode = "micro_quiz",
+            questionHash = $"blank-repair-{Guid.NewGuid():N}"
+        });
+
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var impact = doc.RootElement.GetProperty("learningImpact");
+
+        Assert.Equal("blank", impact.GetProperty("result").GetString());
+        Assert.Equal("medium", impact.GetProperty("remediationNeed").GetString());
+        Assert.Equal("prerequisite_scaffold", impact.GetProperty("nextTutorMove").GetString());
+        Assert.Equal("insert_prerequisite_review", impact.GetProperty("nextPlanAction").GetString());
+        Assert.Equal("observed_only", impact.GetProperty("misconceptionConfidence").GetString());
+        var remediationLesson = impact.GetProperty("remediationLesson");
+        Assert.Equal("prerequisite_repair", remediationLesson.GetProperty("repairType").GetString());
+        Assert.Equal("skipped_answer", remediationLesson.GetProperty("trigger").GetProperty("triggerType").GetString());
+        Assert.True(remediationLesson.GetProperty("checkpoint").GetProperty("avoidsPreSubmitReveal").GetBoolean());
+        Assert.Equal("do_not_overstate_mastery", remediationLesson.GetProperty("outcome").GetProperty("masteryPolicy").GetString());
+        Assert.Contains("blank_answer_not_misconception", remediationLesson.GetProperty("warnings").EnumerateArray().Select(e => e.GetString()));
+        Assert.True(!impact.TryGetProperty("misconceptionSignal", out var signal) || signal.ValueKind == JsonValueKind.Null);
+        Assert.DoesNotContain("correctAnswer", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("answerKey", json, StringComparison.OrdinalIgnoreCase);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var repair = await db.WikiBlocks
+            .AsNoTracking()
+            .SingleAsync(b => b.WikiPageId == wikiPageId && b.BlockType == WikiBlockType.RepairNote);
+        Assert.Equal("server-authority", repair.ConceptKey);
+        Assert.Equal("assessment_verified", repair.SourceBasis);
+        Assert.Contains("Sonuc: blank", repair.Content);
+        Assert.Contains("Remediation ihtiyaci: medium", repair.Content);
+        Assert.Contains("Telafi tipi: prerequisite_repair", repair.Content);
+        Assert.Contains("Tutor sonraki hamlesi: prerequisite_scaffold", repair.Content);
+    }
+
     private async Task<string> RegisterAndGetTokenAsync()
     {
         var email = $"quiz-{Guid.NewGuid():N}@orka.local";

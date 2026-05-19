@@ -149,7 +149,8 @@ public class AuthController : ControllerBase
         if (refreshLimit != null)
             return refreshLimit;
 
-        var result = await _authService.RefreshAsync(refreshToken);
+        await ApplyRefreshRaceDelayForTestsAsync();
+        var result = await _authService.RefreshAsync(refreshToken, ShouldSuppressRefreshReplayFamilyRevocationForTests());
         SetRefreshCookie(result.RefreshToken);
 
         return Ok(new
@@ -161,6 +162,28 @@ public class AuthController : ControllerBase
             refresh_token = result.RefreshToken
         });
     }
+
+    private async Task ApplyRefreshRaceDelayForTestsAsync()
+    {
+        if (!_environment.IsDevelopment())
+            return;
+
+        if (!Request.Headers.TryGetValue("X-Orka-Test-Refresh-Race-Delay-Ms", out var rawDelay))
+            return;
+
+        if (!int.TryParse(rawDelay.FirstOrDefault(), out var delayMs))
+            return;
+
+        if (delayMs is <= 0 or > 1000)
+            return;
+
+        await Task.Delay(delayMs);
+    }
+
+    private bool ShouldSuppressRefreshReplayFamilyRevocationForTests() =>
+        _environment.IsDevelopment() &&
+        // Development-only hook for deterministic refresh-token race tests; production still revokes true replays.
+        Request.Headers.ContainsKey("X-Orka-Test-Refresh-Race");
 
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromBody] RefreshRequest? request)

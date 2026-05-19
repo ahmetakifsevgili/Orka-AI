@@ -85,8 +85,11 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.Equal("usable", root.GetProperty("confidenceStatus").GetString());
         Assert.NotEmpty(root.GetProperty("weakConcepts").EnumerateArray());
         Assert.Contains("derivatives", root.GetProperty("reviewPressure").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("needs_review", root.GetProperty("learningMemoryHygiene").GetProperty("memoryStatus").GetString());
+        Assert.True(root.GetProperty("learningMemoryHygiene").GetProperty("retainedSignalCount").GetInt32() > 0);
         Assert.DoesNotContain(owner.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("payloadJson", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
 
         var crossUserRefresh = await other.Client.PostAsJsonAsync("/api/learning-snapshots/student-context/refresh", new
         {

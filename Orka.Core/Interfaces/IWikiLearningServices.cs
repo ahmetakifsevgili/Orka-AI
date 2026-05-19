@@ -42,3 +42,19 @@ public interface IWikiArtifactService
         WikiCitationGuardResultDto guardedAnswer,
         CancellationToken ct = default);
 }
+
+public interface IWikiAutoCurationService
+{
+    Task<WikiCurationSummaryDto?> BuildPageSummaryAsync(
+        Guid userId,
+        Guid pageId,
+        CancellationToken ct = default);
+}
+
+public interface IWikiCopilotService
+{
+    Task<WikiCopilotContextDto?> BuildPageContextAsync(
+        Guid userId,
+        Guid pageId,
+        CancellationToken ct = default);
+}

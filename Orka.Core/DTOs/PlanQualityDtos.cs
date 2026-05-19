@@ -29,6 +29,8 @@ public sealed class PlanQualityEvaluationDto
     public IReadOnlyList<PlanQualityIssueDto> BlockingIssues { get; set; } = Array.Empty<PlanQualityIssueDto>();
     public IReadOnlyList<PlanQualityIssueDto> WarningIssues { get; set; } = Array.Empty<PlanQualityIssueDto>();
     public PlanCurriculumSequenceDto PlanContract { get; set; } = new();
+    public AdaptiveDiagnosticDto AdaptiveDiagnostic { get; set; } = new();
+    public CoursePlanQualityDto CoursePlanQuality { get; set; } = new();
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -47,9 +49,95 @@ public sealed class PlanCurriculumSequenceDto
     public string ConfidenceStatus { get; set; } = "observed_only";
     public string SequenceStatus { get; set; } = "needs_revision";
     public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public AdaptiveDiagnosticDto AdaptiveDiagnostic { get; set; } = new();
+    public CoursePlanQualityDto CoursePlanQuality { get; set; } = new();
     public IReadOnlyList<PlanStepContractDto> Steps { get; set; } = Array.Empty<PlanStepContractDto>();
     public PlanSequencingGraphDto SequencingGraph { get; set; } = new();
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AdaptiveDiagnosticDto
+{
+    public Guid? DiagnosticId { get; set; }
+    public Guid? TopicId { get; set; }
+    public string Intent { get; set; } = "unclear";
+    public decimal Confidence { get; set; }
+    public string LearnerLevel { get; set; } = "unknown";
+    public AdaptiveLearnerPlacementDto Placement { get; set; } = new();
+    public IReadOnlyList<AdaptiveDiagnosticSignalDto> PlacementBasis { get; set; } = Array.Empty<AdaptiveDiagnosticSignalDto>();
+    public IReadOnlyList<AdaptiveDiagnosticQuestionDto> RecommendedQuestions { get; set; } = Array.Empty<AdaptiveDiagnosticQuestionDto>();
+    public IReadOnlyList<string> PrerequisiteSignals { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> WeakConceptSignals { get; set; } = Array.Empty<string>();
+    public string PlanReadiness { get; set; } = "needs_diagnostic";
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string NextAction { get; set; } = "run_diagnostic";
+}
+
+public sealed class AdaptiveDiagnosticQuestionDto
+{
+    public string QuestionId { get; set; } = string.Empty;
+    public string Prompt { get; set; } = string.Empty;
+    public string Purpose { get; set; } = "placement";
+    public string? TargetConceptKey { get; set; }
+    public string SignalType { get; set; } = "diagnostic_answer";
+    public bool Required { get; set; } = true;
+}
+
+public sealed class AdaptiveDiagnosticSignalDto
+{
+    public string SignalType { get; set; } = "insufficient_data";
+    public string Status { get; set; } = "observed_only";
+    public decimal Confidence { get; set; }
+    public string UserSafeReason { get; set; } = "Bu sinyal plan kalitesini temkinli belirlemek icin kullanildi.";
+}
+
+public sealed class AdaptiveLearnerPlacementDto
+{
+    public string LearnerLevel { get; set; } = "unknown";
+    public decimal Confidence { get; set; }
+    public string Basis { get; set; } = "insufficient_data";
+    public string UserSafeLabel { get; set; } = "Seviye icin kisa teshis onerilir.";
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CoursePlanQualityDto
+{
+    public string ReadinessStatus { get; set; } = "needs_diagnostic";
+    public string GoalClarity { get; set; } = "unclear";
+    public string LearnerLevelBasis { get; set; } = "insufficient_data";
+    public string PrerequisiteCoverage { get; set; } = "unknown";
+    public string SequenceCoherence { get; set; } = "needs_review";
+    public int MilestoneCount { get; set; }
+    public decimal CheckpointCoverage { get; set; }
+    public int RepairLoopCount { get; set; }
+    public string AssessmentAlignment { get; set; } = "needs_diagnostic";
+    public string SourceEvidenceStatus { get; set; } = "evidence_insufficient";
+    public string OverclaimRisk { get; set; } = "medium";
+    public string RecommendedNextAction { get; set; } = "run_diagnostic";
+    public IReadOnlyList<CoursePlanMilestoneDto> Milestones { get; set; } = Array.Empty<CoursePlanMilestoneDto>();
+    public IReadOnlyList<CoursePlanRepairLoopDto> RepairLoops { get; set; } = Array.Empty<CoursePlanRepairLoopDto>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CoursePlanMilestoneDto
+{
+    public string MilestoneId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Objective { get; set; } = string.Empty;
+    public IReadOnlyList<string> StepIds { get; set; } = Array.Empty<string>();
+    public string Checkpoint { get; set; } = "micro_check";
+    public int EstimatedMinutes { get; set; }
+    public string Status { get; set; } = "planned";
+}
+
+public sealed class CoursePlanRepairLoopDto
+{
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Trigger { get; set; } = "needs_review";
+    public string RepairMode { get; set; } = "guided_repair";
+    public string Reason { get; set; } = "Bu kavram icin kisa telafi dongusu onerilir.";
+    public string NextAction { get; set; } = "guided_repair_then_check";
 }
 
 public sealed class PlanSequencingGraphDto
@@ -141,7 +229,10 @@ public sealed class PlanReadinessDto
     public bool HasSourceEvidence { get; set; }
     public string SourceReadiness { get; set; } = "evidence_insufficient";
     public string LearnerEvidenceStatus { get; set; } = "observed_only";
+    public string PlanReadinessStatus { get; set; } = "needs_diagnostic";
     public string RecommendedFirstAction { get; set; } = "diagnostic_check";
     public Guid? LatestQualitySnapshotId { get; set; }
+    public AdaptiveDiagnosticDto AdaptiveDiagnostic { get; set; } = new();
+    public CoursePlanQualityDto CoursePlanQuality { get; set; } = new();
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
 }

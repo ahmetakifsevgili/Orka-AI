@@ -41,6 +41,11 @@ request-boundary guards, migration policy, logging/error leakage hardening,
 health/swagger smoke, endpoint bridge smoke, source guards, runtime telemetry,
 tool capability contracts, and auth-filtered tests.
 
+The same quick baseline starts with the provider-free backend lifetest release
+proof (`BackendLifeTests|PedagogicalReleaseClosureTests`). Test-host logging is
+filtered only for known noisy categories; backend warnings/errors must remain
+visible.
+
 System Closure gates before frontend baseline:
 
 ```powershell
@@ -61,6 +66,17 @@ environment flags and outside `quick-backend.ps1` / `quick-coordination.ps1`.
 Use `(localdb)\OrkaLocalDB` locally or set
 `ORKA_LIFECYCLE_SQLSERVER_BASE_CONNECTION` in CI. These tests should fail
 visibly when SQL Server is not provisioned; do not silently skip them.
+
+## GitHub CI Backend Gate
+
+`.github/workflows/backend-release.yml` mirrors the backend release proof for
+GitHub Actions. It runs on `windows-latest`, prepares SQL Server LocalDB, runs
+`scripts\quick-backend.ps1`, runs `Orka.Infrastructure.UnitTests`, and finishes
+with `git diff --check`.
+
+The CI gate must stay provider-free. Do not add real provider secrets,
+`ORKA_RUN_EXTERNAL_PROVIDER_TESTS`, or paid provider smoke checks to this
+workflow without an explicit separate release decision.
 
 Use this when frontend dependencies are available and you want the combined
 local smoke line:

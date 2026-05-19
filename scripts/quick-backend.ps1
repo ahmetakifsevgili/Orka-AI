@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
+$lifeTestFilter = "BackendLifeTests|PedagogicalReleaseClosureTests"
 $regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|ProductionSafetyLiteTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
 $coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 
@@ -43,6 +44,13 @@ Write-Host "[quick-backend] Building Orka.API.Tests..."
     -ArgumentList @("build", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--configuration", "Debug", "--verbosity", "minimal", "/p:RestoreIgnoreFailedSources=true", "/nr:false")
 
 Assert-LifecycleSqlServerProvisioned
+
+Write-Host "[quick-backend] Running backend lifetest release proof..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 180 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $lifeTestFilter, "--blame-hang", "--blame-hang-timeout", "45s")
 
 Write-Host "[quick-backend] Running stabilization regression baseline..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `

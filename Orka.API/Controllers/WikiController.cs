@@ -20,6 +20,8 @@ public class WikiController : ControllerBase
     private readonly IWikiEvidenceService _wikiEvidenceService;
     private readonly ISourceEvidenceLifecycleService _sourceLifecycle;
     private readonly ISourceConceptLinkingService _sourceConceptLinks;
+    private readonly IWikiAutoCurationService _wikiCuration;
+    private readonly IWikiCopilotService _wikiCopilot;
     private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
 
     public WikiController(
@@ -27,13 +29,17 @@ public class WikiController : ControllerBase
         IWikiLearningAssistant wikiLearningAssistant,
         IWikiEvidenceService wikiEvidenceService,
         ISourceEvidenceLifecycleService sourceLifecycle,
-        ISourceConceptLinkingService sourceConceptLinks)
+        ISourceConceptLinkingService sourceConceptLinks,
+        IWikiAutoCurationService wikiCuration,
+        IWikiCopilotService wikiCopilot)
     {
         _wikiService = wikiService;
         _wikiLearningAssistant = wikiLearningAssistant;
         _wikiEvidenceService = wikiEvidenceService;
         _sourceLifecycle = sourceLifecycle;
         _sourceConceptLinks = sourceConceptLinks;
+        _wikiCuration = wikiCuration;
+        _wikiCopilot = wikiCopilot;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -43,7 +49,7 @@ public class WikiController : ControllerBase
     {
         var userId = GetUserId();
         var pages = await _wikiService.GetTopicWikiPagesAsync(topicId, userId);
-        return Ok(pages.Select(p => new
+        var pageDtos = await Task.WhenAll(pages.Select(async p => new
         {
             id = p.Id,
             title = p.Title,
@@ -56,9 +62,11 @@ public class WikiController : ControllerBase
             sourceReadiness = p.SourceReadiness,
             evidenceStatus = p.EvidenceStatus,
             safeSummary = p.SafeSummary,
+            curation = await _wikiCuration.BuildPageSummaryAsync(userId, p.Id, HttpContext.RequestAborted),
             orderIndex = p.OrderIndex,
             blockCount = p.Blocks?.Count ?? 0
         }));
+        return Ok(pageDtos);
     }
 
     [HttpGet("page/{pageId}")]
@@ -66,6 +74,7 @@ public class WikiController : ControllerBase
     {
         var userId = GetUserId();
         var page = await _wikiService.GetWikiPageAsync(pageId, userId);
+        var curation = await _wikiCuration.BuildPageSummaryAsync(userId, pageId, HttpContext.RequestAborted);
         if (page == null) return NotFound(new { message = "Sayfa bulunamadı." });
 
         return Ok(new
@@ -83,6 +92,7 @@ public class WikiController : ControllerBase
                 page.SourceReadiness,
                 page.EvidenceStatus,
                 page.SafeSummary,
+                Curation = curation,
                 page.OrderIndex,
                 page.CreatedAt,
                 page.UpdatedAt
@@ -110,6 +120,22 @@ public class WikiController : ControllerBase
                 s.Id, s.Type, s.Title, s.Url, s.IsWatched
             })
         });
+    }
+
+    [HttpGet("page/{pageId}/curation")]
+    public async Task<IActionResult> GetWikiPageCuration(Guid pageId)
+    {
+        var userId = GetUserId();
+        var curation = await _wikiCuration.BuildPageSummaryAsync(userId, pageId, HttpContext.RequestAborted);
+        return curation == null ? NotFound(new { message = "Sayfa bulunamadi." }) : Ok(curation);
+    }
+
+    [HttpGet("page/{pageId}/copilot")]
+    public async Task<IActionResult> GetWikiPageCopilot(Guid pageId)
+    {
+        var userId = GetUserId();
+        var context = await _wikiCopilot.BuildPageContextAsync(userId, pageId, HttpContext.RequestAborted);
+        return context == null ? NotFound(new { message = "Sayfa bulunamadi." }) : Ok(context);
     }
 
     [HttpPost("page/{pageId}/blocks")]

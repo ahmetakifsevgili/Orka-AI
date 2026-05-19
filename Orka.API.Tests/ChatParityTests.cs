@@ -69,7 +69,7 @@ public sealed class ChatParityTests
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
         var block = await db.WikiBlocks
             .AsNoTracking()
-            .SingleAsync(b => b.WikiPageId == pageId && b.BlockType == WikiBlockType.TutorExplanation);
+            .SingleAsync(b => b.WikiPageId == pageId && b.Source == "tutor");
         var questionBlock = await db.WikiBlocks
             .AsNoTracking()
             .SingleAsync(b => b.WikiPageId == pageId && b.BlockType == WikiBlockType.StudentQuestion);

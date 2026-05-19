@@ -43,6 +43,7 @@ public sealed class StudentContextSnapshotDto
     public string SourceReadiness { get; set; } = "unknown";
     public GoalReadinessDto GoalReadiness { get; set; } = new();
     public string LearningMemorySummary { get; set; } = string.Empty;
+    public LearningMemoryHygieneDto LearningMemoryHygiene { get; set; } = new();
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }

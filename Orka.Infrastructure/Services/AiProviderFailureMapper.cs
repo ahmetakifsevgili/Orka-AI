@@ -1,7 +1,8 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using Orka.Core.Enums;
 using Orka.Core.Exceptions;
-using Orka.Infrastructure.Security;
 
 namespace Orka.Infrastructure.Services;
 
@@ -32,7 +33,7 @@ internal static class AiProviderFailureMapper
             response.Headers.RetryAfter?.Delta,
             isRetryable: fallbackable,
             isFallbackable: fallbackable,
-            redactedDiagnostic: SensitiveDataRedactor.Redact($"{(int)response.StatusCode} {Trim(responseBody)}"));
+            redactedDiagnostic: BuildResponseDiagnostic(provider, model, response, responseBody, kind, fallbackable));
     }
 
     public static AiProviderCallException FromException(
@@ -70,15 +71,81 @@ internal static class AiProviderFailureMapper
             statusCode: exception is HttpRequestException http ? http.StatusCode : null,
             isRetryable: fallbackable,
             isFallbackable: fallbackable,
-            redactedDiagnostic: SensitiveDataRedactor.Redact(exception.Message),
+            redactedDiagnostic: BuildExceptionDiagnostic(provider, model, exception, kind, fallbackable),
             innerException: exception);
     }
 
-    private static string Trim(string? value)
+    private static string BuildResponseDiagnostic(
+        string provider,
+        string? model,
+        HttpResponseMessage response,
+        string? responseBody,
+        AiProviderFailureKind kind,
+        bool fallbackable)
+    {
+        var body = responseBody ?? string.Empty;
+        var parts = new List<string>
+        {
+            $"provider={SafeToken(provider, "provider")}",
+            $"status={(int)response.StatusCode}",
+            $"category={kind.ToString().ToLowerInvariant()}",
+            $"retryable={fallbackable.ToString().ToLowerInvariant()}",
+            $"fallbackable={fallbackable.ToString().ToLowerInvariant()}",
+            $"bodyLength={body.Length}",
+            $"bodyHash={Hash(body)}"
+        };
+
+        var safeModel = SafeToken(model, string.Empty);
+        if (!string.IsNullOrWhiteSpace(safeModel))
+            parts.Add($"model={safeModel}");
+
+        return string.Join(' ', parts);
+    }
+
+    private static string BuildExceptionDiagnostic(
+        string provider,
+        string? model,
+        Exception exception,
+        AiProviderFailureKind kind,
+        bool fallbackable)
+    {
+        var parts = new List<string>
+        {
+            $"provider={SafeToken(provider, "provider")}",
+            $"category={kind.ToString().ToLowerInvariant()}",
+            $"exceptionType={SafeToken(exception.GetType().Name, "exception")}",
+            $"retryable={fallbackable.ToString().ToLowerInvariant()}",
+            $"fallbackable={fallbackable.ToString().ToLowerInvariant()}"
+        };
+
+        if (exception is HttpRequestException { StatusCode: { } statusCode })
+            parts.Add($"status={(int)statusCode}");
+
+        var safeModel = SafeToken(model, string.Empty);
+        if (!string.IsNullOrWhiteSpace(safeModel))
+            parts.Add($"model={safeModel}");
+
+        return string.Join(' ', parts);
+    }
+
+    private static string SafeToken(string? value, string fallback)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
+            return fallback;
 
-        return value.Length <= 300 ? value : value[..300];
+        var chars = value
+            .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' or '/' or ':')
+            .ToArray();
+        var safe = new string(chars).Trim('/', ':');
+
+        return string.IsNullOrWhiteSpace(safe)
+            ? fallback
+            : safe.Length <= 120 ? safe : safe[..120];
+    }
+
+    private static string Hash(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return $"sha256:{Convert.ToHexString(bytes)[..16].ToLowerInvariant()}";
     }
 }

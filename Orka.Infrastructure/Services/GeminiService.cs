@@ -135,7 +135,8 @@ public class GeminiService : IGeminiService
         };
 
         var json = JsonSerializer.Serialize(requestBody, _jsonOpts);
-        AiDebugLogger.LogRequest("GEMINI", $"URL: {endpoint}\nModel: {model}\n{json[..Math.Min(json.Length, 400)]}");
+        var safeEndpointForLog = $"{_baseUrl.TrimEnd('/')}/{model}:generateContent";
+        AiDebugLogger.LogRequest("GEMINI", $"URL: {safeEndpointForLog}\nModel: {model}\n{json}");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -148,6 +149,7 @@ public class GeminiService : IGeminiService
 
             if (!response.IsSuccessStatusCode)
             {
+                respStr = AiDebugLogger.BuildSafeLogPreview("GEMINI", "ERROR", respStr);
                 _logger.LogError("Gemini API Hatası: {Status} — {Error}", response.StatusCode,
                     respStr[..Math.Min(respStr.Length, 300)]);
                 throw AiProviderFailureMapper.FromResponse("Gemini", model, response, respStr);
@@ -165,7 +167,7 @@ public class GeminiService : IGeminiService
         catch (Exception ex)
         {
             AiDebugLogger.LogError("GEMINI", ex.Message);
-            _logger.LogError(ex, "Gemini API çağrısı başarısız.");
+            _logger.LogError("Gemini API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
             throw AiProviderFailureMapper.FromException("Gemini", model, ex);
         }
     }

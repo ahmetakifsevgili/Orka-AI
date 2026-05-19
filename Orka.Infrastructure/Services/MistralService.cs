@@ -133,6 +133,7 @@ Ders İçeriği:
 
             if (!response.IsSuccessStatusCode)
             {
+                responseString = AiDebugLogger.BuildSafeLogPreview("MISTRAL", "ERROR", responseString);
                 _logger.LogError("Mistral API Hatası: {Status} - {Error}", response.StatusCode, responseString);
                 throw AiProviderFailureMapper.FromResponse("Mistral", _model, response, responseString);
             }
@@ -151,7 +152,7 @@ Ders İçeriği:
         catch (Exception ex)
         {
             AiDebugLogger.LogError("MISTRAL", ex.Message);
-            _logger.LogError(ex, "Mistral API çağrısı başarısız.");
+            _logger.LogError("Mistral API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
             throw AiProviderFailureMapper.FromException("Mistral", _model, ex);
         }
     }
@@ -176,6 +177,7 @@ Ders İçeriği:
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(ct);
+            err = AiDebugLogger.BuildSafeLogPreview("MISTRAL", "ERROR", err);
             throw AiProviderFailureMapper.FromResponse("Mistral", _model, response, err);
         }
 

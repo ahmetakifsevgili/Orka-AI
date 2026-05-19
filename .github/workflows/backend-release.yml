@@ -1,0 +1,90 @@
+name: Backend Release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/backend-release.yml"
+      - "Orka.API/**"
+      - "Orka.API.Tests/**"
+      - "Orka.Core/**"
+      - "Orka.Infrastructure/**"
+      - "Orka.Infrastructure.UnitTests/**"
+      - "scripts/quick-backend.ps1"
+      - "scripts/quick-coordination.ps1"
+      - "scripts/run-command-with-timeout.ps1"
+      - "docs/dev-contract.md"
+      - "docs/architecture/orka-learning-os-contract-map.md"
+      - "docs/project-state/current-roadmap.md"
+      - "scripts/CHECKLIST.md"
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/backend-release.yml"
+      - "Orka.API/**"
+      - "Orka.API.Tests/**"
+      - "Orka.Core/**"
+      - "Orka.Infrastructure/**"
+      - "Orka.Infrastructure.UnitTests/**"
+      - "scripts/quick-backend.ps1"
+      - "scripts/quick-coordination.ps1"
+      - "scripts/run-command-with-timeout.ps1"
+      - "docs/dev-contract.md"
+      - "docs/architecture/orka-learning-os-contract-map.md"
+      - "docs/project-state/current-roadmap.md"
+      - "scripts/CHECKLIST.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  backend-release-proof:
+    name: Backend release proof
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\Orka.sln
+
+      - name: Prepare SQL Server LocalDB for lifecycle tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sqllocaldb = Get-Command sqllocaldb.exe -ErrorAction SilentlyContinue
+          if ($null -eq $sqllocaldb) {
+            throw "SQL Server LocalDB is required by scripts/quick-backend.ps1 DataLifecycleTests. The hosted runner image did not provide sqllocaldb.exe."
+          }
+
+          $instanceExists = (& $sqllocaldb.Source info) -match "(?m)^OrkaLocalDB$"
+          if (-not $instanceExists) {
+            & $sqllocaldb.Source create OrkaLocalDB
+          }
+          & $sqllocaldb.Source start OrkaLocalDB
+
+      - name: Backend quick release proof
+        shell: pwsh
+        run: .\scripts\quick-backend.ps1
+
+      - name: Infrastructure unit tests
+        shell: pwsh
+        run: dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+
+      - name: Diff hygiene
+        shell: pwsh
+        run: git diff --check

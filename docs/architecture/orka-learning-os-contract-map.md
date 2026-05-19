@@ -59,6 +59,91 @@ Historical / reference docs:
 | Frontend learning workspace | `ChatPanel`, `ChatMessage`, `AgenticWorkspace`, `WikiMainPanel`, smoke guards | Metadata chips, learning trace, agent status rail, artifact canvas exist | Pack 9 synchronizes plan/quiz/tutor/wiki/tool state as one workspace |
 | Central Exams domain | Central exam, question bank, curriculum, content ops, quality analytics services | KPSS works; YKS/LGS/YDS scaffold; results feed learning signals | Remains a domain module; must reuse snapshots, tools, assessment, wiki, and Tutor contracts |
 
+### Pedagogical Productization Phase 1 Addendum
+
+- `TutorActionPlanner` now emits a safe `TutorToolDecisionDto` alongside teaching mode, tool plans, and artifact plans.
+- The decision is deterministic and uses existing learner state, remediation signals, source evidence readiness, Wiki/source/IDE context, review pressure, and research/artifact availability.
+- Evidence-limited source intent no longer selects `source_grounded_answer`; it blocks source-grounded routing and prefers clarification or model-assisted explanation with source limits.
+- `ChatResponseMetadata.TutorToolDecision` exposes only selected action, safe reason codes, learner-signal labels, allowed/blocked tool ids, evidence/readiness status, and student-safe summary.
+- No provider, OpenAI Responses/Agents migration, remote MCP, or new tool execution surface is introduced by this polish.
+
+### Pedagogical Productization Phase 2 Addendum
+
+- `TutorActionPlanner` now emits a safe `TutorLessonDeliveryDto` after the Phase 1 tool decision is made.
+- The delivery contract is deterministic and chooses a teaching mode from learner level, mastery/confidence, quiz/remediation signals, source evidence readiness, and Tutor response policy.
+- Supported delivery modes include `concept_explanation`, `guided_example`, `checkpoint_question`, `quiz_review`, `misconception_repair`, `prerequisite_repair`, `source_grounded_explanation`, `model_assisted_explanation`, and `ask_clarifying_question`.
+- The lesson rubric is passed into Tutor prompt guidance and public chat metadata as safe structure, rubric flags, step labels, warnings, and student-visible summary. It does not expose raw prompts, provider/tool payloads, source chunks, local paths, owner ids, or answer keys.
+- `AgentOrchestratorService` uses delivery metadata to make Wiki trace block typing cleaner: repair notes, source notes, checkpoints, worked examples, and Tutor explanations remain safe and deduped through existing trace paths.
+- No provider, OpenAI Responses/Agents migration, remote MCP, or new generation surface is introduced by this polish.
+
+### Pedagogical Productization Phase 3 Addendum
+
+- `PlanSequencingService` now emits safe adaptive diagnostic and course-plan quality metadata without adding storage migrations or provider calls.
+- `AdaptiveDiagnosticDto` captures provisional intent, learner level, placement basis, diagnostic questions, prerequisite/weak concept signals, plan readiness, warnings, and next action.
+- `CoursePlanQualityDto` captures readiness status, milestone count, checkpoint coverage, repair loops, assessment alignment, source evidence status, overclaim risk, and recommended next action.
+- Plan readiness is explicitly bounded: `ready`, `needs_diagnostic`, `needs_prerequisite_check`, `needs_repair`, `source_limited`, `thin_plan`, or `degraded`.
+- Tutor turn state and `ChatResponseMetadata` carry the diagnostic/course-plan summary so Phase 1 tool decisions and Phase 2 lesson delivery can prefer diagnostic, prerequisite check, or remediation when plan evidence is thin.
+- Frontend trace chips render only compact labels and safe summaries; no raw prompt, provider/tool payload, raw source chunk, owner id, or answer key is exposed.
+- Source-backed course planning still requires source evidence; learner level and exam readiness remain provisional unless backed by assessment/mastery evidence.
+
+### Pedagogical Productization Phase 4 Addendum
+
+- `QuizAttemptRecorder`, `TutorTurnStateAssembler`, `TutorActionPlanner`, and `AgentOrchestratorService` now carry a safe `RemediationLessonDto`.
+- The remediation contract distinguishes wrong-answer repair, blank/skipped prerequisite repair, student-confused guided reteach, weak-concept repair, misconception repair, and source-evidence review.
+- A repair lesson includes bounded trigger, repair type, evidence basis labels, lesson shape, checkpoint, outcome policy, warnings, and student-visible summary. It does not expose raw prompts, provider/tool payloads, source chunks, local paths, owner ids, or pre-submit answer keys/correct answers.
+- Tutor prompt guidance receives repair type, goal, checkpoint, and next action so telafi turns can follow micro-lesson -> worked example -> guided practice -> checkpoint instead of generic re-explanation.
+- Wiki trace content records the repair type and checkpoint as safe learning trace text; Notebook Studio can continue treating repair state as a repair-pack candidate without auto-generating artifacts on every miss.
+- No provider, OpenAI Responses/Agents migration, remote MCP, new paid call, or new execution surface is introduced by this polish.
+
+### Pedagogical Productization Phase 5 Addendum
+
+- `IWikiAutoCurationService` / `WikiAutoCurationService` now produces a safe `WikiCurationSummaryDto` for Wiki pages without new storage migrations, provider calls, or destructive cleanup.
+- Curation summarizes page hygiene as `clean`, `duplicate_trace`, `stale_trace`, `repair_pending`, `source_limited`, or `degraded`, with retained/merged/suppressed/stale signal counts, warnings, next action, and student-visible summary.
+- `WikiLearningTraceWriter` dedupes repeated traces with normalized safe text/title comparison in addition to durable tutor/quiz/artifact identifiers, while preserving student manual notes.
+- `LearningMemoryService` and `ActiveLessonSnapshotService` now expose `LearningMemoryHygieneDto`: bounded memory status, retained signals, merged weak-concept labels, safe warnings, and safe summaries only.
+- Chat metadata, Wiki page DTOs, and Notebook Studio pack metadata consume curated memory/Wiki context; they do not expose raw transcripts, prompts, provider/tool payloads, source chunks, local paths, owner ids, or answer keys.
+- Source-linked Wiki context stays evidence-aware: stale/deleted/insufficient source states degrade with warnings, and Tutor-generated notes are not treated as source citations.
+
+### Pedagogical Productization Phase 6 Addendum
+
+- `IWikiCopilotService` / `WikiCopilotService` now produces a safe page-aware `WikiCopilotContextDto` without provider calls or hidden autonomous actions.
+- Copilot reads Wiki page/block state, curation summary, source/evidence readiness, weak concepts, repair state, artifact count, and Notebook pack status.
+- Suggestions are deterministic handoffs: repair/checkpoint, weak-concept review, source ask/citation inspection when evidence is ready, Tutor help for thin pages, curation guidance for noisy pages, and Notebook Studio pack actions when page context is meaningful.
+- Source-grounded suggestions are blocked/degraded when evidence is stale, deleted, degraded, or insufficient.
+
+### Pedagogical Productization Phase 7 Addendum
+
+- `PedagogicalReleaseClosureTests.ProviderFreeLearningLoop_ConnectsPedagogicalProductizationSurfaces` is the final deterministic release harness for the combined learning loop.
+- The harness connects topic/goal, adaptive diagnostic, course-plan quality, Tutor tool decision, lesson delivery, remediation lesson, blank quiz impact, learning snapshot, Wiki curation/Copilot, OrkaLM source notebook, Notebook Studio context, dashboard reachability, and public payload leak guards.
+- It uses existing smoke/in-memory provider-free services only. It does not add new provider calls, Stripe calls, OpenAI Responses/Agents migration, real PPTX/video, Realtime, or graph-canvas scope.
+- Stripe/payment code was not found in the audited release surface; payment safety is not applicable unless a future payment module is intentionally added.
+
+### Backend Release Hardening Phase 1 Addendum
+
+- `AiDebugLogger` is safe by default: it summarizes provider diagnostics with provider, operation, HTTP status, model, endpoint host/path, payload length/hash, and redaction counts only.
+- Raw prompts, provider request/response bodies, source chunks, tool payloads, debug traces, stack traces, local paths, secrets, owner ids, unsafe user ids, and answer keys are not written by the AI debug logger.
+- AI debug file writing is disabled by default and requires an explicit development-only opt-in through environment configuration.
+- Provider non-success logging keeps status and safe body-length/hash diagnostics instead of writing raw provider bodies. Provider failure diagnostics are zero-body: `RedactedDiagnostic` contains provider/status/category/retryability/body length/hash metadata only, not raw or redacted response body excerpts. No provider architecture migration, new OpenAI API surface, or new provider call path was introduced.
+
+### Backend Release Hardening Phase 2 Addendum
+
+- `BackendLifeTests` is the senior-QA HTTP lifetest path from register/login through topics, plan/diagnostic, Tutor/chat, quiz/remediation, learning snapshot, Wiki Copilot, source upload/evidence, Notebook Studio export preview, dashboard, cross-user privacy, and degraded source states.
+- `PedagogicalReleaseClosureTests` remains the deterministic combined learning-loop harness for diagnostic-first planning, course-plan quality, Tutor tool decision, lesson delivery, remediation, quiz impact, snapshot, Wiki Copilot, Notebook Studio, source notebook, dashboard, and public payload safety.
+- `scripts/quick-backend.ps1` now runs `BackendLifeTests|PedagogicalReleaseClosureTests` as a backend lifetest release proof before stabilization and coordination baselines. The path uses `ApiSmokeFactory` provider-free replacements and does not add paid provider calls or provider architecture migration.
+
+### Backend Release Hardening Phase 3 Addendum
+
+- `ApiSmokeFactory` applies test-host-only logging filters for noisy release-validation categories: EF Core in-memory information logs, disabled scheduled worker information logs, background queue lifecycle information logs, and the benign MediatR license banner.
+- The filters do not clear providers and do not raise the application-wide minimum to error; backend warning/error logs remain visible during release validation.
+- Quick backend scripts remain deterministic, provider-free, and aligned with the lifetest release proof. No production logging behavior, provider architecture, OpenAI API surface, or paid provider path was changed.
+
+### Backend Release Hardening Phase 4 Addendum
+
+- `.github/workflows/backend-release.yml` is the CI mirror of the backend release proof.
+- The workflow runs on `windows-latest`, restores `Orka.sln`, prepares SQL Server LocalDB for lifecycle tests, runs `scripts/quick-backend.ps1`, runs `Orka.Infrastructure.UnitTests`, and checks `git diff --check`.
+- The workflow does not configure real AI provider credentials and does not run `ExternalProviderIntegrationTests` or `ORKA_RUN_EXTERNAL_PROVIDER_TESTS`.
+- The current local branch has no matching open PR and the public GitHub repository currently reports no Actions workflows/runs before this local workflow addition, so remote CI status must be verified after the workflow is pushed.
+
 ## Data Ownership Map
 
 | Data family | Current durable/cache stores | Owner rule |
@@ -365,6 +450,7 @@ The implementation pack count is fixed unless explicitly changed by the user lat
 - Out of scope: official scoring, percentile, full psychometric IRT.
 - Required tests: answer leak rejection, final item quality, all assessment flows record comparable results, wrong answer changes remediation state.
 - Exit criteria: any quiz/practice/deneme answer produces the same safe learning signal semantics.
+- Release cleanup addendum: blank/skipped answers are treated as prerequisite/guided-repair signals, not as high-confidence misconceptions. They may drive repair notes and Tutor next actions, but they must not expose answer keys or claim mastery/source certainty.
 
 ### Pack 7 - Tutor Pedagogy & Response Policy Closure
 
@@ -457,6 +543,7 @@ The implementation pack count is fixed unless explicitly changed by the user lat
 | OrkaLM source notebook | Source-centered Notebook Studio surface for uploaded PDFs/TXT/MD sources. It uses `LearningSource`, source evidence bundles, `orkalm_source` Wiki pages, deterministic source-to-concept links, and `LearningNotebookPack` metadata instead of a separate app/table. |
 | Source-to-concept link | A user-scoped `WikiLink` relationship from an `orkalm_source` page to an existing concept Wiki page. Links are confidence-labeled graph hints based on deterministic evidence and do not by themselves create source-backed claims. |
 | Ask-source | Source-centered question flow backed by `SourceQuestionService`. It can ask a selected source or bounded source collection, labels source basis/evidence/readiness, returns safe citation labels, can write Wiki traces, and never exposes raw chunks/prompts/provider payloads. |
+| Wiki Copilot | Page-aware helper surface backed by `IWikiCopilotService`. It reads safe Wiki page, curation, source/evidence, repair, artifact, and Notebook Studio status and returns deterministic suggestions/handoffs without provider calls, raw payloads, hidden actions, or source-grounded claims without evidence. |
 | Teaching artifact | Diagram, table, formula, image prompt, video reference, code result, or study note created for a learning objective. |
 | Tool ledger | Target durable record for every governed tool call and result, including safety, fallback, and consumption state. |
 | Tool capability | Backend contract describing whether a tool is enabled, gated, risky, provider-backed, and telemetry/cost tracked. |

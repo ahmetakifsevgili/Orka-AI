@@ -543,6 +543,8 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             CurrentPlanTutorMove = currentPlanStep?.TutorHook.TutorMove,
             CurrentPlanQuizHook = currentPlanStep?.QuizHook.HookType,
             PlanSourceReadiness = currentPlanStep?.Evidence.SourceReadiness ?? latestPlanQuality?.PlanContract.SourceReadiness,
+            AdaptiveDiagnostic = latestPlanQuality?.PlanContract.AdaptiveDiagnostic,
+            CoursePlanQuality = latestPlanQuality?.PlanContract.CoursePlanQuality,
             LatestAssessmentMode = currentPlanStep?.QuizHook.HookType ?? "unknown",
             LatestMisconceptionConfidence = learningLoopSignal?.Confidence?.Status ?? "none",
             SourceReadiness = currentPlanStep?.Evidence.SourceReadiness
@@ -563,6 +565,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
         state.PersonalizationMode = responsePolicy.PersonalizationMode;
         state.MasteryBasis = responsePolicy.MasteryBasis;
         state.WeakConceptHints = responsePolicy.WeakConceptHints;
+        state.RemediationLesson = BuildTurnStateRemediationLesson(state);
 
         var snapshot = await _workingMemory.SaveTurnSnapshotAsync(state, ct);
         state.WorkingMemorySnapshotId = snapshot.Id;
@@ -602,7 +605,9 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
                 ["learningLoopStatus"] = state.LearningLoopStatus,
                 ["planQualitySnapshotId"] = state.PlanQualitySnapshotId?.ToString() ?? "none",
                 ["currentPlanStepId"] = state.CurrentPlanStepId ?? "none",
-                ["currentPlanQuizHook"] = state.CurrentPlanQuizHook ?? "none"
+                ["currentPlanQuizHook"] = state.CurrentPlanQuizHook ?? "none",
+                ["planReadiness"] = state.CoursePlanQuality?.ReadinessStatus ?? "unknown",
+                ["diagnosticIntent"] = state.AdaptiveDiagnostic?.Intent ?? "unknown"
             }, ct);
         }
 
@@ -626,6 +631,10 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             - currentPlanStep: {state.CurrentPlanStepId ?? "none"} / {state.CurrentPlanStepTitle ?? "none"}
             - currentPlanTutorMove: {state.CurrentPlanTutorMove ?? "none"}
             - currentPlanQuizHook: {state.CurrentPlanQuizHook ?? "none"}
+            - adaptiveDiagnosticIntent: {state.AdaptiveDiagnostic?.Intent ?? "unknown"}
+            - adaptiveLearnerLevel: {state.AdaptiveDiagnostic?.LearnerLevel ?? "unknown"}
+            - planReadiness: {state.CoursePlanQuality?.ReadinessStatus ?? state.AdaptiveDiagnostic?.PlanReadiness ?? "unknown"}
+            - planNextAction: {state.CoursePlanQuality?.RecommendedNextAction ?? state.AdaptiveDiagnostic?.NextAction ?? "unknown"}
             - planSourceReadiness: {state.PlanSourceReadiness ?? "unknown"}
             - sourceReadiness: {state.SourceReadiness ?? "unknown"}
             - latestAssessmentMode: {state.LatestAssessmentMode ?? "unknown"}
@@ -649,6 +658,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             - misconceptionSignal: {state.MisconceptionSignal?.UserSafeLabel ?? "none"}
             - learningSignalConfidence: {state.LearningSignalConfidence?.Status ?? "unknown"}
             - remediationSeed: {state.RemediationSeed?.FirstAction ?? "none"} / {state.RemediationSeed?.Reason ?? "none"}
+            - remediationLesson: {state.RemediationLesson?.RepairType ?? "none"} / {state.RemediationLesson?.StudentVisibleSummary ?? "none"}
             - directAnswerRisk: {state.DirectAnswerRisk}
             - recentMistakes: {(state.RecentMistakes.Count == 0 ? "none" : string.Join("; ", state.RecentMistakes))}
 
@@ -659,6 +669,127 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             learningLoopStatus remediation_ready ise bu turu profesyonel telafi turu olarak ele al: once yanilgi ihtimalini nazikce sinirla, sonra remediationSeed aksiyonuna gore kisa ve adim adim duzeltme yap.
             """;
     }
+
+    private static RemediationLessonDto? BuildTurnStateRemediationLesson(TutorTurnStateDto state)
+    {
+        var confused = state.AffectiveState is "confused" or "frustrated" ||
+                       state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase);
+        var weak = state.RemediationNeed is "high" or "medium" ||
+                   state.MasteryProbability < 0.45m ||
+                   state.CoursePlanQuality?.ReadinessStatus == "needs_repair";
+        if (!confused && !weak && state.RemediationSeed == null && state.MisconceptionSignal == null)
+        {
+            return null;
+        }
+
+        var sourceGap = state.SourceReadiness is "insufficient" or "degraded" or "stale" or "deleted" or "evidence_insufficient";
+        var triggerType = state.RemediationSeed != null ? "misconception_signal" :
+            confused ? "student_confused" :
+            sourceGap ? "source_evidence_gap" :
+            "weak_concept";
+        var repairType = state.RemediationSeed?.FirstAction == "prerequisite_review" ? "prerequisite_repair" :
+            sourceGap ? "source_evidence_review" :
+            state.MisconceptionSignal != null ? "misconception_repair" :
+            weak ? "weak_concept_repair" :
+            "guided_reteach";
+        var concept = FirstNonEmpty(state.ActiveConceptLabel, state.ActiveConceptKey, state.CurrentPlanStepTitle, "aktif kavram");
+        var gap = repairType switch
+        {
+            "misconception_repair" => FirstNonEmpty(state.MisconceptionSignal?.UserSafeLabel, state.MisconceptionSignal?.SafeHint, state.RemediationSeed?.Reason, "Takilma sinyali kesin tani degil."),
+            "prerequisite_repair" => FirstNonEmpty(state.RemediationSeed?.Reason, "Eksik onkosul once kisa telafi istiyor."),
+            "source_evidence_review" => "Kaynak kaniti sinirli oldugu icin kaynakli iddia kurulmadan once kanit kontrolu gerekiyor.",
+            "weak_concept_repair" => "Mastery veya plan sinyali zayif kavram telafisi istiyor.",
+            _ => "Ogrenci mesaji veya ogrenme durumu kisa guided reteach istiyor."
+        };
+
+        var warnings = new List<string>();
+        if (state.LearningSignalConfidence?.Status == "observed_only") warnings.Add("observed_only_repair_signal");
+        if (state.MisconceptionSignal == null && repairType == "guided_reteach") warnings.Add("misconception_not_confirmed");
+        if (sourceGap) warnings.Add("source_evidence_limited");
+
+        return new RemediationLessonDto
+        {
+            TopicId = state.TopicId,
+            ConceptKey = string.IsNullOrWhiteSpace(state.ActiveConceptKey) ? null : state.ActiveConceptKey,
+            Trigger = new RemediationTriggerDto
+            {
+                TriggerType = triggerType,
+                UserSafeLabel = triggerType switch
+                {
+                    "student_confused" => "Anlamadim sinyali",
+                    "source_evidence_gap" => "Kaynak kaniti siniri",
+                    "misconception_signal" => "Takilma sinyali",
+                    _ => "Zayif kavram sinyali"
+                },
+                EvidenceStatus = state.LearningSignalConfidence?.Status ?? "observed_only"
+            },
+            RepairType = repairType,
+            Confidence = state.LearningSignalConfidence?.Status == "usable" ? "medium" : "low",
+            Basis = new[]
+            {
+                string.IsNullOrWhiteSpace(state.LearningLoopStatus) ? null : state.LearningLoopStatus,
+                state.MasteryProbability.HasValue ? "mastery_snapshot" : null,
+                state.RemediationSeed != null ? "learning_memory" : null,
+                confused ? "student_message" : null,
+                sourceGap ? "source_review" : null,
+                state.CoursePlanQuality?.ReadinessStatus == "needs_repair" ? "plan_quality" : null
+            }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToArray(),
+            LessonShape = BuildTurnStateRepairLoop(concept, repairType, gap),
+            Checkpoint = new RemediationCheckpointDto
+            {
+                CheckpointType = repairType == "source_evidence_review" ? "evidence_check" : "micro_check",
+                UserSafePrompt = repairType == "source_evidence_review"
+                    ? "Bu iddiada kaynakta desteklenen kisim hangisi?"
+                    : $"{concept} icin bir mini ornegi kendi cumlenle dene.",
+                AvoidsPreSubmitReveal = true,
+                Required = true
+            },
+            Outcome = new RemediationOutcomeDto
+            {
+                ExpectedSignal = repairType == "source_evidence_review" ? "source_review_needed" : "needs_review",
+                MasteryPolicy = "do_not_overstate_mastery",
+                NextTutorAction = repairType == "source_evidence_review" ? "review_source_then_continue" : "guided_repair_then_check",
+                NotebookAction = "repair_pack_available"
+            },
+            Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToArray(),
+            SourceBasis = repairType == "source_evidence_review" ? "evidence_insufficient" : "tutor_generated",
+            StudentVisibleSummary = repairType switch
+            {
+                "misconception_repair" => "Tutor takilma sinyalini kesin tani gibi sunmadan ornekle onaracak.",
+                "prerequisite_repair" => "Tutor once eksik onkosulu kisa telafiyle toparlayacak.",
+                "source_evidence_review" => "Tutor kaynak kaniti sinirini acik tutarak ilerleyecek.",
+                "weak_concept_repair" => "Tutor zayif kavram icin mikro ders ve kontrol uygulayacak.",
+                _ => "Tutor anlamadigin noktayi kisa guided tekrar ile toparlayacak."
+            }
+        };
+    }
+
+    private static RemediationRepairLoopDto BuildTurnStateRepairLoop(string concept, string repairType, string gap) =>
+        new()
+        {
+            Goal = repairType switch
+            {
+                "misconception_repair" => $"{concept} icin yanilgi ihtimalini nazikce sinirla ve dogru ayrimi kur.",
+                "prerequisite_repair" => $"{concept} icin eksik onkosulu once tamamla.",
+                "source_evidence_review" => $"{concept} icin kaynak kaniti ile Tutor yorumunu ayir.",
+                "weak_concept_repair" => $"{concept} icin zayif parcayi mikro dersle guclendir.",
+                _ => $"{concept} icin kisa guided reteach yap."
+            },
+            MisconceptionOrGap = gap,
+            ShortReteach = "Tek kavramsal ayrimi iki kisa adimda yeniden kur.",
+            WorkedExample = "Bir cozumlu mini ornek kullan.",
+            GuidedPractice = "Ogrenciye tek kucuk adimi kendisi yaptir.",
+            Checkpoint = "Cevap anahtari vermeden mikro kontrol sor.",
+            NextAction = repairType == "source_evidence_review" ? "review_source_then_continue" : "guided_repair_then_check",
+            Steps = new[]
+            {
+                new RemediationStepDto { StepType = "goal", UserSafeLabel = "Telafi hedefini kur", Required = true },
+                new RemediationStepDto { StepType = "short_reteach", UserSafeLabel = "Kisa tekrar", Required = true },
+                new RemediationStepDto { StepType = "worked_example", UserSafeLabel = "Cozumlu mini ornek", Required = repairType != "source_evidence_review" },
+                new RemediationStepDto { StepType = "guided_practice", UserSafeLabel = "Tek adimlik pratik", Required = true },
+                new RemediationStepDto { StepType = "checkpoint", UserSafeLabel = "Cevap anahtarsiz kontrol", Required = true }
+            }
+        };
 
     private async Task<LearningLoopSignalProjection?> LoadLearningLoopSignalAsync(
         Guid userId,
@@ -879,6 +1010,22 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             latestAttempt: null,
             latestBundle: null,
             toolCalls: Array.Empty<TutorToolCall>());
+        var toolDecision = BuildToolDecision(
+            turnState,
+            normalized,
+            teachingMode,
+            toolPlans,
+            artifactPlans,
+            responsePolicy,
+            professionalPolicy);
+        var lessonDelivery = BuildLessonDelivery(
+            turnState,
+            teachingMode,
+            toolDecision,
+            responsePolicy,
+            professionalPolicy,
+            nextCheck);
+        var remediationLesson = BuildActionPlanRemediationLesson(turnState, toolDecision, lessonDelivery);
 
         var plan = new TutorActionPlanDto
         {
@@ -905,8 +1052,11 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             WeakConceptHints = responsePolicy.WeakConceptHints,
             ToolPlans = toolPlans,
             ArtifactPlans = artifactPlans,
+            ToolDecision = toolDecision,
+            LessonDelivery = lessonDelivery,
+            RemediationLesson = remediationLesson,
             NextCheckPrompt = nextCheck,
-            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans, responsePolicy)
+            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans, responsePolicy, toolDecision, lessonDelivery, remediationLesson)
         };
 
         await _workingMemory.ApplyPatchAsync(turnState.UserId, turnState.TopicId, turnState.SessionId, "tutor_action_plan", new
@@ -927,6 +1077,9 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             plan.PersonalizationMode,
             plan.MasteryBasis,
             plan.WeakConceptHints,
+            toolDecision = plan.ToolDecision,
+            lessonDelivery = plan.LessonDelivery,
+            remediationLesson = plan.RemediationLesson,
             turnState.LearningLoopStatus,
             misconceptionSignal = turnState.MisconceptionSignal?.UserSafeLabel,
             remediationAction = turnState.RemediationSeed?.FirstAction,
@@ -943,16 +1096,545 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
                 ["toolCount"] = toolPlans.Count.ToString(),
                 ["artifactCount"] = artifactPlans.Count.ToString(),
                 ["tutorTeachingMove"] = plan.TutorTeachingMove ?? "unknown",
-                ["tutorGroundingPolicy"] = plan.TutorGroundingPolicy ?? "unknown"
+                ["tutorGroundingPolicy"] = plan.TutorGroundingPolicy ?? "unknown",
+                ["selectedToolAction"] = plan.ToolDecision?.SelectedAction ?? "no_tool",
+                ["lessonDeliveryMode"] = plan.LessonDelivery?.DeliveryMode ?? "concept_explanation",
+                ["remediationRepairType"] = plan.RemediationLesson?.RepairType ?? "none"
             }, ct);
         }
 
         return plan;
     }
 
+    private static TutorLessonDeliveryDto BuildLessonDelivery(
+        TutorTurnStateDto state,
+        string teachingMode,
+        TutorToolDecisionDto toolDecision,
+        TutorResponsePolicyDecision responsePolicy,
+        TutorResponsePolicyDto professionalPolicy,
+        string nextCheck)
+    {
+        var learnerLevel = DetermineLearnerLevel(state, responsePolicy);
+        var deliveryMode = DetermineDeliveryMode(state, teachingMode, toolDecision, professionalPolicy);
+        var warnings = new List<string>();
+        if (toolDecision.SafetyWarnings.Contains("source_grounded_route_blocked", StringComparer.OrdinalIgnoreCase) ||
+            professionalPolicy.GroundingPolicy is "evidence_insufficient" or "mention_source_limits" ||
+            responsePolicy.TutorResponseMode == "evidence_limited")
+        {
+            warnings.Add("source_evidence_limited");
+        }
+
+        if (professionalPolicy.SafetyIssues.Any(i => i.Code.Contains("answer_key", StringComparison.OrdinalIgnoreCase)))
+        {
+            warnings.Add("answer_key_guard_active");
+        }
+
+        if (state.Confidence < 0.45m || responsePolicy.MasteryBasis == "low_confidence")
+        {
+            warnings.Add("low_confidence_learner_state");
+        }
+
+        var includesRepair = deliveryMode is "misconception_repair" or "prerequisite_repair";
+        var includesCheckpoint = deliveryMode is "checkpoint_question" or "guided_example" or "concept_explanation" or "misconception_repair" or "prerequisite_repair";
+        var sourceBasis = deliveryMode == "source_grounded_explanation" ? "source_grounded" :
+            deliveryMode == "model_assisted_explanation" ? "model_assisted" :
+            "tutor_generated";
+        var steps = BuildLessonSteps(deliveryMode, sourceBasis);
+
+        return new TutorLessonDeliveryDto
+        {
+            DeliveryMode = deliveryMode,
+            LearnerLevel = learnerLevel,
+            Structure = new TutorLessonStructureDto
+            {
+                Goal = BuildLessonGoal(deliveryMode, state),
+                ShortExplanation = BuildShortExplanationGuidance(deliveryMode, learnerLevel),
+                Example = BuildExampleGuidance(deliveryMode, learnerLevel),
+                Checkpoint = deliveryMode == "ask_clarifying_question" ? "Once hedefi netlestir." : nextCheck,
+                NextAction = BuildLessonNextAction(deliveryMode, professionalPolicy)
+            },
+            RubricSignals = new TutorLessonRubricDto
+            {
+                UsesLearnerState = !string.IsNullOrWhiteSpace(state.LearnerState) && state.LearnerState != "unknown",
+                UsesMasterySignal = state.MasteryProbability.HasValue || state.Confidence.HasValue,
+                UsesQuizSignal = !string.IsNullOrWhiteSpace(state.LatestAssessmentMode) ||
+                                  state.MisconceptionSignal != null ||
+                                  state.RemediationSeed != null ||
+                                  professionalPolicy.LatestAssessmentMode != "none",
+                UsesSourceEvidence = deliveryMode == "source_grounded_explanation",
+                AvoidsPreSubmitReveal = true,
+                IncludesCheckpoint = includesCheckpoint,
+                IncludesRepairStep = includesRepair,
+                BoundedLength = true
+            },
+            Steps = steps,
+            Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToArray(),
+            StudentVisibleSummary = BuildLessonDeliverySummary(deliveryMode, warnings)
+        };
+    }
+
+    private static RemediationLessonDto? BuildActionPlanRemediationLesson(
+        TutorTurnStateDto state,
+        TutorToolDecisionDto toolDecision,
+        TutorLessonDeliveryDto lessonDelivery)
+    {
+        if (state.RemediationLesson != null)
+        {
+            return state.RemediationLesson;
+        }
+
+        var repairDelivery = lessonDelivery.DeliveryMode is "misconception_repair" or "prerequisite_repair";
+        if (toolDecision.SelectedAction != "start_remediation" && !repairDelivery)
+        {
+            return null;
+        }
+
+        var sourceGap = toolDecision.SafetyWarnings.Contains("source_grounded_route_blocked", StringComparer.OrdinalIgnoreCase) ||
+                        lessonDelivery.Warnings.Contains("source_evidence_limited", StringComparer.OrdinalIgnoreCase);
+        var repairType = lessonDelivery.DeliveryMode == "misconception_repair" ? "misconception_repair" :
+            lessonDelivery.DeliveryMode == "prerequisite_repair" ? "prerequisite_repair" :
+            sourceGap ? "source_evidence_review" :
+            state.MasteryProbability < 0.45m ? "weak_concept_repair" :
+            "guided_reteach";
+        var triggerType = state.LatestAssessmentMode is "skipped" ? "skipped_answer" :
+            state.LatestAssessmentMode is "blank" ? "blank_answer" :
+            state.MisconceptionSignal != null ? "misconception_signal" :
+            state.AffectiveState is "confused" or "frustrated" ? "student_confused" :
+            sourceGap ? "source_evidence_gap" :
+            "weak_concept";
+        var concept = FirstNonEmptyLocal(state.ActiveConceptLabel, state.ActiveConceptKey, state.CurrentPlanStepTitle) ?? "aktif kavram";
+        var gap = repairType switch
+        {
+            "misconception_repair" => FirstNonEmptyLocal(state.MisconceptionSignal?.UserSafeLabel, state.MisconceptionSignal?.SafeHint, "Takilma sinyali kesin tani degil.")!,
+            "prerequisite_repair" => FirstNonEmptyLocal(state.RemediationSeed?.Reason, "Eksik onkosul kisa telafi istiyor.")!,
+            "source_evidence_review" => "Kaynak kaniti sinirli; kaynakli iddia kurulmadan once kanit kontrolu gerekir.",
+            "weak_concept_repair" => "Mastery sinyali zayif kavrami mikro dersle toparlamayi oneriyor.",
+            _ => "Ogrenci bu noktada kisa guided reteach istiyor."
+        };
+
+        return new RemediationLessonDto
+        {
+            TopicId = state.TopicId,
+            ConceptKey = string.IsNullOrWhiteSpace(state.ActiveConceptKey) ? null : state.ActiveConceptKey,
+            Trigger = new RemediationTriggerDto
+            {
+                TriggerType = triggerType,
+                UserSafeLabel = triggerType switch
+                {
+                    "blank_answer" => "Bos cevap telafisi",
+                    "skipped_answer" => "Atlanan cevap telafisi",
+                    "student_confused" => "Anlamadim sinyali",
+                    "source_evidence_gap" => "Kaynak kaniti siniri",
+                    "misconception_signal" => "Takilma sinyali",
+                    _ => "Zayif kavram sinyali"
+                },
+                EvidenceStatus = state.LearningSignalConfidence?.Status ?? "observed_only"
+            },
+            RepairType = repairType,
+            Confidence = state.LearningSignalConfidence?.Status == "usable" ? "medium" : "low",
+            Basis = toolDecision.LearnerSignalsUsed
+                .Concat(toolDecision.ReasonCodes)
+                .Append("tutor_action_plan")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(10)
+                .ToArray(),
+            LessonShape = new RemediationRepairLoopDto
+            {
+                Goal = lessonDelivery.Structure.Goal,
+                MisconceptionOrGap = gap,
+                ShortReteach = lessonDelivery.Structure.ShortExplanation,
+                WorkedExample = lessonDelivery.Structure.Example,
+                GuidedPractice = "Ogrenciye tek kucuk adimi kendisi yaptir.",
+                Checkpoint = lessonDelivery.Structure.Checkpoint,
+                NextAction = lessonDelivery.Structure.NextAction,
+                Steps = lessonDelivery.Steps
+                    .Where(s => s.StepType is "goal" or "short_explanation" or "worked_example" or "repair_step" or "checkpoint")
+                    .Select(s => new RemediationStepDto
+                    {
+                        StepType = s.StepType == "short_explanation" ? "short_reteach" : s.StepType,
+                        UserSafeLabel = s.UserSafeLabel,
+                        Required = s.Required,
+                        SourceBasis = s.SourceBasis
+                    })
+                    .Take(5)
+                    .ToArray()
+            },
+            Checkpoint = new RemediationCheckpointDto
+            {
+                CheckpointType = sourceGap ? "evidence_check" : "micro_check",
+                UserSafePrompt = lessonDelivery.Structure.Checkpoint,
+                AvoidsPreSubmitReveal = true,
+                Required = true
+            },
+            Outcome = new RemediationOutcomeDto
+            {
+                ExpectedSignal = repairType == "source_evidence_review" ? "source_review_needed" : "needs_review",
+                MasteryPolicy = "do_not_overstate_mastery",
+                NextTutorAction = lessonDelivery.Structure.NextAction,
+                NotebookAction = "repair_pack_available"
+            },
+            Warnings = lessonDelivery.Warnings
+                .Append(state.MisconceptionSignal == null && repairType == "guided_reteach" ? "misconception_not_confirmed" : null)
+                .Where(w => !string.IsNullOrWhiteSpace(w))
+                .Select(w => w!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(8)
+                .ToArray(),
+            SourceBasis = sourceGap ? "evidence_insufficient" : "tutor_generated",
+            StudentVisibleSummary = repairType switch
+            {
+                "misconception_repair" => "Tutor takilma sinyalini kesin tani gibi sunmadan onaracak.",
+                "prerequisite_repair" => "Tutor once eksik onkosulu kisa telafiyle toparlayacak.",
+                "source_evidence_review" => "Tutor kaynak kaniti sinirini acik tutarak ilerleyecek.",
+                "weak_concept_repair" => "Tutor zayif kavram icin mikro ders ve kontrol uygulayacak.",
+                _ => "Tutor bu turda kisa guided telafi dersi uygulayacak."
+            }
+        };
+    }
+
+    private static string DetermineLearnerLevel(TutorTurnStateDto state, TutorResponsePolicyDecision responsePolicy)
+    {
+        if (state.AdaptiveDiagnostic?.LearnerLevel is "beginner" or "developing" or "exam_ready" or "advanced")
+            return state.AdaptiveDiagnostic.LearnerLevel;
+        if (state.PracticeReadiness == "exam_ready" && state.MasteryProbability >= 0.70m && state.Confidence >= 0.60m)
+            return "exam_ready";
+        if (string.Equals(responsePolicy.PersonalizationMode, "advanced", StringComparison.OrdinalIgnoreCase))
+            return "advanced";
+        if (state.MasteryProbability >= 0.78m && state.Confidence >= 0.65m)
+            return state.PracticeReadiness == "exam_ready" ? "exam_ready" : "advanced";
+        if (state.MasteryProbability >= 0.55m && state.Confidence >= 0.45m)
+            return "developing";
+        if (state.MasteryProbability.HasValue || state.Confidence.HasValue)
+            return "beginner";
+        return "unknown";
+    }
+
+    private static string DetermineDeliveryMode(
+        TutorTurnStateDto state,
+        string teachingMode,
+        TutorToolDecisionDto toolDecision,
+        TutorResponsePolicyDto professionalPolicy)
+    {
+        if (toolDecision.SelectedAction == "ask_clarifying_question")
+            return "ask_clarifying_question";
+        if (toolDecision.SelectedAction == "run_diagnostic")
+            return "checkpoint_question";
+        if (toolDecision.SelectedAction == "generate_quiz")
+            return "checkpoint_question";
+        if (toolDecision.SelectedAction == "ask_source")
+            return HasReadySourceEvidence(state) ? "source_grounded_explanation" : "model_assisted_explanation";
+        if (toolDecision.SelectedAction == "start_remediation")
+        {
+            if (state.RemediationSeed?.FirstAction == "prerequisite_review" ||
+                professionalPolicy.RemediationPolicy == "prerequisite_review" ||
+                string.Equals(state.LatestAssessmentMode, "skipped", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(state.LatestAssessmentMode, "blank", StringComparison.OrdinalIgnoreCase))
+            {
+                return "prerequisite_repair";
+            }
+
+            return state.MisconceptionSignal != null || professionalPolicy.LatestMisconceptionConfidence is "observed" or "strong"
+                ? "misconception_repair"
+                : "prerequisite_repair";
+        }
+
+        if (professionalPolicy.GroundingPolicy is "cite_sources" && HasReadySourceEvidence(state))
+            return "source_grounded_explanation";
+        if (professionalPolicy.GroundingPolicy is "evidence_insufficient" or "mention_source_limits" &&
+            toolDecision.SafetyWarnings.Any(w => w.Contains("source", StringComparison.OrdinalIgnoreCase)))
+            return "model_assisted_explanation";
+        if (teachingMode == "review" || professionalPolicy.TeachingMove == "retrieval_prompt")
+            return "quiz_review";
+        if (teachingMode == "challenge" || state.MasteryProbability >= 0.75m && state.Confidence >= 0.60m)
+            return "checkpoint_question";
+        if (teachingMode == "guided_practice" || state.MasteryProbability < 0.55m || state.Confidence < 0.45m)
+            return "guided_example";
+        return "concept_explanation";
+    }
+
+    private static IReadOnlyList<TutorLessonStepDto> BuildLessonSteps(string deliveryMode, string sourceBasis)
+    {
+        var steps = new List<TutorLessonStepDto>
+        {
+            new() { StepType = "goal", UserSafeLabel = "Hedefi kisa kur", Required = true, SourceBasis = sourceBasis },
+            new() { StepType = "short_explanation", UserSafeLabel = "Kisa aciklama", Required = true, SourceBasis = sourceBasis }
+        };
+
+        if (deliveryMode is "guided_example" or "misconception_repair" or "prerequisite_repair")
+        {
+            steps.Add(new TutorLessonStepDto { StepType = "worked_example", UserSafeLabel = "Somut ornekle ilerle", Required = true, SourceBasis = sourceBasis });
+        }
+
+        if (deliveryMode is "misconception_repair" or "prerequisite_repair")
+        {
+            steps.Add(new TutorLessonStepDto { StepType = "repair_step", UserSafeLabel = "Telafi adimini ac", Required = true, SourceBasis = "tutor_generated" });
+        }
+
+        if (deliveryMode is "checkpoint_question" or "guided_example" or "concept_explanation" or "misconception_repair" or "prerequisite_repair")
+        {
+            steps.Add(new TutorLessonStepDto { StepType = "checkpoint", UserSafeLabel = "Kisa kontrol sorusu sor", Required = true, SourceBasis = "tutor_generated" });
+        }
+
+        steps.Add(new TutorLessonStepDto { StepType = "next_action", UserSafeLabel = "Sonraki adimi soyle", Required = true, SourceBasis = "tutor_generated" });
+        return steps.Take(6).ToArray();
+    }
+
+    private static string BuildLessonGoal(string deliveryMode, TutorTurnStateDto state)
+    {
+        var concept = string.IsNullOrWhiteSpace(state.ActiveConceptLabel)
+            ? (string.IsNullOrWhiteSpace(state.ActiveConceptKey) ? "aktif kavram" : state.ActiveConceptKey)
+            : state.ActiveConceptLabel;
+        return deliveryMode switch
+        {
+            "misconception_repair" => $"{concept} icin takilma sinyalini kesin tani gibi sunmadan onar.",
+            "prerequisite_repair" => $"{concept} icin eksik onkosulu kisa telafiyle tamamla.",
+            "guided_example" => $"{concept} icin kavrami somut ornekle kur.",
+            "checkpoint_question" => $"{concept} icin kisa yoklama yap.",
+            "source_grounded_explanation" => $"{concept} aciklamasini hazir kaynak kanitindan ayirarak kur.",
+            "model_assisted_explanation" => $"{concept} icin kaynak sinirini belirterek model destekli acikla.",
+            "ask_clarifying_question" => "Ogrenme hedefini ve baglami netlestir.",
+            _ => $"{concept} icin kisa, hedefli kavram aciklamasi yap."
+        };
+    }
+
+    private static string BuildShortExplanationGuidance(string deliveryMode, string learnerLevel) =>
+        deliveryMode switch
+        {
+            "ask_clarifying_question" => "Cevap vermeden once tek netlestirme sorusu sor.",
+            "checkpoint_question" => "Aciklamayi kisa tut ve cevabi sakli tek kontrol sorusu sor.",
+            "misconception_repair" => "Hatayi kesin tani gibi sunmadan dogru ayrimi iki kisa adimda kur.",
+            "prerequisite_repair" => "Eksik onkosulu yavas ve kisa parcalarla toparla.",
+            "source_grounded_explanation" => "Kaynakta desteklenen kisim ile Tutor yorumunu ayri tut.",
+            "model_assisted_explanation" => "Kaynak kaniti sinirliyken kesin kaynak iddiasi kurma.",
+            _ => learnerLevel == "advanced" ? "Kisa gerekce ve sinir kosulu ver." : "Tek kavramsal parca ile basla."
+        };
+
+    private static string BuildExampleGuidance(string deliveryMode, string learnerLevel) =>
+        deliveryMode switch
+        {
+            "guided_example" or "misconception_repair" or "prerequisite_repair" => "Bir cozumlu ornek veya mini senaryo kullan.",
+            "checkpoint_question" => "Ornek yerine cevap anahtari olmayan kontrol sorusu kullan.",
+            "ask_clarifying_question" => "Ornek verme; once hedefi netlestir.",
+            _ => learnerLevel is "beginner" or "unknown" ? "Gerekirse tek somut ornek ekle." : "Ornegi kisa ve ayirt edici tut."
+        };
+
+    private static string BuildLessonNextAction(string deliveryMode, TutorResponsePolicyDto professionalPolicy)
+    {
+        var next = professionalPolicy.NextActions.FirstOrDefault()?.ActionType;
+        if (!string.IsNullOrWhiteSpace(next)) return next;
+        return deliveryMode switch
+        {
+            "checkpoint_question" => "student_attempts_checkpoint",
+            "misconception_repair" or "prerequisite_repair" => "guided_repair_then_check",
+            "ask_clarifying_question" => "student_clarifies_goal",
+            "source_grounded_explanation" => "review_source_citation",
+            _ => "continue_lesson"
+        };
+    }
+
+    private static string BuildLessonDeliverySummary(string deliveryMode, IReadOnlyCollection<string> warnings)
+    {
+        if (warnings.Contains("source_evidence_limited", StringComparer.OrdinalIgnoreCase))
+            return "Tutor kaynak sinirini belirterek model destekli ve kontrollu anlatim yapiyor.";
+
+        return deliveryMode switch
+        {
+            "guided_example" => "Tutor once kisa hedefi kurup somut ornekle ilerliyor.",
+            "checkpoint_question" => "Tutor bu turda kisa kontrol sorusuyla ogrenmeyi yokluyor.",
+            "misconception_repair" => "Tutor takilma sinyalini kesin tani gibi sunmadan ornekle onariyor.",
+            "prerequisite_repair" => "Tutor eksik onkosulu kisa telafiyle toparliyor.",
+            "source_grounded_explanation" => "Tutor hazir kaynak kanitini Tutor yorumundan ayri tutarak acikliyor.",
+            "model_assisted_explanation" => "Tutor kaynak kaniti sinirliyken model destekli aciklama yapiyor.",
+            "ask_clarifying_question" => "Tutor daha iyi ders kurmak icin once hedefi netlestiriyor.",
+            "quiz_review" => "Tutor once tekrar ve quiz sonucunu kisa bir ogrenme hamlesine bagliyor.",
+            _ => "Tutor bu turda kisa, hedefli kavram anlatimiyla ilerliyor."
+        };
+    }
+
+    private static TutorToolDecisionDto BuildToolDecision(
+        TutorTurnStateDto state,
+        string normalized,
+        string teachingMode,
+        IReadOnlyList<TutorToolPlanDto> toolPlans,
+        IReadOnlyList<TeachingArtifactPlanDto> artifactPlans,
+        TutorResponsePolicyDecision responsePolicy,
+        TutorResponsePolicyDto professionalPolicy)
+    {
+        var allowedTools = toolPlans.Select(t => t.ToolId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var blockedTools = new List<string>();
+        var reasonCodes = new List<string>();
+        var learnerSignals = new List<string>();
+        var safetyWarnings = new List<string>();
+
+        var sourceIntent = TutorSignalHeuristics.ContainsAny(normalized, "kaynak", "wiki", "dokuman", "doküman", "notebook", "belgeye göre", "kaynağa göre");
+        var quizIntent = TutorSignalHeuristics.ContainsAny(normalized, "quiz", "test", "soru sor", "sinav", "sınav", "yokla", "kontrol et");
+        var codeIntent = TutorSignalHeuristics.ContainsAny(normalized, "kod", "java", "sql", "algorithm", "algoritma", "hata", "runtime", "syntax");
+        var researchIntent = TutorSignalHeuristics.ContainsAny(normalized, "araştır", "arastir", "research", "literatur", "literatür", "kaynak tara");
+        var artifactIntent = TutorSignalHeuristics.ContainsAny(normalized, "paket", "artifact", "study guide", "calisma paketi", "çalışma paketi", "notebook pack", "slayt");
+        var confused = state.AffectiveState is "confused" or "frustrated" ||
+                       state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase) ||
+                       state.RemediationNeed is "high" or "medium" ||
+                       state.RemediationSeed != null ||
+                       state.LearningLoopStatus.Contains("remediation", StringComparison.OrdinalIgnoreCase);
+        var hasSourceEvidence = HasReadySourceEvidence(state);
+        var hasActiveLearningContext = state.TopicId.HasValue ||
+                                       !string.IsNullOrWhiteSpace(state.ActiveConceptKey) ||
+                                       !string.IsNullOrWhiteSpace(state.CurrentPlanStepId);
+
+        if (!string.IsNullOrWhiteSpace(state.ActiveConceptKey)) learnerSignals.Add("active_concept");
+        if (state.MasteryProbability.HasValue || state.Confidence.HasValue) learnerSignals.Add("mastery_confidence");
+        if (state.RemediationNeed is "high" or "medium") learnerSignals.Add("remediation_need");
+        if (state.MisconceptionSignal != null) learnerSignals.Add("misconception_signal");
+        if (state.RemediationSeed != null) learnerSignals.Add("remediation_seed");
+        if (state.HasWikiContext) learnerSignals.Add("wiki_context");
+        if (state.HasNotebookContext || state.SourceEvidenceCount > 0) learnerSignals.Add("source_context");
+        if (state.HasIdeContext) learnerSignals.Add("ide_context");
+        if (!string.IsNullOrWhiteSpace(state.AdaptiveDiagnostic?.Intent)) learnerSignals.Add("adaptive_diagnostic");
+        if (!string.IsNullOrWhiteSpace(state.CoursePlanQuality?.ReadinessStatus)) learnerSignals.Add("plan_readiness");
+        if (!hasSourceEvidence && sourceIntent)
+        {
+            blockedTools.Add("ask_source");
+            blockedTools.Add("source_grounded_answer");
+            reasonCodes.Add("source_evidence_insufficient");
+            safetyWarnings.Add("source_grounded_route_blocked");
+        }
+
+        string selectedAction;
+        if (state.CoursePlanQuality?.ReadinessStatus is "needs_diagnostic" or "thin_plan" && !sourceIntent && !quizIntent)
+        {
+            selectedAction = "run_diagnostic";
+            reasonCodes.Add("plan_needs_diagnostic");
+        }
+        else if (state.CoursePlanQuality?.ReadinessStatus == "needs_prerequisite_check" && !sourceIntent)
+        {
+            selectedAction = "run_diagnostic";
+            reasonCodes.Add("plan_needs_prerequisite_check");
+        }
+        else if (confused || state.CoursePlanQuality?.ReadinessStatus == "needs_repair")
+        {
+            selectedAction = "start_remediation";
+            reasonCodes.Add("learner_needs_repair");
+        }
+        else if (sourceIntent && hasSourceEvidence)
+        {
+            selectedAction = "ask_source";
+            reasonCodes.Add("source_intent_ready_evidence");
+        }
+        else if (sourceIntent)
+        {
+            selectedAction = hasActiveLearningContext ? "ask_clarifying_question" : "explain";
+            reasonCodes.Add("source_intent_evidence_limited");
+        }
+        else if (quizIntent)
+        {
+            selectedAction = "generate_quiz";
+            reasonCodes.Add("student_requested_check");
+        }
+        else if (codeIntent || state.HasIdeContext)
+        {
+            selectedAction = "use_ide_context";
+            reasonCodes.Add("code_context_detected");
+        }
+        else if (researchIntent && allowedTools.Contains("research_context", StringComparer.OrdinalIgnoreCase))
+        {
+            selectedAction = "use_korteks_research";
+            reasonCodes.Add("research_context_available");
+        }
+        else if (artifactIntent || (artifactPlans.Count > 0 && teachingMode is "visualize" or "code_lab"))
+        {
+            selectedAction = artifactIntent ? "create_notebook_pack" : "create_artifact";
+            reasonCodes.Add("artifact_requested_or_helpful");
+        }
+        else if (state.HasWikiContext && allowedTools.Contains("wiki_search", StringComparer.OrdinalIgnoreCase))
+        {
+            selectedAction = "read_wiki_context";
+            reasonCodes.Add("wiki_context_available");
+        }
+        else if (!hasActiveLearningContext)
+        {
+            selectedAction = "ask_clarifying_question";
+            reasonCodes.Add("missing_learning_context");
+        }
+        else
+        {
+            selectedAction = "explain";
+            reasonCodes.Add("default_tutor_explanation");
+        }
+
+        if (state.HasWikiContext && selectedAction is "explain" or "start_remediation" or "ask_source")
+        {
+            allowedTools.Add("write_wiki_trace");
+            reasonCodes.Add("wiki_trace_available");
+        }
+
+        if (professionalPolicy.GroundingPolicy is "evidence_insufficient" or "mention_source_limits" ||
+            responsePolicy.TutorResponseMode == "evidence_limited")
+        {
+            safetyWarnings.Add("evidence_limited");
+        }
+
+        var confidence = selectedAction switch
+        {
+            "start_remediation" => 0.88m,
+            "ask_source" => 0.84m,
+            "ask_clarifying_question" => 0.72m,
+            "use_ide_context" => 0.80m,
+            "use_korteks_research" => 0.68m,
+            _ => 0.70m
+        };
+
+        return new TutorToolDecisionDto
+        {
+            SelectedAction = selectedAction,
+            AllowedTools = allowedTools.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray(),
+            BlockedTools = blockedTools.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray(),
+            ReasonCodes = reasonCodes.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray(),
+            Confidence = confidence,
+            LearnerSignalsUsed = learnerSignals.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray(),
+            EvidenceStatus = responsePolicy.EvidencePolicy,
+            SourceReadiness = FirstNonEmptyLocal(state.SourceReadiness, state.PlanSourceReadiness, state.EvidenceQuality?.Status, state.GroundingStatus) ?? "unknown",
+            SafetyWarnings = safetyWarnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray(),
+            NextTutorMove = state.CoursePlanQuality?.RecommendedNextAction ?? professionalPolicy.TeachingMove,
+            StudentVisibleSummary = BuildDecisionSummary(selectedAction, safetyWarnings, reasonCodes)
+        };
+    }
+
+    private static bool HasReadySourceEvidence(TutorTurnStateDto state)
+    {
+        if (state.SourceEvidenceCount > 0) return true;
+        if (state.EvidenceQuality is { ReadySourceCount: > 0 }) return true;
+        return FirstNonEmptyLocal(state.SourceReadiness, state.PlanSourceReadiness, state.GroundingStatus, state.EvidenceQuality?.Status) is
+            "source_grounded" or "mixed" or "ready" or "strong";
+    }
+
+    private static string? FirstNonEmptyLocal(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
+
+    private static string BuildDecisionSummary(string selectedAction, IReadOnlyCollection<string> safetyWarnings, IReadOnlyCollection<string> reasonCodes)
+    {
+        if (safetyWarnings.Contains("source_grounded_route_blocked", StringComparer.OrdinalIgnoreCase))
+            return "Kaynak kaniti yeterli olmadigi icin Tutor kaynakli iddia kurmadan ilerliyor.";
+
+        return selectedAction switch
+        {
+            "start_remediation" => "Tutor bu turda eksigi kapatmak icin telafi adimina geciyor.",
+            "ask_source" => "Tutor once hazir kaynak kanitini kullanarak cevap verecek.",
+            "ask_clarifying_question" => "Tutor daha guvenli ilerlemek icin once baglami netlestirecek.",
+            "generate_quiz" => "Tutor ogrenmeyi olcmek icin kisa kontrol sorusu hazirlayacak.",
+            "use_ide_context" => "Tutor kod/IDE ciktisini guvenli baglam olarak kullanacak.",
+            "use_korteks_research" => "Tutor arastirma baglamini yalnizca destekleyici kanit olarak kullanacak.",
+            "create_notebook_pack" => "Tutor mevcut baglamdan calisma paketi hazirlamaya yoneliyor.",
+            "create_artifact" => "Tutor anlatimi somutlastirmak icin guvenli bir artifact kullanacak.",
+            "read_wiki_context" => "Tutor once Wiki ogrenme hafizasini kontrol edecek.",
+            _ => reasonCodes.Contains("missing_learning_context", StringComparer.OrdinalIgnoreCase)
+                ? "Tutor once hedefi netlestirerek ilerleyecek."
+                : "Tutor bu turda genel anlatimla ilerliyor."
+        };
+    }
+
     private static string SelectTeachingMode(TutorTurnStateDto state, bool lowMastery, bool codeIntent, bool wantsVisual, bool sourceIntent, bool reviewIntent, TutorResponsePolicyDecision responsePolicy)
     {
-        if (responsePolicy.TutorResponseMode == "evidence_limited" && sourceIntent) return "source_grounded_answer";
+        if (responsePolicy.TutorResponseMode == "evidence_limited" && sourceIntent) return "explain";
         if (state.AffectiveState is "confused" or "frustrated" || state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase)) return "remediate";
         if (codeIntent || state.HasIdeContext) return "code_lab";
         if (sourceIntent && state.SourceEvidenceCount > 0) return "source_grounded_answer";
@@ -1053,11 +1735,31 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         };
     }
 
-    private static string BuildPromptBlock(TutorActionTrace trace, IReadOnlyList<TutorToolPlanDto> toolPlans, IReadOnlyList<TeachingArtifactPlanDto> artifacts, TutorResponsePolicyDecision responsePolicy) => $"""
+    private static string BuildPromptBlock(
+        TutorActionTrace trace,
+        IReadOnlyList<TutorToolPlanDto> toolPlans,
+        IReadOnlyList<TeachingArtifactPlanDto> artifacts,
+        TutorResponsePolicyDecision responsePolicy,
+        TutorToolDecisionDto toolDecision,
+        TutorLessonDeliveryDto lessonDelivery,
+        RemediationLessonDto? remediationLesson) => $"""
 
         [TUTOR ACTION PLAN v3]
         - tutorActionTraceId: {trace.Id}
         - teachingMode: {trace.TeachingMode}
+        - selectedToolAction: {toolDecision.SelectedAction}
+        - lessonDeliveryMode: {lessonDelivery.DeliveryMode}
+        - learnerLevel: {lessonDelivery.LearnerLevel}
+        - lessonGoal: {lessonDelivery.Structure.Goal}
+        - lessonSteps: {(lessonDelivery.Steps.Count == 0 ? "none" : string.Join("; ", lessonDelivery.Steps.Select(s => $"{s.StepType}:{s.UserSafeLabel}")))}
+        - lessonWarnings: {(lessonDelivery.Warnings.Count == 0 ? "none" : string.Join("; ", lessonDelivery.Warnings))}
+        - remediationRepairType: {remediationLesson?.RepairType ?? "none"}
+        - remediationTrigger: {remediationLesson?.Trigger.TriggerType ?? "none"} / {remediationLesson?.Trigger.EvidenceStatus ?? "none"}
+        - remediationGoal: {remediationLesson?.LessonShape.Goal ?? "none"}
+        - remediationCheckpoint: {remediationLesson?.Checkpoint.UserSafePrompt ?? "none"}
+        - toolDecisionReasons: {(toolDecision.ReasonCodes.Count == 0 ? "none" : string.Join("; ", toolDecision.ReasonCodes))}
+        - blockedTools: {(toolDecision.BlockedTools.Count == 0 ? "none" : string.Join(", ", toolDecision.BlockedTools))}
+        - toolSafetyWarnings: {(toolDecision.SafetyWarnings.Count == 0 ? "none" : string.Join("; ", toolDecision.SafetyWarnings))}
         - tutorResponseMode: {responsePolicy.TutorResponseMode}
         - activeConceptKey: {trace.ActiveConceptKey}
         - styleMode: {trace.StyleMode}
@@ -1072,6 +1774,11 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         [ACTION KURALI]
         Cevap bu plana uymali. Direct-answer policy hint-first ise once ipucu ve scaffold ver; kaynak yoksa kaynak iddiasi kurma.
         Response mode concise ise kisa tut; recovery ise adim adim telafi et; evidence_limited ise kesinlik iddiasi kurma ve kaynak kontrolunu onceliklendir.
+        [LESSON DELIVERY RUBRIC]
+        Tek turda tek ana ogretim hamlesi uygula. Hedefi kisa kur, aciklamayi parcalara bol, gerekiyorsa cozumlu ornek ver, cevap anahtari acmadan checkpoint sor.
+        Telafi modunda eksigi kesin tani gibi sunma; kaynak modunda kaynakta desteklenen kisim ile Tutor yorumunu ayir.
+        [REMEDIATION LESSON RUBRIC]
+        remediationRepairType none degilse kisa mikro ders, cozumlu ornek, guided practice ve cevap anahtarsiz checkpoint sirasi uygula. Bos/atlanmis cevapta yanilgi tani koyma; eksik onkosul veya guven telafisi olarak ele al.
         """;
 }
 

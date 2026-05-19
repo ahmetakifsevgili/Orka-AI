@@ -100,7 +100,9 @@ SADECE bu JSON formatında yanıt ver:
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Groq SemanticRoute parse hatası. Ham içerik: {Raw}", cleaned);
+            cleaned = AiDebugLogger.BuildSafeLogPreview("GROQ", "ERROR", cleaned);
+            _logger.LogWarning("Groq SemanticRoute parse failed. ExceptionType={ExceptionType} SafeSummary={SafeSummary}",
+                ex.GetType().Name, cleaned);
             return new RoutingResult
             {
                 Intent = message.Trim().Length < 10 ? "greeting" : "general",
@@ -221,6 +223,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
 
             if (!response.IsSuccessStatusCode)
             {
+                responseString = AiDebugLogger.BuildSafeLogPreview("GROQ", "ERROR", responseString);
                 _logger.LogWarning("Groq API call failed. Status={Status}", response.StatusCode);
                 throw AiProviderFailureMapper.FromResponse("Groq", _model, response, responseString);
             }
@@ -247,9 +250,8 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         catch (Exception ex)
         {
             // ADIM 1 (Diagnostic): Gerçek hata tipini konsola yaz
-            Console.WriteLine($"[GROQ-EXCEPTION] {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
-            AiDebugLogger.LogError("GROQ", $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-            _logger.LogError(ex, "Groq API çağrısı başarısız. Tip: {ExType}", ex.GetType().Name);
+            AiDebugLogger.LogError("GROQ", ex.GetType().Name);
+            _logger.LogError("Groq API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
             throw AiProviderFailureMapper.FromException("Groq", _model, ex);
         }
     }
@@ -285,6 +287,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(ct);
+            err = AiDebugLogger.BuildSafeLogPreview("GROQ", "ERROR", err);
             _logger.LogError("Groq Stream API Hatası: {Status} - {Error}", response.StatusCode, err);
             throw AiProviderFailureMapper.FromResponse("Groq", _model, response, err);
         }

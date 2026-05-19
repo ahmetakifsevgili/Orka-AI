@@ -37,12 +37,15 @@ public sealed class TutorTurnStateDto
     public MisconceptionSignalDto? MisconceptionSignal { get; set; }
     public LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
     public RemediationSeedDto? RemediationSeed { get; set; }
+    public RemediationLessonDto? RemediationLesson { get; set; }
     public string LearningLoopStatus { get; set; } = "signal_pending";
     public string? CurrentPlanStepId { get; set; }
     public string? CurrentPlanStepTitle { get; set; }
     public string? CurrentPlanTutorMove { get; set; }
     public string? CurrentPlanQuizHook { get; set; }
     public string? PlanSourceReadiness { get; set; }
+    public AdaptiveDiagnosticDto? AdaptiveDiagnostic { get; set; }
+    public CoursePlanQualityDto? CoursePlanQuality { get; set; }
     public string? LatestAssessmentMode { get; set; }
     public string? LatestMisconceptionConfidence { get; set; }
     public string? SourceReadiness { get; set; }
@@ -82,6 +85,9 @@ public sealed class TutorActionPlanDto
     public IReadOnlyList<string> WeakConceptHints { get; set; } = Array.Empty<string>();
     public IReadOnlyList<TutorToolPlanDto> ToolPlans { get; set; } = Array.Empty<TutorToolPlanDto>();
     public IReadOnlyList<TeachingArtifactPlanDto> ArtifactPlans { get; set; } = Array.Empty<TeachingArtifactPlanDto>();
+    public TutorToolDecisionDto? ToolDecision { get; set; }
+    public TutorLessonDeliveryDto? LessonDelivery { get; set; }
+    public RemediationLessonDto? RemediationLesson { get; set; }
     public string NextCheckPrompt { get; set; } = "Bu adımı kendi cümlenle özetler misin?";
     public string PromptBlock { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -92,6 +98,142 @@ public sealed record TutorToolPlanDto(
     string Reason,
     bool Required,
     string RiskLevel);
+
+public sealed class TutorToolDecisionDto
+{
+    public string SelectedAction { get; set; } = "no_tool";
+    public IReadOnlyList<string> AllowedTools { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> BlockedTools { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public decimal Confidence { get; set; }
+    public IReadOnlyList<string> LearnerSignalsUsed { get; set; } = Array.Empty<string>();
+    public string EvidenceStatus { get; set; } = "unknown";
+    public string SourceReadiness { get; set; } = "unknown";
+    public IReadOnlyList<string> SafetyWarnings { get; set; } = Array.Empty<string>();
+    public string NextTutorMove { get; set; } = "explain";
+    public string StudentVisibleSummary { get; set; } = "Tutor bu turda genel anlatimla ilerliyor.";
+}
+
+public sealed class TutorLessonDeliveryDto
+{
+    public string DeliveryMode { get; set; } = "concept_explanation";
+    public string LearnerLevel { get; set; } = "unknown";
+    public TutorLessonStructureDto Structure { get; set; } = new();
+    public TutorLessonRubricDto RubricSignals { get; set; } = new();
+    public IReadOnlyList<TutorLessonStepDto> Steps { get; set; } = Array.Empty<TutorLessonStepDto>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string StudentVisibleSummary { get; set; } = "Tutor bu turda hedefli bir anlatimla ilerliyor.";
+}
+
+public sealed class TutorLessonStructureDto
+{
+    public string Goal { get; set; } = "Kavrami guvenli ve kisa bicimde netlestir.";
+    public string ShortExplanation { get; set; } = "Kisa aciklama";
+    public string Example { get; set; } = "Gerekirse somut ornek";
+    public string Checkpoint { get; set; } = "Kisa kontrol";
+    public string NextAction { get; set; } = "Plana devam";
+}
+
+public sealed class TutorLessonRubricDto
+{
+    public bool UsesLearnerState { get; set; }
+    public bool UsesMasterySignal { get; set; }
+    public bool UsesQuizSignal { get; set; }
+    public bool UsesSourceEvidence { get; set; }
+    public bool AvoidsPreSubmitReveal { get; set; } = true;
+    public bool IncludesCheckpoint { get; set; }
+    public bool IncludesRepairStep { get; set; }
+    public bool BoundedLength { get; set; } = true;
+}
+
+public sealed class TutorLessonStepDto
+{
+    public string StepType { get; set; } = "explain";
+    public string UserSafeLabel { get; set; } = "Kisa aciklama";
+    public bool Required { get; set; }
+    public string SourceBasis { get; set; } = "model_assisted";
+}
+
+public sealed class TutorTeachingMoveDto
+{
+    public string Move { get; set; } = "explain";
+    public string UserSafeLabel { get; set; } = "Anlat";
+    public string ReasonCode { get; set; } = "default";
+}
+
+public sealed class TutorCheckpointDto
+{
+    public string Prompt { get; set; } = "Bu adimi kendi cumlenle ozetler misin?";
+    public string SafetyLevel { get; set; } = "no_answer_key";
+    public bool Required { get; set; }
+}
+
+public sealed class TutorScaffoldDto
+{
+    public string ScaffoldType { get; set; } = "short_chunk";
+    public string UserSafeLabel { get; set; } = "Kisa parca";
+    public string ReasonCode { get; set; } = "bounded_lesson";
+}
+
+public sealed class RemediationLessonDto
+{
+    public string RemediationId { get; set; } = Guid.NewGuid().ToString("N");
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public RemediationTriggerDto Trigger { get; set; } = new();
+    public string RepairType { get; set; } = "guided_reteach";
+    public string Confidence { get; set; } = "low";
+    public IReadOnlyList<string> Basis { get; set; } = Array.Empty<string>();
+    public RemediationRepairLoopDto LessonShape { get; set; } = new();
+    public RemediationCheckpointDto Checkpoint { get; set; } = new();
+    public RemediationOutcomeDto Outcome { get; set; } = new();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public string SourceBasis { get; set; } = "tutor_generated";
+    public string StudentVisibleSummary { get; set; } = "Tutor bu turda kisa bir telafi dersi hazirliyor.";
+}
+
+public sealed class RemediationTriggerDto
+{
+    public string TriggerType { get; set; } = "weak_concept";
+    public string UserSafeLabel { get; set; } = "Telafi sinyali";
+    public string EvidenceStatus { get; set; } = "observed_only";
+}
+
+public sealed class RemediationStepDto
+{
+    public string StepType { get; set; } = "short_reteach";
+    public string UserSafeLabel { get; set; } = "Kisa tekrar";
+    public bool Required { get; set; } = true;
+    public string SourceBasis { get; set; } = "tutor_generated";
+}
+
+public sealed class RemediationCheckpointDto
+{
+    public string CheckpointType { get; set; } = "micro_check";
+    public string UserSafePrompt { get; set; } = "Bu adimi kendi cumlenle kontrol et.";
+    public bool AvoidsPreSubmitReveal { get; set; } = true;
+    public bool Required { get; set; } = true;
+}
+
+public sealed class RemediationRepairLoopDto
+{
+    public string Goal { get; set; } = "Eksigi kisa ve guvenli bicimde toparla.";
+    public string MisconceptionOrGap { get; set; } = "Kesin tani degil; telafi sinyali.";
+    public string ShortReteach { get; set; } = "Tek kavramsal parcayi yeniden kur.";
+    public string WorkedExample { get; set; } = "Bir cozumlu mini ornek kullan.";
+    public string GuidedPractice { get; set; } = "Ogrenciye tek kucuk adim denet.";
+    public string Checkpoint { get; set; } = "Cevap anahtari vermeden kontrol sor.";
+    public string NextAction { get; set; } = "guided_repair_then_check";
+    public IReadOnlyList<RemediationStepDto> Steps { get; set; } = Array.Empty<RemediationStepDto>();
+}
+
+public sealed class RemediationOutcomeDto
+{
+    public string ExpectedSignal { get; set; } = "needs_review";
+    public string MasteryPolicy { get; set; } = "do_not_overstate_mastery";
+    public string NextTutorAction { get; set; } = "checkpoint_after_repair";
+    public string NotebookAction { get; set; } = "repair_pack_available";
+}
 
 public sealed record TeachingArtifactPlanDto(
     string ArtifactType,

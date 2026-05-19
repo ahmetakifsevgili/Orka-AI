@@ -276,14 +276,19 @@ public sealed class WikiLearningTraceWriter : IWikiLearningTraceWriter
         }
 
         var normalizedContent = NormalizeForDedupe(safeContent);
+        var normalizedTitle = NormalizeForDedupe(safeTitle ?? string.Empty);
+        var conceptKey = SanitizeTraceText(request.ConceptKey, 180);
         var since = DateTime.UtcNow.AddHours(-12);
-        return await query
+        var candidates = await query
             .Where(b => b.CreatedAt >= since)
             .OrderByDescending(b => b.CreatedAt)
-            .FirstOrDefaultAsync(b =>
-                b.ConceptKey == request.ConceptKey &&
-                b.Title == (safeTitle ?? b.Title) &&
-                b.Content == normalizedContent, ct);
+            .Take(24)
+            .ToListAsync(ct);
+
+        return candidates.FirstOrDefault(b =>
+            string.Equals(b.ConceptKey ?? string.Empty, conceptKey ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrWhiteSpace(normalizedTitle) || NormalizeForDedupe(b.Title) == normalizedTitle) &&
+            NormalizeForDedupe(b.Content) == normalizedContent);
     }
 
     private static string? SanitizeTraceText(string? value, int maxLength)

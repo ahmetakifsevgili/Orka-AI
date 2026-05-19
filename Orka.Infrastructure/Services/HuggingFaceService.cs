@@ -73,6 +73,7 @@ public class HuggingFaceService : IHuggingFaceService
 
             if (!response.IsSuccessStatusCode)
             {
+                respStr = AiDebugLogger.BuildSafeLogPreview("HUGGINGFACE", "ERROR", respStr);
                 _logger.LogError("HuggingFace API Hatası: {Status} — {Error}", response.StatusCode, respStr);
                 throw new HttpRequestException($"HuggingFace API hatası: {response.StatusCode} — {respStr}");
             }
@@ -88,7 +89,7 @@ public class HuggingFaceService : IHuggingFaceService
         catch (Exception ex)
         {
             AiDebugLogger.LogError("HUGGINGFACE", ex.Message);
-            _logger.LogError(ex, "HuggingFace API çağrısı başarısız.");
+            _logger.LogError("HuggingFace API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
             throw new HttpRequestException($"HuggingFace servis hatası: {ex.Message}", ex);
         }
     }
@@ -113,6 +114,7 @@ public class HuggingFaceService : IHuggingFaceService
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(ct);
+            err = AiDebugLogger.BuildSafeLogPreview("HUGGINGFACE", "ERROR", err);
             throw new HttpRequestException($"HuggingFace Stream error: {response.StatusCode} - {err}");
         }
 

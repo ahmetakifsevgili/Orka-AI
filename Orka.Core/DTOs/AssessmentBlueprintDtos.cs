@@ -145,4 +145,5 @@ public sealed class QuizResultLearningImpactDto
     public string? WikiReviewHint { get; set; }
     public string SourceReadiness { get; set; } = "unknown";
     public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+    public RemediationLessonDto? RemediationLesson { get; set; }
 }

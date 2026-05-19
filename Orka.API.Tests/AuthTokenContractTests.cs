@@ -261,8 +261,8 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         var login = await LoginAsync(credentials);
 
         var responses = await Task.WhenAll(
-            PostRefreshAsync(login.RefreshToken),
-            PostRefreshAsync(login.RefreshToken));
+            PostRefreshAsync(login.RefreshToken, raceDelayMs: 250),
+            PostRefreshAsync(login.RefreshToken, raceDelayMs: 250));
 
         var successes = responses.Where(response => response.IsSuccessStatusCode).ToArray();
         var unauthorized = responses.Where(response => response.StatusCode == HttpStatusCode.Unauthorized).ToArray();
@@ -343,8 +343,19 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         return await ReadTokensAsync(response);
     }
 
-    private Task<HttpResponseMessage> PostRefreshAsync(string refreshToken) =>
-        _client.PostAsJsonAsync("/api/auth/refresh", new { refreshToken });
+    private Task<HttpResponseMessage> PostRefreshAsync(string refreshToken, int? raceDelayMs = null)
+    {
+        if (raceDelayMs is null)
+            return _client.PostAsJsonAsync("/api/auth/refresh", new { refreshToken });
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        {
+            Content = JsonContent.Create(new { refreshToken })
+        };
+        request.Headers.Add("X-Orka-Test-Refresh-Race-Delay-Ms", raceDelayMs.Value.ToString());
+        request.Headers.Add("X-Orka-Test-Refresh-Race", "1");
+        return _client.SendAsync(request);
+    }
 
     private async Task<AuthTokens> ReadTokensAsync(HttpResponseMessage response)
     {

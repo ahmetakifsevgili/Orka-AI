@@ -61,6 +61,17 @@ Hedef: **145/145 PASS, Grade A**. JSON + Markdown raporlar
 3. İki kere basıyorsa guard çalışmamış → `HandleTopicProgressionAsync`
    kontrol edilmeli.
 
+### (e) Adaptive Diagnostic / Course Plan Kalitesi
+1. Plan kalite endpoint'i veya yeni konu akisi calistiginda public DTO'da
+   `adaptiveDiagnostic` ve `coursePlanQuality` alanlari gorunmeli.
+2. Ogrenci kaniti azsa `planReadiness`/`readinessStatus` `needs_diagnostic`
+   veya `thin_plan` olmali; plan kendini course-ready diye abartmamali.
+3. Zayif/blank/wrong sinyal varsa `needs_repair` ve repair loop gorunmeli.
+4. Kaynak hazir degilse source-backed plan iddiasi yok; sadece
+   `source_limited`/warning etiketi olmali.
+5. Chat metadata chip'leri compact kalmali; raw JSON, prompt, provider
+   payload, raw source chunk, owner id veya answer key gorunmemeli.
+
 ## 4) LLM-Eval (Opsiyonel — promptfoo)
 
 > Not: Windows'ta `better-sqlite3` native build sorunu çıkabilir. 3 yoldan
@@ -178,6 +189,38 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
 - `Database:AutoMigrateOnStartup=true` sadece local Development override olarak kullanilir.
 - Staging ve Production'da startup auto-migration yasaktir; yanlislikla acilirsa API fail-fast eder.
 - Deploy oncesi migration script'i review edilir.
+
+## Backend Release Hardening Gate
+
+- `AiDebugLogger` ham prompt, provider request/response body, source chunk,
+  tool payload, debug trace, stack trace, local path, secret/token/api key,
+  owner id, unsafe user id veya answer key yazmamalidir.
+- AI debug dosya log'u varsayilan olarak kapali kalmali; sadece Development
+  ortaminda acik opt-in ile guvenli ozet yazabilir.
+- Provider hata log'lari ham body yerine status, body length/hash veya guvenli
+  ozet kullanmalidir.
+- Provider failure diagnostic (`RedactedDiagnostic`) body-free kalmalidir:
+  raw veya redacted response body excerpt yok; yalnizca provider/status/category,
+  retryability, body length ve non-reversible hash gibi guvenli metadata vardir.
+- `quick-backend.ps1`, stabilization baseline'dan once provider-free backend
+  lifetest release proof calistirmalidir:
+  `BackendLifeTests|PedagogicalReleaseClosureTests`.
+- Backend lifetest register/login'den topic/goal, diagnostic/plan, Tutor,
+  quiz/remediation, snapshot/mastery, Wiki/Copilot, source evidence, Notebook
+  Studio, dashboard, degraded states ve public payload safety akisini kanitlar.
+- Test host log filtresi yalnizca release validasyonunu bogan gürültüyü
+  azaltir: EF in-memory info loglari, disabled worker info loglari, background
+  queue lifecycle info loglari ve MediatR license banner'i. Warning/error
+  seviyesindeki gerçek backend problemleri gorunur kalmalidir.
+- Quick script'ler provider-free kalmali, secret basmamali, timeout ile fail
+  etmeli ve lifetest proof + regression baseline siralamasini korumalidir.
+- GitHub CI backend release gate `.github/workflows/backend-release.yml`
+  `windows-latest` uzerinde .NET 8, SQL Server LocalDB, `quick-backend.ps1`,
+  Infrastructure unit testleri ve `git diff --check` calistirmalidir.
+- CI gate real AI provider secret'i, `ORKA_RUN_EXTERNAL_PROVIDER_TESTS` veya
+  paid provider smoke testi kullanmamalidir.
+- Bu gate yeni AI/provider cagrisi, OpenAI API migrasyonu veya paid provider
+  validasyonu gerektirmez.
 
 ## OrkaLM Phase 17 Source Notebook Gate
 
@@ -634,6 +677,8 @@ Before release-polish closure:
 - For Browser proof, use seeded data where possible: create/select a topic and upload at least one safe source file before judging OrkaLM source notebook UX.
 - Verify OrkaLM source mode renders source notebook data even when Wiki pages are empty; it must not remain stuck on Wiki generation polling.
 - Check one narrow viewport smoke pass; compact sidebar behavior is acceptable, broad mobile redesign is not part of this gate.
+- Confirm release-blocker cleanup has removed `%100`/guarantee-style student-facing copy, stabilized auth/security flake targets, and preserved a provider-free deterministic learning-loop smoke proof.
+- Confirm blank/skipped quiz answers produce prerequisite/guided-repair learning impact and safe Wiki repair traces without pre-submit answer keys or fake misconception certainty.
 - Run:
   ```powershell
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "SourceEvidenceLifecycleTests|SourceRegressionGuardTests|WikiGraphContractTests|LearningNotebookStudioTests|LearningArtifactsEngineTests|TutorPedagogyPolicyTests|AgenticSecurityTrustTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
@@ -646,3 +691,132 @@ Before release-polish closure:
   git status --short
   git diff --cached --name-only
   ```
+
+## Pedagogical Productization Phase 5 Gate
+
+Before closing Wiki Auto-Curation & Learning Memory Cleanup:
+
+- Confirm `WikiAutoCurationService` emits `WikiCurationSummaryDto` without raw prompt/provider/tool/source/debug payloads, local paths, owner ids, or answer keys.
+- Confirm Wiki page hygiene can report clean, duplicate trace, stale trace, repair pending, source limited, or degraded states with safe warnings and next action.
+- Confirm `WikiLearningTraceWriter` dedupes repeated normalized Tutor/repair/source/artifact traces while preserving student manual notes.
+- Confirm `LearningMemoryService` and `ActiveLessonSnapshotService` expose bounded `LearningMemoryHygieneDto` summaries, not raw transcripts.
+- Confirm Tutor/chat metadata and Notebook Studio pack metadata consume curated Wiki/memory summaries without treating Tutor notes as source citations.
+- Confirm frontend Wiki/chat surfaces render compact curation/memory labels without raw JSON, raw chunks, answer keys, or overclaim copy.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Pedagogical Productization Phase 6 Gate
+
+Before closing Wiki Copilot UX:
+
+- Confirm `IWikiCopilotService` emits `WikiCopilotContextDto` without raw prompt/provider/tool/source/debug payloads, local paths, owner ids, or answer keys.
+- Confirm Copilot is page-aware: active page title/type/concept, curation status, source readiness/evidence status, repair state, weak concepts, artifact count, and Notebook pack status are safe public fields.
+- Confirm suggestions are deterministic handoffs, not hidden autonomous actions: repair pending -> repair/checkpoint, weak concept -> review/checkpoint, source ready -> ask/inspect source, source limited -> blocked/degraded source actions, thin page -> Tutor explanation.
+- Confirm frontend Wiki Copilot panel renders compact next action/suggestions/warnings without raw JSON or source chunks.
+- Confirm user scoping blocks other-user page copilot access.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Pedagogical Productization Phase 7 Gate
+
+Before closing Final Pedagogical E2E, Evaluation Harness & Release Closure:
+
+- Confirm `PedagogicalReleaseClosureTests` connects the provider-free learning loop end to end: topic/goal, adaptive diagnostic, course-plan quality, Tutor tool decision, lesson delivery, remediation, quiz impact, learning snapshot, Wiki curation/Copilot, OrkaLM source notebook, Notebook Studio pack, dashboard, and public payload safety.
+- Confirm `BackendLifeTests` runs senior-QA style HTTP lifecycles from register/login through topics, plan/diagnostic, Tutor/chat, quiz/remediation, source upload/evidence, Wiki Copilot, Notebook Studio export preview, dashboard, cross-user privacy, and degraded source states.
+- Confirm no new provider calls, paid calls, Google Cloud, OpenAI Responses/Agents migration, Stripe live calls, real PPTX/video, Realtime voice, graph canvas, or classroom/teacher workflow was added.
+- Confirm public Phase 1-7 metadata surfaces do not expose raw prompt/provider/tool/source/debug payloads, local paths, owner ids, user ids, or pre-submit answer keys.
+- Confirm Stripe/payment code is either absent/not applicable or audited for test/live mode, webhook signature safety, and secret hygiene without live external calls.
+- Confirm frontend smoke covers compact Tutor/Wiki/Copilot/Notebook Studio metadata surfaces and no raw JSON/source/debug rendering.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests|TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Pedagogical Productization Phase 2 Gate
+
+Before closing Professional Lesson Delivery Rubric:
+
+- Confirm `TutorActionPlanner` emits `TutorLessonDeliveryDto` after `TutorToolDecisionDto` without raw prompt/provider/tool/source/debug payloads, local paths, owner ids, or answer keys.
+- Confirm low mastery prefers guided example or beginner-safe explanation, high mastery prefers checkpoint/extension, and unclear learner level keeps a diagnostic/checkpoint.
+- Confirm confused learner, blank/skipped quiz impact, wrong answer, or misconception evidence produce safe remediation/telafi delivery (`prerequisite_repair` or `misconception_repair`) without fake diagnosis certainty.
+- Confirm source-ready ask uses `source_grounded_explanation`; source-insufficient ask uses clarification or `model_assisted_explanation` with a source warning.
+- Confirm lesson delivery metadata feeds Tutor prompt guidance, chat metadata/frontend chips, and Wiki trace block typing without adding AI/provider calls or migrating provider architecture.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|KorteksContractTests|UnifiedToolRuntimeTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Pedagogical Productization Phase 1 Gate
+
+Before closing Tutor tool-use orchestration polish:
+
+- Confirm `TutorActionPlanner` emits `TutorToolDecisionDto` without raw prompt/provider/tool/source/debug payloads, local paths, owner ids, or answer keys.
+- Confirm evidence-limited source intent blocks `source_grounded_answer` / `ask_source` and surfaces a safe clarification or model-assisted explanation decision.
+- Confirm remediation/telafi signals from confused learner state, weak mastery, blank/skipped quiz impact, or misconception evidence prefer `start_remediation`.
+- Confirm tool decisions remain deterministic and do not add new AI/provider calls or migrate provider architecture.
+- Confirm Chat metadata/frontend render the selected action compactly without raw JSON or raw tool output.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|KorteksContractTests|UnifiedToolRuntimeTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-coordination.ps1
+  scripts\quick-backend.ps1
+  cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+## Phase 4 Remediation / Telafi Dersi Addendum
+1. Yanlis cevap sonrasi public `learningImpact.remediationLesson` alaninda
+   repair type, trigger, checkpoint ve mastery policy gorunmeli.
+2. Bos/skip cevap `prerequisite_repair` veya guvenli prerequisite/confidence
+   telafisi olmali; kesin yanilgi tani gibi sunulmamali.
+3. Tutor/chat metadata telafi dersini compact label olarak gostermeli:
+   raw JSON, prompt, provider payload, source chunk, owner id, answer key veya
+   correct answer gorunmemeli.
+4. Wiki repair trace bloklarinda telafi tipi, ozet ve checkpoint guvenli
+   metin olarak yer almali; tekrar eden bloklar dedupe edilmeli.
+5. Notebook Studio repair pack onerisi yalnizca mevcut repair state'ten
+   gelmeli; her hatada otomatik artifact uretmemeli.

@@ -6,6 +6,10 @@ Main Learning OS Professionalization - closed
 
 OrkaLM / Wiki-aware Notebook Studio - closed as safe foundation
 
+Pedagogical Productization - in progress
+
+Backend Release Hardening - in progress
+
 ## Completed Phases
 
 - V1 system-life
@@ -84,6 +88,48 @@ OrkaLM / Wiki-aware Notebook Studio - closed as safe foundation
   - Phase 21 Source Q&A Conversation Memory & Review Workflow - complete
   - Phase 22-23 Source Q&A Study Workflow & Advanced OrkaLM Graph Polish - complete
   - Phase 24-25 Final Safety/Privacy Audit & Product Closure - PASS
+
+11. Pedagogical Productization - in progress
+  - Phase 1 - Tutor Tool-Use Orchestration Polish - implemented pending full validation
+    - Adds a safe Tutor tool decision contract on top of the existing TutorActionPlanner/TutorToolOrchestrator/UnifiedToolRuntime path.
+    - Uses deterministic learner, remediation, source evidence, Wiki, IDE, review, artifact, and research signals first.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+    - Evidence-limited source intent blocks source-grounded routing and exposes a safe clarification/degraded decision.
+    - Blank/skipped remediation remains prerequisite/telafi oriented rather than fake misconception certainty.
+  - Phase 2 - Professional Lesson Delivery Rubric - implemented pending full validation
+    - Adds a safe `TutorLessonDeliveryDto` on top of the Phase 1 tool decision contract.
+    - Uses deterministic learner level, mastery, quiz/remediation, source evidence, and policy signals to choose concept explanation, guided example, checkpoint, prerequisite repair, misconception repair, source-grounded explanation, or model-assisted explanation.
+    - Feeds the lesson delivery mode into Tutor prompt guidance, chat metadata, frontend trace chips, and Wiki learning trace summaries without raw prompts, provider payloads, source chunks, or answer keys.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+  - Phase 3 - Adaptive Diagnostic & Course-Plan Quality - implemented pending full validation
+    - Adds safe `AdaptiveDiagnosticDto` and `CoursePlanQualityDto` metadata to plan sequencing, plan readiness, Tutor turn state, chat metadata, and frontend trace chips.
+    - Uses deterministic intent, learner evidence, mastery/quiz/remediation, concept graph, prerequisite, source readiness, and plan quality signals.
+    - Plan readiness is provisional and can be `ready`, `needs_diagnostic`, `needs_prerequisite_check`, `needs_repair`, `source_limited`, `thin_plan`, or `degraded`.
+    - Course plans now expose milestone shape, checkpoint coverage, repair loops, recommended next action, and overclaim risk without raw prompts, provider payloads, source chunks, owner ids, or answer keys.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+  - Phase 4 - Remediation Lesson Productization - implemented pending full validation
+    - Adds safe `RemediationLessonDto` metadata across quiz learning impact, Tutor turn state/action plans, chat metadata, Wiki traces, and compact quiz/chat UI.
+    - Wrong answers, blank/skipped answers, confused turns, weak concepts, and source-evidence gaps now produce distinct repair types: misconception repair, prerequisite repair, guided reteach, weak concept repair, confidence/prerequisite repair, or source evidence review.
+    - Repair lessons expose only bounded student-facing fields: trigger, repair type, basis labels, micro-lesson shape, worked-example/guided-practice/checkpoint labels, next action, warnings, and mastery policy.
+    - Blank/skipped answers remain post-submit safe and do not become fake misconception certainty.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+  - Phase 5 - Wiki Auto-Curation & Learning Memory Cleanup - implemented pending full validation
+    - Adds safe `WikiCurationSummaryDto` and `LearningMemoryHygieneDto` metadata across Wiki pages, learning snapshots, chat metadata, Notebook Studio context, and compact Wiki/chat UI.
+    - `WikiAutoCurationService` computes page hygiene without provider calls: duplicate trace, stale trace, repair pending, source limited, degraded, or clean.
+    - Wiki trace dedupe now compares normalized safe summaries in addition to durable ids, reducing repeated chat sludge without deleting manual student notes.
+    - Learning memory exposes bounded hygiene/status summaries only; Tutor and Notebook Studio consume curated memory/context rather than raw transcripts.
+    - Source-grounded Wiki blocks remain separate from Tutor-generated notes; stale/deleted/source-limited state degrades via warnings instead of overclaiming.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+  - Phase 6 - Wiki Copilot UX - implemented pending full validation
+    - Adds safe `WikiCopilotContextDto` metadata and a page-aware `IWikiCopilotService`.
+    - Copilot suggestions are deterministic handoffs to Tutor, quiz/checkpoint, source review, Wiki curation, and Notebook Studio, not hidden autonomous actions.
+    - Source-grounded actions are blocked/degraded unless source evidence is ready.
+    - Does not add new AI/provider calls and does not migrate to OpenAI Responses or Agents SDK.
+  - Phase 7 - Final Pedagogical E2E, Evaluation Harness & Release Closure - implemented pending full validation
+    - Adds a provider-free release harness that connects diagnostic, course plan, Tutor tool decision, lesson delivery, remediation, quiz impact, learning snapshot, Wiki curation/Copilot, OrkaLM source notebook, Notebook Studio, dashboard, and public payload safety.
+    - Uses deterministic smoke services only; no paid provider calls, Stripe calls, OpenAI migration, real PPTX/video, Realtime, or graph-canvas scope is added.
+    - Stripe/payment code was not found in the audited repo surface, so payment release safety is not applicable for this phase.
+    - Remaining pedagogical backlog: live provider pedagogy E2E proof, human-reviewed advanced Tutor evaluation harness, long-term adaptive syllabus optimization, optional graph canvas, optional semantic multi-source synthesis, optional real PPTX/video/Realtime voice.
 
 ## OrkaLM Phase 24-25 Closure Summary
 
@@ -239,6 +285,8 @@ Final audit:
   - Phase 21 adds source Q&A conversation memory: selected-source/source-collection questions can be stored as bounded `source_question_thread` LearningArtifacts, continued with safe prior summaries, reviewed/degraded by citation state, written to Wiki on request, and included in source Notebook pack summaries without raw chunk/provider/prompt/debug payloads.
   - Phase 22-23 adds a compact source-study workflow layer: OrkaLM now exposes a safe source study summary over Q&A threads, citation review, source readiness, and source-to-concept links so the UI can show review/degraded/citation-warning counts, linked concept counts, compare readiness, and next actions without new AI calls or raw source storage.
   - Phase 27 is post-closure polish, not new OrkaLM scope: it performs a global public DTO/API projection privacy sweep, aligns legacy classroom wording with personal audio lesson language, attempts Browser visual E2E where tooling/auth allows it, reviews frontend bundle output, and cleans behaviorless provider nullable warnings.
+  - Release-blocker cleanup after the whole-system learning intelligence audit removes student-facing certainty/guarantee copy, hardens refresh-token and chaos-header regression determinism, strengthens blank/skipped answer prerequisite repair semantics, and adds deterministic provider-free smoke proof for the learning loop without adding AI/provider calls.
+  - Pedagogical Productization Phase 6 adds Wiki Copilot as a page-aware helper layer: safe `WikiCopilotContextDto`, deterministic suggestions, read-only `/api/wiki/page/{pageId}/copilot`, compact Wiki panel, and Tutor/quiz/source/Notebook Studio handoff guidance without new AI/provider calls or raw payload exposure.
 - Safety:
   - raw source chunks, prompts, provider payloads, raw tool payloads, debug traces, local paths, secrets, and pre-submit answer keys are not exposed.
   - official curriculum/exam readiness and success guarantees remain blocked.
@@ -277,6 +325,46 @@ Final audit:
   it must not add product scope, provider calls, real PPTX/video generation,
   interactive voice, graph canvas editing, or teacher/classroom/dershane
   workflows.
+- Release-blocker cleanup after the learning intelligence audit is limited to
+  copy safety, deterministic regression proof, provider-free smoke coverage, and
+  blank/skipped answer repair semantics. It must not add new providers or claim
+  official/success guarantees.
+- Backend Release Hardening Phase 1 hardens AI/provider logging: raw provider
+  requests, responses, prompts, source chunks, tool payloads, stack traces, and
+  secrets are not written by `AiDebugLogger`; file logging is disabled by
+  default and development-only opt-in. Provider error logs retain status/length
+  diagnostics instead of raw bodies. Final zero-leak hardening also keeps
+  provider failure diagnostics body-free: `RedactedDiagnostic` stores safe
+  status/category/body length/hash metadata only, not redacted body excerpts or
+  arbitrary learner/source text echoed by a provider. No AI/provider calls or
+  OpenAI API migration were added.
+- Backend Release Hardening Phase 2 adds the provider-free backend lifetest
+  release proof to `scripts/quick-backend.ps1`: `BackendLifeTests` and
+  `PedagogicalReleaseClosureTests` now run before the stabilization and
+  coordination baselines, proving auth, topic/goal, diagnostic/plan, Tutor,
+  quiz/remediation, mastery/snapshot, Wiki/Copilot, source evidence, Notebook
+  Studio, dashboard, degraded states, and public-payload safety without paid
+  provider calls.
+- Backend Release Hardening Phase 3 polishes the backend release test host:
+  `ApiSmokeFactory` now filters only noisy test categories such as EF
+  in-memory info logs, disabled worker info logs, background queue lifecycle
+  info logs, and the MediatR license banner. Warning/error logs remain visible,
+  quick scripts remain provider-free, and no production logging behavior,
+  AI/provider calls, or OpenAI API migration were added.
+- Backend Release Hardening Phase 4 adds GitHub CI / PR closure alignment:
+  `.github/workflows/backend-release.yml` now runs the provider-free backend
+  release proof on Windows with .NET 8, SQL Server LocalDB preparation,
+  `scripts/quick-backend.ps1`, Infrastructure unit tests, and `git diff --check`.
+  The local checkout has no active GitHub Actions run history yet and the
+  current branch has no open PR, so CI pass/fail is established by this workflow
+  definition plus local validation until a remote run is triggered. No
+  AI/provider calls, paid provider validation, or OpenAI API migration were
+  added.
+- Pedagogical Productization Phase 6 Wiki Copilot is deterministic and
+  page-aware. It may suggest safe handoffs to Tutor, Quiz, source review,
+  repair, curation, and Notebook Studio, but it must not execute hidden
+  autonomous actions, add provider calls, expose raw payloads, or claim source
+  grounding without evidence.
 - Central Exams pilot productization readiness onceki faz olarak tamamlanmistir.
 - Yeni ara asama icat edilmeyecek.
 - Stage 6C, global exam implementation veya teacher/institutional feature kullanici onayi olmadan baslatilmayacak.

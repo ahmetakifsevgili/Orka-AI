@@ -83,7 +83,7 @@ public class OpenRouterService : IOpenRouterService
             }
 
             _logger.LogWarning("OpenRouter API Hatası. Status: {Status}, Model: {Model}, Error: {Error}",
-                response.StatusCode, targetModel, responseString);
+                response.StatusCode, targetModel, AiDebugLogger.BuildSafeLogPreview("OPENROUTER", "ERROR", responseString));
             throw AiProviderFailureMapper.FromResponse("OpenRouter", targetModel, response, responseString);
         }
         catch (HttpRequestException)
@@ -93,7 +93,7 @@ public class OpenRouterService : IOpenRouterService
         catch (Exception ex)
         {
             AiDebugLogger.LogError("OPENROUTER", ex.Message);
-            _logger.LogError(ex, "OpenRouter çağrısı başarısız. Model: {Model}", targetModel);
+            _logger.LogError("OpenRouter request failed. Model={Model} ExceptionType={ExceptionType}", targetModel, ex.GetType().Name);
             throw AiProviderFailureMapper.FromException("OpenRouter", targetModel, ex);
         }
     }

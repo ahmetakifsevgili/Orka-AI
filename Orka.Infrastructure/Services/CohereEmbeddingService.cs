@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -82,6 +83,7 @@ public class CohereEmbeddingService : IEmbeddingService
 
         if (!response.IsSuccessStatusCode)
         {
+            respStr = AiDebugLogger.BuildSafeLogPreview("COHERE_EMBED", "ERROR", respStr);
             _logger.LogError("[CohereEmbed] Hata: {Status} — {Body}", response.StatusCode, respStr);
             throw new HttpRequestException($"Cohere Embed hatası: {response.StatusCode} — {respStr}");
         }

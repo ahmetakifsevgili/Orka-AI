@@ -194,6 +194,13 @@ public sealed class QuizLearningPipelineTests
         Assert.Equal("concept_confusion", body.RootElement.GetProperty("misconceptionSignal").GetProperty("category").GetString());
         Assert.Equal("tutor_explain", body.RootElement.GetProperty("remediationSeed").GetProperty("firstAction").GetString());
         Assert.NotEqual("ignored", body.RootElement.GetProperty("learningSignalConfidence").GetProperty("status").GetString());
+        var impact = body.RootElement.GetProperty("learningImpact");
+        var remediationLesson = impact.GetProperty("remediationLesson");
+        Assert.Equal("misconception_repair", remediationLesson.GetProperty("repairType").GetString());
+        Assert.Equal("misconception_signal", remediationLesson.GetProperty("trigger").GetProperty("triggerType").GetString());
+        Assert.True(remediationLesson.GetProperty("checkpoint").GetProperty("avoidsPreSubmitReveal").GetBoolean());
+        Assert.Equal("do_not_overstate_mastery", remediationLesson.GetProperty("outcome").GetProperty("masteryPolicy").GetString());
+        Assert.DoesNotContain("answerKey", remediationLesson.GetRawText(), StringComparison.OrdinalIgnoreCase);
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();

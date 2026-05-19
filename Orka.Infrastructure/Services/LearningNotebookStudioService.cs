@@ -191,6 +191,9 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
                 wikiPageConceptKey = pageContext?.ConceptKey,
                 wikiPageBlockCount = pageContext?.BlockSnippets.Count ?? 0,
                 wikiPageQuestionCount = pageContext?.QuestionSnippets.Count ?? 0,
+                wikiCurationStatus = pageContext?.Curation.CurationStatus,
+                wikiCurationSummary = pageContext?.Curation.StudentVisibleSummary,
+                wikiCurationWarnings = pageContext?.Curation.Warnings.Take(6).ToArray(),
                 linkedSourceIds = sourceLinkSummary?.Links
                     .Where(l => l.SourceId.HasValue)
                     .Select(l => l.SourceId!.Value)
@@ -417,6 +420,9 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
                 wikiPageType = pageContext?.PageType,
                 wikiPageConceptKey = pageContext?.ConceptKey,
                 wikiPageBlockCount = pageContext?.BlockSnippets.Count ?? 0,
+                wikiCurationStatus = pageContext?.Curation.CurationStatus,
+                wikiCurationSummary = pageContext?.Curation.StudentVisibleSummary,
+                wikiCurationWarnings = pageContext?.Curation.Warnings.Take(6).ToArray(),
                 linkedConceptKeys = sourceLinkSummary?.Links
                     .Where(l => !string.IsNullOrWhiteSpace(l.ConceptKey))
                     .Select(l => l.ConceptKey)
@@ -987,16 +993,8 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             .OrderBy(b => b.OrderIndex)
             .ThenBy(b => b.CreatedAt)
             .Take(80)
-            .Select(b => new
-            {
-                b.BlockType,
-                b.Title,
-                b.Content,
-                b.ConceptKey,
-                b.MisconceptionKey,
-                b.SourceBasis
-            })
             .ToListAsync(ct);
+        var curation = WikiAutoCurationService.BuildSummary(page, blocks);
 
         var snippets = blocks
             .Where(b => !string.IsNullOrWhiteSpace(b.Content))
@@ -1039,7 +1037,8 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             questions,
             concepts,
             misconceptions,
-            blocks.Count(b => b.BlockType == WikiBlockType.RepairNote || b.BlockType == WikiBlockType.MisconceptionNote));
+            blocks.Count(b => b.BlockType == WikiBlockType.RepairNote || b.BlockType == WikiBlockType.MisconceptionNote),
+            curation);
     }
 
     private async Task<IReadOnlyList<string>> LoadLatestConceptKeysAsync(Guid userId, Guid topicId, CancellationToken ct)
@@ -2054,6 +2053,8 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         var warnings = BuildPackWarnings(bundle, concepts).ToList();
         if (pageContext != null && pageContext.BlockSnippets.Count == 0)
             warnings.Add("Wiki sayfasinda henuz blok yok; OrkaLM sayfa paketi dusuk baglamla olusturuldu.");
+        if (pageContext?.Curation.Warnings.Count > 0)
+            warnings.AddRange(pageContext.Curation.Warnings.Select(w => $"wiki_curation:{w}"));
         return warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
@@ -2373,7 +2374,8 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         IReadOnlyList<string> QuestionSnippets,
         IReadOnlyList<string> BlockConceptKeys,
         IReadOnlyList<string> MisconceptionKeys,
-        int RepairNoteCount);
+        int RepairNoteCount,
+        WikiCurationSummaryDto Curation);
 
     private sealed record PackWikiPageMetadata(
         Guid? WikiPageId,

@@ -73,6 +73,7 @@ public abstract class OpenAICompatibleService
 
             if (!response.IsSuccessStatusCode)
             {
+                body = AiDebugLogger.BuildSafeLogPreview(providerTag, "ERROR", body);
                 Logger.LogError("[{Provider}] API Hatası: {Status} - {Body}", providerTag, response.StatusCode, body);
                 throw AiProviderFailureMapper.FromResponse(providerTag, Model, response, body);
             }
@@ -88,7 +89,7 @@ public abstract class OpenAICompatibleService
         catch (Exception ex)
         {
             AiDebugLogger.LogError(providerTag, ex.Message);
-            Logger.LogError(ex, "[{Provider}] İstek başarısız.", providerTag);
+            Logger.LogError("[{Provider}] provider request failed. ExceptionType={ExceptionType}", providerTag, ex.GetType().Name);
             throw AiProviderFailureMapper.FromException(providerTag, Model, ex);
         }
     }

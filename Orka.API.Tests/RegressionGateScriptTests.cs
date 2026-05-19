@@ -19,6 +19,12 @@ public sealed class RegressionGateScriptTests
         "RegressionGateScriptTests"
     ];
 
+    private static readonly string[] MandatoryBackendLifeTests =
+    [
+        "BackendLifeTests",
+        "PedagogicalReleaseClosureTests"
+    ];
+
     [Fact]
     public void QuickCoordinationRunsMandatoryCoordinationTests()
     {
@@ -37,6 +43,51 @@ public sealed class RegressionGateScriptTests
         Assert.Contains("coordination regression baseline", script, StringComparison.OrdinalIgnoreCase);
         foreach (var testName in MandatoryCoordinationTests)
             Assert.Contains(testName, script);
+    }
+
+    [Fact]
+    public void QuickBackendRunsBackendLifetestReleaseProof()
+    {
+        var script = Read("scripts/quick-backend.ps1");
+
+        Assert.Contains("backend lifetest release proof", script, StringComparison.OrdinalIgnoreCase);
+        foreach (var testName in MandatoryBackendLifeTests)
+            Assert.Contains(testName, script);
+    }
+
+    [Fact]
+    public void ApiSmokeFactoryKeepsTestLoggingFocusedWithoutSuppressingReleaseWarnings()
+    {
+        var factory = Read("Orka.API.Tests/ApiSmokeFactory.cs");
+
+        Assert.Contains("ConfigureLogging", factory, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.EntityFrameworkCore\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.Contains("LuckyPennySoftware.MediatR.License\", LogLevel.None", factory, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.Services.BackgroundTaskQueue\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.Services.RetentionCleanupWorker\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.Services.RedisStreamMaintenanceWorker\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.Services.SrsReminderWorker\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.Services.DailyChallengeWorker\", LogLevel.Warning", factory, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearProviders()", factory, StringComparison.Ordinal);
+        Assert.DoesNotContain("LogLevel.Error", factory, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BackendReleaseWorkflowRunsProviderFreeReleaseProof()
+    {
+        var workflow = Read(".github/workflows/backend-release.yml");
+
+        Assert.Contains("Backend Release", workflow, StringComparison.Ordinal);
+        Assert.Contains("windows-latest", workflow, StringComparison.Ordinal);
+        Assert.Contains("dotnet restore .\\Orka.sln", workflow, StringComparison.Ordinal);
+        Assert.Contains(".\\scripts\\quick-backend.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("Orka.Infrastructure.UnitTests.csproj", workflow, StringComparison.Ordinal);
+        Assert.Contains("git diff --check", workflow, StringComparison.Ordinal);
+        Assert.Contains("sqllocaldb.exe", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExternalProviderIntegrationTests", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORKA_RUN_EXTERNAL_PROVIDER_TESTS", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("OPENAI_API_KEY", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("GROQ_API_KEY", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

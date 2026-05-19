@@ -102,21 +102,29 @@ public sealed class PublicSecuritySurfaceTests
     [Fact]
     public async Task ChaosHeader_IsActiveInDevelopment()
     {
-        using var factory = new ApiSmokeFactory();
-        var client = factory.CreateClient();
-        var credentials = await RegisterAsync(client);
-        var token = (await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password));
-        ApiSmokeFactory.ResetChaosTracking();
+        await EnvironmentGate.WaitAsync();
+        try
+        {
+            using var factory = new ApiSmokeFactory();
+            var client = factory.CreateClient();
+            var credentials = await RegisterAsync(client);
+            var token = (await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password));
+            ApiSmokeFactory.ResetChaosTracking();
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        request.Headers.Add("X-Chaos-Fail", "Groq");
-        request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Add("X-Chaos-Fail", "Groq");
+            request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
 
-        var response = await client.SendAsync(request);
+            var response = await client.SendAsync(request);
 
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains("Groq", ApiSmokeFactory.GetChaosTrackingProviders());
+            Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Contains("Groq", ApiSmokeFactory.GetChaosTrackingProviders());
+        }
+        finally
+        {
+            EnvironmentGate.Release();
+        }
     }
 
     [Fact]

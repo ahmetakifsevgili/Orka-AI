@@ -333,6 +333,225 @@ public sealed class WikiGraphContractTests
     }
 
     [Fact]
+    public async Task WikiLearningTraceWriter_DedupesNormalizedTraceTextWithoutRawLeak()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-trace-normalized-dedupe");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Trace Dedupe");
+        var (_, pageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+
+        using var scope = factory.Services.CreateScope();
+        var writer = scope.ServiceProvider.GetRequiredService<IWikiLearningTraceWriter>();
+        var first = await writer.RecordTutorExplanationAsync(new WikiLearningTraceRequestDto
+        {
+            UserId = user.UserId,
+            TopicId = tree.RootId,
+            ActiveWikiPageId = pageId,
+            ConceptKey = "big-o",
+            SafeContent = "Big-O   buyume oranini anlatan guvenli tutor notudur.",
+            SourceBasis = "tutor_generated",
+            CreatedBy = "tutor"
+        });
+        var second = await writer.RecordTutorExplanationAsync(new WikiLearningTraceRequestDto
+        {
+            UserId = user.UserId,
+            TopicId = tree.RootId,
+            ActiveWikiPageId = pageId,
+            ConceptKey = "big-o",
+            SafeContent = "Big-O buyume oranini anlatan guvenli tutor notudur.",
+            SourceBasis = "tutor_generated",
+            CreatedBy = "tutor"
+        });
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(first!.Id, second!.Id);
+
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        Assert.Equal(1, await db.WikiBlocks.CountAsync(b =>
+            b.WikiPageId == pageId &&
+            b.BlockType == WikiBlockType.TutorExplanation &&
+            b.ConceptKey == "big-o" &&
+            !b.IsDeleted));
+    }
+
+    [Fact]
+    public async Task WikiPageCuration_ReturnsDuplicateRepairAndSourceSafeSummary()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-curation-summary");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Trace Curation");
+        var (_, pageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var now = DateTime.UtcNow;
+            db.WikiBlocks.AddRange(
+                new WikiBlock
+                {
+                    Id = Guid.NewGuid(),
+                    WikiPageId = pageId,
+                    BlockType = WikiBlockType.TutorExplanation,
+                    Title = "Tutor note",
+                    Content = "Duplicate curation note",
+                    SourceBasis = "tutor_generated",
+                    ConceptKey = "big-o",
+                    OrderIndex = 20,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                },
+                new WikiBlock
+                {
+                    Id = Guid.NewGuid(),
+                    WikiPageId = pageId,
+                    BlockType = WikiBlockType.TutorExplanation,
+                    Title = "Tutor note",
+                    Content = "Duplicate   curation note",
+                    SourceBasis = "tutor_generated",
+                    ConceptKey = "big-o",
+                    OrderIndex = 21,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/curation");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        Assert.Equal("duplicate_trace", root.GetProperty("curationStatus").GetString());
+        Assert.True(root.GetProperty("suppressedSignalCount").GetInt32() >= 1);
+        Assert.Contains(root.GetProperty("warnings").EnumerateArray(), w => w.GetString() == "duplicate_trace_suppressed");
+        Assert.DoesNotContain(user.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawProviderPayload", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WikiCopilot_CleanPageReturnsPageAwareStudySuggestionsWithoutRawLeak()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-clean");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Copilot Clean");
+        var (pageId, _) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/copilot");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        Assert.Equal(pageId, root.GetProperty("pageId").GetGuid());
+        Assert.Equal("clean", root.GetProperty("curationStatus").GetString());
+        var actions = root.GetProperty("suggestedActions").EnumerateArray().ToArray();
+        Assert.Contains(actions, a => a.GetProperty("actionType").GetString() == "summarize_page");
+        Assert.Contains(actions, a => a.GetProperty("actionType").GetString() == "create_study_pack");
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("studentVisibleSummary").GetString()));
+        Assert.DoesNotContain(user.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Raw tutor block content", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawProviderPayload", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("answerKey", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WikiCopilot_RepairPendingPageSuggestsRepairAndCheckpoint()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-repair");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Copilot Repair");
+        var (_, pageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/copilot");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        Assert.Equal("repair_pending", root.GetProperty("repairState").GetString());
+        Assert.Equal("start_repair", root.GetProperty("primaryAction").GetProperty("actionType").GetString());
+        var actions = root.GetProperty("suggestedActions").EnumerateArray().ToArray();
+        Assert.Contains(actions, a => a.GetProperty("actionType").GetString() == "generate_checkpoint");
+        Assert.Contains(root.GetProperty("warnings").EnumerateArray(), w => w.GetString() == "repair_pending");
+    }
+
+    [Fact]
+    public async Task WikiCopilot_SourceLimitedPageBlocksSourceGroundedActions()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-source-limited");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Copilot Source Limited");
+        var pageId = await CoordinationTestHelpers.SeedWikiPageAsync(factory, user.UserId, tree.RootId, "Thin source page", "Tutor generated note.");
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/copilot");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        Assert.Equal("source_limited", root.GetProperty("curationStatus").GetString());
+        var actions = root.GetProperty("suggestedActions").EnumerateArray().ToArray();
+        var sourceAction = Assert.Single(actions.Where(a => a.GetProperty("actionType").GetString() == "ask_source"));
+        Assert.Equal("blocked", sourceAction.GetProperty("availability").GetString());
+        Assert.Contains(sourceAction.GetProperty("safetyWarnings").EnumerateArray(), w => w.GetString() == "action_degraded_for_safety");
+        Assert.Contains(root.GetProperty("warnings").EnumerateArray(), w => w.GetString() == "source_grounded_actions_degraded");
+    }
+
+    [Fact]
+    public async Task WikiCopilot_EmptyPageSuggestsTutorHelpNotStudyPack()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-empty");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Copilot Empty");
+        Guid pageId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            pageId = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+            db.WikiPages.Add(new WikiPage
+            {
+                Id = pageId,
+                UserId = user.UserId,
+                TopicId = tree.RootId,
+                Title = "Empty Copilot Page",
+                PageKey = "empty-copilot-page",
+                PageType = "concept",
+                ConceptKey = "empty-copilot-page",
+                SourceReadiness = "evidence_insufficient",
+                EvidenceStatus = "evidence_insufficient",
+                Status = "draft",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/copilot");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        Assert.Equal("degraded", root.GetProperty("curationStatus").GetString());
+        var actions = root.GetProperty("suggestedActions").EnumerateArray().ToArray();
+        Assert.Contains(actions, a => a.GetProperty("actionType").GetString() == "ask_tutor_about_page");
+        Assert.DoesNotContain(actions, a => a.GetProperty("actionType").GetString() == "create_study_pack");
+    }
+
+    [Fact]
+    public async Task WikiCopilot_IsUserScoped()
+    {
+        using var factory = new ApiSmokeFactory();
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-owner");
+        var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-copilot-other");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, owner.UserId, "Copilot Scope");
+        var (pageId, _) = await SeedGraphPagesAsync(factory, owner.UserId, tree.RootId, tree.LessonId);
+
+        var response = await other.Client.GetAsync($"/api/wiki/page/{pageId}/copilot");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task WikiLearningTraceWriter_ResolvesConceptPageAndRedactsUnsafeMarkers()
     {
         using var factory = new ApiSmokeFactory();

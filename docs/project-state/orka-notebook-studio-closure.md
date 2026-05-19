@@ -8,6 +8,8 @@ Status: professionally closed as a safe foundation. Phase 24-25 final safety/pri
 
 OrkaLM is not a generic NotebookLM clone. It is the Notebook-like study studio inside Orka's Learning OS. Its primary context is the student's Wiki page graph, uploaded/source evidence, plan state, quiz/misconception signals, mastery, snapshots, and Tutor pedagogy.
 
+Post-closure pedagogical polish now adds safe Tutor tool-decision, lesson-delivery, diagnostic/course-plan, remediation, Wiki curation, Wiki Copilot, and final provider-free release harness evidence over the existing Learning OS path. This does not reopen OrkaLM scope or add provider calls; it proves Tutor/source/Wiki/Notebook Studio/dashboard decisions are explicit, evidence-gated, and release-checkable as one product loop.
+
 Final audit doc: `docs/project-state/orka-notebook-studio-final-audit.md`
 
 ## Product Shape
@@ -45,6 +47,7 @@ Final audit doc: `docs/project-state/orka-notebook-studio-final-audit.md`
 | 21. Source Q&A Conversation Memory & Review Workflow | Closed | `SourceQuestionThreadService` persists selected-source/source-collection Q&A as bounded `source_question_thread` LearningArtifacts, stores only safe questions, answer summaries, citation labels, review states, and warnings, supports follow-up, review updates, optional Wiki trace writing, and renders thread memory in OrkaLM mode. | This is not long-term raw transcript storage or a separate chat app. Rich semantic synthesis, manual citation annotation, scheduled source-review workflows, and advanced graph canvas remain backlog. |
 | 22-23. Source Q&A Study Workflow & Advanced OrkaLM Graph Polish | Closed | `SourceQuestionThreadService.GetStudySummaryAsync` derives a source-study summary from existing Q&A memory artifacts, citation checks, source readiness, and source-to-concept links. OrkaLM mode shows source study status, review/degraded/citation-warning counts, linked concept count, compare readiness, and next actions beside Q&A memory. | This is not a scheduler, semantic contradiction detector, graph canvas, or manual citation manager. Long-term review scheduling and richer semantic synthesis remain backlog. |
 | 24-25. Final Safety/Privacy Audit & Product Closure | PASS | Final audit verifies source notebook, ask-source, Q&A memory, compare/citation review, source-study summary, Wiki trace, Notebook packs, artifacts, and export surfaces. Legacy source quality/retrieval DTO owner-id exposure and source page raw chunk/highlight DTO leakage were removed without migration. | Browser visual proof remains conditional on local Browser/Playwright access. Phase 26 should only prepare selective staging/commit; it should not add product scope. |
+| Pedagogical Productization Phase 7. Final Pedagogical E2E & Release Closure | Implemented pending validation | Provider-free release harness connects diagnostic, plan quality, Tutor tool decision, lesson delivery, remediation, quiz impact, learning snapshot, Wiki curation/Copilot, OrkaLM source notebook, Notebook Studio pack, dashboard, and public payload safety. | Live provider pedagogy E2E, human evaluation harness, long-term syllabus optimization, full graph canvas, semantic synthesis, real PPTX/video, and Realtime voice remain explicit backlog. |
 
 ## Service Ownership Map
 
@@ -378,3 +381,11 @@ Phase 19 also requires:
 - Narrow viewport smoke should verify source notebook content remains reachable; compact shell behavior is acceptable, full mobile redesign remains outside Phase 27.
 - Provider nullable cleanup is allowed only when it is behaviorless and does not add or reroute provider calls.
 - Phase 27 remains polish only: no new AI/provider calls, no real PPTX/video, no interactive voice, no graph canvas editor, and no teacher/classroom/dershane workflows.
+
+## Whole-System Release Blocker Cleanup Gate
+
+- Student-facing release copy must not claim `%100` fit, guaranteed system outcomes, official curriculum/exam readiness, or success guarantees.
+- Full API regression must pass first run; known auth/security flake targets should also pass isolated reruns.
+- Provider-free smoke proof should stay deterministic through in-memory API setup, smoke test agents, quiz learning pipeline tests, and Wiki trace regression tests.
+- Blank/skipped quiz answers should create safe prerequisite/guided-repair learning impact and Wiki repair traces without creating fake misconception certainty.
+- This cleanup remains release hardening only: no provider calls, product scope expansion, staging, or commits without explicit user approval.

@@ -878,10 +878,10 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         var assessmentMode = NormalizeAssessmentMode(request.AssessmentMode, request.QuestionType, request.CognitiveSkill);
         var skipped = request.WasSkipped == true || string.Equals(request.SelectedOptionId, "skip", StringComparison.OrdinalIgnoreCase);
         var result = skipped ? "blank" : !verification.IsVerified ? "unverified" : attempt.IsCorrect ? "correct" : "wrong";
-        var remediationNeed = skipped || !verification.IsVerified || attempt.IsCorrect ? "none" :
+        var remediationNeed = skipped ? "medium" : !verification.IsVerified || attempt.IsCorrect ? "none" :
             misconception?.RemediationSeed.FirstAction == "prerequisite_review" ? "high" :
             misconception?.LearningSignalConfidence.Status == "usable" ? "medium" : "low";
-        var nextTutorMove = !verification.IsVerified ? "server_assessment_needed" : attempt.IsCorrect ? "confirm_and_extend" :
+        var nextTutorMove = skipped ? "prerequisite_scaffold" : !verification.IsVerified ? "server_assessment_needed" : attempt.IsCorrect ? "confirm_and_extend" :
             misconception?.RemediationSeed.FirstAction switch
             {
                 "wiki_review" => "source_review_then_explain",
@@ -889,12 +889,14 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                 "prerequisite_review" => "prerequisite_scaffold",
                 _ => "misconception_repair"
             };
-        var nextPlanAction = !verification.IsVerified ? "keep_as_practice_observation" : attempt.IsCorrect ? "advance_or_retrieval_practice" :
+        var nextPlanAction = skipped ? "insert_prerequisite_review" : !verification.IsVerified ? "keep_as_practice_observation" : attempt.IsCorrect ? "advance_or_retrieval_practice" :
             assessmentMode == "misconception_probe" ? "insert_remediation_step" : "stay_on_current_step";
         decimal? masteryDelta = tracingState == null ? null :
             attempt.IsCorrect ? Math.Round(0.06m * tracingState.Confidence, 4) : Math.Round(-0.04m * Math.Max(0.30m, tracingState.Confidence), 4);
 
-        return new QuizResultLearningImpactDto
+        var sourceReadiness = ExtractSourceReadiness(request.SourceRefsJson) ?? "unknown";
+        var evidenceBasis = BuildImpactEvidenceBasis(request, tracingState, misconception, verification);
+        var impact = new QuizResultLearningImpactDto
         {
             TopicId = request.TopicId,
             SessionId = request.SessionId,
@@ -904,8 +906,8 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             AssessmentMode = assessmentMode,
             TargetConceptKey = conceptKey,
             Result = result,
-            MisconceptionSignal = misconception?.MisconceptionSignal,
-            MisconceptionConfidence = !verification.IsVerified ? "observed_only" : misconception?.LearningSignalConfidence.Status ?? "none",
+            MisconceptionSignal = skipped ? null : misconception?.MisconceptionSignal,
+            MisconceptionConfidence = skipped || !verification.IsVerified ? "observed_only" : misconception?.LearningSignalConfidence.Status ?? "none",
             RemediationNeed = remediationNeed,
             MasteryDelta = masteryDelta,
             MasteryProbability = tracingState?.MasteryProbability,
@@ -914,10 +916,159 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             WikiReviewHint = string.IsNullOrWhiteSpace(request.WikiNotebookSectionKey)
                 ? (verification.IsVerified && !attempt.IsCorrect ? "wiki_review_if_available" : null)
                 : request.WikiNotebookSectionKey,
-            SourceReadiness = ExtractSourceReadiness(request.SourceRefsJson) ?? "unknown",
-            EvidenceBasis = BuildImpactEvidenceBasis(request, tracingState, misconception, verification)
+            SourceReadiness = sourceReadiness,
+            EvidenceBasis = evidenceBasis
+        };
+
+        impact.RemediationLesson = BuildRemediationLesson(request, impact, misconception, verification, evidenceBasis);
+        return impact;
+    }
+
+    private static RemediationLessonDto? BuildRemediationLesson(
+        RecordQuizAttemptRequest request,
+        QuizResultLearningImpactDto impact,
+        MisconceptionIntelligenceResult? misconception,
+        AttemptVerification verification,
+        IReadOnlyList<string> evidenceBasis)
+    {
+        if (impact.Result is not ("wrong" or "blank" or "partial"))
+        {
+            return null;
+        }
+
+        var skipped = impact.Result == "blank" ||
+                      request.WasSkipped == true ||
+                      string.Equals(request.SelectedOptionId, "skip", StringComparison.OrdinalIgnoreCase);
+        var hasUsableMisconception = !skipped &&
+                                     misconception?.MisconceptionSignal != null &&
+                                     misconception.LearningSignalConfidence.Status is "usable" or "observed_only";
+        var sourceGap = impact.SourceReadiness is "insufficient" or "degraded" or "stale" or "deleted" or "evidence_insufficient";
+        var lowMastery = impact.MasteryProbability.HasValue && impact.MasteryProbability.Value < 0.45m;
+
+        var triggerType = skipped ? (request.WasSkipped == true ? "skipped_answer" : "blank_answer") :
+            sourceGap ? "source_evidence_gap" :
+            hasUsableMisconception ? "misconception_signal" :
+            "wrong_answer";
+        var repairType = skipped ? "prerequisite_repair" :
+            sourceGap ? "source_evidence_review" :
+            hasUsableMisconception ? "misconception_repair" :
+            lowMastery ? "weak_concept_repair" :
+            "guided_reteach";
+        var confidence = hasUsableMisconception && misconception?.LearningSignalConfidence.Status == "usable" ? "medium" :
+            skipped || lowMastery ? "medium" :
+            "low";
+        var concept = FirstNonEmpty(impact.TargetConceptKey, request.ConceptKey, request.ConceptTag, request.SkillTag) ?? "aktif kavram";
+        var gap = repairType switch
+        {
+            "misconception_repair" => FirstNonEmpty(
+                impact.MisconceptionSignal?.UserSafeLabel,
+                impact.MisconceptionSignal?.SafeHint,
+                impact.MisconceptionSignal?.Category) ?? "Takilma sinyali kesin tani degil.",
+            "prerequisite_repair" => "Cevap bos/skipped oldugu icin eksik onkosul veya guven araligi kontrol edilecek.",
+            "source_evidence_review" => "Kaynak kaniti sinirli oldugu icin kaynak iddiasi kurulmadan once kanit kontrolu gerekiyor.",
+            "weak_concept_repair" => "Mastery sinyali dusuk; kavram kisa tekrar ve ornek istiyor.",
+            _ => "Yanlis cevap kesin yanilgi tani degil; guvenli tekrar gerektiriyor."
+        };
+
+        var warnings = new List<string>();
+        if (skipped) warnings.Add("blank_answer_not_misconception");
+        if (!verification.IsVerified) warnings.Add("correctness_observed_only");
+        if (sourceGap) warnings.Add("source_evidence_limited");
+        if (!hasUsableMisconception && !skipped) warnings.Add("misconception_not_confirmed");
+
+        return new RemediationLessonDto
+        {
+            TopicId = request.TopicId,
+            ConceptKey = string.IsNullOrWhiteSpace(impact.TargetConceptKey) ? null : impact.TargetConceptKey,
+            Trigger = new RemediationTriggerDto
+            {
+                TriggerType = triggerType,
+                UserSafeLabel = triggerType switch
+                {
+                    "blank_answer" => "Bos cevap telafisi",
+                    "skipped_answer" => "Atlanan cevap telafisi",
+                    "misconception_signal" => "Takilma sinyali telafisi",
+                    "source_evidence_gap" => "Kaynak kaniti kontrolu",
+                    _ => "Yanlis cevap telafisi"
+                },
+                EvidenceStatus = skipped ? "observed_only" : impact.MisconceptionConfidence
+            },
+            RepairType = repairType,
+            Confidence = confidence,
+            Basis = evidenceBasis
+                .Append(skipped ? "blank_attempt" : "quiz_attempt")
+                .Append(repairType)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(10)
+                .ToArray(),
+            LessonShape = BuildRemediationRepairLoop(concept, repairType, gap, lowMastery),
+            Checkpoint = new RemediationCheckpointDto
+            {
+                CheckpointType = repairType == "source_evidence_review" ? "evidence_check" : "micro_check",
+                UserSafePrompt = repairType == "source_evidence_review"
+                    ? "Bu iddia hangi kaynak kanitiyla destekleniyor, yoksa model destekli mi?"
+                    : $"{concept} icin bir mini ornegi cevap anahtari olmadan dene.",
+                AvoidsPreSubmitReveal = true,
+                Required = true
+            },
+            Outcome = new RemediationOutcomeDto
+            {
+                ExpectedSignal = skipped ? "prerequisite_review" : "needs_review",
+                MasteryPolicy = "do_not_overstate_mastery",
+                NextTutorAction = impact.NextTutorMove,
+                NotebookAction = "repair_pack_available"
+            },
+            Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToArray(),
+            SourceBasis = repairType == "source_evidence_review" ? "evidence_insufficient" : "tutor_generated",
+            StudentVisibleSummary = BuildRemediationSummary(repairType, skipped)
         };
     }
+
+    private static RemediationRepairLoopDto BuildRemediationRepairLoop(string concept, string repairType, string gap, bool lowMastery)
+    {
+        var steps = new List<RemediationStepDto>
+        {
+            new() { StepType = "goal", UserSafeLabel = "Telafi hedefini kur", Required = true },
+            new() { StepType = "short_reteach", UserSafeLabel = "Kisa tekrar", Required = true },
+            new() { StepType = "worked_example", UserSafeLabel = "Cozumlu mini ornek", Required = lowMastery || repairType != "source_evidence_review" },
+            new() { StepType = "guided_practice", UserSafeLabel = "Tek adimlik pratik", Required = true },
+            new() { StepType = "checkpoint", UserSafeLabel = "Cevap anahtarsiz kontrol", Required = true }
+        };
+
+        return new RemediationRepairLoopDto
+        {
+            Goal = repairType switch
+            {
+                "misconception_repair" => $"{concept} icin takilma sinyalini kesin tani gibi sunmadan duzelt.",
+                "prerequisite_repair" => $"{concept} icin eksik onkosulu once kisa telafi et.",
+                "source_evidence_review" => $"{concept} icin kaynak kaniti sinirini netlestir.",
+                "weak_concept_repair" => $"{concept} icin zayif kavrami mikro dersle toparla.",
+                _ => $"{concept} icin yanlis cevabi guvenli tekrar dersine cevir."
+            },
+            MisconceptionOrGap = gap,
+            ShortReteach = repairType == "source_evidence_review"
+                ? "Kaynakta desteklenen kisim ile Tutor yorumunu ayir."
+                : "Tek kavramsal ayrimi iki kisa adimda yeniden kur.",
+            WorkedExample = repairType == "prerequisite_repair"
+                ? "Once en kucuk onkosul ornegini cozumlu goster."
+                : "Ayni kavrami kisa bir cozumlu ornekle uygula.",
+            GuidedPractice = "Ogrenciye tek kucuk adimi kendisi yaptir.",
+            Checkpoint = "Cevap anahtari vermeden mikro kontrol sor.",
+            NextAction = repairType == "source_evidence_review" ? "review_source_then_continue" : "guided_repair_then_check",
+            Steps = steps.Take(5).ToArray()
+        };
+    }
+
+    private static string BuildRemediationSummary(string repairType, bool skipped) =>
+        repairType switch
+        {
+            "misconception_repair" => "Tutor yanlis cevabi kesin tani yapmadan yanilgi ayrimini onaracak.",
+            "prerequisite_repair" when skipped => "Tutor bos/atlanmis cevabi onkosul ve guven telafisine cevirecek.",
+            "prerequisite_repair" => "Tutor once eksik onkosulu kisa telafiyle toparlayacak.",
+            "source_evidence_review" => "Tutor kaynak kaniti sinirliyken iddiayi kaynakli gibi sunmadan kontrol edecek.",
+            "weak_concept_repair" => "Tutor zayif kavram icin mikro ders, ornek ve kontrol uygulayacak.",
+            _ => "Tutor yanlis cevabi kisa tekrar, ornek ve kontrolle toparlayacak."
+        };
 
     private static IReadOnlyList<string> BuildImpactEvidenceBasis(
         RecordQuizAttemptRequest request,
@@ -928,6 +1079,8 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         var basis = new List<string> { "quiz_attempt" };
         if ((verification.AssessmentItemId ?? request.AssessmentItemId).HasValue) basis.Add("assessment_item");
         basis.Add(verification.IsVerified ? "server_verified_correctness" : "observed_only_unverified_correctness");
+        if (request.WasSkipped == true || string.Equals(request.SelectedOptionId, "skip", StringComparison.OrdinalIgnoreCase))
+            basis.Add("blank_answer_prerequisite_review");
         if (!string.IsNullOrWhiteSpace(request.AssessmentMode)) basis.Add("assessment_mode");
         if (tracingState != null) basis.Add("knowledge_tracing");
         if (misconception != null) basis.Add("misconception_signal");
@@ -984,7 +1137,7 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                         QuizAttemptId = attempt.Id,
                         SourceEvidenceBundleId = request.SourceEvidenceBundleId,
                         TraceType = impact.MisconceptionSignal == null ? "repair_note" : "misconception_note",
-                        Title = impact.Result is "blank" ? "Boş cevap pekiştirmesi" : "Yanlış cevap pekiştirmesi",
+                        Title = impact.Result is "blank" ? "Bos cevap telafisi" : "Yanlis cevap telafisi",
                         SafeContent = content,
                         SourceBasis = impact.MisconceptionSignal == null ? "assessment_verified" : "assessment_signal",
                         MisconceptionKey = impact.MisconceptionSignal?.Category,
@@ -1058,6 +1211,13 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         {
             lines.Add($"Takilma sinyali: {FirstNonEmpty(impact.MisconceptionSignal.UserSafeLabel, impact.MisconceptionSignal.SafeHint, impact.MisconceptionSignal.Category) ?? "dusuk guvenli sinyal"}");
             lines.Add($"Sinyal guveni: {impact.MisconceptionConfidence}");
+        }
+        if (impact.RemediationLesson != null)
+        {
+            lines.Add($"Telafi tipi: {impact.RemediationLesson.RepairType}");
+            lines.Add($"Telafi ozeti: {impact.RemediationLesson.StudentVisibleSummary}");
+            lines.Add($"Telafi checkpoint: {impact.RemediationLesson.Checkpoint.UserSafePrompt}");
+            lines.Add($"Telafi sonraki aksiyon: {impact.RemediationLesson.Outcome.NextTutorAction}");
         }
         if (!string.IsNullOrWhiteSpace(impact.WikiReviewHint)) lines.Add($"Wiki tekrar ipucu: {impact.WikiReviewHint}");
         if (!string.IsNullOrWhiteSpace(impact.SourceReadiness) && impact.SourceReadiness != "unknown") lines.Add($"Kaynak hazirligi: {impact.SourceReadiness}");

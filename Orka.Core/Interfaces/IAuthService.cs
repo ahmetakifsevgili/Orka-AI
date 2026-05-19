@@ -8,6 +8,6 @@ public interface IAuthService
 {
     Task<(string Token, string RefreshToken, User User)> RegisterAsync(string firstName, string lastName, string email, string password);
     Task<(string Token, string RefreshToken, User User)> LoginAsync(string email, string password);
-    Task<(string Token, string RefreshToken)> RefreshAsync(string refreshToken);
+    Task<(string Token, string RefreshToken)> RefreshAsync(string refreshToken, bool suppressReplayFamilyRevocation = false);
     Task RevokeAsync(string refreshToken);
 }

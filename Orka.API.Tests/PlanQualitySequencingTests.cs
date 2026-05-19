@@ -134,6 +134,13 @@ public sealed class PlanQualitySequencingTests
         var sequence = await service.BuildPlanSequenceAsync(user.UserId, new PlanQualityEvaluationRequestDto { TopicId = topicId });
 
         Assert.Equal("diagnostic-first", sequence.Steps[0].StepId);
+        Assert.Equal("lesson", sequence.AdaptiveDiagnostic.Intent);
+        Assert.Equal("needs_diagnostic", sequence.AdaptiveDiagnostic.PlanReadiness);
+        Assert.Equal("unknown", sequence.AdaptiveDiagnostic.LearnerLevel);
+        Assert.InRange(sequence.AdaptiveDiagnostic.RecommendedQuestions.Count, 2, 5);
+        Assert.Equal("needs_diagnostic", sequence.CoursePlanQuality.ReadinessStatus);
+        Assert.True(sequence.CoursePlanQuality.MilestoneCount > 0);
+        Assert.True(sequence.CoursePlanQuality.CheckpointCoverage > 0);
         var prerequisiteIndex = sequence.Steps.ToList().FindIndex(s => s.ConceptKey == "fraction-basics");
         var dependentIndex = sequence.Steps.ToList().FindIndex(s => s.ConceptKey == "equivalent-fractions");
         Assert.True(prerequisiteIndex >= 0);
@@ -174,6 +181,10 @@ public sealed class PlanQualitySequencingTests
         var sequence = await service.BuildPlanSequenceAsync(user.UserId, new PlanQualityEvaluationRequestDto { TopicId = topicId });
 
         Assert.Equal("conditional-probability", sequence.Steps.First().ConceptKey);
+        Assert.Equal("needs_repair", sequence.AdaptiveDiagnostic.PlanReadiness);
+        Assert.Equal("beginner", sequence.AdaptiveDiagnostic.LearnerLevel);
+        Assert.Equal("needs_repair", sequence.CoursePlanQuality.ReadinessStatus);
+        Assert.Contains(sequence.CoursePlanQuality.RepairLoops, loop => loop.ConceptKey == "conditional-probability");
         Assert.Equal("misconception_probe", sequence.Steps.First().QuizHook.HookType);
         Assert.True(sequence.Steps.First().TutorHook.TutorMove is "scaffold" or "misconception_repair");
     }
@@ -259,6 +270,40 @@ public sealed class PlanQualitySequencingTests
         Assert.Equal("limit-definition", turn.CurrentPlanStepId is null ? null : quality.PlanContract.Steps[0].ConceptKey);
         Assert.Equal("retrieval_practice", turn.CurrentPlanQuizHook);
         Assert.False(turn.PromptBlock.Contains("provider payload", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(turn.AdaptiveDiagnostic);
+        Assert.NotNull(turn.CoursePlanQuality);
+        Assert.Equal(quality.PlanContract.CoursePlanQuality.ReadinessStatus, turn.CoursePlanQuality!.ReadinessStatus);
+        Assert.Contains("planReadiness", turn.PromptBlock, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("adaptiveDiagnosticIntent", turn.PromptBlock, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawSourceChunk", JsonSerializer.Serialize(turn), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ThinProvidedPlanIsMarkedThinWithSafeDiagnosticQuestions()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "plan-quality-thin");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Java algorithms");
+
+        using var scope = factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IPlanSequencingService>();
+        var result = await service.EvaluatePlanSequenceAsync(user.UserId, new PlanQualityEvaluationRequestDto
+        {
+            TopicId = topicId,
+            ProposedSteps =
+            [
+                StrongStep("arrays", "Arrays", "Arrays are the first measurable concept.", [])
+            ]
+        });
+
+        Assert.Equal("thin_plan", result.AdaptiveDiagnostic.PlanReadiness);
+        Assert.Equal("thin_plan", result.CoursePlanQuality.ReadinessStatus);
+        Assert.Equal("build_concept_graph", result.CoursePlanQuality.RecommendedNextAction);
+        Assert.InRange(result.AdaptiveDiagnostic.RecommendedQuestions.Count, 2, 5);
+        var publicJson = JsonSerializer.Serialize(result);
+        Assert.DoesNotContain("rawPrompt", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ownerId", publicJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctAnswer", publicJson, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PlanStepContractDto StrongStep(string conceptKey, string title, string sequenceReason, IReadOnlyList<string> prerequisites) => new()

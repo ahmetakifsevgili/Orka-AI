@@ -164,18 +164,87 @@ public sealed class AiReliabilityTests
     {
         using var response = new HttpResponseMessage(HttpStatusCode.Unauthorized)
         {
-            Content = new StringContent("""{"apiKey":"sk-secret-value-that-should-not-appear","email":"demo@example.com"}""")
+            Content = new StringContent("""
+                {
+                  "apiKey":"sk-secret-value-that-should-not-appear",
+                  "email":"demo@example.com",
+                  "rawPrompt":"hidden system prompt",
+                  "rawProviderPayload":"provider body",
+                  "rawSourceChunk":"source private paragraph: confidential lesson material",
+                  "debugTrace":"stackTrace C:\\secret\\file.txt",
+                  "answerKey":"A",
+                  "correctAnswer":"A",
+                  "studentPrivateNote":"student private note: my family phone is 555-111-2222"
+                }
+                """)
         };
 
-        var exception = AiProviderFailureMapperForTests.FromResponse("Test", "model", response, await response.Content.ReadAsStringAsync());
+        var rawBody = await response.Content.ReadAsStringAsync();
+        var exception = AiProviderFailureMapperForTests.FromResponse("Test", "model", response, rawBody);
 
         Assert.Equal(AiProviderFailureKind.Authentication, exception.FailureKind);
+        Assert.Contains("provider=Test", exception.RedactedDiagnostic);
+        Assert.Contains("status=401", exception.RedactedDiagnostic);
+        Assert.Contains("category=authentication", exception.RedactedDiagnostic);
+        Assert.Contains("bodyLength=", exception.RedactedDiagnostic);
+        Assert.Contains("bodyHash=sha256:", exception.RedactedDiagnostic);
         Assert.DoesNotContain("sk-secret-value", exception.RedactedDiagnostic, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("demo@example.com", exception.RedactedDiagnostic, StringComparison.OrdinalIgnoreCase);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
+    }
+
+    [Fact]
+    public void ProviderFailureMapper_ExceptionDiagnostic_DoesNotRetainExceptionMessage()
+    {
+        var exception = AiProviderFailureMapperForTests.FromException(
+            "OpenRouter",
+            "model",
+            new InvalidOperationException("rawProviderPayload rawPrompt source private paragraph: confidential lesson material C:\\secret\\file.txt stackTrace"));
+
+        Assert.Equal(AiProviderFailureKind.InvalidResponse, exception.FailureKind);
+        Assert.Contains("provider=OpenRouter", exception.RedactedDiagnostic);
+        Assert.Contains("exceptionType=InvalidOperationException", exception.RedactedDiagnostic);
+        Assert.DoesNotContain("InvalidOperationException: rawProviderPayload", exception.RedactedDiagnostic, StringComparison.OrdinalIgnoreCase);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
     private static AiProviderCallException ServerError(string provider) =>
         new(provider, "model", "Tutor", AiProviderFailureKind.ServerError, "server error", HttpStatusCode.InternalServerError, isRetryable: true, isFallbackable: true);
+
+    private static void AssertNoUnsafeProviderDiagnosticContent(string diagnostic)
+    {
+        var unsafeFragments = new[]
+        {
+            "rawPrompt",
+            "hiddenPrompt",
+            "systemPrompt",
+            "developerPrompt",
+            "rawProviderPayload",
+            "rawSourceChunk",
+            "rawToolPayload",
+            "debugTrace",
+            "localPath",
+            "apiKey",
+            "secret",
+            "token",
+            "answerKey",
+            "correctAnswer",
+            "stackTrace",
+            "ownerId",
+            "userId",
+            "C:\\",
+            "D:\\",
+            "student private note",
+            "my family phone",
+            "source private paragraph",
+            "confidential lesson material",
+            "provider body",
+            "hidden system prompt"
+        };
+
+        foreach (var fragment in unsafeFragments)
+            Assert.DoesNotContain(fragment, diagnostic, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static AIAgentFactory CreateFactory(
         FakeProviders providers,
@@ -366,5 +435,14 @@ internal static class AiProviderFailureMapperForTests
             "FromResponse",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
         return (AiProviderCallException)method!.Invoke(null, new object?[] { provider, model, response, body })!;
+    }
+
+    public static AiProviderCallException FromException(string provider, string? model, Exception exception)
+    {
+        var mapperType = typeof(AIAgentFactory).Assembly.GetType("Orka.Infrastructure.Services.AiProviderFailureMapper", throwOnError: true)!;
+        var method = mapperType.GetMethod(
+            "FromException",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        return (AiProviderCallException)method!.Invoke(null, new object?[] { provider, model, exception, AiProviderFailureKind.TransientNetwork })!;
     }
 }

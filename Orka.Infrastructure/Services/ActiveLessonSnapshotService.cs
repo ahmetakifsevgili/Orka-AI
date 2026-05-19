@@ -231,7 +231,8 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
                 memory.ConfidenceStatus,
                 memory.HasEnoughSignals,
                 memory.ConfidenceSummary,
-                memory.RecentProgressSignals
+                memory.RecentProgressSignals,
+                memory.Hygiene
             }, JsonOptions),
             SnapshotJson = JsonSerializer.Serialize(new
             {
@@ -240,7 +241,8 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
                 weakConcepts,
                 recentMisconceptions,
                 remediationReady,
-                reviewPressure
+                reviewPressure,
+                memory.Hygiene
             }, JsonOptions),
             CreatedAt = now,
             UpdatedAt = now,
@@ -587,6 +589,7 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
         SourceReadiness = entity.SourceReadiness ?? "unknown",
         GoalReadiness = Parse(entity.GoalReadinessJson, new GoalReadinessDto()),
         LearningMemorySummary = ParseMemorySummary(entity.LearningMemoryJson),
+        LearningMemoryHygiene = ParseMemoryHygiene(entity.LearningMemoryJson),
         CreatedAt = entity.CreatedAt,
         UpdatedAt = entity.UpdatedAt,
         ExpiresAt = entity.ExpiresAt
@@ -707,6 +710,12 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
             : summary.Summary;
     }
 
+    private static LearningMemoryHygieneDto ParseMemoryHygiene(string? json)
+    {
+        var summary = Parse(json, new LearningMemorySummaryProjection());
+        return summary.Hygiene ?? new LearningMemoryHygieneDto();
+    }
+
     private static string CacheKey(string kind, Guid userId, Guid? topicId, Guid? sessionId) =>
         $"orka:v4:{kind}-snapshot:{userId}:{topicId?.ToString() ?? "global"}:{sessionId?.ToString() ?? "global"}";
 
@@ -724,5 +733,6 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
     private sealed class LearningMemorySummaryProjection
     {
         public string Summary { get; set; } = string.Empty;
+        public LearningMemoryHygieneDto? Hygiene { get; set; }
     }
 }

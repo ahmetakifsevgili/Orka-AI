@@ -237,6 +237,14 @@ public sealed class LearningMemoryService : ILearningMemoryService
         };
 
         var goalReadiness = BuildGoalReadiness(strongTopics, weakConcepts, remediationReady, confidenceSummary, evidenceQuality);
+        var hygiene = BuildMemoryHygiene(
+            hasEnoughSignals,
+            sourceReadiness,
+            weakConcepts,
+            recentMisconceptions,
+            remediationReady,
+            recentProgressSignals,
+            confidenceSummary);
         return new LearningMemoryLiteDto
         {
             Summary = BuildSummary(hasSignals, strongTopics, weakConcepts, remediationReady),
@@ -250,9 +258,77 @@ public sealed class LearningMemoryService : ILearningMemoryService
             SourceReadiness = sourceReadiness,
             RecentProgressSignals = recentProgressSignals,
             GoalReadiness = goalReadiness,
+            Hygiene = hygiene,
             LastUpdatedAt = LastUpdatedAt(states.Select(s => s.UpdatedAt), masteries.Select(m => m.UpdatedAt), signals.Select(s => s.CreatedAt), attempts.Select(a => a.CreatedAt)),
             HasEnoughSignals = hasEnoughSignals
         };
+    }
+
+    private static LearningMemoryHygieneDto BuildMemoryHygiene(
+        bool hasEnoughSignals,
+        string sourceReadiness,
+        IReadOnlyList<LearningMemoryConceptDto> weakConcepts,
+        IReadOnlyList<LearningMemoryConceptDto> recentMisconceptions,
+        IReadOnlyList<LearningMemoryConceptDto> remediationReady,
+        IReadOnlyList<string> recentProgressSignals,
+        LearningMemoryConfidenceSummaryDto confidenceSummary)
+    {
+        var warnings = new List<string>();
+        if (!hasEnoughSignals) warnings.Add("learning_memory_observed_only");
+        if (sourceReadiness is "missing" or "weak" or "evidence_insufficient" or "degraded" or "stale")
+            warnings.Add("source_memory_limited");
+        if (remediationReady.Count > 0) warnings.Add("repair_memory_pending");
+
+        var mergedSignals = weakConcepts
+            .GroupBy(c => string.IsNullOrWhiteSpace(c.ConceptKey) ? c.Label : c.ConceptKey, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"weak_concept:{g.Key}")
+            .Take(6)
+            .ToArray();
+
+        var retained = recentProgressSignals
+            .Concat(weakConcepts.Select(c => $"weak:{SafeSignalKey(c.ConceptKey, c.Label)}"))
+            .Concat(recentMisconceptions.Select(c => $"misconception:{SafeSignalKey(c.ConceptKey, c.Label)}"))
+            .Concat(remediationReady.Select(c => $"repair:{SafeSignalKey(c.ConceptKey, c.Label)}"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToArray();
+
+        var status = remediationReady.Count > 0
+            ? "needs_review"
+            : weakConcepts.Count > 0
+                ? "active"
+                : confidenceSummary.StrongAreaCount > 0
+                    ? "improving"
+                    : hasEnoughSignals
+                        ? "active"
+                        : "observed_only";
+
+        return new LearningMemoryHygieneDto
+        {
+            MemoryStatus = status,
+            RetainedSignalCount = retained.Length,
+            MergedWeakConceptCount = Math.Max(mergedSignals.Length, weakConcepts.Count),
+            RepairPendingCount = remediationReady.Count,
+            StaleSignalCount = warnings.Contains("source_memory_limited") ? 1 : 0,
+            RetainedSignals = retained,
+            MergedSignals = mergedSignals,
+            Warnings = warnings,
+            StudentVisibleSummary = status switch
+            {
+                "needs_review" => $"Ogrenme hafizasinda {remediationReady.Count} telafi bekleyen guvenli ozet var.",
+                "improving" => "Ogrenme hafizasi gelisim sinyallerini guvenli ozet olarak tutuyor.",
+                "active" => "Ogrenme hafizasi zayif/guclu kavramlari ham metin yerine ozet sinyallerle tutuyor.",
+                _ => "Ogrenme hafizasi henuz gozlem modunda; ham chat metni profil olarak kullanilmiyor."
+            },
+            NextAction = remediationReady.Count > 0 ? "run_repair_checkpoint" : hasEnoughSignals ? "continue_learning" : "collect_more_learning_signals"
+        };
+    }
+
+    private static string SafeSignalKey(string? conceptKey, string? label)
+    {
+        var value = string.IsNullOrWhiteSpace(conceptKey) ? label : conceptKey;
+        return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim().ToLowerInvariant();
     }
 
     private static LearningMemoryTopicDto BuildTopicItem(Guid? topicId, string label, decimal mastery, decimal confidence, string reason, IReadOnlyList<string> basis) => new()

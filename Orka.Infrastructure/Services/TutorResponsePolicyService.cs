@@ -389,7 +389,7 @@ public sealed class TutorResponsePolicyService : ITutorResponsePolicyService
 
     private static string RemediationPolicy(TutorTurnStateDto? turn, QuizAttempt? latestAttempt)
     {
-        if (latestAttempt?.WasSkipped == true) return "retry_question";
+        if (latestAttempt?.WasSkipped == true) return "prerequisite_review";
         if (latestAttempt is { IsCorrect: false }) return "guided_repair";
         if (turn?.RemediationNeed is "high" or "medium") return "guided_repair";
         if (turn?.RemediationSeed?.FirstAction == "prerequisite_review") return "prerequisite_review";

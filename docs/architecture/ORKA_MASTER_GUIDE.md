@@ -700,8 +700,8 @@ Bu özellikler **halihazırda çalışmaktadır**, aşağıdaki yeni fikirlerde 
 **9. Hava Durumu ile Coğrafya/Fizik (OpenWeatherMap API)**
 - Canlı verilerle (sıcaklık, basınç) iklim veya termodinamik konularını somutlaştırma.
 
-**10. Kesin Matematik Çözümleri (Wolfram Alpha API)**
-- LLM halüsinasyonunu engeller: Adım adım, %100 doğru matematiksel hesaplamalar ve grafikler.
+**10. Kanıtlanabilir Matematik Çözümleri (Wolfram Alpha API)**
+- LLM halüsinasyon riskini azaltmak için dış aracın döndürdüğü adım adım hesaplama ve grafikleri kullanır; resmi başarı veya mutlak doğruluk garantisi vermez.
 
 **11. Canlı Borsa/Kripto Verisi ile Kod Görevleri (CoinGecko / Alpha Vantage API)**
 - Gerçek veri kümeleri üzerinden algoritma/kodlama pratikleri.

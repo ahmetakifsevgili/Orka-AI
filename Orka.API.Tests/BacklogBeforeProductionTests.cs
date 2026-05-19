@@ -227,6 +227,28 @@ public sealed class BacklogBeforeProductionTests
     }
 
     [Fact]
+    public async Task ExceptionMiddleware_HandledAuthFailureLogsSafeWarningWithoutStackException()
+    {
+        var logger = new CapturingLogger<ExceptionMiddleware>();
+        var middleware = new ExceptionMiddleware(
+            _ => throw new UnauthorizedException("Gecersiz refresh token."),
+            logger,
+            new TestEnvironment("Development"));
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        var body = await ReadResponseBodyAsync(context);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        Assert.Contains("Gecersiz refresh token", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Handled exception", logger.MessagesText, StringComparison.Ordinal);
+        Assert.Contains("Status=401", logger.MessagesText, StringComparison.Ordinal);
+        Assert.Contains(LogLevel.Warning, logger.Levels);
+        Assert.All(logger.Exceptions, Assert.Null);
+    }
+
+    [Fact]
     public async Task ExceptionMiddleware_DevelopmentProviderConfigResponseKeepsDebugDetail()
     {
         var middleware = new ExceptionMiddleware(
@@ -298,8 +320,12 @@ public sealed class BacklogBeforeProductionTests
     private sealed class CapturingLogger<T> : ILogger<T>
     {
         private readonly List<string> _messages = [];
+        private readonly List<LogLevel> _levels = [];
+        private readonly List<Exception?> _exceptions = [];
 
         public string MessagesText => string.Join(Environment.NewLine, _messages);
+        public IReadOnlyList<LogLevel> Levels => _levels;
+        public IReadOnlyList<Exception?> Exceptions => _exceptions;
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -311,6 +337,8 @@ public sealed class BacklogBeforeProductionTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
+            _levels.Add(logLevel);
+            _exceptions.Add(exception);
             _messages.Add(formatter(state, exception));
         }
 

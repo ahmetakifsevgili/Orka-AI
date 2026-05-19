@@ -35,6 +35,20 @@ Post-audit Phase 22-23 note: source Q&A study workflow and advanced OrkaLM graph
 
 Phase 24-25 note: final safety/privacy closure found two legacy public DTO risks and fixed them without schema changes: source quality/retrieval DTOs no longer carry owner ids, and source page evidence DTOs no longer carry raw source chunk text/highlight snippets. Ask-source, compare, citation review, Q&A memory, source-study summary, Wiki trace, Notebook Studio packs, artifacts, and export remain bounded and evidence/status labeled.
 
+Pedagogical Productization Phase 1 note: Tutor tool-use orchestration now has a safe decision DTO layered over the existing TutorActionPlanner, TutorToolOrchestrator, and UnifiedToolRuntime path. The polish is deterministic and does not add providers or migrate API architecture. Evidence-limited source requests block source-grounded routing and expose safe clarification/degraded metadata.
+
+Pedagogical Productization Phase 2 note: Tutor lesson delivery now has a safe delivery-rubric DTO layered over the Phase 1 tool decision. The delivery mode is deterministic and uses learner level, mastery/confidence, quiz/remediation state, source readiness, and Tutor response policy to choose guided example, checkpoint, prerequisite repair, misconception repair, source-grounded explanation, model-assisted explanation, or clarification. The rubric feeds Tutor prompt guidance, chat metadata, frontend trace chips, and Wiki trace summaries without new providers, raw prompts, source chunks, tool/provider payloads, or answer keys.
+
+Pedagogical Productization Phase 3 note: adaptive diagnostic and course-plan quality are now explicit safe metadata over the existing plan sequencing and snapshot infrastructure. `AdaptiveDiagnosticDto` and `CoursePlanQualityDto` expose provisional intent, learner level basis, diagnostic questions, plan readiness, milestones, checkpoint coverage, repair loops, source evidence status, overclaim risk, and next action to Tutor metadata and compact frontend trace chips. This remains deterministic and does not add providers, OpenAI Responses/Agents migration, raw prompts, source chunks, provider/tool payloads, owner ids, or answer keys.
+
+Pedagogical Productization Phase 4 note: remediation/telafi is now an explicit safe lesson contract instead of only a warning label. `RemediationLessonDto` flows through quiz learning impact, Tutor turn/action metadata, chat metadata, Wiki trace content, and compact quiz/chat UI. Wrong, blank/skipped, confused, weak concept, misconception, and source-evidence-gap signals produce bounded repair types with micro-lesson, worked-example, guided-practice, checkpoint, next-action, and mastery-policy metadata. Blank/skipped answers do not create fake misconception certainty. This remains deterministic and does not add providers, OpenAI Responses/Agents migration, raw prompts, source chunks, provider/tool payloads, owner ids, or pre-submit answer keys/correct answers.
+
+Pedagogical Productization Phase 5 note: Wiki auto-curation and learning memory hygiene are now explicit safe metadata over the existing Wiki trace, snapshot, memory, and Notebook Studio infrastructure. `WikiCurationSummaryDto` classifies Wiki page hygiene as clean, duplicate trace, stale trace, repair pending, source limited, or degraded. `LearningMemoryHygieneDto` exposes bounded memory status, retained signals, merged weak-concept labels, warnings, and safe summaries. Tutor/chat metadata, Wiki pages, and Notebook Studio packs consume curated summaries rather than raw traces/transcripts. This remains deterministic and does not add providers, OpenAI Responses/Agents migration, raw prompts, source chunks, provider/tool payloads, owner ids, or answer keys.
+
+Pedagogical Productization Phase 6 note: Wiki Copilot is now a deterministic page-aware helper layer over Wiki curation, source readiness, repair state, weak concepts, artifacts, and Notebook Studio status. `WikiCopilotContextDto` exposes safe summaries, primary action, suggestions, warnings, and degraded/blocked source actions without provider calls, raw payloads, hidden actions, or source-grounded claims without evidence.
+
+Pedagogical Productization Phase 7 note: final release closure adds a provider-free deterministic harness for the combined learning loop. `PedagogicalReleaseClosureTests.ProviderFreeLearningLoop_ConnectsPedagogicalProductizationSurfaces` verifies diagnostic-first planning, repair-ready course quality, Tutor tool decision, lesson delivery, remediation lesson, blank-answer quiz impact, learning snapshot, Wiki Copilot, Notebook Studio wiki-page pack, OrkaLM source notebook, dashboard reachability, and public payload leak guards. This phase does not add providers, OpenAI Responses/Agents migration, Stripe calls, PPTX/video/Realtime, or graph canvas scope.
+
 ## Scope Summary
 
 OrkaLM is the Notebook-like study studio inside Orka's Learning OS. It works from:
@@ -478,3 +492,27 @@ Closed behavior:
 - Mobile Browser smoke was attempted; narrow viewports now force the sidebar into compact icon mode so OrkaLM source notebook content remains reachable without broad shell redesign.
 
 Phase 27 does not add provider calls, Google Cloud, real PPTX export, video generation, interactive Realtime voice, graph canvas editing, semantic multi-source synthesis, or teacher/classroom/dershane workflows.
+
+## Whole-System Release Blocker Cleanup Note
+
+After the deep learning-intelligence audit, release-blocker cleanup remains bounded to safety and proof hardening:
+
+- Student-facing `%100` fit and guarantee-style copy is removed in favor of evidence-aware language.
+- Refresh-token parallel-use and chaos-header regression checks are stabilized without weakening the security contract.
+- Blank/skipped quiz answers now produce a prerequisite/guided-repair learning impact instead of a fake misconception certainty.
+- Provider-free smoke proof is documented through deterministic in-memory/test-agent wiring and learning-loop regression coverage.
+- No AI/provider calls, Google Cloud, official curriculum/exam/success claims, raw source chunk exposure, or real PPTX/video behavior are added.
+
+## Pedagogical Productization Phase 6 Note
+
+Phase 6 adds Wiki Copilot UX as a page-aware, deterministic helper layer rather than a second Tutor or debug console.
+
+Closed behavior:
+
+- `IWikiCopilotService` builds safe page context from Wiki page/block state, Phase 5 curation, source readiness/evidence status, repair signals, artifacts, and Notebook Studio pack status.
+- `GET /api/wiki/page/{pageId}/copilot` is authenticated, user-scoped, read-only, and returns `WikiCopilotContextDto` with primary action, suggestions, warnings, and student-facing summary.
+- Suggestions route to existing surfaces such as Tutor, quiz/checkpoint, source review, repair, Wiki curation, and Notebook Studio. They do not execute hidden autonomous actions.
+- Source-grounded suggestions are blocked/degraded when evidence is insufficient, stale, deleted, or source-limited.
+- Wiki UI renders a compact Copilot panel with primary/secondary actions, repair/source/notebook labels, and no raw JSON/debug/tool/provider/source payloads or answer keys.
+
+Phase 6 remains bounded: it does not add provider calls, migrate to OpenAI Responses/Agents SDK, build a graph canvas editor, generate artifacts automatically, or claim NotebookLM/PPTX/video parity.

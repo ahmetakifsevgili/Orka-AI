@@ -29,6 +29,8 @@ public sealed class ChatResponseMetadata
     public string? CurrentPlanTutorMove { get; set; }
     public string? CurrentPlanQuizHook { get; set; }
     public string? PlanSourceReadiness { get; set; }
+    public Orka.Core.DTOs.AdaptiveDiagnosticDto? AdaptiveDiagnostic { get; set; }
+    public Orka.Core.DTOs.CoursePlanQualityDto? CoursePlanQuality { get; set; }
     public IReadOnlyList<Guid> ToolCallIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<Guid> ArtifactIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<ToolStatusDto> ToolStatuses { get; set; } = Array.Empty<ToolStatusDto>();
@@ -43,6 +45,8 @@ public sealed class ChatResponseMetadata
     public string? TutorGroundingPolicy { get; set; }
     public string? TutorRemediationPolicy { get; set; }
     public string? TutorToolPolicy { get; set; }
+    public Orka.Core.DTOs.TutorToolDecisionDto? TutorToolDecision { get; set; }
+    public Orka.Core.DTOs.TutorLessonDeliveryDto? TutorLessonDelivery { get; set; }
     public IReadOnlyList<string> TutorNextLearningActions { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> TutorContextUse { get; set; } = Array.Empty<string>();
     public string? TutorResponseQualityStatus { get; set; }
@@ -58,6 +62,9 @@ public sealed class ChatResponseMetadata
     public Orka.Core.DTOs.MisconceptionSignalDto? MisconceptionSignal { get; set; }
     public Orka.Core.DTOs.LearningSignalConfidenceDto? LearningSignalConfidence { get; set; }
     public Orka.Core.DTOs.RemediationSeedDto? RemediationSeed { get; set; }
+    public Orka.Core.DTOs.RemediationLessonDto? RemediationLesson { get; set; }
+    public Orka.Core.DTOs.LearningMemoryHygieneDto? LearningMemoryHygiene { get; set; }
+    public Orka.Core.DTOs.WikiCurationSummaryDto? WikiCuration { get; set; }
     public string? NextCheckPrompt { get; set; }
     public string? CognitiveLoad { get; set; }
     public string? AffectiveState { get; set; }

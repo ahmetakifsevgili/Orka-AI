@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +23,7 @@ public class AuthService : IAuthService
     private const string RevokedReasonRotated = "Rotated";
     private const string RevokedReasonReplayDetected = "ReplayDetected";
     private const string RevokedReasonLogout = "Logout";
+    private static readonly ConcurrentDictionary<string, RefreshTokenGate> RefreshTokenLocks = new(StringComparer.Ordinal);
 
     private readonly OrkaDbContext _dbContext;
     private readonly IConfiguration _configuration;
@@ -91,9 +94,34 @@ public class AuthService : IAuthService
         return await GenerateTokensAsync(user);
     }
 
-    public async Task<(string Token, string RefreshToken)> RefreshAsync(string refreshToken)
+    public async Task<(string Token, string RefreshToken)> RefreshAsync(string refreshToken, bool suppressReplayFamilyRevocation = false)
     {
         var tokenHash = HashRefreshToken(refreshToken);
+        var tokenGate = RefreshTokenLocks.GetOrAdd(tokenHash, _ => new RefreshTokenGate());
+        var suppressReplayFamilyRevocationFromWaiter = false;
+
+        if (!await tokenGate.Lock.WaitAsync(0))
+        {
+            Interlocked.Increment(ref tokenGate.WaiterCount);
+            await tokenGate.Lock.WaitAsync();
+            Interlocked.Decrement(ref tokenGate.WaiterCount);
+            suppressReplayFamilyRevocationFromWaiter = true;
+        }
+
+        try
+        {
+            return await RefreshLockedAsync(tokenHash, suppressReplayFamilyRevocation || suppressReplayFamilyRevocationFromWaiter);
+        }
+        finally
+        {
+            tokenGate.Lock.Release();
+            if (tokenGate.Lock.CurrentCount == 1 && tokenGate.WaiterCount == 0)
+                RefreshTokenLocks.TryRemove(tokenHash, out _);
+        }
+    }
+
+    private async Task<(string Token, string RefreshToken)> RefreshLockedAsync(string tokenHash, bool suppressReplayFamilyRevocation)
+    {
         var now = DateTime.UtcNow;
         var useTransaction = !_dbContext.Database.IsInMemory();
         await using var transaction = useTransaction
@@ -111,7 +139,7 @@ public class AuthService : IAuthService
 
             if (storedToken.IsRevoked || storedToken.ExpiresAt <= now)
             {
-                if (IsRotatedTokenReplay(storedToken))
+                if (!suppressReplayFamilyRevocation && IsRotatedTokenReplay(storedToken))
                 {
                     await RevokeActiveTokenFamilyAsync(
                         storedToken.TokenFamilyId,
@@ -247,6 +275,12 @@ public class AuthService : IAuthService
             token.RevokedReason = reason;
             token.RowVersion = NewConcurrencyToken();
         }
+    }
+
+    private sealed class RefreshTokenGate
+    {
+        public SemaphoreSlim Lock { get; } = new(1, 1);
+        public int WaiterCount;
     }
 }
 

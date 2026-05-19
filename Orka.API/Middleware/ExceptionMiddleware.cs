@@ -37,10 +37,23 @@ public class ExceptionMiddleware
             try
             {
                 var safeMessage = SensitiveDataRedactor.Redact(ex.Message);
-                if (_environment.IsDevelopment())
+                var statusCode = GetStatusCode(ex);
+                if (IsExpectedHandledException(ex))
+                {
+                    _logger.LogWarning(
+                        "Handled exception. Type={ExceptionType} Status={StatusCode} Message={Message}",
+                        ex.GetType().Name,
+                        statusCode,
+                        safeMessage);
+                }
+                else if (_environment.IsDevelopment())
+                {
                     _logger.LogError(ex, "Unhandled exception: {Message}", safeMessage);
+                }
                 else
+                {
                     _logger.LogError("Unhandled exception. Type={ExceptionType} Message={Message}", ex.GetType().Name, safeMessage);
+                }
             }
             catch
             {
@@ -55,20 +68,21 @@ public class ExceptionMiddleware
     {
         context.Response.ContentType = "application/json";
 
-        var (statusCode, message) = exception switch
+        var statusCode = GetStatusCode(exception);
+        var message = exception switch
         {
-            DailyLimitExceededException => (429, exception.Message),
-            AiProviderCallException => (503, exposeDetails ? exception.Message : "AI provider gecici olarak kullanilamiyor."),
-            ProviderConfigurationException => (503, exposeDetails ? exception.Message : "AI provider gecici olarak kullanilamiyor."),
-            NotFoundException => (404, exception.Message),
-            UnauthorizedException => (401, exception.Message),
-            ConflictException => (409, exception.Message),
-            BadRequestException => (400, exception.Message),
-            ArgumentException => (400, exposeDetails ? exception.Message : "Gecersiz istek."),
-            InvalidOperationException => (500, exposeDetails ? exception.Message : "Istek su anda tamamlanamiyor."),
-            TimeoutException => (504, "Islem zaman asimina ugradi. Yapay zeka servisleri su an yogun olabilir."),
-            System.Text.Json.JsonException => (422, "Veri isleme hatasi. Yapay zeka yaniti beklenmedik bir formatta dondu."),
-            _ => (500, "Su an baglanti kurulamiyor. Lutfen internetinizi kontrol edin veya az sonra tekrar deneyin.")
+            DailyLimitExceededException => exception.Message,
+            AiProviderCallException => exposeDetails ? exception.Message : "AI provider gecici olarak kullanilamiyor.",
+            ProviderConfigurationException => exposeDetails ? exception.Message : "AI provider gecici olarak kullanilamiyor.",
+            NotFoundException => exception.Message,
+            UnauthorizedException => exception.Message,
+            ConflictException => exception.Message,
+            BadRequestException => exception.Message,
+            ArgumentException => exposeDetails ? exception.Message : "Gecersiz istek.",
+            InvalidOperationException => exposeDetails ? exception.Message : "Istek su anda tamamlanamiyor.",
+            TimeoutException => "Islem zaman asimina ugradi. Yapay zeka servisleri su an yogun olabilir.",
+            System.Text.Json.JsonException => "Veri isleme hatasi. Yapay zeka yaniti beklenmedik bir formatta dondu.",
+            _ => "Su an baglanti kurulamiyor. Lutfen internetinizi kontrol edin veya az sonra tekrar deneyin."
         };
 
         context.Response.StatusCode = statusCode;
@@ -76,4 +90,33 @@ public class ExceptionMiddleware
         var response = new { message, statusCode };
         return context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
+
+    private static int GetStatusCode(Exception exception) =>
+        exception switch
+        {
+            DailyLimitExceededException => 429,
+            AiProviderCallException => 503,
+            ProviderConfigurationException => 503,
+            NotFoundException => 404,
+            UnauthorizedException => 401,
+            ConflictException => 409,
+            BadRequestException => 400,
+            ArgumentException => 400,
+            InvalidOperationException => 500,
+            TimeoutException => 504,
+            System.Text.Json.JsonException => 422,
+            _ => 500
+        };
+
+    private static bool IsExpectedHandledException(Exception exception) =>
+        exception is DailyLimitExceededException
+            or AiProviderCallException
+            or ProviderConfigurationException
+            or NotFoundException
+            or UnauthorizedException
+            or ConflictException
+            or BadRequestException
+            or ArgumentException
+            or TimeoutException
+            or System.Text.Json.JsonException;
 }

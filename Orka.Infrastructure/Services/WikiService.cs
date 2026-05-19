@@ -1187,6 +1187,7 @@ Ders İçeriği:
         SafeSummary = page.SafeSummary,
         OrderIndex = page.OrderIndex,
         BlockCount = page.Blocks?.Count(b => !b.IsDeleted) ?? 0,
+        Curation = WikiAutoCurationService.BuildSummary(page, page.Blocks?.Where(b => !b.IsDeleted).ToArray()),
         UpdatedAt = page.UpdatedAt
     };
 
