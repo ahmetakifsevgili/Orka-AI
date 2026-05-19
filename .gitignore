@@ -16,6 +16,7 @@ publish/
 # Local appsettings overrides — production anahtarı içerebilir
 appsettings.*.json
 !appsettings.json
+!appsettings.*.template.json
 
 # EF Core migrations snapshot geçici dosyalar
 *.migration.cs.bak

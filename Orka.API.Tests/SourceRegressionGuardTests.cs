@@ -793,8 +793,12 @@ public sealed class SourceRegressionGuardTests
     {
         var migrationPolicy = ReadRepoText("docs/deployment/migration-policy.md");
         var checklist = ReadRepoText("scripts/CHECKLIST.md");
-        var productionSettings = ReadRepoText("Orka.API/appsettings.Production.json");
-        var stagingSettings = ReadRepoText("Orka.API/appsettings.Staging.json");
+        var productionSettings = ReadRepoText(
+            "Orka.API/appsettings.Production.json",
+            "Orka.API/appsettings.Production.template.json");
+        var stagingSettings = ReadRepoText(
+            "Orka.API/appsettings.Staging.json",
+            "Orka.API/appsettings.Staging.template.json");
 
         Assert.Contains("Cors:AllowedOrigins", migrationPolicy);
         Assert.Contains("Empty values and `*` are rejected at startup", migrationPolicy);
@@ -965,6 +969,18 @@ public sealed class SourceRegressionGuardTests
         var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(fullPath), "Missing expected source file: " + fullPath);
         return File.ReadAllText(fullPath, Encoding.UTF8);
+    }
+
+    private static string ReadRepoText(string relativePath, string fallbackRelativePath)
+    {
+        var root = FindRepoRoot();
+        var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(fullPath))
+            return File.ReadAllText(fullPath, Encoding.UTF8);
+
+        var fallbackPath = Path.Combine(root, fallbackRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(fallbackPath), "Missing expected source file: " + fallbackPath);
+        return File.ReadAllText(fallbackPath, Encoding.UTF8);
     }
 
     private static bool RepoFileExists(string relativePath)
