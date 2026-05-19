@@ -7,6 +7,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -118,7 +119,9 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "[SrsReminderWorker] Batch failed safely.");
+            _logger.LogWarning(
+                "[SrsReminderWorker] Batch failed safely. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             await RecordWorkerEventAsync("failed", false, "unknown_failure", sw.ElapsedMilliseconds, CancellationToken.None, sent);
             return sent;
         }

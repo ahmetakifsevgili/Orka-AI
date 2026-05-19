@@ -5,6 +5,7 @@ using System.Text.Json;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -55,9 +56,9 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
                 ct))
         {
             _logger.LogWarning(
-                "[ChatPostProcess] Assistant message missing. MessageId={MessageId} Session={SessionId}",
-                request.AssistantMessageId,
-                request.SessionId);
+                "[ChatPostProcess] Assistant message missing. MessageRef={MessageRef} SessionRef={SessionRef}",
+                LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"),
+                LogPrivacyGuard.SafeId(request.SessionId, "session"));
             return;
         }
 
@@ -117,8 +118,8 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
                 {
                     db.ChangeTracker.Clear();
                     _logger.LogInformation(
-                        "[ChatPostProcess] Duplicate evaluator insert ignored. MessageId={MessageId} AgentRole={AgentRole}",
-                        request.AssistantMessageId,
+                        "[ChatPostProcess] Duplicate evaluator insert ignored. MessageRef={MessageRef} AgentRole={AgentRole}",
+                        LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"),
                         request.AgentRole);
                     return;
                 }
@@ -134,10 +135,10 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "[ChatPostProcess] Evaluator failed. MessageId={MessageId} Correlation={CorrelationId}",
-                request.AssistantMessageId,
-                request.CorrelationId);
+                "[ChatPostProcess] Evaluator failed. MessageRef={MessageRef} CorrelationRef={CorrelationRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"),
+                LogPrivacyGuard.SafeTextRef(request.CorrelationId, "corr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -238,10 +239,10 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "[ChatPostProcess] Analyzer/wiki pipeline failed. MessageId={MessageId} Correlation={CorrelationId}",
-                request.AssistantMessageId,
-                request.CorrelationId);
+                "[ChatPostProcess] Analyzer/wiki pipeline failed. MessageRef={MessageRef} CorrelationRef={CorrelationRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"),
+                LogPrivacyGuard.SafeTextRef(request.CorrelationId, "corr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
 
             await MarkPendingWikiFailedAsync(db, request, ct);
         }
@@ -302,16 +303,16 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
             {
                 db.ChangeTracker.Clear();
                 _logger.LogInformation(
-                    "[ChatPostProcess] Duplicate summarizer evaluation ignored. MessageId={MessageId}",
-                    request.AssistantMessageId);
+                    "[ChatPostProcess] Duplicate summarizer evaluation ignored. MessageRef={MessageRef}",
+                    LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"));
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "[ChatPostProcess] Summarizer evaluation failed. MessageId={MessageId}",
-                request.AssistantMessageId);
+                "[ChatPostProcess] Summarizer evaluation failed. MessageRef={MessageRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.AssistantMessageId, "msg"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

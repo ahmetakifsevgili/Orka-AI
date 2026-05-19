@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -61,7 +62,9 @@ public sealed class LearningRuntimeTelemetryService : ILearningRuntimeTelemetryS
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[LearningRuntimeTelemetry] Runtime trace write failed. Category={Category}", request.Category);
+            _logger.LogWarning("[LearningRuntimeTelemetry] Runtime trace write failed. Category={Category} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(request.Category, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return MapToolTelemetry(entity);

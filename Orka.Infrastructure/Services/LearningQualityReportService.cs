@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -364,7 +365,10 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[LearningQualityReport] Redis write skipped. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogDebug("[LearningQualityReport] Redis write skipped. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

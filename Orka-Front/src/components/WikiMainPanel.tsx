@@ -34,7 +34,7 @@ import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 import { tryParseQuiz } from "@/lib/quizParser";
-import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiGraphDto, WikiGraphPageDto } from "@/lib/types";
+import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto } from "@/lib/types";
 import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import { userSafeStatus } from "@/lib/userSafeStatus";
 import QuizCard from "./QuizCard";
@@ -52,6 +52,7 @@ interface WikiPage {
   sourceReadiness?: string;
   evidenceStatus?: string;
   safeSummary?: string | null;
+  curation?: import("@/lib/types").WikiCurationSummaryDto | null;
   orderIndex?: number;
   blockCount?: number;
   blocks?: Array<{
@@ -532,6 +533,8 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [sourceConceptLinks, setSourceConceptLinks] = useState<SourceConceptLinkSummaryDto | null>(null);
   const [sourceConceptGraph, setSourceConceptGraph] = useState<SourceConceptGraphDto | null>(null);
   const [activePageSourceLinks, setActivePageSourceLinks] = useState<SourceConceptLinkSummaryDto | null>(null);
+  const [wikiCopilot, setWikiCopilot] = useState<WikiCopilotContextDto | null>(null);
+  const [wikiCopilotLoading, setWikiCopilotLoading] = useState(false);
   const [sourceConceptSyncing, setSourceConceptSyncing] = useState(false);
   const [sourceAsking, setSourceAsking] = useState(false);
   const [selectedCompareSourceIds, setSelectedCompareSourceIds] = useState<string[]>([]);
@@ -635,6 +638,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       sourceReadiness: page.sourceReadiness,
       evidenceStatus: page.evidenceStatus,
       safeSummary: page.safeSummary,
+      curation: page.curation,
       orderIndex: page.orderIndex,
       blockCount: page.blockCount,
     }));
@@ -922,6 +926,29 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       cancelled = true;
     };
   }, [activePage?.id, sourceConceptSyncing]);
+
+  useEffect(() => {
+    if (!activePage?.id || activePage.id.startsWith("orkalm-source-")) {
+      setWikiCopilot(null);
+      setWikiCopilotLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setWikiCopilotLoading(true);
+    WikiAPI.getPageCopilot(activePage.id)
+      .then((context) => {
+        if (!cancelled) setWikiCopilot(context);
+      })
+      .catch(() => {
+        if (!cancelled) setWikiCopilot(null);
+      })
+      .finally(() => {
+        if (!cancelled) setWikiCopilotLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePage?.id, activePage?.blocks?.length, notebookRefreshTick]);
 
   useEffect(() => {
     if (!activePage?.blocks || activePage.blocks.length === 0) {
@@ -1303,6 +1330,40 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     setInput(`${label} konusunu kaynaklara göre açıkla ve ilişkili noktaları göster.`);
   };
 
+  const handleWikiCopilotAction = (action: NonNullable<WikiCopilotContextDto["primaryAction"]>) => {
+    if (action.availability === "blocked") {
+      toast(action.userSafeDescription || "Bu aksiyon guvenlik nedeniyle sinirlandi.");
+      recordWikiAction("wiki-copilot-action-blocked", action.actionType, {
+        targetSurface: action.targetSurface,
+        reasonCodes: action.reasonCodes,
+      });
+      return;
+    }
+
+    recordWikiAction("wiki-copilot-action", action.actionType, {
+      targetSurface: action.targetSurface,
+      reasonCodes: action.reasonCodes,
+    });
+
+    if (action.actionType === "ask_source" || action.actionType === "inspect_citations") {
+      document.getElementById("wiki-study-sources")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (action.actionType === "create_study_pack" || action.actionType === "create_flashcards") {
+      document.getElementById("wiki-notebook-studio")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (action.actionType === "generate_checkpoint" || action.actionType === "start_repair" || action.actionType === "review_weak_concept") {
+      document.getElementById("wiki-study-reinforcement")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    setShowCopilot(true);
+    const pageTitle = activePage?.title ?? "bu Wiki sayfasi";
+    setInput(`${pageTitle}: ${action.userSafeLabel}. ${action.userSafeDescription}`);
+  };
+
   const handleSyncWikiGraph = async () => {
     if (wikiGraphSyncing) return;
     setWikiGraphSyncing(true);
@@ -1361,6 +1422,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       sourceReadiness: page.sourceReadiness,
       evidenceStatus: page.evidenceStatus,
       safeSummary: page.safeSummary,
+      curation: page.curation,
       orderIndex: page.orderIndex,
       blockCount: page.blockCount,
     };
@@ -1876,6 +1938,93 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                           {activeGraphPage?.safeSummary ?? activePage.safeSummary}
                         </p>
                       )}
+                      {(activeGraphPage?.curation ?? activePage.curation) && (
+                        <div className="rounded-xl border border-[#e8c46f]/18 bg-[#fff8ee]/70 px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone((activeGraphPage?.curation ?? activePage.curation)?.curationStatus)}`}>
+                              {userSafeStatus((activeGraphPage?.curation ?? activePage.curation)?.curationStatus)}
+                            </span>
+                            <span className="text-[10px] font-bold text-[#8a6a33]">
+                              {userSafeStatus((activeGraphPage?.curation ?? activePage.curation)?.nextAction)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-5 text-[#8a6a33]">
+                            {(activeGraphPage?.curation ?? activePage.curation)?.studentVisibleSummary}
+                          </p>
+                        </div>
+                      )}
+                      {(wikiCopilot || wikiCopilotLoading) && (
+                        <div data-testid="wiki-copilot-panel" className="rounded-xl border border-[#8fb7a2]/22 bg-[#f2faf5]/78 px-3 py-3">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="h-3.5 w-3.5 text-[#47725d]" />
+                              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#47725d]">
+                                Wiki Copilot
+                              </span>
+                            </div>
+                            {wikiCopilotLoading ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#47725d]" />
+                            ) : (
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(wikiCopilot?.nextAction)}`}>
+                                {userSafeStatus(wikiCopilot?.nextAction ?? "continue_learning")}
+                              </span>
+                            )}
+                          </div>
+                          {wikiCopilot && (
+                            <>
+                              <p className="text-[11px] leading-5 text-[#47725d]">
+                                {wikiCopilot.studentVisibleSummary}
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(wikiCopilot.repairState)}`}>
+                                  {userSafeStatus(wikiCopilot.repairState)}
+                                </span>
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(wikiCopilot.sourceReadiness)}`}>
+                                  {userSafeStatus(wikiCopilot.sourceReadiness)}
+                                </span>
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(wikiCopilot.notebookPackStatus)}`}>
+                                  {userSafeStatus(wikiCopilot.notebookPackStatus)}
+                                </span>
+                              </div>
+                              {wikiCopilot.primaryAction && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleWikiCopilotAction(wikiCopilot.primaryAction!)}
+                                  disabled={wikiCopilot.primaryAction.availability === "blocked"}
+                                  className="mt-3 w-full rounded-xl border border-[#8fb7a2]/28 bg-white/75 px-3 py-2 text-left transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <div className="text-xs font-black text-[#172033]">{wikiCopilot.primaryAction.userSafeLabel}</div>
+                                  <div className="mt-0.5 text-[11px] leading-5 text-[#667085]">{wikiCopilot.primaryAction.userSafeDescription}</div>
+                                </button>
+                              )}
+                              {wikiCopilot.suggestedActions.length > 1 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {wikiCopilot.suggestedActions.slice(1, 5).map((action) => (
+                                    <button
+                                      key={`${action.actionType}-${action.availability}-${action.userSafeLabel}`}
+                                      type="button"
+                                      onClick={() => handleWikiCopilotAction(action)}
+                                      disabled={action.availability === "blocked"}
+                                      className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                                        action.availability === "blocked"
+                                          ? "border-amber-500/22 bg-[#fff8ee]/80 text-[#8a6a33]"
+                                          : "border-[#526d82]/12 bg-white/70 text-[#344054] hover:bg-white"
+                                      }`}
+                                    >
+                                      {action.userSafeLabel}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              {wikiCopilot.warnings.length > 0 && (
+                                <p className="mt-2 rounded-lg border border-amber-500/18 bg-white/60 px-2 py-1.5 text-[10px] font-semibold leading-4 text-[#8a6a33]">
+                                  {wikiCopilot.warnings.slice(0, 2).map(userSafeStatus).join(" / ")}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
                       {activePageSourceLinks && (
                         <div className="rounded-xl border border-[#526d82]/10 bg-white/64 px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
@@ -2037,6 +2186,21 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                   <p className="mt-3 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/64 px-3 py-2 text-xs leading-5 text-[#667085]">
                     {activeGraphPage?.safeSummary ?? activePage.safeSummary}
                   </p>
+                )}
+                {(activeGraphPage?.curation ?? activePage.curation) && (
+                  <div className="mt-3 rounded-xl border border-[#e8c46f]/18 bg-[#fff8ee]/70 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone((activeGraphPage?.curation ?? activePage.curation)?.curationStatus)}`}>
+                        {userSafeStatus((activeGraphPage?.curation ?? activePage.curation)?.curationStatus)}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#8a6a33]">
+                        Wiki hygiene
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#8a6a33]">
+                      {(activeGraphPage?.curation ?? activePage.curation)?.studentVisibleSummary}
+                    </p>
+                  </div>
                 )}
 
                 {relatedGraphPages.length > 0 && (
@@ -3052,15 +3216,17 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </div>
 
                 <div className="space-y-4">
-                  <NotebookStudioPanel
-                    topicId={topicId}
-                    wikiPageId={isOrkaLm ? undefined : activePage?.id}
-                    wikiPageTitle={isOrkaLm ? undefined : activePage?.title}
-                    surface={isOrkaLm && activeSource ? "source_notebook" : activePage ? "wiki_page" : "milestone"}
-                    sourceId={isOrkaLm ? activeSource?.id : undefined}
-                    sourceTitle={isOrkaLm ? activeSource?.title || activeSource?.fileName : undefined}
-                    sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
-                  />
+                  <div id="wiki-notebook-studio" className="scroll-mt-6">
+                    <NotebookStudioPanel
+                      topicId={topicId}
+                      wikiPageId={isOrkaLm ? undefined : activePage?.id}
+                      wikiPageTitle={isOrkaLm ? undefined : activePage?.title}
+                      surface={isOrkaLm && activeSource ? "source_notebook" : activePage ? "wiki_page" : "milestone"}
+                      sourceId={isOrkaLm ? activeSource?.id : undefined}
+                      sourceTitle={isOrkaLm ? activeSource?.title || activeSource?.fileName : undefined}
+                      sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
+                    />
+                  </div>
 
                   <div id="wiki-study-glossary" className="scroll-mt-6 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">

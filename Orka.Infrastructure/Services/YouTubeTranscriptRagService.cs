@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -54,7 +55,9 @@ public sealed partial class YouTubeTranscriptProvider : IYouTubeTranscriptProvid
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[YouTubeTranscriptRag] Transcript provider failed.");
+            _logger.LogWarning(
+                "[YouTubeTranscriptRag] Transcript provider failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return Disabled(request.VideoId, "unknown_failure", "YouTube transcript provider failed safely.");
         }
     }

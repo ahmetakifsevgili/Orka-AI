@@ -11,6 +11,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 
 namespace Orka.Infrastructure.Services;
@@ -319,7 +320,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             state.Status = PlanDiagnosticStatus.Failed;
             state.ErrorMessage = ex.Message;
             await _stateStore.SaveAsync(state, ct);
-            _logger.LogWarning(ex, "[PlanDiagnostic] Start failed. PlanRequestId={PlanRequestId}", planRequestId);
+            _logger.LogWarning("[PlanDiagnostic] Start failed. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(planRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             throw;
         }
     }
@@ -553,9 +556,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             if (!quality.IsAcceptable)
             {
                 _logger.LogWarning(
-                    "[PlanDiagnostic] Diagnostic quiz quality failed. Topic={Topic} Failures={Failures}",
-                    topicTitle,
-                    string.Join(" | ", quality.Failures));
+                    "[PlanDiagnostic] Diagnostic quiz quality failed. TopicRef={TopicRef} FailureCount={FailureCount}",
+                    LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                    quality.Failures.Count);
             }
 
             return validatedQuiz;
@@ -563,9 +566,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning(
-                ex,
-                "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. Topic={Topic}",
-                topicTitle);
+                "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
 
             var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar);
             fallback = await _assessmentGrammar.AttachQuestionMetadataAsync(fallback, assessmentGrammar, ct);
@@ -1025,7 +1028,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[PlanDiagnostic] Learning snapshot refresh skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+            _logger.LogDebug("[PlanDiagnostic] Learning snapshot refresh skipped. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(state.PlanRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -1062,7 +1067,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[PlanDiagnostic] Plan quality evaluation skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+            _logger.LogDebug("[PlanDiagnostic] Plan quality evaluation skipped. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(state.PlanRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -1080,7 +1087,9 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[PlanDiagnostic] Latest plan quality lookup skipped. PlanRequestId={PlanRequestId}", state.PlanRequestId);
+            _logger.LogDebug("[PlanDiagnostic] Latest plan quality lookup skipped. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(state.PlanRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Exceptions;
+using Orka.Infrastructure.Utilities;
 using UglyToad.PdfPig;
 
 namespace Orka.Infrastructure.Services;
@@ -71,7 +72,9 @@ public class FileExtractionService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[FileExtraction] {File} okunamadı.", fileName);
+            _logger.LogWarning("[FileExtraction] File okunamadi. FileRef={FileRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(fileName, "file"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new ExtractedDocument([], "[Dosya okunamadi. Dosya bicimini veya icerigini kontrol edip tekrar deneyin.]");
         }
     }

@@ -7,6 +7,7 @@ using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -80,7 +81,9 @@ public sealed class DiagnosticProfileBuilder : IDiagnosticProfileBuilder
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[DiagnosticProfile] Redis write skipped. Key={Key}", activeDiagnosticKey);
+                _logger.LogDebug("[DiagnosticProfile] Redis write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(activeDiagnosticKey, "cache"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 

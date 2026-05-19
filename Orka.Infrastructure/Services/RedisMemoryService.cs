@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 using StackExchange.Redis;
 
 namespace Orka.Infrastructure.Services;
@@ -49,7 +50,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch(Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Hatalar Defteri'ne puan kaydedilirken hata oluştu.");
+            _logger.LogError(
+                "[Redis] Hatalar Defteri'ne puan kaydedilirken hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -67,7 +70,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch(Exception ex)
         {
-             _logger.LogError(ex, "[Redis] Geçmiş geri bildirimler çekilirken hata oluştu.");
+             _logger.LogError(
+                 "[Redis] Gecmis geri bildirimler cekilirken hata olustu. ErrorType={ErrorType}",
+                 LogPrivacyGuard.SafeExceptionType(ex));
              return Enumerable.Empty<string>();
         }
     }
@@ -112,7 +117,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-             _logger.LogError(ex, "[Redis] Rate Limit (Kota Kalkanı) kontrol edilirken hata oluştu.");
+             _logger.LogError(
+                 "[Redis] Rate Limit (Kota Kalkani) kontrol edilirken hata olustu. ErrorType={ErrorType}",
+                 LogPrivacyGuard.SafeExceptionType(ex));
              // Redis çökerse sistemi kilitlememek için (Fail open) true döndürüyoruz.
              return true;
         }
@@ -126,7 +133,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch(Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Global politika yazılırken hata oluştu.");
+            _logger.LogError(
+                "[Redis] Global politika yazilirken hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -139,7 +148,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch(Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Global politika okunurken hata oluştu.");
+            _logger.LogError(
+                "[Redis] Global politika okunurken hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -178,7 +189,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Piston sonucu kaydedilirken hata oluştu. SessionId={SessionId}", sessionId);
+            _logger.LogError("[Redis] Piston sonucu kaydedilirken hata olustu. SessionRef={SessionRef} ErrorType={ErrorType}",
+                SessionRef(sessionId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -191,7 +203,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Piston sonucu okunurken hata oluştu. SessionId={SessionId}", sessionId);
+            _logger.LogError("[Redis] Piston sonucu okunurken hata olustu. SessionRef={SessionRef} ErrorType={ErrorType}",
+                SessionRef(sessionId), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -207,7 +220,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Wiki-ready sinyali yazılırken hata oluştu. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Wiki-ready sinyali yazilirken hata olustu. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -229,11 +243,12 @@ public class RedisMemoryService : IRedisMemoryService
             await _db.ListTrimAsync(key, 0, 9);                          // Max 10 örnek
             await _db.KeyExpireAsync(key, TimeSpan.FromDays(30));
 
-            _logger.LogInformation("[Redis] Altın örnek kaydedildi. TopicId={TopicId} Puan={Score}", topicId, score);
+            _logger.LogInformation("[Redis] Altin ornek kaydedildi. TopicRef={TopicRef} Puan={Score}", TopicRef(topicId), score);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Altın örnek kaydedilirken hata oluştu. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Altin ornek kaydedilirken hata olustu. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -256,7 +271,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Altın örnekler okunurken hata oluştu. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Altin ornekler okunurken hata olustu. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return Enumerable.Empty<GoldExample>();
         }
     }
@@ -297,7 +313,10 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Ajan metriği kaydedilirken hata oluştu. Role={Role}", agentRole);
+            _logger.LogError(
+                "[Redis] Ajan metrigi kaydedilirken hata olustu. Role={Role} ErrorType={ErrorType}",
+                agentRole,
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -345,7 +364,10 @@ public class RedisMemoryService : IRedisMemoryService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Redis] Sistem metrikleri okunurken hata oluştu. Role={Role}", role);
+                _logger.LogError(
+                    "[Redis] Sistem metrikleri okunurken hata olustu. Role={Role} ErrorType={ErrorType}",
+                    role,
+                    LogPrivacyGuard.SafeExceptionType(ex));
                 result.Add(new AgentMetricSummary(role, 0, 0, 0, 0, "—", "—"));
             }
         }
@@ -393,7 +415,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Provider kullanım dağılımı okunurken hata oluştu.");
+            _logger.LogError(
+                "[Redis] Provider kullanim dagilimi okunurken hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return Enumerable.Empty<ProviderUsageStat>();
         }
     }
@@ -407,7 +431,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Cache okunamadı. Key={Key}", key);
+            _logger.LogWarning("[Redis] Cache okunamadi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -420,7 +445,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Cache yazılamadı. Key={Key}", key);
+            _logger.LogWarning("[Redis] Cache yazilamadi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -445,7 +471,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Stream event yazılamadı. Key={Key}", key);
+            _logger.LogWarning("[Redis] Stream event yazilamadi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -462,7 +489,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Stream okunamadi. Key={Key}", key);
+            _logger.LogWarning("[Redis] Stream okunamadi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -480,7 +508,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Consumer group olusturulamadi. Key={Key} Group={Group}", key, group);
+            _logger.LogWarning("[Redis] Consumer group olusturulamadi. KeyRef={KeyRef} Group={Group} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeMessage(group, 80), LogPrivacyGuard.SafeExceptionType(ex));
             return false;
         }
     }
@@ -494,7 +523,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Consumer group stream okunamadi. Key={Key} Group={Group}", key, group);
+            _logger.LogWarning("[Redis] Consumer group stream okunamadi. KeyRef={KeyRef} Group={Group} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeMessage(group, 80), LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -513,7 +543,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Stream ack basarisiz. Key={Key} Group={Group}", key, group);
+            _logger.LogWarning("[Redis] Stream ack basarisiz. KeyRef={KeyRef} Group={Group} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeMessage(group, 80), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -525,7 +556,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Stream trim basarisiz. Key={Key}", key);
+            _logger.LogWarning("[Redis] Stream trim basarisiz. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
             return 0;
         }
     }
@@ -546,7 +578,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Key scan basarisiz. Pattern={Pattern}", pattern);
+            _logger.LogWarning("[Redis] Key scan basarisiz. PatternRef={PatternRef} ErrorType={ErrorType}",
+                KeyRef(pattern), LogPrivacyGuard.SafeExceptionType(ex));
             return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         }
     }
@@ -572,7 +605,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Cache silinemedi. Key={Key}", key);
+            _logger.LogWarning("[Redis] Cache silinemedi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -586,7 +620,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Notebook version okunamadı. TopicId={TopicId}", topicId);
+            _logger.LogWarning("[Redis] Notebook version okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return 0;
         }
     }
@@ -599,13 +634,14 @@ public class RedisMemoryService : IRedisMemoryService
             var version = await _db.StringIncrementAsync(key);
             await _db.KeyExpireAsync(key, TimeSpan.FromDays(30));
             await RecordCacheMetricAsync("notebook-invalidation", hit: false, tool: reason);
-            _logger.LogInformation("[Redis] Notebook cache version güncellendi. TopicId={TopicId} Version={Version} Reason={Reason}",
-                topicId, version, reason);
+            _logger.LogInformation("[Redis] Notebook cache version guncellendi. TopicRef={TopicRef} Version={Version} Reason={Reason}",
+                TopicRef(topicId), version, LogPrivacyGuard.SafeMessage(reason, 80));
             return version;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Notebook version artırılamadı. TopicId={TopicId} Reason={Reason}", topicId, reason);
+            _logger.LogWarning("[Redis] Notebook version artirilamadi. TopicRef={TopicRef} Reason={Reason} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeMessage(reason, 80), LogPrivacyGuard.SafeExceptionType(ex));
             return 0;
         }
     }
@@ -620,12 +656,13 @@ public class RedisMemoryService : IRedisMemoryService
                 LearningRecommendationsKey(userId, topicId)
             });
             await RecordCacheMetricAsync("learning-invalidation", hit: false, tool: reason);
-            _logger.LogInformation("[Redis] Learning cache temizlendi. User={UserId} Topic={TopicId} Reason={Reason}",
-                userId, topicId, reason);
+            _logger.LogInformation("[Redis] Learning cache temizlendi. UserRef={UserRef} TopicRef={TopicRef} Reason={Reason}",
+                UserRef(userId), TopicRef(topicId), LogPrivacyGuard.SafeMessage(reason, 80));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Learning cache temizlenemedi. User={UserId} Topic={TopicId}", userId, topicId);
+            _logger.LogWarning("[Redis] Learning cache temizlenemedi. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                UserRef(userId), TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -665,11 +702,11 @@ public class RedisMemoryService : IRedisMemoryService
 
         await RecordCacheMetricAsync("broad-purge", hit: false, tool: reason);
         _logger.LogInformation(
-            "[Redis] User/topic cache purge tamamlandi. User={UserId} TopicCount={TopicCount} Deleted={Deleted} Reason={Reason}",
-            userId,
+            "[Redis] User/topic cache purge tamamlandi. UserRef={UserRef} TopicCount={TopicCount} Deleted={Deleted} Reason={Reason}",
+            UserRef(userId),
             scopedTopicIds.Length,
             deleted,
-            reason);
+            LogPrivacyGuard.SafeMessage(reason, 80));
     }
 
     public async Task RecordCacheMetricAsync(string area, bool hit, string? tool = null, double? latencyMs = null)
@@ -695,7 +732,10 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[Redis] Cache metriği yazılamadı. Area={Area}", area);
+            _logger.LogDebug(
+                "[Redis] Cache metrigi yazilamadi. Area={Area} ErrorType={ErrorType}",
+                area,
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -755,7 +795,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Cache metrikleri okunamadı.");
+            _logger.LogWarning(
+                "[Redis] Cache metrikleri okunamadi. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return Enumerable.Empty<CacheMetricSummary>();
         }
     }
@@ -778,7 +820,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Health check başarısız.");
+            _logger.LogWarning(
+                "[Redis] Health check basarisiz. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new RedisHealthDto(false, 0, 0, "offline", ex.Message, checkedAt);
         }
     }
@@ -799,7 +843,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Quiz hash hafızası okunamadı. User={UserId} Topic={TopicId}", userId, topicId);
+            _logger.LogWarning("[Redis] Quiz hash hafizasi okunamadi. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                UserRef(userId), TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -825,7 +870,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Redis] Quiz hash hafızası yazılamadı. User={UserId} Topic={TopicId}", userId, topicId);
+            _logger.LogWarning("[Redis] Quiz hash hafizasi yazilamadi. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                UserRef(userId), TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -860,7 +906,9 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Evaluator logları okunurken hata oluştu.");
+            _logger.LogError(
+                "[Redis] Evaluator loglari okunurken hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return Enumerable.Empty<EvaluatorLogEntry>();
         }
     }
@@ -929,7 +977,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Topic score kaydedilirken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Topic score kaydedilirken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -961,7 +1010,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Topic score okunurken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Topic score okunurken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return (0, 0);
         }
     }
@@ -985,11 +1035,13 @@ public class RedisMemoryService : IRedisMemoryService
             var payload = JsonSerializer.Serialize(record);
             await _db.StringSetAsync(key, payload, WeaknessDecayPeriod);
 
-            _logger.LogInformation("[Redis] Öğrenci Profili güncellendi. TopicId={TopicId} Puan={Score} TTL={Days}gün", topicId, understandingScore, WeaknessDecayPeriod.TotalDays);
+            _logger.LogInformation("[Redis] Ogrenci profili guncellendi. TopicRef={TopicRef} Puan={Score} TTL={Days}gun",
+                TopicRef(topicId), understandingScore, WeaknessDecayPeriod.TotalDays);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Öğrenci profili kaydedilirken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Ogrenci profili kaydedilirken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -1009,7 +1061,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Öğrenci profili okunurken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Ogrenci profili okunurken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -1029,11 +1082,12 @@ public class RedisMemoryService : IRedisMemoryService
             // 5 dakika TTL — bir sonraki yanıtta tüketilmezse expire olur, eski uyarılar yığılmaz.
             await _db.StringSetAsync(key, payload, TimeSpan.FromMinutes(5));
 
-            _logger.LogInformation("[Redis] Düşük kalite uyarısı set edildi. SessionId={SessionId} Score={Score}", sessionId, score);
+            _logger.LogInformation("[Redis] Dusuk kalite uyarisi set edildi. SessionRef={SessionRef} Score={Score}", SessionRef(sessionId), score);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Düşük kalite uyarısı yazılırken hata. SessionId={SessionId}", sessionId);
+            _logger.LogError("[Redis] Dusuk kalite uyarisi yazilirken hata. SessionRef={SessionRef} ErrorType={ErrorType}",
+                SessionRef(sessionId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -1067,7 +1121,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Düşük kalite uyarısı okunurken hata. SessionId={SessionId}", sessionId);
+            _logger.LogError("[Redis] Dusuk kalite uyarisi okunurken hata. SessionRef={SessionRef} ErrorType={ErrorType}",
+                SessionRef(sessionId), LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -1086,11 +1141,12 @@ public class RedisMemoryService : IRedisMemoryService
 
             await _db.StringSetAsync(key, trimmed, TimeSpan.FromHours(2));
             await BumpTopicVersionAsync(topicId, "korteks-report");
-            _logger.LogInformation("[Redis] Korteks raporu kaydedildi. TopicId={TopicId} Length={Length}", topicId, trimmed.Length);
+            _logger.LogInformation("[Redis] Korteks raporu kaydedildi. TopicRef={TopicRef} Length={Length}", TopicRef(topicId), trimmed.Length);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Korteks raporu yazılırken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Korteks raporu yazilirken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -1104,7 +1160,8 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] Korteks raporu okunurken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] Korteks raporu okunurken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -1118,11 +1175,12 @@ public class RedisMemoryService : IRedisMemoryService
             var key = $"orka:youtube:{topicId}";
             // 24 saat TTL — YouTube içeriği sık değişmez, kota tasarrufu kritik
             await _db.StringSetAsync(key, payload, TimeSpan.FromHours(24));
-            _logger.LogInformation("[Redis] YouTube context cache'lendi. TopicId={TopicId} Length={Length}", topicId, payload.Length);
+            _logger.LogInformation("[Redis] YouTube context cache'lendi. TopicRef={TopicRef} Length={Length}", TopicRef(topicId), payload.Length);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] YouTube context yazılırken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] YouTube context yazilirken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -1142,10 +1200,19 @@ public class RedisMemoryService : IRedisMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Redis] YouTube context okunurken hata. TopicId={TopicId}", topicId);
+            _logger.LogError("[Redis] YouTube context okunurken hata. TopicRef={TopicRef} ErrorType={ErrorType}",
+                TopicRef(topicId), LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
+
+    private static string UserRef(Guid userId) => LogPrivacyGuard.SafeId(userId, "usr");
+
+    private static string TopicRef(Guid topicId) => LogPrivacyGuard.SafeId(topicId, "topic");
+
+    private static string SessionRef(Guid sessionId) => LogPrivacyGuard.SafeId(sessionId, "session");
+
+    private static string KeyRef(string? key) => LogPrivacyGuard.SafeTextRef(key, "redis");
 
     public static string LearningSummaryKey(Guid userId, Guid topicId) =>
         $"orka:v1:learning:summary:{userId}:{topicId}";

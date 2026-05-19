@@ -13,6 +13,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -650,8 +651,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             if (lq == null) return string.Empty;
 
             _logger.LogInformation(
-                "[TutorAgent] Düşük kalite uyarısı tüketildi. SessionId={SessionId} Score={Score}",
-                sessionId, lq.Value.score);
+                "[TutorAgent] Dusuk kalite uyarisi tuketildi. SessionRef={SessionRef} Score={Score}",
+                LogPrivacyGuard.SafeId(sessionId, "session"), lq.Value.score);
 
             return $"""
 
@@ -668,7 +669,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Düşük kalite flag'i okunamadı.");
+            _logger.LogWarning("[TutorAgent] Dusuk kalite flag'i okunamadi. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -681,7 +683,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] NotebookLM belge bağlamı okunamadı. TopicId={TopicId}", topicId);
+            _logger.LogWarning("[TutorAgent] NotebookLM belge baglami okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -721,7 +724,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Learning signal context okunamadi. TopicId={TopicId}", topicId);
+            _logger.LogWarning("[TutorAgent] Learning signal context okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -748,7 +752,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] YouTube context okunamadı. TopicId={TopicId}", topicId);
+            _logger.LogWarning("[TutorAgent] YouTube context okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -830,7 +835,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Aktif ders baglami okunamadi. TopicId={TopicId}", topicId.Value);
+            _logger.LogWarning("[TutorAgent] Aktif ders baglami okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId.Value, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -898,8 +904,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             if (!string.IsNullOrWhiteSpace(context))
             {
                 _logger.LogInformation(
-                    "[TutorAgent] Review/remediation pressure context loaded. TopicId={TopicId} RecommendationCount={RecommendationCount} RemediationCount={RemediationCount}",
-                    topicId.Value,
+                    "[TutorAgent] Review/remediation pressure context loaded. TopicRef={TopicRef} RecommendationCount={RecommendationCount} RemediationCount={RemediationCount}",
+                    LogPrivacyGuard.SafeId(topicId.Value, "topic"),
                     recommendations.Count,
                     remediationPlans.Count);
             }
@@ -908,7 +914,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Review/remediation pressure context okunamadi. TopicId={TopicId}", topicId.Value);
+            _logger.LogWarning("[TutorAgent] Review/remediation pressure context okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId.Value, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -926,8 +933,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             var examples = (await _redisService.GetGoldExamplesAsync(topicId.Value, 2)).ToList();
             if (examples.Count == 0) return string.Empty;
 
-            _logger.LogInformation("[TutorAgent] {Count} altın örnek yüklendi. TopicId={TopicId}",
-                examples.Count, topicId.Value);
+            _logger.LogInformation("[TutorAgent] {Count} altin ornek yuklendi. TopicRef={TopicRef}",
+                examples.Count, LogPrivacyGuard.SafeId(topicId.Value, "topic"));
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("\n\n[ALTIN ÖRNEKLER — Bu konuda daha önce başarılı olan yanıtlar (sen yazdın, puan >= 9)]:");
@@ -944,7 +951,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Altın örnekler yüklenemedi. TopicId={TopicId}", topicId.Value);
+            _logger.LogWarning("[TutorAgent] Altin ornekler yuklenemedi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId.Value, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -968,14 +976,15 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             if (wikiContent.Length > WikiContextMaxChars)
                 wikiContent = wikiContent[..WikiContextMaxChars] + "\n[...devamı wiki panelinde]";
 
-            _logger.LogInformation("[TutorAgent] Wiki context yüklendi: {CharCount} karakter. TopicId={TopicId}",
-                wikiContent.Length, topicId.Value);
+            _logger.LogInformation("[TutorAgent] Wiki context yuklendi: {CharCount} karakter. TopicRef={TopicRef}",
+                wikiContent.Length, LogPrivacyGuard.SafeId(topicId.Value, "topic"));
 
             return $"\n\n[KONU WİKİSİ — Bu konuda şimdiye kadar bilinenler]:\n{wikiContent}";
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Wiki context yüklenemedi, standart moda devam. TopicId={TopicId}", topicId.Value);
+            _logger.LogWarning("[TutorAgent] Wiki context yuklenemedi, standart moda devam. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId.Value, "topic"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -992,13 +1001,15 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             var json = await _redisService.GetLastPistonResultAsync(sessionId);
             if (string.IsNullOrEmpty(json)) return string.Empty;
 
-            _logger.LogInformation("[TutorAgent] Piston context yüklendi. Session={SessionId}", sessionId);
+            _logger.LogInformation("[TutorAgent] Piston context yuklendi. SessionRef={SessionRef}",
+                LogPrivacyGuard.SafeId(sessionId, "session"));
 
             return $"\n\n[SON KOD ÇIKTISI — Öğrenci az önce şunu çalıştırdı]:\n{json}";
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Piston context yüklenemedi. Session={SessionId}", sessionId);
+            _logger.LogWarning("[TutorAgent] Piston context yuklenemedi. SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(sessionId, "session"), LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -1066,7 +1077,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[TutorAgent] Redis performans notları okunurken hata oluştu, standart moda devam ediliyor.");
+            _logger.LogWarning("[TutorAgent] Redis performans notlari okunurken hata olustu, standart moda devam ediliyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return "";
         }
     }

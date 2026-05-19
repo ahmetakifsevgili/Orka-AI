@@ -6,6 +6,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -68,7 +69,9 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[RuntimeTelemetry] Tool event write failed. ToolId={ToolId}", request.ToolId);
+            _logger.LogWarning("[RuntimeTelemetry] Tool event write failed. ToolRef={ToolRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(request.ToolId, "tool"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -108,7 +111,10 @@ public sealed class RuntimeTelemetryService : IRuntimeTelemetryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[RuntimeTelemetry] Cost record write failed. Agent={AgentRole} Model={Model}", CanonicalAgentRoles.NormalizeForCost(request.AgentRole), request.Model);
+            _logger.LogWarning("[RuntimeTelemetry] Cost record write failed. Agent={AgentRole} ModelRef={ModelRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(CanonicalAgentRoles.NormalizeForCost(request.AgentRole), 80),
+                LogPrivacyGuard.SafeTextRef(request.Model, "model"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

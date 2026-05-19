@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -694,7 +695,9 @@ public sealed class DataLifecycleService : IDataLifecycleService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Learning cache invalidation failed after data lifecycle operation. TopicId={TopicId}", topicId);
+                _logger.LogWarning("Learning cache invalidation failed after data lifecycle operation. TopicRef={TopicRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -709,9 +712,9 @@ public sealed class DataLifecycleService : IDataLifecycleService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(
-                        ex,
-                        "Session Redis cache invalidation failed after data lifecycle operation. SessionId={SessionId}",
-                        sessionId);
+                        "Session Redis cache invalidation failed after data lifecycle operation. SessionRef={SessionRef} ErrorType={ErrorType}",
+                        LogPrivacyGuard.SafeId(sessionId, "session"),
+                        LogPrivacyGuard.SafeExceptionType(ex));
                 }
             }
         }
@@ -722,7 +725,9 @@ public sealed class DataLifecycleService : IDataLifecycleService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Broad Redis cache purge failed after data lifecycle operation. Reason={Reason}", reason);
+            _logger.LogWarning("Broad Redis cache purge failed after data lifecycle operation. Reason={Reason} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(reason, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

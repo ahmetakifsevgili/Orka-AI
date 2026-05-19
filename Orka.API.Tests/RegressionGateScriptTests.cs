@@ -99,6 +99,22 @@ public sealed class RegressionGateScriptTests
     }
 
     [Fact]
+    public void AudioRetentionSummaryDoesNotMaterializeAudioPayloadTables()
+    {
+        var service = Read("Orka.Infrastructure/Services/StandardsAndProductionServices.cs");
+        var start = service.IndexOf("public async Task<AudioRetentionSummaryDto> GetAudioRetentionSummaryAsync", StringComparison.Ordinal);
+        var end = service.IndexOf("public async Task<AudioRetentionSummaryDto> PurgeExpiredAudioAsync", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "Audio retention summary method was not found.");
+        var method = service[start..end];
+
+        Assert.Contains("BuildAudioRetentionAggregateAsync", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("AudioOverviewJobs.AsNoTracking().ToListAsync", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClassroomInteractions.AsNoTracking().ToListAsync", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("AudioBytes.Length", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("AudioBytes?.LongLength", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void QuickRegressionScriptsDoNotRunExternalProviderTests()
     {
         var quickBackend = Read("scripts/quick-backend.ps1");

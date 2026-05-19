@@ -45,8 +45,12 @@ public sealed class ExternalProviderIntegrationTests
         });
         var body = await response.Content.ReadAsStringAsync();
 
-        Assert.DoesNotContain(token, body, StringComparison.Ordinal);
-        Assert.True(response.IsSuccessStatusCode, $"External provider smoke failed with {(int)response.StatusCode}: {TrimDiagnostic(body)}");
+        Assert.False(
+            body.Contains(token, StringComparison.Ordinal),
+            "External provider response echoed the configured token.");
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"External provider smoke failed with {(int)response.StatusCode}; bodyLength={body.Length}");
     }
 
     [Fact]
@@ -94,8 +98,4 @@ public sealed class ExternalProviderIntegrationTests
         return client;
     }
 
-    private static string TrimDiagnostic(string value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? string.Empty
-            : value.Length <= 500 ? value : value[..500];
 }

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -80,7 +81,8 @@ public class PistonService : IPistonService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Judge0 language list could not be loaded.");
+            _logger.LogError("Judge0 language list could not be loaded. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -158,7 +160,8 @@ public class PistonService : IPistonService
         catch (HttpRequestException ex)
         {
             sw.Stop();
-            _logger.LogError(ex, "Judge0 network error.");
+            _logger.LogError("Judge0 network error. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new PistonResult(
                 "",
                 "Kod çalıştırma servisine bağlanılamadı. İnternet bağlantınızı kontrol edin.",
@@ -170,7 +173,8 @@ public class PistonService : IPistonService
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogError(ex, "Judge0 unexpected error.");
+            _logger.LogError("Judge0 unexpected error. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new PistonResult(
                 "",
                 "Kod çalıştırma servisinde beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.",

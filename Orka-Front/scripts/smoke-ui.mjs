@@ -46,8 +46,10 @@ const dirty = [srcRoot, path.join(root, "scripts")]
 addCheck("Turkish mojibake guard", dirty.length === 0, dirty.map((file) => path.relative(root, file)).join(", "));
 
 const landing = read("src/pages/Landing.tsx");
+const login = read("src/pages/Login.tsx");
 addCheck("Landing has real ORKA module copy", landing.includes("Öğrenci sinyali yakalandı") && landing.includes("NotebookLM") && landing.includes("QA ve sistem güveni"));
 addCheck("Landing keeps P4 product depth", landing.includes("Plan") && landing.includes("Wiki") && landing.includes("Quiz") && landing.includes("Sesli Ders") && landing.includes("IDE"));
+addCheck("Release copy avoids certainty claims", !landing.includes("garanti alt") && !login.includes("%100 uyumlu") && !landing.includes("success guarantee") && !login.includes("official curriculum"));
 
 const css = read("src/index.css");
 addCheck("Mist Comfort utilities exist", css.includes(".orka-surface") && css.includes(".orka-panel") && css.includes(".orka-focus"));
@@ -70,6 +72,13 @@ addCheck("Classroom assistant never disappears", classroom.includes("ensureClass
 
 const api = read("src/services/api.ts");
 const types = read("src/lib/types.ts");
+const apiSmokeFactory = readRepo("Orka.API.Tests/ApiSmokeFactory.cs");
+const quizLearningPipeline = readRepo("Orka.API.Tests/QuizLearningPipelineTests.cs");
+const wikiGraphContract = readRepo("Orka.API.Tests/WikiGraphContractTests.cs");
+const pedagogicalReleaseClosure = readRepo("Orka.API.Tests/PedagogicalReleaseClosureTests.cs");
+const startApiScript = readRepo("scripts/start-api.ps1");
+addCheck("Provider-free learning smoke proof is wired", apiSmokeFactory.includes("SmokeAgentFactory") && apiSmokeFactory.includes("UseInMemoryDatabase") && startApiScript.includes("InMemoryDatabase") && quizLearningPipeline.includes("WrongQuizAttempt_ReturnsSafeMisconceptionAndRemediationSeed") && wikiGraphContract.includes("WikiLearningTraceWriter"));
+addCheck("Final pedagogical release harness is wired", pedagogicalReleaseClosure.includes("ProviderFreeLearningLoop_ConnectsPedagogicalProductizationSurfaces") && pedagogicalReleaseClosure.includes("TutorActionPlanner") && pedagogicalReleaseClosure.includes("/api/wiki/page/") && pedagogicalReleaseClosure.includes("/api/notebook-studio/wiki-page/") && pedagogicalReleaseClosure.includes("/api/sources/topic/") && pedagogicalReleaseClosure.includes("AssertNoPublicLeak"));
 addCheck("Learning signal API exposed", api.includes("/learning/signal") && api.includes("recordSignal"));
 addCheck("Learning snapshot API exposed", api.includes("LearningSnapshotsAPI") && api.includes("/learning-snapshots/active-lesson") && api.includes("/learning-snapshots/student-context"));
 addCheck("Plan quality API exposed", api.includes("PlanQualityAPI") && api.includes("/plan-quality/topic/") && api.includes("/plan-quality/evaluate") && api.includes("PlanQualityEvaluationDto"));
@@ -162,6 +171,7 @@ addCheck("Wiki Vault page tree and filters are visible", wiki.includes("Wiki Vau
 addCheck("Wiki Vault graph context is visible", wiki.includes("Backlinks / local graph") && wiki.includes("Geri linkler") && wiki.includes("Cikis linkleri") && wiki.includes("Local komsular") && wiki.includes("activeBacklinks") && wiki.includes("activeOutgoingLinks"));
 addCheck("Wiki Vault block grouping is visible", wiki.includes("Blok gruplari") && wiki.includes("blockGroupFor") && wiki.includes("Ogrenci sorulari") && wiki.includes("Takilma ve onarim"));
 addCheck("Wiki Vault page-aware Notebook context is preserved", wiki.includes("NotebookStudioPanel") && wiki.includes("wikiPageId={isOrkaLm ? undefined : activePage?.id}") && wiki.includes("wikiPageTitle={isOrkaLm ? undefined : activePage?.title}"));
+addCheck("Wiki Copilot page-aware UX is visible and safe", wiki.includes("wiki-copilot-panel") && wiki.includes("Wiki Copilot") && wiki.includes("handleWikiCopilotAction") && api.includes("getPageCopilot") && types.includes("WikiCopilotContextDto") && !wiki.includes("rawToolPayload") && !wiki.includes("rawSourceChunk") && !wiki.includes("answerKey"));
 addCheck("Notebook Studio panel is wired into Wiki", wiki.includes("NotebookStudioPanel") && notebookStudio.includes("Milestone Pack") && notebookStudio.includes("audio_overview") && notebookStudio.includes("mind_map") && notebookStudio.includes("review_quiz"));
 addCheck("Notebook Studio production states are visible", notebookStudio.includes("Kaynak hazirlik") && notebookStudio.includes("Notebook Studio paketleri yuklenemedi") && notebookStudio.includes("script-only") && notebookStudio.includes("Henuz cikti yok."));
 addCheck("Notebook Studio advanced media/export actions are visible", notebookStudio.includes("video_ready_package") && notebookStudio.includes("slide_export_manifest") && notebookStudio.includes("audio_transcript") && notebookStudio.includes("caption_track") && notebookStudio.includes("Export readiness"));
@@ -220,6 +230,9 @@ addCheck("Plan quality metadata stays safe", types.includes("PlanStepContractDto
 addCheck("Plan mode exposes meaningful staged UX", chatPanel.includes("Niyet ayrılıyor") && chatPanel.includes("Bağlam taranıyor") && chatPanel.includes("Seviye testi kuruluyor") && chatPanel.includes("Öğrenme yolu üretiliyor"));
 
 addCheck("Tutor response policy closure metadata is typed and rendered", types.includes("TutorResponsePolicyDto") && types.includes("tutorTeachingMove") && types.includes("tutorGroundingPolicy") && chatMessage.includes("tutorTeachingMove") && chatMessage.includes("tutorGroundingPolicy") && api.includes("/tutor/policy/evaluate") && api.includes("/tutor/next-actions"));
+addCheck("Tutor tool decision metadata is typed and rendered safely", types.includes("TutorToolDecisionDto") && types.includes("tutorToolDecision") && chatMessage.includes("toolDecision?.selectedAction") && chatMessage.includes("toolDecision.safetyWarnings") && !chatMessage.includes("rawToolPayload") && !chatMessage.includes("rawSourceChunk"));
+addCheck("Tutor lesson delivery rubric metadata is typed and rendered safely", types.includes("TutorLessonDeliveryDto") && types.includes("tutorLessonDelivery") && types.includes("deliveryMode") && chatMessage.includes("lessonDelivery?.deliveryMode") && chatMessage.includes("lessonDelivery.studentVisibleSummary") && !chatMessage.includes("rawProviderPayload") && !chatMessage.includes("rawSourceChunk"));
+addCheck("Adaptive diagnostic and course-plan quality metadata is typed and rendered safely", types.includes("AdaptiveDiagnosticDto") && types.includes("CoursePlanQualityDto") && types.includes("adaptiveDiagnostic") && types.includes("coursePlanQuality") && chatMessage.includes("adaptiveDiagnostic?.planReadiness") && chatMessage.includes("coursePlanQuality?.readinessStatus") && !chatMessage.includes("rawProviderPayload") && !chatMessage.includes("rawSourceChunk"));
 const agenticWorkspace = read("src/components/AgenticWorkspace.tsx");
 addCheck("Frontend learning workspace state drives chat rail", chatPanel.includes("useLearningWorkspaceState") && chatPanel.includes("workspaceState.recentArtifacts") && chatPanel.includes("workspaceState={workspaceState}") && agenticWorkspace.includes("workspaceState?.currentPlanStep") && agenticWorkspace.includes("workspaceState?.sourceReadiness"));
 addCheck("Frontend artifact canvas renders Pack 8 artifacts safely", agenticWorkspace.includes("learningArtifacts?: LearningArtifactDto[]") && agenticWorkspace.includes("artifact.safeContent") && agenticWorkspace.includes("safeMarkdownComponents") && agenticWorkspace.includes("artifact.sourceBasis") && agenticWorkspace.includes("artifact.accessibility"));

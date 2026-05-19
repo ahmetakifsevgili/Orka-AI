@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -38,7 +39,10 @@ public sealed class AdaptiveLearningContextBuilder : IAdaptiveLearningContextBui
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[AdaptiveLearningContext] Failed to build context. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogWarning("[AdaptiveLearningContext] Failed to build context. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return Empty(topicId, topicTitle, userLevel);
         }
     }

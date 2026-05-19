@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -74,7 +75,9 @@ public class RouterService : IRouterService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "RouterService: SemanticRoute başarısız, fallback'e geçiliyor.");
+            _logger.LogWarning(
+                "RouterService: SemanticRoute basarisiz, fallback'e geciliyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new RoutingResult
             {
                 Intent = content.Trim().Length < 10 ? "greeting" : "general",

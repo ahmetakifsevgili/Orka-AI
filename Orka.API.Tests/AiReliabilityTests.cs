@@ -208,8 +208,84 @@ public sealed class AiReliabilityTests
         AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
+    [Fact]
+    public async Task CohereService_FailureDiagnostic_DoesNotRetainProviderBody()
+    {
+        var service = new CohereService(
+            new StaticHttpClientFactory(HttpStatusCode.InternalServerError, UnsafeProviderBody()),
+            ProviderConfig("AI:Cohere:ApiKey", "test-key", "AI:Cohere:Model", "command-test"),
+            NullLogger<CohereService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
+            service.GenerateResponseAsync("system", "hello"));
+
+        Assert.Equal(AiProviderFailureKind.ServerError, exception.FailureKind);
+        Assert.Contains("provider=Cohere", exception.RedactedDiagnostic);
+        Assert.Contains("bodyLength=", exception.RedactedDiagnostic);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
+    }
+
+    [Fact]
+    public async Task HuggingFaceService_FailureDiagnostic_DoesNotRetainProviderBody()
+    {
+        var service = new HuggingFaceService(
+            new StaticHttpClientFactory(HttpStatusCode.BadGateway, UnsafeProviderBody()),
+            ProviderConfig("AI:HuggingFace:ApiKey", "test-key", "AI:HuggingFace:Model", "test-model"),
+            NullLogger<HuggingFaceService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
+            service.GenerateResponseAsync("system", "hello"));
+
+        Assert.Equal(AiProviderFailureKind.ServerError, exception.FailureKind);
+        Assert.Contains("provider=HuggingFace", exception.RedactedDiagnostic);
+        Assert.Contains("bodyHash=sha256:", exception.RedactedDiagnostic);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
+    }
+
+    [Fact]
+    public async Task CohereEmbeddingService_FailureDiagnostic_DoesNotRetainProviderBody()
+    {
+        var service = new CohereEmbeddingService(
+            new StaticHttpClientFactory(HttpStatusCode.Unauthorized, UnsafeProviderBody()),
+            ProviderConfig("AI:Cohere:ApiKey", "test-key", "AI:Cohere:EmbedModel", "embed-test"),
+            NullLogger<CohereEmbeddingService>.Instance);
+
+        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
+            service.EmbedAsync("harmless synthetic text"));
+
+        Assert.Equal(AiProviderFailureKind.Authentication, exception.FailureKind);
+        Assert.Contains("provider=CohereEmbed", exception.RedactedDiagnostic);
+        Assert.Contains("status=401", exception.RedactedDiagnostic);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
+    }
+
     private static AiProviderCallException ServerError(string provider) =>
         new(provider, "model", "Tutor", AiProviderFailureKind.ServerError, "server error", HttpStatusCode.InternalServerError, isRetryable: true, isFallbackable: true);
+
+    private static IConfiguration ProviderConfig(params string?[] values)
+    {
+        var pairs = new Dictionary<string, string?>();
+        for (var i = 0; i + 1 < values.Length; i += 2)
+            pairs[values[i]!] = values[i + 1];
+
+        return new ConfigurationBuilder().AddInMemoryCollection(pairs).Build();
+    }
+
+    private static string UnsafeProviderBody() => """
+        {
+          "rawProviderPayload":"provider body",
+          "rawPrompt":"hidden system prompt",
+          "rawSourceChunk":"source private paragraph: confidential lesson material",
+          "rawToolPayload":"tool output",
+          "debugTrace":"stackTrace C:\\secret\\file.txt",
+          "apiKey":"sk-secret-value",
+          "answerKey":"A",
+          "correctAnswer":"A",
+          "ownerId":"owner-123",
+          "userId":"user-123",
+          "studentPrivateNote":"student private note: my family phone is 555-111-2222"
+        }
+        """;
 
     private static void AssertNoUnsafeProviderDiagnosticContent(string diagnostic)
     {
@@ -336,6 +412,38 @@ public sealed class AiReliabilityTests
         public Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel", string level = "orta") => GenerateResponseAsync(string.Empty, topicTitle);
         public Task<string> ExtractWikiBlocksAsync(string conversation, string topicTitle) => GenerateResponseAsync(string.Empty, conversation);
         public Task<string> GenerateReinforcementQuestionsAsync(string content) { MistralCalls++; return GenerateResponseAsync(string.Empty, content); }
+    }
+
+    private sealed class StaticHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpStatusCode _status;
+        private readonly string _body;
+
+        public StaticHttpClientFactory(HttpStatusCode status, string body)
+        {
+            _status = status;
+            _body = body;
+        }
+
+        public HttpClient CreateClient(string name) => new(new StaticHttpHandler(_status, _body));
+    }
+
+    private sealed class StaticHttpHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+        private readonly string _body;
+
+        public StaticHttpHandler(HttpStatusCode status, string body)
+        {
+            _status = status;
+            _body = body;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(_status)
+            {
+                Content = new StringContent(_body)
+            });
     }
 
     private sealed class StaticBudget(bool Allowed) : IAiUsageBudgetService

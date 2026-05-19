@@ -422,7 +422,13 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
   const tools = metadata?.usedTools ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.tutorTeachingMove || metadata?.tutorGroundingPolicy || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus;
+  const toolDecision = metadata?.tutorToolDecision;
+  const lessonDelivery = metadata?.tutorLessonDelivery;
+  const adaptiveDiagnostic = metadata?.adaptiveDiagnostic;
+  const coursePlanQuality = metadata?.coursePlanQuality;
+  const memoryHygiene = metadata?.learningMemoryHygiene;
+  const wikiCuration = metadata?.wikiCuration;
+  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.tutorTeachingMove || metadata?.tutorGroundingPolicy || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus || toolDecision?.selectedAction || lessonDelivery?.deliveryMode || adaptiveDiagnostic?.planReadiness || coursePlanQuality?.readinessStatus || memoryHygiene?.memoryStatus || wikiCuration?.curationStatus;
   if (!hasMeta) return null;
 
   return (
@@ -440,6 +446,52 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
         >
           <BookOpen className="h-3 w-3" />
           {formatTechnicalLabel(metadata.teachingMode)}
+        </span>
+      )}
+      {toolDecision?.selectedAction && (
+        <span
+          title={[toolDecision.studentVisibleSummary, ...(toolDecision.reasonCodes ?? []), ...(toolDecision.safetyWarnings ?? [])].filter(Boolean).map(formatTechnicalLabel).join(" | ") || undefined}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
+            (toolDecision.blockedTools?.length ?? 0) > 0 || (toolDecision.safetyWarnings?.length ?? 0) > 0
+              ? "border-amber-500/25 bg-amber-50 text-amber-700"
+              : "border-[#8fb7a2]/28 bg-[#f2faf5]/70 text-[#47725d]"
+          }`}
+        >
+          <Wrench className="h-3 w-3" />
+          tool: {formatTechnicalLabel(toolDecision.selectedAction)}
+        </span>
+      )}
+      {lessonDelivery?.deliveryMode && (
+        <span
+          title={[lessonDelivery.studentVisibleSummary, lessonDelivery.structure?.goal, ...(lessonDelivery.warnings ?? [])].filter(Boolean).map(formatTechnicalLabel).join(" | ") || undefined}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
+            (lessonDelivery.warnings?.length ?? 0) > 0
+              ? "border-amber-500/25 bg-amber-50 text-amber-700"
+              : "border-sky-500/20 bg-sky-50 text-sky-700"
+          }`}
+        >
+          <BookOpen className="h-3 w-3" />
+          ders: {formatTechnicalLabel(lessonDelivery.deliveryMode)}
+        </span>
+      )}
+      {(adaptiveDiagnostic?.planReadiness || coursePlanQuality?.readinessStatus) && (
+        <span
+          title={[
+            adaptiveDiagnostic?.placement?.userSafeLabel,
+            adaptiveDiagnostic?.nextAction,
+            coursePlanQuality?.recommendedNextAction,
+            ...(adaptiveDiagnostic?.warnings ?? []),
+            ...(coursePlanQuality?.warnings ?? []),
+          ].filter(Boolean).map(formatTechnicalLabel).join(" | ") || undefined}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
+            (coursePlanQuality?.overclaimRisk === "high") || (adaptiveDiagnostic?.planReadiness && adaptiveDiagnostic.planReadiness !== "ready")
+              ? "border-amber-500/25 bg-amber-50 text-amber-700"
+              : "border-[#8fb7a2]/28 bg-[#f2faf5]/70 text-[#47725d]"
+          }`}
+        >
+          <CheckCircle className="h-3 w-3" />
+          plan: {formatTechnicalLabel(coursePlanQuality?.readinessStatus ?? adaptiveDiagnostic?.planReadiness ?? "unknown")}
+          {adaptiveDiagnostic?.learnerLevel && <span>- {formatTechnicalLabel(adaptiveDiagnostic.learnerLevel)}</span>}
         </span>
       )}
       {metadata?.styleMode && (
@@ -504,6 +556,24 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
           <CheckCircle className="h-3 w-3" />
           öğretim {formatTechnicalLabel(metadata.tutorPedagogyStatus)}
           {typeof metadata.tutorPedagogyScore === "number" && <span>%{Math.round(metadata.tutorPedagogyScore * 100)}</span>}
+        </span>
+      )}
+      {memoryHygiene?.memoryStatus && (
+        <span
+          title={memoryHygiene.studentVisibleSummary}
+          className="inline-flex items-center gap-1 rounded-full border border-[#8fb7a2]/24 bg-[#f2faf5]/72 px-2 py-1 text-[10px] font-bold text-[#47725d]"
+        >
+          <BookOpen className="h-3 w-3" />
+          hafiza {formatTechnicalLabel(memoryHygiene.memoryStatus)}
+        </span>
+      )}
+      {wikiCuration?.curationStatus && (
+        <span
+          title={wikiCuration.studentVisibleSummary}
+          className="inline-flex items-center gap-1 rounded-full border border-[#e8c46f]/28 bg-[#fff8ee]/75 px-2 py-1 text-[10px] font-bold text-[#8a5f12]"
+        >
+          <CheckCircle className="h-3 w-3" />
+          wiki {formatTechnicalLabel(wikiCuration.curationStatus)}
         </span>
       )}
       {tools.slice(0, 6).map((tool, index) => (
@@ -646,6 +716,40 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   const allTools = [...tools, ...toolStatuses];
   const mode = metadata?.groundingMode?.toLowerCase() ?? "";
   const items: LearningTraceSummaryItem[] = [];
+  const toolDecision = metadata?.tutorToolDecision;
+  const lessonDelivery = metadata?.tutorLessonDelivery;
+
+  if (toolDecision?.selectedAction) {
+    items.push({
+      label: `Tutor aksiyonu: ${formatTechnicalLabel(toolDecision.selectedAction)}`,
+      detail: toolDecision.studentVisibleSummary || "Tutor bu turda guvenli bir sonraki adimi secti.",
+      tone: (toolDecision.blockedTools?.length ?? 0) > 0 || (toolDecision.safetyWarnings?.length ?? 0) > 0 ? "watch" : "learning",
+    });
+  }
+
+  if (lessonDelivery?.deliveryMode) {
+    items.push({
+      label: `Ders modu: ${formatTechnicalLabel(lessonDelivery.deliveryMode)}`,
+      detail: lessonDelivery.studentVisibleSummary || lessonDelivery.structure?.goal || "Tutor bu turda hedefli ders akisi kullandi.",
+      tone: (lessonDelivery.warnings?.length ?? 0) > 0 ? "watch" : "learning",
+    });
+  }
+
+  if (metadata?.learningMemoryHygiene?.memoryStatus && items.length < 3) {
+    items.push({
+      label: `Ogrenme hafizasi: ${formatTechnicalLabel(metadata.learningMemoryHygiene.memoryStatus)}`,
+      detail: metadata.learningMemoryHygiene.studentVisibleSummary || "Tutor ham metin yerine guvenli ozet hafizayi kullaniyor.",
+      tone: (metadata.learningMemoryHygiene.warnings?.length ?? 0) > 0 ? "watch" : "learning",
+    });
+  }
+
+  if (metadata?.wikiCuration?.curationStatus && items.length < 3) {
+    items.push({
+      label: `Wiki hygiene: ${formatTechnicalLabel(metadata.wikiCuration.curationStatus)}`,
+      detail: metadata.wikiCuration.studentVisibleSummary || "Wiki izleri curasyon durumuyla birlikte tutuluyor.",
+      tone: (metadata.wikiCuration.warnings?.length ?? 0) > 0 ? "watch" : "learning",
+    });
+  }
 
   if (evidenceQuality?.status && ["partial", "weak", "missing"].includes(evidenceQuality.status.toLowerCase())) {
     const status = evidenceQuality.status.toLowerCase();
@@ -690,6 +794,13 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
       detail: evidenceSummary?.learnerEvidenceStatus
         ? `Öğrenen kanıtı: ${formatTechnicalLabel(evidenceSummary.learnerEvidenceStatus)}.`
         : "Bu turdaki pratik çıktısı sonraki çalışma kararlarına bağlanabilir.",
+      tone: "learning",
+    });
+  } else if (metadata?.remediationLesson) {
+    const lesson = metadata.remediationLesson;
+    items.push({
+      label: "Telafi dersi hazir.",
+      detail: `${formatTechnicalLabel(lesson.repairType ?? "guided_reteach")} - ${lesson.studentVisibleSummary ?? lesson.lessonShape?.goal ?? "Kisa tekrar, cozumlu ornek ve mikro kontrol hazir."}`,
       tone: "learning",
     });
   } else if (metadata?.misconceptionSignal || metadata?.remediationSeed) {
@@ -821,7 +932,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   const toolStatuses = metadata?.toolStatuses ?? [];
   const citations = metadata?.citations ?? [];
   const warnings = metadata?.providerWarnings ?? [];
-  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.misconceptionSignal || metadata?.learningSignalConfidence || metadata?.remediationSeed || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || metadata?.currentPlanStepTitle || metadata?.sourceReadiness || metadata?.planSourceReadiness || metadata?.tutorNextLearningActions?.length || typeof metadata?.masteryProbability === "number";
+  const hasMeta = tools.length > 0 || toolStatuses.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.tutorResponseMode || metadata?.personalizationMode || metadata?.misconceptionSignal || metadata?.learningSignalConfidence || metadata?.remediationSeed || metadata?.remediationLesson || metadata?.learningMemoryHygiene?.memoryStatus || metadata?.wikiCuration?.curationStatus || metadata?.tutorActionTraceId || metadata?.tutorPedagogyStatus || metadata?.evidenceSummary || metadata?.currentPlanStepTitle || metadata?.sourceReadiness || metadata?.planSourceReadiness || metadata?.tutorNextLearningActions?.length || metadata?.tutorToolDecision?.selectedAction || metadata?.tutorLessonDelivery?.deliveryMode || typeof metadata?.masteryProbability === "number";
   if (!hasMeta) return null;
   metadata = metadata ?? {};
 

@@ -7,6 +7,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -114,7 +115,9 @@ public sealed class TutorPolicyTraceService : ITutorPolicyTraceService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[TutorPolicyTrace] Redis write skipped. SessionId={SessionId}", sessionId);
+                _logger.LogDebug("[TutorPolicyTrace] Redis write skipped. SessionRef={SessionRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(sessionId, "session"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 

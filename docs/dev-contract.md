@@ -41,6 +41,12 @@ request-boundary guards, migration policy, logging/error leakage hardening,
 health/swagger smoke, endpoint bridge smoke, source guards, runtime telemetry,
 tool capability contracts, and auth-filtered tests.
 
+Production logging must use masked references for learner/user/topic/session/
+message/source/cache identifiers. Use `LogPrivacyGuard.SafeId` or
+`LogPrivacyGuard.SafeTextRef` in backend logs instead of raw GUIDs, Redis keys,
+local paths, prompt text, provider bodies, source chunks, tool payloads, answer
+keys, owner ids, unsafe user ids, or exception stack traces.
+
 The same quick baseline starts with the provider-free backend lifetest release
 proof (`BackendLifeTests|PedagogicalReleaseClosureTests`). Test-host logging is
 filtered only for known noisy categories; backend warnings/errors must remain
@@ -78,6 +84,25 @@ The CI gate must stay provider-free. Do not add real provider secrets,
 `ORKA_RUN_EXTERNAL_PROVIDER_TESTS`, or paid provider smoke checks to this
 workflow without an explicit separate release decision.
 
+## Backend Production Readiness
+
+Backend production-readiness work keeps two proof lines separate:
+
+- Deterministic release proof: `scripts\quick-backend.ps1`,
+  `scripts\quick-coordination.ps1`, full API tests, Infrastructure unit tests,
+  and GitHub backend release CI. This line is provider-free and must not need
+  live AI keys.
+- Optional live/staging proof: explicit provider smoke only after approval,
+  with harmless synthetic input, no secret printing, no source chunks, and no
+  load testing against paid providers.
+
+Production/staging startup must keep protected gates enabled: explicit DB and
+Redis configuration, explicit CORS/AllowedHosts, secure refresh-cookie settings,
+Redis auth rate limiting, applied-migration readiness, and global/user AI cost
+or token limits. Audio retention and Redis stream maintenance must stay bounded
+and aggregate-based; do not reintroduce full audio payload scans in readiness
+summaries.
+
 Use this when frontend dependencies are available and you want the combined
 local smoke line:
 
@@ -111,6 +136,18 @@ dotnet test Orka.API.Tests\Orka.API.Tests.csproj --filter ExternalProviderIntegr
 
 If the gate or token is missing, the tests write an explicit skip reason and
 return without calling an external provider.
+
+Provider staging proof rules:
+
+- Do not print provider secrets or `dotnet user-secrets list` values. Report
+  configured true/false only.
+- A real completion/embedding success smoke requires an explicit token and an
+  explicit call plan. Without a token, mark success proof blocked rather than
+  pretending it passed.
+- Invalid-token failure checks may prove safe provider failure behavior because
+  they send only synthetic text and do not require a paid credential.
+- Keyless public providers may be checked manually for reachability, but those
+  checks stay out of deterministic quick scripts and CI.
 
 ## What To Run When
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -84,7 +85,10 @@ public sealed class PushDeliveryService : IPushDeliveryService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[PushDelivery] Push attempt failed safely. User={UserId} Notification={NotificationId}", userId, notification.Id);
+            _logger.LogWarning("[PushDelivery] Push attempt failed safely. UserRef={UserRef} NotificationRef={NotificationRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(notification.Id, "notification"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             result = new PushDeliveryResultDto(
                 false,
                 "unknown_failure",

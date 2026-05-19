@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -49,7 +50,9 @@ public sealed class RedisPlanDiagnosticStateStore : IPlanDiagnosticStateStore
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "[PlanDiagnosticStateStore] Invalid state payload. PlanRequestId={PlanRequestId}", planRequestId);
+            _logger.LogWarning("[PlanDiagnosticStateStore] Invalid state payload. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(planRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             await DeleteAsync(planRequestId, ct);
             return null;
         }

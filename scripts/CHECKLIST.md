@@ -202,6 +202,12 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
 - Provider failure diagnostic (`RedactedDiagnostic`) body-free kalmalidir:
   raw veya redacted response body excerpt yok; yalnizca provider/status/category,
   retryability, body length ve non-reversible hash gibi guvenli metadata vardir.
+- Production log privacy gate: backend loglari raw user/topic/session/message/
+  source/cache id yazmamali; `UserRef`, `TopicRef`, `SessionRef`, `MessageRef`,
+  `SourceRef`, `WorkflowRef`, `KeyRef` gibi maskeli ref kullanmalidir.
+- Production loglari raw prompt/provider body/source chunk/tool payload/answer
+  key/local path/stack trace/owner id/unsafe user id basmamali; hata icin
+  mumkunse safe error type/status metadata kullanilmalidir.
 - `quick-backend.ps1`, stabilization baseline'dan once provider-free backend
   lifetest release proof calistirmalidir:
   `BackendLifeTests|PedagogicalReleaseClosureTests`.
@@ -221,6 +227,29 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
   paid provider smoke testi kullanmamalidir.
 - Bu gate yeni AI/provider cagrisi, OpenAI API migrasyonu veya paid provider
   validasyonu gerektirmez.
+- Backend Production Readiness Phase 2 provider staging proof:
+  - Provider secret degerleri yazdirilmaz; yalnizca configured true/false
+    raporlanir.
+  - Live AI success smoke icin explicit token ve explicit call plan gerekir;
+    token yoksa success proof blocked sayilir.
+  - Invalid-token external provider testi opt-in calisabilir ve sadece safe
+    failure davranisini kanitlar.
+  - Wikipedia/Open-Meteo/CoinGecko gibi keyless public provider kontrolleri
+    manuel smoke olabilir; quick script/CI baseline'a eklenmez.
+  - Provider failure diagnostic body-free kalir; raw body excerpt yoktur.
+- Backend Production Readiness Phase 3 scale/ops gate:
+  - `BackgroundTaskQueue` bounded channel ve per-job timeout davranisini korur.
+  - SRS, daily challenge, retention cleanup ve Redis stream maintenance
+    worker'lari config-gated, batch/interval bounded ve safe-log kalir.
+  - Protected Staging/Production startup DB/Redis/CORS/AllowedHosts/JWT/refresh
+    cookie/rate limit/migration readiness/global-user AI cost limit guard'larini
+    fail-closed kontrol eder.
+  - Source upload/file/extraction/chunk/embedding/hourly/daily/topic limitleri
+    korunur; raw source chunk loglanmaz.
+  - Provider-free quick script/CI baseline'a live provider veya paid load testi
+    eklenmez.
+  - Audio retention summary tum audio byte payloadlarini materialize etmez;
+    aggregate DB sorgulari ile sayim/toplam yapar.
 
 ## OrkaLM Phase 17 Source Notebook Gate
 

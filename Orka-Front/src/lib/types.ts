@@ -165,6 +165,60 @@ export interface RemediationSeedDto {
   evidenceBasis?: string[];
 }
 
+export interface RemediationLessonDto {
+  remediationId?: string;
+  topicId?: string | null;
+  conceptKey?: string | null;
+  trigger?: RemediationTriggerDto | null;
+  repairType?: string;
+  confidence?: string;
+  basis?: string[];
+  lessonShape?: RemediationRepairLoopDto | null;
+  checkpoint?: RemediationCheckpointDto | null;
+  outcome?: RemediationOutcomeDto | null;
+  warnings?: string[];
+  sourceBasis?: string;
+  studentVisibleSummary?: string;
+}
+
+export interface RemediationTriggerDto {
+  triggerType?: string;
+  userSafeLabel?: string;
+  evidenceStatus?: string;
+}
+
+export interface RemediationStepDto {
+  stepType?: string;
+  userSafeLabel?: string;
+  required?: boolean;
+  sourceBasis?: string;
+}
+
+export interface RemediationCheckpointDto {
+  checkpointType?: string;
+  userSafePrompt?: string;
+  avoidsPreSubmitReveal?: boolean;
+  required?: boolean;
+}
+
+export interface RemediationRepairLoopDto {
+  goal?: string;
+  misconceptionOrGap?: string;
+  shortReteach?: string;
+  workedExample?: string;
+  guidedPractice?: string;
+  checkpoint?: string;
+  nextAction?: string;
+  steps?: RemediationStepDto[];
+}
+
+export interface RemediationOutcomeDto {
+  expectedSignal?: string;
+  masteryPolicy?: string;
+  nextTutorAction?: string;
+  notebookAction?: string;
+}
+
 export interface LearningMemoryTopicDto {
   topicId?: string | null;
   label: string;
@@ -217,8 +271,22 @@ export interface LearningMemoryLiteDto {
   sourceReadiness: string;
   recentProgressSignals: string[];
   goalReadiness: GoalReadinessDto;
+  hygiene: LearningMemoryHygieneDto;
   lastUpdatedAt: string;
   hasEnoughSignals: boolean;
+}
+
+export interface LearningMemoryHygieneDto {
+  memoryStatus: string;
+  retainedSignalCount: number;
+  mergedWeakConceptCount: number;
+  repairPendingCount: number;
+  staleSignalCount: number;
+  retainedSignals: string[];
+  mergedSignals: string[];
+  warnings: string[];
+  studentVisibleSummary: string;
+  nextAction: string;
 }
 
 export interface LearningSnapshotEvidenceSummaryDto {
@@ -294,6 +362,7 @@ export interface StudentContextSnapshotDto {
   sourceReadiness: string;
   goalReadiness: GoalReadinessDto;
   learningMemorySummary: string;
+  learningMemoryHygiene?: LearningMemoryHygieneDto | null;
   createdAt: string;
   updatedAt: string;
   expiresAt?: string | null;
@@ -345,6 +414,8 @@ export interface PlanQualityEvaluationDto {
   blockingIssues: PlanQualityIssueDto[];
   warningIssues: PlanQualityIssueDto[];
   planContract: PlanCurriculumSequenceDto;
+  adaptiveDiagnostic: AdaptiveDiagnosticDto;
+  coursePlanQuality: CoursePlanQualityDto;
   generatedAt: string;
 }
 
@@ -361,9 +432,88 @@ export interface PlanCurriculumSequenceDto {
   confidenceStatus: string;
   sequenceStatus: string;
   sourceReadiness: string;
+  adaptiveDiagnostic: AdaptiveDiagnosticDto;
+  coursePlanQuality: CoursePlanQualityDto;
   steps: PlanStepContractDto[];
   sequencingGraph: PlanSequencingGraphDto;
   generatedAt: string;
+}
+
+export interface AdaptiveDiagnosticDto {
+  diagnosticId?: string | null;
+  topicId?: string | null;
+  intent: string;
+  confidence: number;
+  learnerLevel: string;
+  placement: AdaptiveLearnerPlacementDto;
+  placementBasis: AdaptiveDiagnosticSignalDto[];
+  recommendedQuestions: AdaptiveDiagnosticQuestionDto[];
+  prerequisiteSignals: string[];
+  weakConceptSignals: string[];
+  planReadiness: string;
+  warnings: string[];
+  nextAction: string;
+}
+
+export interface AdaptiveDiagnosticQuestionDto {
+  questionId: string;
+  prompt: string;
+  purpose: string;
+  targetConceptKey?: string | null;
+  signalType: string;
+  required: boolean;
+}
+
+export interface AdaptiveDiagnosticSignalDto {
+  signalType: string;
+  status: string;
+  confidence: number;
+  userSafeReason: string;
+}
+
+export interface AdaptiveLearnerPlacementDto {
+  learnerLevel: string;
+  confidence: number;
+  basis: string;
+  userSafeLabel: string;
+  warnings: string[];
+}
+
+export interface CoursePlanQualityDto {
+  readinessStatus: string;
+  goalClarity: string;
+  learnerLevelBasis: string;
+  prerequisiteCoverage: string;
+  sequenceCoherence: string;
+  milestoneCount: number;
+  checkpointCoverage: number;
+  repairLoopCount: number;
+  assessmentAlignment: string;
+  sourceEvidenceStatus: string;
+  overclaimRisk: string;
+  recommendedNextAction: string;
+  milestones: CoursePlanMilestoneDto[];
+  repairLoops: CoursePlanRepairLoopDto[];
+  warnings: string[];
+}
+
+export interface CoursePlanMilestoneDto {
+  milestoneId: string;
+  title: string;
+  objective: string;
+  stepIds: string[];
+  checkpoint: string;
+  estimatedMinutes: number;
+  status: string;
+}
+
+export interface CoursePlanRepairLoopDto {
+  conceptKey: string;
+  label: string;
+  trigger: string;
+  repairMode: string;
+  reason: string;
+  nextAction: string;
 }
 
 export interface PlanSequencingGraphDto {
@@ -442,8 +592,11 @@ export interface PlanReadinessDto {
   hasSourceEvidence: boolean;
   sourceReadiness: string;
   learnerEvidenceStatus: string;
+  planReadinessStatus: string;
   recommendedFirstAction: string;
   latestQualitySnapshotId?: string | null;
+  adaptiveDiagnostic: AdaptiveDiagnosticDto;
+  coursePlanQuality: CoursePlanQualityDto;
   warnings: string[];
 }
 
@@ -566,6 +719,7 @@ export interface QuizResultLearningImpactDto {
   wikiReviewHint?: string | null;
   sourceReadiness: string;
   evidenceBasis: string[];
+  remediationLesson?: RemediationLessonDto | null;
 }
 
 export interface AdaptiveStudyPlanRequestDto {
@@ -1134,7 +1288,58 @@ export interface WikiGraphPageDto {
   safeSummary?: string | null;
   orderIndex: number;
   blockCount: number;
+  curation?: WikiCurationSummaryDto | null;
   updatedAt: string;
+}
+
+export interface WikiCurationSummaryDto {
+  pageId?: string | null;
+  pageKey?: string | null;
+  conceptKey?: string | null;
+  curationStatus: string;
+  retainedSignalCount: number;
+  mergedSignalCount: number;
+  suppressedSignalCount: number;
+  staleSignalCount: number;
+  retainedSignals: string[];
+  mergedSignals: string[];
+  suppressedSignals: string[];
+  staleSignals: string[];
+  warnings: string[];
+  studentVisibleSummary: string;
+  nextAction: string;
+}
+
+export interface WikiCopilotActionDto {
+  actionType: string;
+  userSafeLabel: string;
+  userSafeDescription: string;
+  targetSurface: string;
+  availability: string;
+  reasonCodes: string[];
+  safetyWarnings: string[];
+}
+
+export interface WikiCopilotContextDto {
+  pageId?: string | null;
+  pageKey?: string | null;
+  conceptKey?: string | null;
+  pageTitle: string;
+  pageType: string;
+  curationStatus: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  masteryStatus: string;
+  weakConcepts: string[];
+  repairState: string;
+  artifactCount: number;
+  notebookPackStatus: string;
+  primaryAction?: WikiCopilotActionDto | null;
+  suggestedActions: WikiCopilotActionDto[];
+  warnings: string[];
+  studentVisibleSummary: string;
+  nextAction: string;
+  generatedAt: string;
 }
 
 export interface WikiGraphLinkDto {
@@ -1561,6 +1766,8 @@ export interface ChatResponseMetadata {
   currentPlanTutorMove?: string | null;
   currentPlanQuizHook?: string | null;
   planSourceReadiness?: string | null;
+  adaptiveDiagnostic?: AdaptiveDiagnosticDto | null;
+  coursePlanQuality?: CoursePlanQualityDto | null;
   toolCallIds?: string[];
   artifactIds?: string[];
   toolStatuses?: ToolStatusDto[];
@@ -1575,6 +1782,9 @@ export interface ChatResponseMetadata {
   tutorGroundingPolicy?: string | null;
   tutorRemediationPolicy?: string | null;
   tutorToolPolicy?: string | null;
+  tutorToolDecision?: TutorToolDecisionDto | null;
+  tutorLessonDelivery?: TutorLessonDeliveryDto | null;
+  remediationLesson?: RemediationLessonDto | null;
   tutorNextLearningActions?: string[];
   tutorContextUse?: string[];
   tutorResponseQualityStatus?: string | null;
@@ -1591,6 +1801,8 @@ export interface ChatResponseMetadata {
   learningSignalConfidence?: LearningSignalConfidenceDto | null;
   remediationSeed?: RemediationSeedDto | null;
   nextCheckPrompt?: string | null;
+  learningMemoryHygiene?: LearningMemoryHygieneDto | null;
+  wikiCuration?: WikiCurationSummaryDto | null;
   cognitiveLoad?: string | null;
   affectiveState?: string | null;
   tutorPedagogyEvaluationRunId?: string | null;
@@ -1598,6 +1810,56 @@ export interface ChatResponseMetadata {
   tutorPedagogyScore?: number | null;
   pedagogyWarnings?: string[];
   planDiagnostic?: PlanDiagnosticMeta;
+}
+
+export interface TutorToolDecisionDto {
+  selectedAction: string;
+  allowedTools?: string[];
+  blockedTools?: string[];
+  reasonCodes?: string[];
+  confidence?: number;
+  learnerSignalsUsed?: string[];
+  evidenceStatus?: string;
+  sourceReadiness?: string;
+  safetyWarnings?: string[];
+  nextTutorMove?: string;
+  studentVisibleSummary?: string;
+}
+
+export interface TutorLessonDeliveryDto {
+  deliveryMode: string;
+  learnerLevel?: string;
+  structure?: TutorLessonStructureDto | null;
+  rubricSignals?: TutorLessonRubricDto | null;
+  steps?: TutorLessonStepDto[];
+  warnings?: string[];
+  studentVisibleSummary?: string;
+}
+
+export interface TutorLessonStructureDto {
+  goal?: string;
+  shortExplanation?: string;
+  example?: string;
+  checkpoint?: string;
+  nextAction?: string;
+}
+
+export interface TutorLessonRubricDto {
+  usesLearnerState?: boolean;
+  usesMasterySignal?: boolean;
+  usesQuizSignal?: boolean;
+  usesSourceEvidence?: boolean;
+  avoidsPreSubmitReveal?: boolean;
+  includesCheckpoint?: boolean;
+  includesRepairStep?: boolean;
+  boundedLength?: boolean;
+}
+
+export interface TutorLessonStepDto {
+  stepType: string;
+  userSafeLabel?: string;
+  required?: boolean;
+  sourceBasis?: string;
 }
 
 export interface TutorContextUseDto {

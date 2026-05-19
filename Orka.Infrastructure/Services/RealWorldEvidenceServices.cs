@@ -9,6 +9,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -144,7 +145,10 @@ public sealed class RealWorldEvidenceService : IRealWorldEvidenceService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[RealWorldEvidence] Provider failed safely. Type={EvidenceType}", evidenceType);
+            _logger.LogWarning(
+                "[RealWorldEvidence] Provider failed safely. Type={EvidenceType} ErrorType={ErrorType}",
+                evidenceType,
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await FinishAsync(request, evidenceType, evidenceType, "degraded", [], "Public evidence provider failed safely; use a general analogy instead.", "provider_error", sw.ElapsedMilliseconds, true, ct);
         }
     }

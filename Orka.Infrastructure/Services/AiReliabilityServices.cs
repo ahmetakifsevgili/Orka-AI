@@ -7,6 +7,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -41,7 +42,9 @@ public sealed class AiProviderTelemetryService : IAiProviderTelemetryService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[AiProviderTelemetry] Metric write failed. Provider={Provider}", telemetryEvent.Provider);
+            _logger.LogDebug("[AiProviderTelemetry] Metric write failed. Provider={Provider} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(telemetryEvent.Provider, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -70,7 +73,8 @@ public sealed class AiProviderTelemetryService : IAiProviderTelemetryService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[AiProviderTelemetry] Summary read failed.");
+            _logger.LogDebug("[AiProviderTelemetry] Summary read failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new AiProviderTelemetrySummary(0, 0, new Dictionary<string, int>(), new Dictionary<string, int>());
         }
     }

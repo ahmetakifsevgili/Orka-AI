@@ -50,6 +50,7 @@ const frontendContracts = [
   ["/concept-links/sync", "OrkaLM source concept link sync"],
   ["/sources/topic/${topicId}/concept-graph", "OrkaLM source concept graph"],
   ["/wiki/pages/${pageId}/source-links", "Wiki concept supporting source links"],
+  ["/wiki/page/${pageId}/copilot", "Wiki Copilot page context"],
   ["/evidence-bundle", "Source evidence lifecycle bundle"],
   ["/lifecycle-summary", "Source lifecycle summary"],
   ["/invalidate-evidence", "Source evidence invalidation"],

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -125,8 +126,8 @@ public class EvaluatorAgent : IEvaluatorAgent
             {
                 await _redisService.SaveGoldExampleAsync(topicId.Value, userMessage, agentResponse, detail.Overall);
                 _logger.LogInformation(
-                    "[EvaluatorAgent] Altın örnek kaydedildi. TopicId={TopicId} Puan={Score}",
-                    topicId.Value, detail.Overall);
+                    "[EvaluatorAgent] Altin ornek kaydedildi. TopicRef={TopicRef} Puan={Score}",
+                    LogPrivacyGuard.SafeId(topicId.Value, "topic"), detail.Overall);
             }
 
             if (detail.HallucinationRisk)
@@ -144,7 +145,8 @@ public class EvaluatorAgent : IEvaluatorAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[EvaluatorAgent] Json parse veya ağ hatası: Puanlama başarısız oldu.");
+            _logger.LogError("[EvaluatorAgent] Json parse veya ag hatasi: Puanlama basarisiz oldu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return (5, "Hata oluştu.");
         }
     }

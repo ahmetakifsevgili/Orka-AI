@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -231,7 +232,10 @@ public sealed class KnowledgeTracingService : IKnowledgeTracingService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[KnowledgeTracing] Redis learner state write skipped. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogDebug("[KnowledgeTracing] Redis learner state write skipped. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

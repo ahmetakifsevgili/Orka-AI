@@ -7,6 +7,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -652,7 +653,9 @@ public sealed class TutorPedagogyEvaluationService : ITutorPedagogyEvaluationSer
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[TutorPedagogy] Optional LLM judge skipped.");
+            _logger.LogDebug(
+                "[TutorPedagogy] Optional LLM judge skipped. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }

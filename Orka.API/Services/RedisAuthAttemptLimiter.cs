@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Orka.Infrastructure.Utilities;
 using StackExchange.Redis;
 
 namespace Orka.API.Services;
@@ -98,7 +99,9 @@ public sealed class RedisAuthAttemptLimiter : IAuthAttemptLimiter
     {
         if (_environment.IsDevelopment())
         {
-            _logger.LogWarning(ex, "[AuthRateLimit] Redis limiter unavailable; using in-memory fallback.");
+            _logger.LogWarning(
+                "[AuthRateLimit] Redis limiter unavailable; using in-memory fallback. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return;
         }
 
@@ -109,7 +112,9 @@ public sealed class RedisAuthAttemptLimiter : IAuthAttemptLimiter
     {
         if (_environment.IsDevelopment())
         {
-            _logger.LogWarning(ex, "[AuthRateLimit] Redis limiter unavailable; denying auth attempt.");
+            _logger.LogWarning(
+                "[AuthRateLimit] Redis limiter unavailable; denying auth attempt. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return;
         }
 

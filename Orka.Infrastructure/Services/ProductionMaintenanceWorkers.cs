@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -37,7 +38,9 @@ public sealed class RetentionCleanupWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[RetentionCleanupWorker] Cleanup pass failed.");
+                _logger.LogWarning(
+                    "[RetentionCleanupWorker] Cleanup pass failed. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
 
             await Task.Delay(TimeSpan.FromHours(6), stoppingToken);
@@ -76,7 +79,9 @@ public sealed class RedisStreamMaintenanceWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[RedisStreamMaintenanceWorker] Maintenance pass failed.");
+                _logger.LogWarning(
+                    "[RedisStreamMaintenanceWorker] Maintenance pass failed. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
 
             await Task.Delay(TimeSpan.FromHours(1), stoppingToken);

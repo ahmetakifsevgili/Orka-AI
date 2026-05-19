@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Services;
 
@@ -47,7 +48,13 @@ public sealed class EfPendingMigrationsHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("EF migration readiness check failed.", ex);
+            return HealthCheckResult.Unhealthy(
+                "EF migration readiness check failed.",
+                exception: null,
+                data: new Dictionary<string, object>
+                {
+                    ["errorType"] = LogPrivacyGuard.SafeExceptionType(ex)
+                });
         }
     }
 }

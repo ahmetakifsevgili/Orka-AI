@@ -532,14 +532,20 @@ public sealed class RetentionCleanupService : IRetentionCleanupService
     {
         var retentionDays = RetentionDays();
         var now = DateTime.UtcNow;
-        var overview = await _db.AudioOverviewJobs.AsNoTracking().ToListAsync(ct);
-        var classroom = await _db.ClassroomInteractions.AsNoTracking().ToListAsync(ct);
-        var readyCount = overview.Count(j => j.AudioBytes != null && j.AudioBytes.Length > 0) + classroom.Count(i => i.AudioBytes != null && i.AudioBytes.Length > 0);
-        var expired = overview.Count(j => j.AudioBytes != null && (j.AudioExpiresAt ?? j.CreatedAt.AddDays(retentionDays)) <= now) +
-                      classroom.Count(i => i.AudioBytes != null && (i.AudioExpiresAt ?? i.CreatedAt.AddDays(retentionDays)) <= now);
-        var purged = overview.Count(j => j.AudioPurgedAt != null) + classroom.Count(i => i.AudioPurgedAt != null);
-        var bytes = overview.Sum(j => j.AudioByteLength > 0 ? j.AudioByteLength : j.AudioBytes?.LongLength ?? 0) +
-                    classroom.Sum(i => i.AudioByteLength > 0 ? i.AudioByteLength : i.AudioBytes?.LongLength ?? 0);
+        var overview = await BuildAudioRetentionAggregateAsync(
+            _db.AudioOverviewJobs.AsNoTracking(),
+            retentionDays,
+            now,
+            ct);
+        var classroom = await BuildAudioRetentionAggregateAsync(
+            _db.ClassroomInteractions.AsNoTracking(),
+            retentionDays,
+            now,
+            ct);
+        var readyCount = overview.ReadyCount + classroom.ReadyCount;
+        var expired = overview.ExpiredCount + classroom.ExpiredCount;
+        var purged = overview.PurgedCount + classroom.PurgedCount;
+        var bytes = overview.StoredBytes + classroom.StoredBytes;
         return new AudioRetentionSummaryDto
         {
             Status = expired > 0 ? "watch" : "healthy",
@@ -583,6 +589,51 @@ public sealed class RetentionCleanupService : IRetentionCleanupService
     }
 
     private int RetentionDays() => Math.Clamp(_configuration.GetValue("Retention:AudioBytesDays", 7), 1, 365);
+
+    private static async Task<AudioRetentionAggregate> BuildAudioRetentionAggregateAsync(
+        IQueryable<AudioOverviewJob> query,
+        int retentionDays,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var aggregate = await query
+            .GroupBy(_ => 1)
+            .Select(g => new AudioRetentionAggregate(
+                g.Count(j => j.AudioBytes != null && j.AudioByteLength > 0),
+                g.Count(j => j.AudioBytes != null && (j.AudioExpiresAt ?? j.CreatedAt.AddDays(retentionDays)) <= now),
+                g.Count(j => j.AudioPurgedAt != null),
+                g.Sum(j => j.AudioBytes != null ? j.AudioByteLength : 0)))
+            .FirstOrDefaultAsync(ct);
+
+        return aggregate ?? AudioRetentionAggregate.Empty;
+    }
+
+    private static async Task<AudioRetentionAggregate> BuildAudioRetentionAggregateAsync(
+        IQueryable<ClassroomInteraction> query,
+        int retentionDays,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var aggregate = await query
+            .GroupBy(_ => 1)
+            .Select(g => new AudioRetentionAggregate(
+                g.Count(i => i.AudioBytes != null && i.AudioByteLength > 0),
+                g.Count(i => i.AudioBytes != null && (i.AudioExpiresAt ?? i.CreatedAt.AddDays(retentionDays)) <= now),
+                g.Count(i => i.AudioPurgedAt != null),
+                g.Sum(i => i.AudioBytes != null ? i.AudioByteLength : 0)))
+            .FirstOrDefaultAsync(ct);
+
+        return aggregate ?? AudioRetentionAggregate.Empty;
+    }
+
+    private sealed record AudioRetentionAggregate(
+        int ReadyCount,
+        int ExpiredCount,
+        int PurgedCount,
+        long StoredBytes)
+    {
+        public static readonly AudioRetentionAggregate Empty = new(0, 0, 0, 0);
+    }
 }
 
 public sealed class RedisStreamMaintenanceService : IRedisStreamMaintenanceService

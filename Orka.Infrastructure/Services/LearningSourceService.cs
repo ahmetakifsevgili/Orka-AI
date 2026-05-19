@@ -12,6 +12,7 @@ using Orka.Core.Interfaces;
 using Orka.Core.Services;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -137,7 +138,10 @@ public class LearningSourceService : ILearningSourceService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[NotebookLM] Embedding üretilemedi, lexical fallback kullanılacak. File={File}", SensitiveDataRedactor.MaskFileName(fileName));
+                _logger.LogWarning(
+                    "[NotebookLM] Embedding uretilemedi, lexical fallback kullanilacak. FileRef={FileRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(fileName, "file"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -739,7 +743,9 @@ public class LearningSourceService : ILearningSourceService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[NotebookLM] Query embedding üretilemedi, lexical scoring kullanılacak.");
+            _logger.LogDebug(
+                "[NotebookLM] Query embedding uretilemedi, lexical scoring kullanilacak. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         var scored = chunks
@@ -881,7 +887,10 @@ public class LearningSourceService : ILearningSourceService
             }
             catch (JsonException ex)
             {
-                _logger.LogDebug(ex, "[NotebookLM] Chunk embedding deserialize edilemedi. ChunkId={ChunkId}", chunk.Id);
+                _logger.LogDebug(
+                    "[NotebookLM] Chunk embedding deserialize edilemedi. ChunkRef={ChunkRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(chunk.Id, "chunk"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -1511,7 +1520,9 @@ public class LearningSourceService : ILearningSourceService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[NotebookLM] Wiki context okunamadı. TopicId={TopicId}", topicId);
+            _logger.LogDebug("[NotebookLM] Wiki context okunamadi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }

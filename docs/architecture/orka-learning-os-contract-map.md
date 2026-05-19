@@ -144,6 +144,30 @@ Historical / reference docs:
 - The workflow does not configure real AI provider credentials and does not run `ExternalProviderIntegrationTests` or `ORKA_RUN_EXTERNAL_PROVIDER_TESTS`.
 - The current local branch has no matching open PR and the public GitHub repository currently reports no Actions workflows/runs before this local workflow addition, so remote CI status must be verified after the workflow is pushed.
 
+### Backend Production Readiness Phase 1 Addendum
+
+- `LogPrivacyGuard` is the canonical helper for production-safe application logs. It converts raw GUIDs and cache/text keys into stable short non-reversible references and sanitizes bounded log messages.
+- Core backend logs now use `UserRef`, `TopicRef`, `SessionRef`, `MessageRef`, `SourceRef`, `WorkflowRef`, or `KeyRef` style fields where correlation is needed; raw user/topic/session/message/source ids should not be written to normal production logs.
+- Touched production log paths avoid logging raw prompts, provider request/response bodies, source chunks, tool payloads, answer keys, local file paths, owner ids, unsafe user ids, or stack traces. Expected failures log safe error type/status metadata instead of exception bodies where practical.
+- AI/provider diagnostic policy remains unchanged from the zero-leak hardening: debug file logging is disabled by default, development-only opt-in, and provider diagnostics remain body-free. No provider architecture migration, OpenAI Responses/Agents migration, or new AI/provider call path was introduced.
+
+### Backend Production Readiness Phase 2 Addendum
+
+- Live/staging provider proof is split from the deterministic release baseline. `quick-backend.ps1`, `quick-coordination.ps1`, and CI remain provider-free and must not require real AI credentials.
+- Real AI provider success proof requires explicit configured credentials. When credentials are missing, success-call proof is blocked honestly; invalid-token failure checks may still run as an opt-in safety probe without paid provider use.
+- Provider failure diagnostics remain body-free. Cohere, HuggingFace, and Cohere embedding failure paths now use `AiProviderFailureMapper` so diagnostics keep provider/status/category/body length/hash metadata only.
+- Keyless public reference providers such as Wikipedia/Open-Meteo/CoinGecko may be smoke-checked manually, but they are external reference signals, not curriculum truth or source-grounded evidence.
+- No new provider architecture, OpenAI Responses/Agents migration, hidden Tutor behavior, or product feature was introduced by this phase.
+
+### Backend Production Readiness Phase 3 Addendum
+
+- Backend scale/readiness closure keeps the deterministic baseline provider-free. `quick-backend.ps1`, `quick-coordination.ps1`, and GitHub backend release CI must not run live AI/provider smoke checks or require provider secrets.
+- Database readiness is guarded by production startup checks, migration-readiness health checks, and `DbIndexAuditService` for core high-traffic learning tables. Missing index work should be additive and migration-reviewed.
+- Background work is bounded: `BackgroundTaskQueue` uses a bounded channel and per-job timeout; scheduled SRS/daily/retention/Redis workers are configuration-gated and batch/interval bounded.
+- Source/file processing is bounded by upload size, extracted character, page, chunk, per-upload embedding, per-user daily embedding, per-hour upload, and per-topic source limits.
+- Audio retention summaries now use aggregate DB queries instead of materializing audio rows and byte payloads. Purge remains bounded to 100 overview jobs and 100 classroom interactions per pass.
+- Provider cost safety remains configuration-driven: protected environments must configure global and user AI cost/token limits before startup can pass. Live provider smoke remains explicit and separate from CI.
+
 ## Data Ownership Map
 
 | Data family | Current durable/cache stores | Owner rule |

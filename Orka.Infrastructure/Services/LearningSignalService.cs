@@ -7,6 +7,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -210,7 +211,9 @@ public class LearningSignalService : ILearningSignalService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[LearningSignal] Summary cache parse failed. Topic={TopicId}", topicId);
+                _logger.LogDebug("[LearningSignal] Summary cache parse failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -244,7 +247,9 @@ public class LearningSignalService : ILearningSignalService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[LearningSignal] Recommendation cache parse failed. Topic={TopicId}", topicId);
+                _logger.LogDebug("[LearningSignal] Recommendation cache parse failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -347,8 +352,10 @@ public class LearningSignalService : ILearningSignalService
             CreatedAt = DateTime.UtcNow
         });
 
-        _logger.LogInformation("[LearningSignal] StudyRecommendation created. User={UserId} Topic={TopicId} Skill={Skill}",
-            userId, topicId, skillTag);
+        _logger.LogInformation("[LearningSignal] StudyRecommendation created. UserRef={UserRef} TopicRef={TopicRef} SkillRef={SkillRef}",
+            LogPrivacyGuard.SafeId(userId, "usr"),
+            LogPrivacyGuard.SafeId(topicId, "topic"),
+            LogPrivacyGuard.SafeTextRef(skillTag, "skill"));
     }
 
     private async Task<HashSet<Guid>> GetTopicScopeIdsAsync(Guid userId, Guid topicId, CancellationToken ct)
@@ -409,19 +416,19 @@ public class LearningSignalService : ILearningSignalService
         catch (TimeoutException)
         {
             _logger.LogWarning(
-                "[LearningSignal] Redis invalidation timeout. Area={Area} Topic={TopicId} Reason={Reason}",
+                "[LearningSignal] Redis invalidation timeout. Area={Area} TopicRef={TopicRef} Reason={Reason}",
                 area,
-                topicId,
-                reason);
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeMessage(reason, 80));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "[LearningSignal] Redis invalidation skipped. Area={Area} Topic={TopicId} Reason={Reason}",
+                "[LearningSignal] Redis invalidation skipped. Area={Area} TopicRef={TopicRef} Reason={Reason} ErrorType={ErrorType}",
                 area,
-                topicId,
-                reason);
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeMessage(reason, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

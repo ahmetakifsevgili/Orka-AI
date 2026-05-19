@@ -1,10 +1,8 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Orka.Core.Events;
 using Orka.Core.Interfaces;
-using Microsoft.Extensions.Logging;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Handlers;
 
@@ -26,21 +24,21 @@ public class TopicCompletedHandler : INotificationHandler<TopicCompletedEvent>
 
     public async Task Handle(TopicCompletedEvent notification, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("🚀 [EVENT] TopicCompletedEvent alındı. İşçiler başlatılıyor: SessionId={SessionId}", notification.SessionId);
+        _logger.LogInformation("[EVENT] TopicCompletedEvent alindi. SessionRef={SessionRef}",
+            LogPrivacyGuard.SafeId(notification.SessionId, "session"));
 
         try
         {
-            // 1. Özetle ve Wiki'ye kaydet
             await _summarizerAgent.SummarizeAndSaveWikiAsync(notification.SessionId, notification.TopicId, notification.UserId);
-            _logger.LogInformation("✅ [SUMMARIZER] Özet ve Wiki tamamlandı.");
+            _logger.LogInformation("[SUMMARIZER] Ozet ve Wiki tamamlandi.");
 
-            // 2. Quiz üret
             await _quizAgent.GeneratePendingQuizAsync(notification.SessionId, notification.TopicId, notification.UserId);
-            _logger.LogInformation("✅ [QUIZ] Pekiştirme soruları hazırlandı.");
+            _logger.LogInformation("[QUIZ] Pekistirme sorulari hazirlandi.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ [EVENT ERROR] Arka plan iş akışı başarısız oldu.");
+            _logger.LogError("[EVENT ERROR] Arka plan is akisi basarisiz oldu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 }

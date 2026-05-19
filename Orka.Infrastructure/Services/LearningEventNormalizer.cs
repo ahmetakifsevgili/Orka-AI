@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -138,7 +139,9 @@ public sealed class LearningEventNormalizer : ILearningEventNormalizer
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[LearningEvent] Signal normalization skipped. SignalType={SignalType}", signalType);
+            _logger.LogDebug("[LearningEvent] Signal normalization skipped. SignalType={SignalType} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(signalType, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }

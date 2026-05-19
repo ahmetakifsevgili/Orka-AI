@@ -8,6 +8,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -88,7 +89,9 @@ public sealed class AssessmentGrammarEngine : IAssessmentGrammarEngine
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[AssessmentGrammar] Redis read skipped. Key={Key}", cacheKey);
+                _logger.LogDebug("[AssessmentGrammar] Redis read skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(cacheKey, "cache"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -106,7 +109,9 @@ public sealed class AssessmentGrammarEngine : IAssessmentGrammarEngine
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[AssessmentGrammar] Redis write skipped. Key={Key}", cacheKey);
+                _logger.LogDebug("[AssessmentGrammar] Redis write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(cacheKey, "cache"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -213,7 +218,9 @@ public sealed class AssessmentGrammarEngine : IAssessmentGrammarEngine
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[AssessmentGrammar] Quality evaluation skipped. DraftId={DraftId}", grammar.DraftId);
+            _logger.LogDebug("[AssessmentGrammar] Quality evaluation skipped. DraftRef={DraftRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(grammar.DraftId, "draft"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }

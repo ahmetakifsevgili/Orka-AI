@@ -75,7 +75,7 @@ public class HuggingFaceService : IHuggingFaceService
             {
                 respStr = AiDebugLogger.BuildSafeLogPreview("HUGGINGFACE", "ERROR", respStr);
                 _logger.LogError("HuggingFace API Hatası: {Status} — {Error}", response.StatusCode, respStr);
-                throw new HttpRequestException($"HuggingFace API hatası: {response.StatusCode} — {respStr}");
+                throw AiProviderFailureMapper.FromResponse("HuggingFace", _model, response, respStr);
             }
 
             using var doc = JsonDocument.Parse(respStr);
@@ -90,7 +90,7 @@ public class HuggingFaceService : IHuggingFaceService
         {
             AiDebugLogger.LogError("HUGGINGFACE", ex.Message);
             _logger.LogError("HuggingFace API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
-            throw new HttpRequestException($"HuggingFace servis hatası: {ex.Message}", ex);
+            throw AiProviderFailureMapper.FromException("HuggingFace", _model, ex);
         }
     }
 
@@ -115,7 +115,7 @@ public class HuggingFaceService : IHuggingFaceService
         {
             var err = await response.Content.ReadAsStringAsync(ct);
             err = AiDebugLogger.BuildSafeLogPreview("HUGGINGFACE", "ERROR", err);
-            throw new HttpRequestException($"HuggingFace Stream error: {response.StatusCode} - {err}");
+            throw AiProviderFailureMapper.FromResponse("HuggingFace", _model, response, err);
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);

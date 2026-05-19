@@ -7,6 +7,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -114,8 +115,11 @@ public sealed class WikiLearningTraceWriter : IWikiLearningTraceWriter
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiTrace] Trace write failed. UserId={UserId} TopicId={TopicId} TraceType={TraceType}",
-                request.UserId, request.TopicId, blockType);
+            _logger.LogDebug("[WikiTrace] Trace write failed. UserRef={UserRef} TopicRef={TopicRef} TraceType={TraceType} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.UserId, "usr"),
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeMessage(blockType, 80),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Exceptions;
 using Orka.Infrastructure.Security;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Middleware;
 
@@ -48,7 +49,10 @@ public class ExceptionMiddleware
                 }
                 else if (_environment.IsDevelopment())
                 {
-                    _logger.LogError(ex, "Unhandled exception: {Message}", safeMessage);
+                    _logger.LogError(
+                        "Unhandled exception. Type={ExceptionType} Message={Message}",
+                        LogPrivacyGuard.SafeExceptionType(ex),
+                        safeMessage);
                 }
                 else
                 {

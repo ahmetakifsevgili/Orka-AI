@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -99,7 +100,9 @@ public class ContextBuilder : IContextBuilder
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[SEMANTIC TRUNCATION] Budama basarisiz, normal baglama donuluyor.");
+            _logger.LogWarning(
+                "[SEMANTIC TRUNCATION] Budama basarisiz, normal baglama donuluyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
 
             // Guvenli fallback: sadece son mesajlari dondur.
             var fallback = await _dbContext.Messages

@@ -12,6 +12,7 @@ using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Core.DTOs;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -257,7 +258,9 @@ public class WikiService : IWikiService
         {
             var resolvedUserId = topic.UserId;
             
-            _logger.LogDebug("[WIKI] Yeni wiki sayfası oluşturuluyor. SubtopicId={SubtopicId} Title={Title}", wikiTopicId, wikiTitle);
+            _logger.LogDebug("[WIKI] Yeni wiki sayfasi olusturuluyor. SubtopicRef={SubtopicRef} TitleRef={TitleRef}",
+                LogPrivacyGuard.SafeId(wikiTopicId, "topic"),
+                LogPrivacyGuard.SafeTextRef(wikiTitle, "title"));
 
             page = new WikiPage
             {
@@ -317,7 +320,9 @@ public class WikiService : IWikiService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[WIKI] Groq özet üretimi başarısız, ham içerik kaydediliyor.");
+            _logger.LogWarning(
+                "[WIKI] Groq ozet uretimi basarisiz, ham icerik kaydediliyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             // Fallback: ham içeriğin ilk 1000 karakterini kaydet
             summary = aiContent.Length > 1000 ? aiContent[..1000] + "\n\n..." : aiContent;
         }
@@ -381,7 +386,9 @@ Ders İçeriği:
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[WIKI CURATOR] Quiz üretimi başarısız — ders akışı engellenmedi.");
+                _logger.LogWarning(
+                    "[WIKI CURATOR] Quiz uretimi basarisiz; ders akisi engellenmedi. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 

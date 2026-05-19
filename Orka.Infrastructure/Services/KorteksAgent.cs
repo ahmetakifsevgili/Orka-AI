@@ -13,6 +13,7 @@ using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.SemanticKernel.Filters;
 using Orka.Infrastructure.SemanticKernel.Plugins;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -148,11 +149,11 @@ public class KorteksAgent : IKorteksAgent
         var endpointHost = ResolveEndpointHost(provider);
 
         _logger.LogInformation(
-            "[Korteks] Structured run started. RunId={RunId} Topic={Topic} TopicId={TopicId} User={UserId}",
-            runId,
-            topic,
-            topicId,
-            userId);
+            "[Korteks] Structured run started. RunRef={RunRef} TopicRef={TopicRef} TopicRefId={TopicRefId} UserRef={UserRef}",
+            LogPrivacyGuard.SafeTextRef(runId, "run"),
+            LogPrivacyGuard.SafeTextRef(topic, "topic"),
+            LogPrivacyGuard.SafeId(topicId, "topic"),
+            LogPrivacyGuard.SafeId(userId, "usr"));
 
         Kernel kernel;
         try
@@ -163,7 +164,10 @@ public class KorteksAgent : IKorteksAgent
         catch (Exception ex)
         {
             var diagnostic = KorteksFailureDiagnostic.Create(ex, stage, provider, model, endpointHost, capture);
-            _logger.LogError(ex, "[Korteks] Structured kernel build failed. RunId={RunId} Diagnostic={Diagnostic}", runId, diagnostic);
+            _logger.LogError("[Korteks] Structured kernel build failed. RunRef={RunRef} DiagnosticRef={DiagnosticRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(runId, "run"),
+                LogPrivacyGuard.SafeTextRef(diagnostic, "diag"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             providerFailures.Add(diagnostic);
             return BuildResearchResult(topic, topicId, string.Empty, capture, warnings, providerFailures);
         }
@@ -218,7 +222,10 @@ public class KorteksAgent : IKorteksAgent
         {
             var failureStage = capture.Calls.Count > 0 ? KorteksFailureStage.ToolCallRoundtrip : stage;
             var diagnostic = KorteksFailureDiagnostic.Create(ex, failureStage, provider, model, endpointHost, capture);
-            _logger.LogError(ex, "[Korteks] Structured research stream failed. RunId={RunId} Diagnostic={Diagnostic}", runId, diagnostic);
+            _logger.LogError("[Korteks] Structured research stream failed. RunRef={RunRef} DiagnosticRef={DiagnosticRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(runId, "run"),
+                LogPrivacyGuard.SafeTextRef(diagnostic, "diag"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             providerFailures.Add(diagnostic);
         }
 
@@ -269,7 +276,9 @@ public class KorteksAgent : IKorteksAgent
         string? fileContext = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        _logger.LogInformation("[Korteks] Araştırma başlatılıyor: '{Topic}' | User: {User}", topic, userId);
+        _logger.LogInformation("[Korteks] Arastirma baslatiliyor. TopicRef={TopicRef} UserRef={UserRef}",
+            LogPrivacyGuard.SafeTextRef(topic, "topic"),
+            LogPrivacyGuard.SafeId(userId, "usr"));
 
         yield return "🧠 Korteks derin araştırma motoru başlatılıyor...\n";
 
@@ -281,7 +290,9 @@ public class KorteksAgent : IKorteksAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Korteks] Kernel başlatılamadı.");
+            _logger.LogError(
+                "[Korteks] Kernel baslatilamadi. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             buildErr = ex.Message;
         }
 
@@ -436,7 +447,9 @@ public class KorteksAgent : IKorteksAgent
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Korteks] Wiki/Grader doğrulama hatası. TopicId={TopicId}", topicId);
+                _logger.LogError("[Korteks] Wiki/Grader dogrulama hatasi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
                 wikiError = true;
             }
         }
@@ -507,7 +520,8 @@ public class KorteksAgent : IKorteksAgent
             var isValid = await grader.IsContextRelevantAsync(topic, report, ct);
             if (!isValid)
             {
-                _logger.LogWarning("[Korteks] Structured research rejected by grader. TopicId={TopicId}", topicId);
+                _logger.LogWarning("[Korteks] Structured research rejected by grader. TopicRef={TopicRef}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"));
                 return "Korteks report was not saved to Wiki because the grader rejected context relevance.";
             }
 
@@ -528,7 +542,9 @@ public class KorteksAgent : IKorteksAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Korteks] Structured Wiki/Redis persistence failed. TopicId={TopicId}", topicId);
+            _logger.LogWarning("[Korteks] Structured Wiki/Redis persistence failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return "Korteks report was generated, but Wiki/Redis persistence failed.";
         }
     }

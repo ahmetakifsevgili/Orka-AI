@@ -7,6 +7,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -155,7 +156,9 @@ public class AudioOverviewService : IAudioOverviewService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[AudioOverview] Generation failed. Job={JobId}", job.Id);
+            _logger.LogError("[AudioOverview] Generation failed. JobRef={JobRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(job.Id, "job"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             job.Status = "script-only";
             job.ErrorMessage = "Backend TTS uretilemedi; frontend browser TTS fallback kullanmali.";
             job.Script = string.IsNullOrWhiteSpace(job.Script)
@@ -188,11 +191,15 @@ public class AudioOverviewService : IAudioOverviewService
             job.ContentType = "audio/mpeg";
             job.Status = "ready";
             job.ErrorMessage = null;
-            _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. Job={JobId} Bytes={Bytes}", job.Id, job.AudioBytes.Length);
+            _logger.LogInformation("[AudioOverview] Edge-TTS audio generated. JobRef={JobRef} Bytes={Bytes}",
+                LogPrivacyGuard.SafeId(job.Id, "job"),
+                job.AudioBytes.Length);
         }
         catch (Exception ttsEx)
         {
-            _logger.LogWarning(ttsEx, "[AudioOverview] Edge-TTS failed; switching to script-only. Job={JobId}", job.Id);
+            _logger.LogWarning("[AudioOverview] Edge-TTS failed; switching to script-only. JobRef={JobRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(job.Id, "job"),
+                LogPrivacyGuard.SafeExceptionType(ttsEx));
             job.Status = "script-only";
             job.ErrorMessage = "Edge-TTS uretilemedi; frontend browser TTS fallback kullanmali.";
         }

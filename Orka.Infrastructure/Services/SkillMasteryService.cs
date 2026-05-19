@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -35,13 +36,13 @@ public class SkillMasteryService : ISkillMasteryService
                 existing.QuizScore = quizScore;
                 existing.MasteredAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("[SkillMastery] Puan güncellendi. UserId={UserId} TopicId={TopicId} Title={Title} EskiScore={Old} YeniScore={New}",
-                    userId, topicId, subTopicTitle, oldScore, quizScore);
+                _logger.LogInformation("[SkillMastery] Puan guncellendi. UserRef={UserRef} TopicRef={TopicRef} SkillRef={SkillRef} EskiScore={Old} YeniScore={New}",
+                    LogPrivacyGuard.SafeId(userId, "usr"), LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeTextRef(subTopicTitle, "skill"), oldScore, quizScore);
             }
             else
             {
-                _logger.LogInformation("[SkillMastery] Mevcut puan ({Existing}) daha yüksek/eşit, güncelleme gerekmedi. UserId={UserId} TopicId={TopicId} Title={Title}",
-                    existing.QuizScore, userId, topicId, subTopicTitle);
+                _logger.LogInformation("[SkillMastery] Mevcut puan ({Existing}) daha yuksek/esit, guncelleme gerekmedi. UserRef={UserRef} TopicRef={TopicRef} SkillRef={SkillRef}",
+                    existing.QuizScore, LogPrivacyGuard.SafeId(userId, "usr"), LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeTextRef(subTopicTitle, "skill"));
             }
             return;
         }
@@ -59,8 +60,8 @@ public class SkillMasteryService : ISkillMasteryService
         _db.SkillMasteries.Add(mastery);
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("[SkillMastery] Yeni mastery kaydedildi. UserId={UserId} TopicId={TopicId} Title={Title} Score={Score}",
-            userId, topicId, subTopicTitle, quizScore);
+        _logger.LogInformation("[SkillMastery] Yeni mastery kaydedildi. UserRef={UserRef} TopicRef={TopicRef} SkillRef={SkillRef} Score={Score}",
+            LogPrivacyGuard.SafeId(userId, "usr"), LogPrivacyGuard.SafeId(topicId, "topic"), LogPrivacyGuard.SafeTextRef(subTopicTitle, "skill"), quizScore);
     }
 
     public async Task<IEnumerable<SkillMastery>> GetMasteriesByTopicAsync(Guid userId, Guid topicId)

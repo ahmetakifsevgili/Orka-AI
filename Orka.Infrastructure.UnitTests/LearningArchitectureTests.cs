@@ -1433,6 +1433,67 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task RetentionCleanupService_SummaryUsesStoredByteCounters()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var now = DateTime.UtcNow;
+        db.AudioOverviewJobs.AddRange(
+            new AudioOverviewJob
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                Status = "ready",
+                Script = "[HOCA]: Expired audio.",
+                AudioBytes = [1, 2, 3],
+                AudioByteLength = 3,
+                AudioExpiresAt = now.AddHours(-1),
+                CreatedAt = now.AddDays(-10),
+                UpdatedAt = now.AddDays(-10)
+            },
+            new AudioOverviewJob
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                Status = "script-only",
+                Script = "[HOCA]: Purged script stays.",
+                AudioBytes = null,
+                AudioByteLength = 7,
+                AudioPurgedAt = now.AddMinutes(-5),
+                AudioExpiresAt = now.AddHours(-1),
+                CreatedAt = now.AddDays(-10),
+                UpdatedAt = now.AddDays(-10)
+            });
+        db.ClassroomInteractions.Add(new ClassroomInteraction
+        {
+            Id = Guid.NewGuid(),
+            ClassroomSessionId = Guid.NewGuid(),
+            Question = "Kisa tekrar?",
+            AnswerScript = "[HOCA]: Unexpired audio.",
+            AudioBytes = [4, 5],
+            AudioByteLength = 2,
+            AudioExpiresAt = now.AddDays(1),
+            CreatedAt = now
+        });
+        await db.SaveChangesAsync();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Retention:AudioBytesDays"] = "7" })
+            .Build();
+        var service = new RetentionCleanupService(db, config);
+
+        var summary = await service.GetAudioRetentionSummaryAsync();
+
+        Assert.Equal("watch", summary.Status);
+        Assert.Equal(2, summary.ReadyAudioCount);
+        Assert.Equal(1, summary.ExpiredAudioCount);
+        Assert.Equal(1, summary.PurgedAudioCount);
+        Assert.Equal(5, summary.StoredAudioBytes);
+        Assert.Equal(7, summary.RetentionDays);
+    }
+
+    [Fact]
     public async Task RetentionCleanupService_DoesNotPurgeUnexpiredAudioBytes()
     {
         await using var db = CreateDb();

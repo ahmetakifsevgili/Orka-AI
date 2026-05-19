@@ -6,6 +6,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -117,7 +118,9 @@ public sealed class ConceptGraphQualityService : IConceptGraphQualityService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[GraphQuality] Redis write skipped. Key={Key}", key);
+            _logger.LogDebug("[GraphQuality] Redis write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(key, "cache"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

@@ -360,6 +360,36 @@ Final audit:
   definition plus local validation until a remote run is triggered. No
   AI/provider calls, paid provider validation, or OpenAI API migration were
   added.
+- Backend Production Readiness Phase 1 hardens production log privacy:
+  application logs now prefer masked/correlated refs (`UserRef`, `TopicRef`,
+  `SessionRef`, `MessageRef`, `KeyRef`) instead of raw learner/topic/session
+  identifiers in the core learning flow. `LogPrivacyGuard` provides stable
+  non-reversible refs plus bounded safe messages and exception-type-only
+  diagnostics. Production-facing log paths touched in Tutor, quiz, Wiki,
+  source/notebook, planning, Redis/cache, runtime telemetry, and background
+  job services no longer intentionally write raw prompts, provider bodies,
+  source chunks, tool payloads, answer keys, local paths, stack traces, owner
+  ids, or unsafe user ids. AI debug logging remains disabled by default and
+  development-only opt-in. No new AI/provider calls or OpenAI API migration
+  were added.
+- Backend Production Readiness Phase 2 audits live/staging provider readiness:
+  provider configuration is mapped without printing secrets, missing live AI
+  credentials block success-call proof honestly, `ExternalProviderIntegrationTests`
+  remain explicit opt-in, invalid-token failure checks are safe, and keyless
+  public reference providers can be smoke-checked without joining the
+  deterministic quick baseline. Cohere, HuggingFace, and Cohere embedding
+  failures now use body-free provider diagnostics, and startup migration failure
+  logging keeps exception type only. No new product provider path or OpenAI API
+  migration was added.
+- Backend Production Readiness Phase 3 closes the scale/ops pass: database
+  index coverage, background queues/workers, Redis stream trim guards, upload
+  and source chunk limits, provider timeout/retry/cost gates, production startup
+  safety, and quick script/CI alignment were reviewed. A small production
+  scalability fix moved audio-retention readiness summaries from materializing
+  all audio rows/byte payloads to aggregate DB queries. Provider-free CI remains
+  the default release baseline; live provider checks remain explicit opt-in and
+  must not be added to quick scripts or CI. No migration, provider architecture
+  change, OpenAI API migration, or new AI feature was added.
 - Pedagogical Productization Phase 6 Wiki Copilot is deterministic and
   page-aware. It may suggest safe handoffs to Tutor, Quiz, source review,
   repair, curation, and Notebook Studio, but it must not execute hidden

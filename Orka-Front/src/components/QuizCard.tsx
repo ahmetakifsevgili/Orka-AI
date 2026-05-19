@@ -61,6 +61,11 @@ const confidenceStatusLabel = (confidence?: LearningSignalConfidenceDto | null, 
   return "Kanıt izleniyor";
 };
 
+const safeLabel = (value?: string | null) =>
+  (value ?? "guided_reteach")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+
 const buildSourceRefs = (quiz: QuizData) => {
   const base =
     quiz.sourceRefs && typeof quiz.sourceRefs === "object" && !Array.isArray(quiz.sourceRefs)
@@ -128,6 +133,7 @@ export default function QuizCard({
   const isLastQuestion = currentQuestionIdx >= totalQuestions - 1;
   const recoveryTopicId = planDiagnostic?.topicId ?? topicId;
   const recoveryTopicTitle = activeQuiz.topicPath ?? activeQuiz.topic ?? activeQuiz.skillTag ?? "bu konu";
+  const remediationLesson = submittedAnswer?.learningImpact?.remediationLesson ?? null;
 
   useEffect(() => {
     setQuestionStartedAt(Date.now());
@@ -448,6 +454,21 @@ export default function QuizCard({
                     <p className="mt-1 font-bold text-[#8a641f]">
                       Kanıt durumu: {confidenceStatusLabel(signalConfidence, remediationSeed?.confidenceStatus ?? misconceptionSignal?.confidenceStatus)}
                     </p>
+                  </div>
+                )}
+                {remediationLesson && (
+                  <div className="mt-3 rounded-lg border border-[#8fb7a2]/24 bg-[#f2faf5]/68 px-3 py-2 text-[11px] leading-5 text-[#667085]">
+                    <p className="font-black text-[#47725d]">
+                      Telafi dersi: {safeLabel(remediationLesson.repairType)}
+                    </p>
+                    <p className="mt-1">
+                      {remediationLesson.studentVisibleSummary ?? remediationLesson.lessonShape?.goal ?? "Kisa tekrar, cozumlu ornek ve mikro kontrol hazir."}
+                    </p>
+                    {remediationLesson.checkpoint?.userSafePrompt && (
+                      <p className="mt-1 font-bold text-[#47725d]">
+                        Kontrol: {remediationLesson.checkpoint.userSafePrompt}
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">

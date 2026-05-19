@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -71,7 +72,9 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Quiz üretimi başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("Quiz uretimi basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Quiz üretilemedi." });
         }
     }
@@ -119,7 +122,9 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Quiz sonucu kaydedilemedi. UserId={UserId}", userId);
+            _logger.LogError("[QuizController] Quiz sonucu kaydedilemedi. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Quiz sonucu kaydedilemedi." });
         }
     }
@@ -137,7 +142,9 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Adaptive assessment start failed. UserId={UserId}", userId);
+            _logger.LogError("[QuizController] Adaptive assessment start failed. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Adaptive practice could not be started." });
         }
     }
@@ -159,7 +166,10 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Adaptive assessment next failed. UserId={UserId} SessionId={SessionId}", userId, adaptiveSessionId);
+            _logger.LogError("[QuizController] Adaptive assessment next failed. UserRef={UserRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(adaptiveSessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Next adaptive question could not be selected." });
         }
     }
@@ -182,7 +192,10 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Adaptive assessment answer failed. UserId={UserId} SessionId={SessionId}", userId, adaptiveSessionId);
+            _logger.LogError("[QuizController] Adaptive assessment answer failed. UserRef={UserRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(adaptiveSessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Adaptive answer could not be recorded." });
         }
     }
@@ -202,12 +215,16 @@ public class QuizController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "[QuizController] Plan diagnostic start rejected. UserId={UserId}", userId);
+            _logger.LogWarning("[QuizController] Plan diagnostic start rejected. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return BadRequest(new { error = "Plan diagnostic request could not be accepted." });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Plan diagnostic start failed. UserId={UserId}", userId);
+            _logger.LogError("[QuizController] Plan diagnostic start failed. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Plan diagnostic could not be started." });
         }
     }
@@ -225,12 +242,16 @@ public class QuizController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "[QuizController] Study intent analysis rejected. UserId={UserId}", userId);
+            _logger.LogWarning("[QuizController] Study intent analysis rejected. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return BadRequest(new { error = "Study intent request is required." });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Study intent analysis failed. UserId={UserId}", userId);
+            _logger.LogError("[QuizController] Study intent analysis failed. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Study intent could not be analyzed." });
         }
     }
@@ -249,7 +270,10 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Plan diagnostic answer failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, planRequestId);
+            _logger.LogError("[QuizController] Plan diagnostic answer failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(planRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Plan diagnostic answer could not be recorded." });
         }
     }
@@ -267,7 +291,10 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Plan diagnostic finalize failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, request.PlanRequestId);
+            _logger.LogError("[QuizController] Plan diagnostic finalize failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(request.PlanRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Plan diagnostic could not be finalized." });
         }
     }
@@ -285,7 +312,10 @@ public class QuizController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizController] Plan diagnostic skip failed. UserId={UserId} PlanRequestId={PlanRequestId}", userId, planRequestId);
+            _logger.LogError("[QuizController] Plan diagnostic skip failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(planRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Plan diagnostic could not be skipped safely." });
         }
     }

@@ -10,6 +10,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -100,7 +101,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[ConceptGraph] Redis read skipped. Key={Key}", cacheKey);
+                _logger.LogDebug("[ConceptGraph] Redis read skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(cacheKey, "cache"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -123,7 +126,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "[ConceptGraph] Redis write skipped. Key={Key}", cacheKey);
+                _logger.LogDebug("[ConceptGraph] Redis write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(cacheKey, "cache"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 
@@ -206,7 +211,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[ConceptGraph] Source bundle Redis write skipped. Key={Key}", cacheKey);
+            _logger.LogDebug("[ConceptGraph] Source bundle Redis write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(cacheKey, "cache"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -224,7 +231,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[ConceptGraph] Quality evaluation skipped. SnapshotId={SnapshotId}", graph.SnapshotId);
+            _logger.LogDebug("[ConceptGraph] Quality evaluation skipped. SnapshotRef={SnapshotRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(graph.SnapshotId, "snapshot"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -238,7 +247,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[ConceptGraph] Source alignment skipped. SnapshotId={SnapshotId}", graph.SnapshotId);
+            _logger.LogDebug("[ConceptGraph] Source alignment skipped. SnapshotRef={SnapshotRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(graph.SnapshotId, "snapshot"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

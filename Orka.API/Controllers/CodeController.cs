@@ -6,6 +6,7 @@ using Orka.API.Services;
 using Orka.Core.Constants;
 using Orka.Core.DTOs.Code;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Controllers;
 
@@ -106,8 +107,8 @@ public class CodeController : ControllerBase
                 result.SafeTutorSummary);
 
             _logger.LogInformation(
-                "Piston sonucu Redis'e yazildi. Session={SessionId} Dil={Language} Phase={Phase} Success={Success}",
-                request.SessionId.Value,
+                "Piston sonucu Redis'e yazildi. SessionRef={SessionRef} Dil={Language} Phase={Phase} Success={Success}",
+                LogPrivacyGuard.SafeId(request.SessionId.Value, "session"),
                 language,
                 result.Phase,
                 result.Success);

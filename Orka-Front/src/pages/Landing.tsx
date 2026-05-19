@@ -343,7 +343,7 @@ export default function Landing() {
             <motion.div {...slide(-34)}>
               <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">Güçlü Mimari ve QA</p>
               <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Görünmez asistanlarınız, görünür güvenilirlik.</h2>
-              <p className="mt-5 text-sm leading-8 text-[#667085]">QA ve sistem güveni, estetik kadar kritik. Çoklu ajanların veri tutarlılığı, JSON yapılarının şema denetimleri ve endpoint kontrolleri, uçtan uca otomatik test süreçleriyle garanti altındadır.</p>
+              <p className="mt-5 text-sm leading-8 text-[#667085]">QA ve sistem güveni, estetik kadar kritik. Çoklu ajanların veri tutarlılığı, JSON yapılarının şema denetimleri ve endpoint kontrolleri, uçtan uca otomatik test süreçleriyle izlenir ve kanıta bağlanır.</p>
             </motion.div>
             <motion.div {...slide(34, 0.08)} className="orka-card rounded-[2rem] p-5">
               {trustItems.map(([title, text]) => (

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -188,7 +189,9 @@ public sealed class MistakeClassifierService : IMistakeClassifierService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[MistakeClassifier] Signal write failed safely.");
+            _logger.LogDebug(
+                "[MistakeClassifier] Signal write failed safely. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return result;

@@ -5,6 +5,7 @@ using Orka.Core.DTOs.Korteks;
 using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -54,7 +55,10 @@ public class KorteksController : ControllerBase
         }
 
         var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Arastirma: {Topic} | URL: {Url}", request.Topic, request.SourceUrl);
+        _logger.LogInformation("[KorteksController] Arastirma. UserRef={UserRef} TopicRef={TopicRef} UrlRef={UrlRef}",
+            LogPrivacyGuard.SafeId(userId, "usr"),
+            LogPrivacyGuard.SafeTextRef(request.Topic, "topic"),
+            LogPrivacyGuard.SafeTextRef(request.SourceUrl, "url"));
 
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
@@ -79,8 +83,10 @@ public class KorteksController : ControllerBase
         }
 
         var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Dosyali arastirma: {Topic} | Dosya: {File}",
-            request.Topic, request.File?.FileName);
+        _logger.LogInformation("[KorteksController] Dosyali arastirma. UserRef={UserRef} TopicRef={TopicRef} FileRef={FileRef}",
+            LogPrivacyGuard.SafeId(userId, "usr"),
+            LogPrivacyGuard.SafeTextRef(request.Topic, "topic"),
+            LogPrivacyGuard.SafeTextRef(request.File?.FileName, "file"));
 
         var ct = HttpContext.RequestAborted;
         string? fileContext;
@@ -112,7 +118,9 @@ public class KorteksController : ControllerBase
             return BadRequest(new { message = "Araştırma konusu boş olamaz." });
 
         var userId = GetUserId();
-        _logger.LogInformation("[KorteksController] Senkron arastirma: {Topic}", request.Topic);
+        _logger.LogInformation("[KorteksController] Senkron arastirma. UserRef={UserRef} TopicRef={TopicRef}",
+            LogPrivacyGuard.SafeId(userId, "usr"),
+            LogPrivacyGuard.SafeTextRef(request.Topic, "topic"));
 
         var fileContext = BuildUrlContext(request.SourceUrl);
         var ct = HttpContext.RequestAborted;
@@ -162,7 +170,10 @@ public class KorteksController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[KorteksController] Senkron arastirma hatasi.");
+            _logger.LogError("[KorteksController] Senkron arastirma hatasi. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeTextRef(request.Topic, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { success = false, error = "Korteks arastirmasi su an tamamlanamadi." });
         }
     }
@@ -202,7 +213,10 @@ public class KorteksController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[KorteksController] Arastirma akisi hatasi.");
+            _logger.LogError("[KorteksController] Arastirma akisi hatasi. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeTextRef(topic, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             try
             {
                 await Response.WriteAsync("data: [ERROR]: Korteks arastirmasi su an tamamlanamadi.\n\n", ct);
@@ -210,7 +224,8 @@ public class KorteksController : ControllerBase
             }
             catch (Exception flushEx)
             {
-                _logger.LogDebug(flushEx, "[KorteksController] SSE error flush failed.");
+                _logger.LogDebug("[KorteksController] SSE error flush failed. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(flushEx));
             }
         }
     }

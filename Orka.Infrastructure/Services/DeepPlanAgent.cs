@@ -6,6 +6,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -132,7 +133,9 @@ public class DeepPlanAgent : IDeepPlanAgent
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[DeepPlan] Korteks aratrmas baarsz oldu. Planlama mevcut bilgilerle devam edecek.");
+                _logger.LogWarning(
+                    "[DeepPlan] Korteks aratrmas baarsz oldu. Planlama mevcut bilgilerle devam edecek. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
                 groundingMetadata = new DeepPlanGroundingMetadataDto
                 {
                     GroundingMode = GroundingMode.BlockedProvider,
@@ -439,7 +442,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[DeepPlan] YouTube referans ekme baarsz.");
+            _logger.LogWarning(
+                "[DeepPlan] YouTube referans ekme baarsz. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -923,7 +928,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[DeepPlan] Baseline analiz aamas baarsz oldu.");
+            _logger.LogWarning(
+                "[DeepPlan] Baseline analiz aamas baarsz oldu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return string.Empty;
         }
     }
@@ -947,7 +954,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[DeepPlan] Baseline Quiz Korteks aratrmas baarsz oldu. Tanlama kurallaryla devam edilecek.");
+            _logger.LogWarning(
+                "[DeepPlan] Baseline Quiz Korteks aratrmas baarsz oldu. Tanlama kurallaryla devam edilecek. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             var blockedResearch = new KorteksResearchResultDto
             {
                 Topic = topicTitle,
@@ -1023,9 +1032,9 @@ public class DeepPlanAgent : IDeepPlanAgent
         if (!quality.IsAcceptable)
         {
             _logger.LogWarning(
-                "[DeepPlan] Baseline quiz quality failed. Topic={Topic} Failures={Failures}",
-                topicTitle,
-                string.Join(" | ", quality.Failures));
+                "[DeepPlan] Baseline quiz quality failed. TopicRef={TopicRef} FailureCount={FailureCount}",
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                quality.Failures.Count);
         }
 
         return validatedQuiz;

@@ -7,6 +7,7 @@ using Orka.Core.DTOs.Chat;
 using Orka.Core.Interfaces;
 using Orka.Core.Services;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -107,7 +108,10 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[TutorPolicy] Policy context fallback. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogDebug("[TutorPolicy] Policy context fallback. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             var fallback = new TutorPolicyContextDto
             {
                 TopicId = topicId,

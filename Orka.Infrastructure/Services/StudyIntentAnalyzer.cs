@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -81,7 +82,9 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[StudyIntentAnalyzer] AI intent analysis failed; using deterministic fallback. User={UserId}", userId);
+            _logger.LogWarning("[StudyIntentAnalyzer] AI intent analysis failed; using deterministic fallback. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return BuildFallback(raw);

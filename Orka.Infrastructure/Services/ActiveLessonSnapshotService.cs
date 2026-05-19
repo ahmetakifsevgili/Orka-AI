@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -542,7 +543,9 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Learning snapshot cache write skipped. Key={Key}", key);
+            _logger.LogDebug("Learning snapshot cache write skipped. KeyRef={KeyRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(key, "cache"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

@@ -8,6 +8,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -181,7 +182,8 @@ public class ClassroomService : IClassroomService
             payloadJson: JsonSerializer.Serialize(new { question, segment }),
             ct: ct);
 
-        _logger.LogInformation("[Classroom] Student question answered. Classroom={ClassroomId}", classroom.Id);
+        _logger.LogInformation("[Classroom] Student question answered. ClassroomRef={ClassroomRef}",
+            LogPrivacyGuard.SafeId(classroom.Id, "classroom"));
         return new ClassroomAskResultDto(classroom.Id, interaction.Id, answer, ParseSpeakers(answer));
     }
 
@@ -199,9 +201,10 @@ public class ClassroomService : IClassroomService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,
-                "[Classroom] AI answer unavailable within {TimeoutSeconds}s. Returning structured fallback.",
-                AiAnswerTimeout.TotalSeconds);
+            _logger.LogWarning(
+                "[Classroom] AI answer unavailable within {TimeoutSeconds}s. Returning structured fallback. ErrorType={ErrorType}",
+                AiAnswerTimeout.TotalSeconds,
+                LogPrivacyGuard.SafeExceptionType(ex));
             return BuildProviderFallbackDialogue(question, segment);
         }
     }
@@ -245,12 +248,14 @@ public class ClassroomService : IClassroomService
                     interaction.AudioPurgedAt = null;
                     interaction.ContentType = "audio/mpeg";
                     await db.SaveChangesAsync(ct);
-                    _logger.LogInformation("[Classroom] Edge-TTS audio attached. Interaction={InteractionId} Bytes={Bytes}",
-                        interactionId, audioBytes.Length);
+                    _logger.LogInformation("[Classroom] Edge-TTS audio attached. InteractionRef={InteractionRef} Bytes={Bytes}",
+                        LogPrivacyGuard.SafeId(interactionId, "interaction"), audioBytes.Length);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "[Classroom] Interaction TTS failed; keeping script-only interaction. Interaction={InteractionId}", interactionId);
+                    _logger.LogWarning("[Classroom] Interaction TTS failed; keeping script-only interaction. InteractionRef={InteractionRef} ErrorType={ErrorType}",
+                        LogPrivacyGuard.SafeId(interactionId, "interaction"),
+                        LogPrivacyGuard.SafeExceptionType(ex));
                 }
             },
             MaxAttempts: 1,

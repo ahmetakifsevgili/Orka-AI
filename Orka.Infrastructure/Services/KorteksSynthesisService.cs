@@ -7,6 +7,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -87,9 +88,9 @@ public sealed class KorteksSynthesisService : IKorteksSynthesisService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "[KorteksSynthesis] Workflow saved. WorkflowId={WorkflowId} TopicId={TopicId} Mode={GroundingMode} Sources={SourceCount}",
-            entity.Id,
-            entity.TopicId,
+            "[KorteksSynthesis] Workflow saved. WorkflowRef={WorkflowRef} TopicRef={TopicRef} Mode={GroundingMode} Sources={SourceCount}",
+            LogPrivacyGuard.SafeId(entity.Id, "workflow"),
+            LogPrivacyGuard.SafeId(entity.TopicId, "topic"),
             entity.GroundingMode,
             entity.SourceCount);
 

@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -65,10 +66,10 @@ public sealed class ConceptMasteryService : IConceptMasteryService
 
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation(
-            "[ConceptMastery] Updated {Count} concept mastery rows. UserId={UserId} TopicId={TopicId}",
+            "[ConceptMastery] Updated {Count} concept mastery rows. UserRef={UserRef} TopicRef={TopicRef}",
             updated.Count,
-            profile.UserId,
-            profile.TopicId);
+            LogPrivacyGuard.SafeId(profile.UserId, "usr"),
+            LogPrivacyGuard.SafeId(profile.TopicId, "topic"));
         return updated;
     }
 

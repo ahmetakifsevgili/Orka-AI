@@ -15,6 +15,7 @@ using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -52,7 +53,8 @@ public class SummarizerAgent : ISummarizerAgent
         var lockKey = $"{sessionId}:{topicId}";
         if (!_inProgress.TryAdd(lockKey, 0))
         {
-            _logger.LogInformation("[WikiCurator] Zaten işlemde — atlandı. Key={Key}", lockKey);
+            _logger.LogInformation("[WikiCurator] Already in progress; skipped. KeyRef={KeyRef}",
+                LogPrivacyGuard.SafeTextRef(lockKey, "wiki"));
             return;
         }
 
@@ -129,14 +131,16 @@ public class SummarizerAgent : ISummarizerAgent
                 if (weakLessons.Count > 0)
                 {
                     moduleWeaknessNotice = $"\n\n[MODÜL ZAYIFLIK RAPORU — Bu modülün özetinde aşağıdaki başlıklara özel vurgu yap]:\n{string.Join("\n", weakLessons)}\n";
-                    _logger.LogInformation("[WikiCurator] Modül seviyesi zayıflık raporu eklendi. TopicId={TopicId} WeakCount={Count}",
-                        topicId, weakLessons.Count);
+                    _logger.LogInformation("[WikiCurator] Modul seviyesi zayiflik raporu eklendi. TopicRef={TopicRef} WeakCount={Count}",
+                        LogPrivacyGuard.SafeId(topicId, "topic"), weakLessons.Count);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[WikiCurator] Modül zayıflık raporu üretilemedi.");
+            _logger.LogWarning("[WikiCurator] Modul zayiflik raporu uretilemedi. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         // ── KİŞİSELLEŞTİRME: Öğrenci zayıf noktaları + yanlış quiz cevapları ──
@@ -192,8 +196,8 @@ public class SummarizerAgent : ISummarizerAgent
                     - Kavrama seviyesi düşükse dili daha basitleştir, benzetmeleri artır.
                     - Yanlış cevaplanan soruların ardındaki temel kavramı Wiki'de açıkça anlat.
                     """;
-                _logger.LogInformation("[WikiCurator] Kişiselleştirme uygulandı. TopicId={TopicId} Failed={Count}",
-                    topicId, failedAttempts.Count);
+                _logger.LogInformation("[WikiCurator] Kisisellestirme uygulandi. TopicRef={TopicRef} Failed={Count}",
+                    LogPrivacyGuard.SafeId(topicId, "topic"), failedAttempts.Count);
             }
 
             var failedAttemptEntities = await db.QuizAttempts
@@ -257,7 +261,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[WikiCurator] Kişiselleştirme verisi okunamadı, jenerik wiki üretiliyor.");
+            _logger.LogWarning("[WikiCurator] Kisisellestirme verisi okunamadi, jenerik wiki uretiliyor. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         var systemPrompt = $$"""
@@ -323,8 +329,9 @@ public class SummarizerAgent : ISummarizerAgent
 
         try
         {
-            _logger.LogInformation("[WikiCurator] AIAgentFactory (Summarizer/{Model}) özetleme başladı. SessionId={SessionId}",
-                _factory.GetModel(Orka.Core.Enums.AgentRole.Summarizer), sessionId);
+            _logger.LogInformation("[WikiCurator] AIAgentFactory (Summarizer/{Model}) ozetleme basladi. SessionRef={SessionRef}",
+                _factory.GetModel(Orka.Core.Enums.AgentRole.Summarizer),
+                LogPrivacyGuard.SafeId(sessionId, "session"));
 
             var summary = await _factory.CompleteChatAsync(Orka.Core.Enums.AgentRole.Summarizer, systemPrompt, userPrompt);
             summary = WikiAdaptiveMetadataFormatter.EnsureSourceTagsPresent(summary, sourceBackedWikiBlock);
@@ -381,11 +388,14 @@ public class SummarizerAgent : ISummarizerAgent
             await db.SaveChangesAsync();
             InvalidateNotebookTools(topicId);
 
-            _logger.LogInformation("[WikiCurator] Başarıyla Wiki'ye aktarıldı. Topic={Topic}", topicTitle);
+            _logger.LogInformation("[WikiCurator] Basariyla Wiki'ye aktarildi. TopicRef={TopicRef}",
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[WikiCurator] Tüm sağlayıcılar başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[WikiCurator] Tum saglayicilar basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -527,7 +537,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Briefing] Üretim başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[Briefing] Uretim basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new BriefingDocument(
                 topicTitle,
                 "Briefing şu anda hazırlanamadı. Lütfen daha sonra tekrar dene.",
@@ -579,7 +591,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Glossary] Üretim başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[Glossary] Uretim basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -622,7 +636,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Timeline] Üretim başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[Timeline] Uretim basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -671,7 +687,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[MindMap] Üretim başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[MindMap] Uretim basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new MindMapDto("mindmap\n  root((Harita hazırlanamadı))", []);
         }
     }
@@ -714,7 +732,9 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[StudyCards] Üretim başarısız. TopicId={TopicId}", topicId);
+            _logger.LogError("[StudyCards] Uretim basarisiz. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -745,7 +765,10 @@ public class SummarizerAgent : ISummarizerAgent
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[NotebookLM] Redis cache parse edilemedi. Tool={Tool} TopicId={TopicId}", tool, topicId);
+            _logger.LogDebug("[NotebookLM] Redis cache parse edilemedi. Tool={Tool} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeMessage(tool, 80),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         await _redis.RecordCacheMetricAsync($"notebook-{tool}", hit: false, tool: tool, latencyMs: sw.Elapsed.TotalMilliseconds);

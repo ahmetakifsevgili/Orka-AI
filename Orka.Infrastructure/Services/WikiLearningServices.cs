@@ -10,6 +10,7 @@ using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Core.Services;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -63,7 +64,9 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiV2] Topic source retrieval skipped. TopicId={TopicId}", request.TopicId);
+            _logger.LogDebug("[WikiV2] Topic source retrieval skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         var wikiBlocks = await BuildWikiBlocksAsync(request, ct);
@@ -246,7 +249,9 @@ public sealed class WikiEvidenceService : IWikiEvidenceService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiV2] Recommendations unavailable. TopicId={TopicId}", topicId);
+            _logger.LogDebug("[WikiV2] Recommendations unavailable. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return [];
         }
     }
@@ -656,7 +661,9 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[WikiV2] Assistant generation failed. TopicId={TopicId}", request.TopicId);
+            _logger.LogWarning("[WikiV2] Assistant generation failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return policy.UserSafeMessage;
         }
     }
@@ -689,7 +696,9 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiV2] Learning event skipped. TopicId={TopicId}", request.TopicId);
+            _logger.LogDebug("[WikiV2] Learning event skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -771,7 +780,9 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiV2] Citation check skipped. TopicId={TopicId}", request.TopicId);
+            _logger.LogDebug("[WikiV2] Citation check skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

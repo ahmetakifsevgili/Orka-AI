@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -59,7 +60,9 @@ public class GraderAgent : IGraderAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[GraderAgent] Kontrol esnasında hata oluştu. Tedbir amaçlı FALSE dönülüyor.");
+            _logger.LogError(
+                "[GraderAgent] Kontrol esnasinda hata olustu. Tedbir amacli FALSE donuluyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return false;
         }
     }
@@ -84,7 +87,9 @@ public class GraderAgent : IGraderAgent
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[GraderAgent] Cevap değerlendirmesi esnasında hata oluştu.");
+            _logger.LogError(
+                "[GraderAgent] Cevap degerlendirmesi esnasinda hata olustu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return false;
         }
     }

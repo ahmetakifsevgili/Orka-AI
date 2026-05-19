@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -155,7 +156,9 @@ public sealed class EducatorCoreService : IEducatorCoreService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[EducatorCore] Teaching reference cache read failed. TopicId={TopicId}", topicId);
+            _logger.LogDebug("[EducatorCore] Teaching reference cache read failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         if (string.IsNullOrWhiteSpace(rawYouTubeContext))
@@ -172,7 +175,9 @@ public sealed class EducatorCoreService : IEducatorCoreService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[EducatorCore] Teaching reference cache write failed. TopicId={TopicId}", topicId);
+            _logger.LogDebug("[EducatorCore] Teaching reference cache write failed. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return reference;
@@ -433,7 +438,10 @@ public sealed class EducatorCoreService : IEducatorCoreService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[EducatorCore] LearningSignal write skipped. Type={SignalType}", signalType);
+            _logger.LogDebug(
+                "[EducatorCore] LearningSignal write skipped. Type={SignalType} ErrorType={ErrorType}",
+                signalType,
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

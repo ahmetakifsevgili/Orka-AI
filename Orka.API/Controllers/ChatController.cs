@@ -13,6 +13,7 @@ using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Controllers;
 
@@ -169,7 +170,11 @@ public class ChatController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Stream initialization failed");
+            _logger.LogError("Stream initialization failed. UserRef={UserRef} TopicRef={TopicRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeId(request.SessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             Response.StatusCode = 500;
             return;
         }
@@ -193,7 +198,11 @@ public class ChatController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "StreamMessage akışı kesildi.");
+            _logger.LogError("StreamMessage akisi kesildi. UserRef={UserRef} TopicRef={TopicRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeId(sid, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             try
             {
                 await Response.WriteAsync("data: [ERROR]: AI bağlantısı şu an tamamlanamadı.\n\n");
@@ -201,7 +210,9 @@ public class ChatController : ControllerBase
             }
             catch (Exception flushEx)
             {
-                _logger.LogDebug(flushEx, "Stream error suffix could not be flushed.");
+                _logger.LogDebug("Stream error suffix could not be flushed. SessionRef={SessionRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(sid, "session"),
+                    LogPrivacyGuard.SafeExceptionType(flushEx));
             }
         }
     }

@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -64,8 +65,8 @@ public class QuizAgent : IQuizAgent
         string quizLevelType = isModuleLevel ? "Müfredat Değerlendirme Sınavı" : "Konu Kavrama Testi";
         string topicTitle    = topic?.Title ?? "Konu";
 
-        _logger.LogInformation("[QuizAgent] Seviye: {Level} | Soru Aralığı: {Min}-{Max} | Konu: {Topic}",
-            quizLevelType, minQuestions, maxQuestions, topicTitle);
+        _logger.LogInformation("[QuizAgent] Seviye: {Level} | Soru Araligi: {Min}-{Max} | TopicRef={TopicRef}",
+            quizLevelType, minQuestions, maxQuestions, LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
 
         // ── Bağlam: Son mesajlar veya önceki özet ─────────────────────────────
         var context = !string.IsNullOrWhiteSpace(session.Summary)
@@ -86,7 +87,9 @@ public class QuizAgent : IQuizAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[QuizAgent] YouTube context okunamadı, standart çeldiriciler kullanılacak.");
+            _logger.LogWarning("[QuizAgent] YouTube context okunamadi, standart celdiriciler kullanilacak. TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         // ── Quiz Üretim Prompt'u ──────────────────────────────────────────────
@@ -129,12 +132,16 @@ public class QuizAgent : IQuizAgent
         string questions;
         try
         {
-            _logger.LogInformation("[QuizAgent] {Level} soruları üretiliyor. Konu: {Topic}", quizLevelType, topicTitle);
+            _logger.LogInformation("[QuizAgent] {Level} sorulari uretiliyor. TopicRef={TopicRef}",
+                quizLevelType,
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
             questions = await _factory.CompleteChatAsync(AgentRole.Quiz, systemPrompt, userPrompt);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizAgent] Soru üretimi başarısız. SessionId={SessionId}", sessionId);
+            _logger.LogError("[QuizAgent] Soru uretimi basarisiz. SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(sessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return;
         }
 
@@ -162,7 +169,9 @@ public class QuizAgent : IQuizAgent
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[QuizAgent] Yedek soru üretimi de başarısız.");
+                _logger.LogError("[QuizAgent] Yedek soru uretimi de basarisiz. SessionRef={SessionRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(sessionId, "session"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
                 return;
             }
         }
@@ -175,11 +184,15 @@ public class QuizAgent : IQuizAgent
             session.CurrentState = Orka.Core.Enums.SessionState.QuizPending;
             await db.SaveChangesAsync();
 
-            _logger.LogInformation("[QuizAgent] ✅ {Level} soruları kaydedildi. Konu: {Topic}", quizLevelType, topicTitle);
+            _logger.LogInformation("[QuizAgent] {Level} sorulari kaydedildi. TopicRef={TopicRef}",
+                quizLevelType,
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[QuizAgent] Soru kaydetme başarısız.");
+            _logger.LogError("[QuizAgent] Soru kaydetme basarisiz. SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(sessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 

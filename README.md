@@ -23,7 +23,7 @@ Orka is a student-facing Learning OS. The completed OrkaLM / Wiki-aware Notebook
 
 Current scope is personal learning: Tutor, Wiki vault, uploaded-source OrkaLM notebooks, source evidence/citation safety, Notebook Studio packs, artifacts, audio/script fallback, review tools, and deterministic export previews. Orka does not claim full NotebookLM parity, real PPTX export, video generation, official curriculum/exam success guarantees, or teacher/classroom/dershane workflows.
 
-Phase 27 is post-closure polish only: global public DTO privacy, user-facing copy alignment, Browser visual verification where local tooling/auth allows it, frontend build/performance review, and behaviorless provider warning cleanup.
+Backend production readiness is currently closed through log privacy, zero-leak provider diagnostics, provider-free backend lifetest/CI proof, optional live provider smoke separation, and a final scale/ops pass. Provider-free quick scripts remain the default release proof; live provider checks stay explicit opt-in and must not be added to CI without a separate release decision.
 
 ---
 

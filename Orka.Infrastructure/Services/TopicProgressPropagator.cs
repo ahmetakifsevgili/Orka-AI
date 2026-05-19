@@ -6,6 +6,7 @@ using Orka.Core.Enums;
 using Orka.Core.Events;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -77,7 +78,8 @@ public sealed class TopicProgressPropagator : ITopicProgressPropagator
             .FirstOrDefaultAsync(ct);
         if (lastAiMsg?.Content?.Contains("[TOPIC_COMPLETE:", StringComparison.OrdinalIgnoreCase) == true)
         {
-            _logger.LogInformation("[Auto-Progression] Quiz path already marked completion. TopicId={TopicId}", topicId);
+            _logger.LogInformation("[Auto-Progression] Quiz path already marked completion. TopicRef={TopicRef}",
+                LogPrivacyGuard.SafeId(topicId, "topic"));
             return;
         }
 
@@ -107,7 +109,8 @@ public sealed class TopicProgressPropagator : ITopicProgressPropagator
         if (completedCount < orderedLessons.Count)
         {
             var nextTopic = orderedLessons[completedCount];
-            _logger.LogInformation("[Auto-Progression] Next lesson selected. Topic={Topic}", nextTopic.Title);
+            _logger.LogInformation("[Auto-Progression] Next lesson selected. TopicRef={TopicRef}",
+                LogPrivacyGuard.SafeTextRef(nextTopic.Title, "topic"));
 
             var curriculumTitles = orderedLessons.Select(t => t.Title).ToList();
             var autoLesson = await _tutorAgent.GetFirstLessonAsync(topic.Title, nextTopic.Title, curriculumTitles);
@@ -140,7 +143,8 @@ public sealed class TopicProgressPropagator : ITopicProgressPropagator
             return;
         }
 
-        _logger.LogInformation("[Auto-Progression] All lessons completed. TopicId={TopicId}", topicId);
+        _logger.LogInformation("[Auto-Progression] All lessons completed. TopicRef={TopicRef}",
+            LogPrivacyGuard.SafeId(topicId, "topic"));
         await _mediator.Publish(new TopicCompletedEvent
         {
             SessionId = sessionId,

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -132,7 +133,9 @@ public class IntentClassifierAgent : IIntentClassifierAgent
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[IntentClassifier] LLM hatası. Fail-safe CONTINUE döndürülüyor.");
+            _logger.LogWarning(
+                "[IntentClassifier] LLM hatasi. Fail-safe CONTINUE donduruluyor. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return new IntentResult("CONTINUE", 0.0, "LLM hatası — fail-safe.", 5, "");
         }
     }

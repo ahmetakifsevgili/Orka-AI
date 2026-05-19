@@ -36,7 +36,7 @@ function authErrorMessage(err: unknown, mode: AuthTab) {
 }
 
 const previewRows = [
-  ["Dinamik Müfredat", "Zihinsel modelinize %100 uyumlu, adaptif öğrenme yolları"],
+  ["Dinamik Müfredat", "Öğrenme sinyallerinize göre uyarlanan adaptif öğrenme yolları"],
   ["Derin Analitik", "Beceri boşluklarınızı tespit eden gerçek zamanlı teşhis motoru"],
   ["Bilgi Hafızası", "Öğrendiğiniz her konuyu indeksleyen otonom Wiki sistemi"],
   ["Ajan Ağı", "Kişisel öğrenme hızınıza senkronize olan yapay zeka asistanları"],

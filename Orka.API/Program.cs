@@ -14,6 +14,7 @@ using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Security;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 using Orka.Infrastructure.SemanticKernel.Filters;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 using Microsoft.SemanticKernel;
@@ -661,8 +662,9 @@ if (autoMigrateOnStartup && !useInMemoryDatabase)
     }
     catch (Exception ex)
     {
-        app.Logger.LogError(ex,
-            "Database auto migration failed. API continues so Swagger and health endpoints stay available.");
+        app.Logger.LogError(
+            "Database auto migration failed. API continues so Swagger and health endpoints stay available. ErrorType={ErrorType}",
+            LogPrivacyGuard.SafeExceptionType(ex));
     }
 }
 

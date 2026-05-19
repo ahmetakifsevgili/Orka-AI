@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Controllers;
 
@@ -37,7 +38,10 @@ public sealed class LearningQualityController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[LearningQuality] Topic report failed. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogError("[LearningQuality] Topic report failed. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Learning quality report could not be generated." });
         }
     }
@@ -55,7 +59,10 @@ public sealed class LearningQualityController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[LearningQuality] RAG evaluation failed. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogError("[LearningQuality] RAG evaluation failed. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "RAG evaluation could not be generated." });
         }
     }

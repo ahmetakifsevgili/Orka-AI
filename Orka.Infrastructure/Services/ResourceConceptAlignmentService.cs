@@ -4,6 +4,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -112,7 +113,9 @@ public sealed class ResourceConceptAlignmentService : IResourceConceptAlignmentS
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[ResourceAlignment] Embedding score fallback used.");
+            _logger.LogDebug(
+                "[ResourceAlignment] Embedding score fallback used. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return lexical;
         }
     }

@@ -1,6 +1,7 @@
 using EdgeTtsSharp;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -37,7 +38,10 @@ public class EdgeTtsService : IEdgeTtsService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[EdgeTtsService] Segment TTS failed. Speaker={Speaker} Voice={Voice}", speaker, voiceName);
+                _logger.LogWarning("[EdgeTtsService] Segment TTS failed. Speaker={Speaker} VoiceRef={VoiceRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeMessage(speaker, 32),
+                    LogPrivacyGuard.SafeTextRef(voiceName, "voice"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
         }
 

@@ -8,6 +8,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -314,7 +315,10 @@ public sealed class TutorWorkingMemoryService : ITutorWorkingMemoryService
             snapshot.IsDegraded = true;
             snapshot.Source = "sql_fallback";
             await _db.SaveChangesAsync(ct);
-            _logger.LogWarning(ex, "[TutorWorkingMemory] Redis write degraded. User={UserId} Topic={TopicId}", state.UserId, state.TopicId);
+            _logger.LogWarning("[TutorWorkingMemory] Redis write degraded. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(state.UserId, "usr"),
+                LogPrivacyGuard.SafeId(state.TopicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return snapshot;

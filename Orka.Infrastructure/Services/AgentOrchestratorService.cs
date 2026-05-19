@@ -126,7 +126,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
                         using var scope = _scopeFactory.CreateScope();
                         var summarizer = scope.ServiceProvider.GetRequiredService<ISummarizerAgent>();
                         await summarizer.SummarizeAndSaveWikiAsync(capturedSessionId, capturedTopicId, userId);
-                        _logger.LogInformation("[Orchestrator] EndSession Wiki uretimi tamamlandi. SessionId={SessionId}", capturedSessionId);
+                        _logger.LogInformation("[Orchestrator] EndSession Wiki uretimi tamamlandi. SessionRef={SessionRef}",
+                            LogPrivacyGuard.SafeId(capturedSessionId, "session"));
                     },
                     MaxAttempts: 2,
                     Timeout: TimeSpan.FromSeconds(90)));
@@ -274,7 +275,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[STREAM] Senkron routing hatası");
+                _logger.LogError("[STREAM] Senkron routing hatasi. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
                 syncResponse = "Bir hata oluştu. Lütfen tekrar deneyin.";
             }
 
@@ -369,10 +371,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         _logger.LogInformation(
-            "[Orchestrator] ORKA_CONTEXT focus injected. FocusTopicId={FocusTopicId} FocusTopicPath={FocusTopicPath} FocusSourceRef={FocusSourceRef}",
-            focusTopicId,
-            focusTopicPath,
-            focusSourceRef);
+            "[Orchestrator] ORKA_CONTEXT focus injected. FocusTopicRef={FocusTopicRef} FocusTopicPathRef={FocusTopicPathRef} FocusSourceRef={FocusSourceRef}",
+            LogPrivacyGuard.SafeId(focusTopicId, "topic"),
+            LogPrivacyGuard.SafeTextRef(focusTopicPath, "path"),
+            LogPrivacyGuard.SafeTextRef(focusSourceRef, "source"));
 
         var lines = new List<string>
         {
@@ -516,13 +518,13 @@ public class AgentOrchestratorService : IAgentOrchestrator
         catch (Exception ex)
         {
             _logger.LogWarning(
-                ex,
-                "[ChatPostProcess] Schedule skipped. UserId={UserId} SessionId={SessionId} MessageId={MessageId} AgentRole={AgentRole} IsStream={IsStream}",
-                userId,
-                session.Id,
-                assistantMessageId,
-                agentRole,
-                isStream);
+                "[ChatPostProcess] Schedule skipped. UserRef={UserRef} SessionRef={SessionRef} MessageRef={MessageRef} AgentRole={AgentRole} IsStream={IsStream} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(session.Id, "session"),
+                LogPrivacyGuard.SafeId(assistantMessageId, "msg"),
+                LogPrivacyGuard.SafeMessage(agentRole, 80),
+                isStream,
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
 
@@ -632,16 +634,17 @@ public class AgentOrchestratorService : IAgentOrchestrator
                                       ?? KorteksResearchContextFormatter.FormatForTutor(researchResult);
 
                     _logger.LogInformation(
-                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}, SynthesisWorkflowId={SynthesisWorkflowId}",
+                        "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}, SynthesisWorkflowRef={SynthesisWorkflowRef}",
                         researchResult.GroundingMode,
                         researchResult.IsFallback,
                         researchResult.SourceCount,
                         researchResult.ProviderCalls.Count(c => c.Invoked),
-                        synthesis?.Id);
+                        LogPrivacyGuard.SafeId(synthesis?.Id, "workflow"));
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "[Orchestrator] Research route failed; Tutor will answer with explicit source limits.");
+                    _logger.LogWarning("[Orchestrator] Research route failed; Tutor will answer with explicit source limits. ErrorType={ErrorType}",
+                        LogPrivacyGuard.SafeExceptionType(ex));
                     researchContext = "[KORTEKS SOURCE-GROUNDING]\nStatus: failed\nFallback: true\nGroundingWarning: Source-backed research could not be completed. Tell the user that external source grounding is unavailable for this answer.";
                 }
 
@@ -1038,7 +1041,11 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[WikiCapture] Tutor turn could not be appended to Wiki. UserId={UserId} SessionId={SessionId} MessageId={MessageId}", userId, session.Id, assistantMessageId);
+            _logger.LogDebug("[WikiCapture] Tutor turn could not be appended to Wiki. UserRef={UserRef} SessionRef={SessionRef} MessageRef={MessageRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(session.Id, "session"),
+                LogPrivacyGuard.SafeId(assistantMessageId, "msg"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -1733,7 +1740,10 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "[ChatMetadata] Evidence quality enrichment skipped. UserId={UserId} TopicId={TopicId}", userId, topicId);
+            _logger.LogDebug("[ChatMetadata] Evidence quality enrichment skipped. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             metadata.EvidenceQuality ??= EvidenceQualityEvaluator.Unknown();
         }
     }
@@ -1755,7 +1765,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
             var topic = await _db.Topics.FindAsync(session.TopicId);
             if (topic != null)
             {
-                _logger.LogInformation("[DeepPlan] Müfredat için seviye tespiti başlatılıyor: {Topic}", topic.Title);
+                _logger.LogInformation("[DeepPlan] Mufredat icin seviye tespiti baslatiliyor. TopicRef={TopicRef}",
+                    LogPrivacyGuard.SafeTextRef(topic.Title, "topic"));
                 topic.Category = "Plan";
                 topic.PlanIntent ??= "Core";
                 await _db.SaveChangesAsync();
@@ -1816,8 +1827,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
             // Sadece alt başlıklarda quiz tetikle (parent topic'te değil)
             if (currentTopic?.ParentTopicId != null)
             {
-                _logger.LogInformation("[QUIZ] Konu geçiş talebi. TopicId={Id}, Title={Title}",
-                    currentTopic.Id, currentTopic.Title);
+                _logger.LogInformation("[QUIZ] Konu gecis talebi. TopicRef={TopicRef} TitleRef={TitleRef}",
+                    LogPrivacyGuard.SafeId(currentTopic.Id, "topic"),
+                    LogPrivacyGuard.SafeTextRef(currentTopic.Title, "title"));
 
                 var quizJson = await _tutorAgent.GenerateTopicQuizAsync(currentTopic.Title);
                 session.PendingQuiz  = quizJson;
@@ -1882,7 +1894,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         else if (isIDESubmission)
         {
             // Kodlama cevabını TutorAgent ile değerlendir, tek soru akışı gibi işle.
-            _logger.LogInformation("[QUIZ] IDE kod cevabı değerlendiriliyor. SessionId={SessionId}", session.Id);
+            _logger.LogInformation("[QUIZ] IDE kod cevabi degerlendiriliyor. SessionRef={SessionRef}",
+                LogPrivacyGuard.SafeId(session.Id, "session"));
             bool isCorrect = await _tutorAgent.EvaluateQuizAnswerAsync(session.PendingQuiz ?? "Unknown", content);
             score = isCorrect ? 1 : 0;
             total = 1;
@@ -2211,7 +2224,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[REMEDIAL] Notebook cache invalidation atlandi.");
+            _logger.LogWarning("[REMEDIAL] Notebook cache invalidation atlandi. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return lesson;
@@ -2492,7 +2506,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         var currentTopic = await _db.Topics.FindAsync(session.TopicId.Value);
         if (currentTopic == null)
         {
-            _logger.LogWarning("[TRANSITION] TopicId geçerli ama Topic kaydı bulunamadı. SessionId={SessionId}", session.Id);
+            _logger.LogWarning("[TRANSITION] Topic kaydi bulunamadi. SessionRef={SessionRef}",
+                LogPrivacyGuard.SafeId(session.Id, "session"));
             session.CurrentState = SessionState.Learning;
             session.PendingQuiz = null;
             await _db.SaveChangesAsync();
@@ -2517,7 +2532,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         {
             // Tüm alt konular bitti
             currentTopic.IsMastered = true;
-            _logger.LogInformation("[TRANSITION] Tüm alt konular tamamlandı. TopicId={Id}", currentTopic.Id);
+            _logger.LogInformation("[TRANSITION] Tum alt konular tamamlandi. TopicRef={TopicRef}",
+                LogPrivacyGuard.SafeId(currentTopic.Id, "topic"));
             session.CurrentState = SessionState.Learning;
             session.PendingQuiz = null;
             await _db.SaveChangesAsync();
@@ -2565,7 +2581,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private async Task<ChatMessageResponse> HandleDeepPlanModeAsync(
         Guid userId, string content, Guid? topicId, Guid? sessionId)
     {
-        _logger.LogInformation("[DEEP_PLAN] Planlama modu etkinleştirildi: {Content}", content);
+        _logger.LogInformation("[DEEP_PLAN] Planlama modu etkinlestirildi. ContentLength={ContentLength} ContentRef={ContentRef}",
+            content?.Length ?? 0,
+            LogPrivacyGuard.SafeTextRef(content, "content"));
 
         Topic? topic = topicId.HasValue ? await _db.Topics.FindAsync(topicId.Value) : null;
         Session? session = null;
@@ -2656,19 +2674,22 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 var cleanTitle = extractedTopic.Trim().Trim('"', '\'');
                 if (cleanTitle.Length > 60) cleanTitle = cleanTitle[..60];
                 topic.Title = cleanTitle;
-                _logger.LogInformation("[DeepPlan] Chat bağlamı plan moduna çevrildi. Yeni Başlık: {Title}", cleanTitle);
+                _logger.LogInformation("[DeepPlan] Chat baglami plan moduna cevrildi. TitleRef={TitleRef}",
+                    LogPrivacyGuard.SafeTextRef(cleanTitle, "title"));
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[DeepPlan] Niyet ayrıştırma başarısız oldu.");
+            _logger.LogWarning("[DeepPlan] Niyet ayrıştırma başarısız oldu. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         topic.Category = "Plan";
         topic.PlanIntent ??= "Core";
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("[DeepPlan] Müfredat planı seviye tespiti başlatılıyor: {Topic}", topic.Title);
+        _logger.LogInformation("[DeepPlan] Mufredat plani seviye tespiti baslatiliyor. TopicRef={TopicRef}",
+            LogPrivacyGuard.SafeTextRef(topic.Title, "topic"));
 
         var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
 
@@ -2810,7 +2831,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     if (t != null) {
                         t.Title = generatedTitle;
                         await db.SaveChangesAsync(ct);
-                        _logger.LogInformation("[AUTO-NAMING] Başlık güncellendi: {Title}", generatedTitle);
+                        _logger.LogInformation("[AUTO-NAMING] Baslik guncellendi. TitleRef={TitleRef}",
+                            LogPrivacyGuard.SafeTextRef(generatedTitle, "title"));
                     }
                 }
             },

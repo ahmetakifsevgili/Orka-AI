@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.SemanticKernel.Plugins;
 
@@ -55,14 +56,17 @@ public partial class YouTubeTranscriptPlugin
                       "&maxResults=3&order=relevance&relevanceLanguage=tr" +
                       $"&videoCategoryId=27&key={_apiKey}";
 
-            _logger.LogInformation("[YouTube] Video araniyor: {Query}", query);
+            _logger.LogInformation("[YouTube] Video araniyor. QueryRef={QueryRef}",
+                LogPrivacyGuard.SafeTextRef(query, "query"));
 
             var response = await _httpClient.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("[YouTube] API hata: {Status} - {Body}",
-                    response.StatusCode, errorBody.Length > 200 ? errorBody[..200] : errorBody);
+                _logger.LogWarning("[YouTube] API hata. Status={Status} BodyLength={BodyLength} BodyRef={BodyRef}",
+                    response.StatusCode,
+                    errorBody.Length,
+                    LogPrivacyGuard.SafeTextRef(errorBody, "body"));
                 return $"[youtube:degraded] YouTube araması geçici olarak kullanılamıyor. Status={(int)response.StatusCode}.";
             }
 
@@ -119,7 +123,8 @@ public partial class YouTubeTranscriptPlugin
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[YouTube] Arama sirasinda hata.");
+            _logger.LogError("[YouTube] Arama sirasinda hata. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return "[youtube:degraded] YouTube araması geçici olarak kullanılamıyor.";
         }
     }
@@ -138,7 +143,9 @@ public partial class YouTubeTranscriptPlugin
 
         try
         {
-            _logger.LogInformation("[YouTube] Transcript cekiliyor: VideoId={VideoId}, Lang={Lang}", videoId, lang);
+            _logger.LogInformation("[YouTube] Transcript cekiliyor. VideoRef={VideoRef} Lang={Lang}",
+                LogPrivacyGuard.SafeTextRef(videoId, "video"),
+                LogPrivacyGuard.SafeMessage(lang, 16));
 
             var transcript = await FetchCaptionTrackAsync(videoId, lang);
             if (string.IsNullOrWhiteSpace(transcript) && lang == "tr")
@@ -164,7 +171,9 @@ public partial class YouTubeTranscriptPlugin
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[YouTube] Transcript cekme hatasi. VideoId={VideoId}", videoId);
+            _logger.LogError("[YouTube] Transcript cekme hatasi. VideoRef={VideoRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(videoId, "video"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return $"[youtube:degraded] YouTube transcript gecici olarak alinamadi. Kaynak: https://youtube.com/watch?v={videoId}";
         }
     }
@@ -308,7 +317,9 @@ public partial class YouTubeTranscriptPlugin
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[YouTube] Caption track parse hatasi. VideoId={VideoId}", videoId);
+            _logger.LogWarning("[YouTube] Caption track parse hatasi. VideoRef={VideoRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeTextRef(videoId, "video"),
+                LogPrivacyGuard.SafeExceptionType(ex));
             return null;
         }
     }
@@ -361,7 +372,9 @@ public partial class YouTubeTranscriptPlugin
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[YouTube] Meta bilgi cekme hatasi.");
+            _logger.LogWarning(
+                "[YouTube] Meta bilgi cekme hatasi. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return $"[youtube:degraded] Transcript ve meta bilgi gecici olarak alinamadi. Kaynak: https://youtube.com/watch?v={videoId}";
         }
     }
@@ -398,7 +411,9 @@ public partial class YouTubeTranscriptPlugin
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[YouTube] Video istatistikleri cekilirken hata.");
+            _logger.LogWarning(
+                "[YouTube] Video istatistikleri cekilirken hata. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
         }
 
         return result;

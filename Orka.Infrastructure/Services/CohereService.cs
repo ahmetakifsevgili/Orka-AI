@@ -75,7 +75,7 @@ public class CohereService : ICohereService
             {
                 respStr = AiDebugLogger.BuildSafeLogPreview("COHERE", "ERROR", respStr);
                 _logger.LogError("Cohere API Hatası: {Status} — {Error}", response.StatusCode, respStr);
-                throw new HttpRequestException($"Cohere API hatası: {response.StatusCode} — {respStr}");
+                throw AiProviderFailureMapper.FromResponse("Cohere", _model, response, respStr);
             }
 
             using var doc = JsonDocument.Parse(respStr);
@@ -90,7 +90,7 @@ public class CohereService : ICohereService
         {
             AiDebugLogger.LogError("COHERE", ex.Message);
             _logger.LogError("Cohere API request failed. ExceptionType={ExceptionType}", ex.GetType().Name);
-            throw new HttpRequestException($"Cohere servis hatası: {ex.Message}", ex);
+            throw AiProviderFailureMapper.FromException("Cohere", _model, ex);
         }
     }
 
@@ -115,7 +115,7 @@ public class CohereService : ICohereService
         {
             var err = await response.Content.ReadAsStringAsync(ct);
             err = AiDebugLogger.BuildSafeLogPreview("COHERE", "ERROR", err);
-            throw new HttpRequestException($"Cohere Stream error: {response.StatusCode} - {err}");
+            throw AiProviderFailureMapper.FromResponse("Cohere", _model, response, err);
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);

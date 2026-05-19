@@ -85,7 +85,7 @@ public class CohereEmbeddingService : IEmbeddingService
         {
             respStr = AiDebugLogger.BuildSafeLogPreview("COHERE_EMBED", "ERROR", respStr);
             _logger.LogError("[CohereEmbed] Hata: {Status} — {Body}", response.StatusCode, respStr);
-            throw new HttpRequestException($"Cohere Embed hatası: {response.StatusCode} — {respStr}");
+            throw AiProviderFailureMapper.FromResponse("CohereEmbed", _model, response, respStr);
         }
 
         using var doc = JsonDocument.Parse(respStr);

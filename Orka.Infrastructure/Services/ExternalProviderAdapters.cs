@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -80,7 +81,9 @@ public sealed class WolframProvider : IWolframProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Wolfram] Provider call failed.");
+            _logger.LogWarning(
+                "[Wolfram] Provider call failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "wolfram_alpha", "degraded", ProviderFailureCodes.UnknownFailure, "Wolfram provider failed safely; no external computation was used.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
@@ -152,12 +155,16 @@ public sealed class NewsProvider : INewsProvider
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "[News] Malformed response.");
+            _logger.LogWarning(
+                "[News] Malformed response. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "news", "malformed", ProviderFailureCodes.MalformedResponse, "News provider returned malformed data.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[News] Provider call failed.");
+            _logger.LogWarning(
+                "[News] Provider call failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "news", "degraded", ProviderFailureCodes.UnknownFailure, "News provider failed safely; do not infer current events.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
@@ -286,7 +293,9 @@ public sealed class WeatherProvider : IWeatherProvider
         }
         catch (Exception ex) when (ex is JsonException or HttpRequestException)
         {
-            _logger.LogWarning(ex, "[Weather] Provider call failed.");
+            _logger.LogWarning(
+                "[Weather] Provider call failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "geography_context", "degraded", ex is JsonException ? ProviderFailureCodes.MalformedResponse : ProviderFailureCodes.ProviderError, "Geography context provider failed safely.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
@@ -379,7 +388,9 @@ public sealed class GeocodingProvider : IGeocodingProvider
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "[Geocoding] Provider call failed.");
+            _logger.LogWarning(
+                "[Geocoding] Provider call failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "open_meteo_geocoding", "degraded", ProviderFailureCodes.UnknownFailure, "Geocoding failed safely; do not invent location data.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }
@@ -491,7 +502,9 @@ public sealed class MarketDataProvider : IMarketDataProvider
         }
         catch (Exception ex) when (ex is JsonException or HttpRequestException)
         {
-            _logger.LogWarning(ex, "[MarketData] Provider call failed.");
+            _logger.LogWarning(
+                "[MarketData] Provider call failed. ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeExceptionType(ex));
             return await RecordAsync(ProviderToolResultDto.Fallback(toolId, "coingecko", "degraded", ex is JsonException ? ProviderFailureCodes.MalformedResponse : ProviderFailureCodes.ProviderError, "Market data provider failed safely. This is not investment advice.", sw.ElapsedMilliseconds), userId, sessionId, topicId, ct);
         }
     }

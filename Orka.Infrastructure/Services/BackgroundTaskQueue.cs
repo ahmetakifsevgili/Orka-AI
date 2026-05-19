@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -53,12 +54,12 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
             try
             {
                 _logger.LogInformation(
-                    "[BackgroundQueue] Job started. Type={JobType} Attempt={Attempt}/{Attempts} User={UserId} Correlation={CorrelationId}",
-                    item.JobType,
+                    "[BackgroundQueue] Job started. Type={JobType} Attempt={Attempt}/{Attempts} UserRef={UserRef} CorrelationRef={CorrelationRef}",
+                    LogPrivacyGuard.SafeMessage(item.JobType, 80),
                     attempt,
                     attempts,
-                    item.UserId,
-                    item.CorrelationId);
+                    LogPrivacyGuard.SafeId(item.UserId, "usr"),
+                    LogPrivacyGuard.SafeTextRef(item.CorrelationId, "corr"));
 
                 using var aiContext = _aiRequestContext.Push(new AiRequestContext(
                     UserId: item.UserId,
@@ -69,35 +70,35 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
                 await item.Work(timeout.Token);
 
                 _logger.LogInformation(
-                    "[BackgroundQueue] Job succeeded. Type={JobType} Attempt={Attempt}/{Attempts} User={UserId} Correlation={CorrelationId}",
-                    item.JobType,
+                    "[BackgroundQueue] Job succeeded. Type={JobType} Attempt={Attempt}/{Attempts} UserRef={UserRef} CorrelationRef={CorrelationRef}",
+                    LogPrivacyGuard.SafeMessage(item.JobType, 80),
                     attempt,
                     attempts,
-                    item.UserId,
-                    item.CorrelationId);
+                    LogPrivacyGuard.SafeId(item.UserId, "usr"),
+                    LogPrivacyGuard.SafeTextRef(item.CorrelationId, "corr"));
                 return;
             }
             catch (OperationCanceledException ex) when (!stoppingToken.IsCancellationRequested)
             {
                 _logger.LogWarning(
-                    ex,
-                    "[BackgroundQueue] Job timed out. Type={JobType} Attempt={Attempt}/{Attempts} User={UserId} Correlation={CorrelationId}",
-                    item.JobType,
+                    "[BackgroundQueue] Job timed out. Type={JobType} Attempt={Attempt}/{Attempts} UserRef={UserRef} CorrelationRef={CorrelationRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeMessage(item.JobType, 80),
                     attempt,
                     attempts,
-                    item.UserId,
-                    item.CorrelationId);
+                    LogPrivacyGuard.SafeId(item.UserId, "usr"),
+                    LogPrivacyGuard.SafeTextRef(item.CorrelationId, "corr"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
-                    ex,
-                    "[BackgroundQueue] Job failed. Type={JobType} Attempt={Attempt}/{Attempts} User={UserId} Correlation={CorrelationId}",
-                    item.JobType,
+                    "[BackgroundQueue] Job failed. Type={JobType} Attempt={Attempt}/{Attempts} UserRef={UserRef} CorrelationRef={CorrelationRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeMessage(item.JobType, 80),
                     attempt,
                     attempts,
-                    item.UserId,
-                    item.CorrelationId);
+                    LogPrivacyGuard.SafeId(item.UserId, "usr"),
+                    LogPrivacyGuard.SafeTextRef(item.CorrelationId, "corr"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
             }
 
             if (attempt < attempts)
