@@ -35,11 +35,15 @@ public sealed class BackendLifeTests
             password = LifePassword
         });
         loginResponse.EnsureSuccessStatusCode();
-        using var loginJson = await JsonDocument.ParseAsync(await loginResponse.Content.ReadAsStreamAsync());
-        var refreshToken = loginJson.RootElement.GetProperty("refreshToken").GetString();
+        var refreshToken = ReadRefreshCookie(loginResponse);
         Assert.False(string.IsNullOrWhiteSpace(refreshToken));
 
-        var refreshResponse = await lifeUser.Client.PostAsJsonAsync("/api/auth/refresh", new { refreshToken });
+        using var refreshRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        {
+            Content = JsonContent.Create(new { })
+        };
+        refreshRequest.Headers.Add("Cookie", $"orka_refresh={refreshToken}");
+        var refreshResponse = await lifeUser.Client.SendAsync(refreshRequest);
         refreshResponse.EnsureSuccessStatusCode();
         var refreshJson = await refreshResponse.Content.ReadAsStringAsync();
         Assert.Contains("token", refreshJson, StringComparison.OrdinalIgnoreCase);
@@ -64,7 +68,12 @@ public sealed class BackendLifeTests
         topicDetailResponse.EnsureSuccessStatusCode();
         AssertNoPublicLeak(await topicDetailResponse.Content.ReadAsStringAsync(), allowUserId: true);
 
-        var logoutResponse = await lifeUser.Client.PostAsJsonAsync("/api/auth/logout", new { refreshToken });
+        using var logoutRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout")
+        {
+            Content = JsonContent.Create(new { })
+        };
+        logoutRequest.Headers.Add("Cookie", $"orka_refresh={refreshToken}");
+        var logoutResponse = await lifeUser.Client.SendAsync(logoutRequest);
         logoutResponse.EnsureSuccessStatusCode();
 
         using var anonymousFactory = new ApiSmokeFactory();
@@ -350,7 +359,10 @@ public sealed class BackendLifeTests
 
     private static async Task<LifeTestUser> RegisterLifeUserAsync(ApiSmokeFactory factory, string prefix)
     {
-        var client = factory.CreateClient();
+        var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            HandleCookies = false
+        });
         var email = $"{prefix}-{Guid.NewGuid():N}@orka.local";
         var response = await client.PostAsJsonAsync("/api/auth/register", new
         {
@@ -362,10 +374,18 @@ public sealed class BackendLifeTests
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
         var token = body.RootElement.GetProperty("token").GetString()!;
-        var refreshToken = body.RootElement.GetProperty("refreshToken").GetString()!;
+        var refreshToken = ReadRefreshCookie(response);
         var userId = Guid.Parse(body.RootElement.GetProperty("user").GetProperty("id").GetString()!);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return new LifeTestUser(client, userId, email, refreshToken);
+    }
+
+    private static string ReadRefreshCookie(HttpResponseMessage response)
+    {
+        var header = Assert.Single(response.Headers.GetValues("Set-Cookie"), value =>
+            value.StartsWith("orka_refresh=", StringComparison.OrdinalIgnoreCase));
+        var pair = header.Split(';', 2)[0];
+        return pair["orka_refresh=".Length..];
     }
 
     private static async Task<Guid> UploadSourceAsync(

@@ -39,9 +39,7 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         Assert.Equal("alive", liveJson.RootElement.GetProperty("status").GetString());
 
         var ready = await _client.GetAsync("/health/ready");
-        Assert.True(
-            ready.StatusCode is HttpStatusCode.OK or HttpStatusCode.ServiceUnavailable,
-            $"Unexpected readiness status: {ready.StatusCode}");
+        Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
 
         using var readyJson = await JsonDocument.ParseAsync(await ready.Content.ReadAsStreamAsync());
         Assert.True(readyJson.RootElement.TryGetProperty("status", out _));
@@ -65,6 +63,16 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         register.EnsureSuccessStatusCode();
 
         var registerBody = await register.Content.ReadFromJsonAsync<AuthBody>();
+        if (registerBody != null && register.Headers.TryGetValues("Set-Cookie", out var regCookies))
+        {
+            var cookie = regCookies.FirstOrDefault(c => c.Contains("orka_refresh="));
+            if (cookie != null)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(cookie, @"orka_refresh=([^;]+)");
+                if (match.Success) registerBody.RefreshToken = match.Groups[1].Value;
+            }
+        }
+
         Assert.False(string.IsNullOrWhiteSpace(registerBody?.Token));
         Assert.Equal("Smoke", registerBody!.User.FirstName);
         Assert.Equal("User", registerBody.User.LastName);
@@ -78,6 +86,16 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         login.EnsureSuccessStatusCode();
 
         var loginBody = await login.Content.ReadFromJsonAsync<AuthBody>();
+        if (loginBody != null && login.Headers.TryGetValues("Set-Cookie", out var logCookies))
+        {
+            var cookie = logCookies.FirstOrDefault(c => c.Contains("orka_refresh="));
+            if (cookie != null)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(cookie, @"orka_refresh=([^;]+)");
+                if (match.Success) loginBody.RefreshToken = match.Groups[1].Value;
+            }
+        }
+
         Assert.False(string.IsNullOrWhiteSpace(loginBody?.RefreshToken));
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/user/me");
@@ -119,6 +137,16 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         register.EnsureSuccessStatusCode();
 
         var body = await register.Content.ReadFromJsonAsync<AuthBody>();
+        if (body != null && register.Headers.TryGetValues("Set-Cookie", out var regCookies))
+        {
+            var cookie = regCookies.FirstOrDefault(c => c.Contains("orka_refresh="));
+            if (cookie != null)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(cookie, @"orka_refresh=([^;]+)");
+                if (match.Success) body.RefreshToken = match.Groups[1].Value;
+            }
+        }
+
         Assert.Equal("Legacy", body?.User.FirstName);
         Assert.Equal("Person", body?.User.LastName);
         Assert.Equal(email, body?.User.Email);
@@ -135,7 +163,12 @@ public sealed class AuthSwaggerHealthSmokeTests : IClassFixture<ApiSmokeFactory>
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private sealed record AuthBody(string Token, string RefreshToken, UserBody User);
+    private sealed class AuthBody
+    {
+        public string Token { get; set; } = string.Empty;
+        public string? RefreshToken { get; set; }
+        public UserBody User { get; set; } = null!;
+    }
 
     private sealed record UserBody(
         string Id,

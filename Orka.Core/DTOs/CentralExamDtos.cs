@@ -425,3 +425,208 @@ public sealed class CentralExamDenemeNextActionDto
     public string ConfidenceStatus { get; set; } = "observed_only";
     public ExamLearningContextDto ExamContext { get; set; } = new();
 }
+
+public sealed class ExamLearningProfileDto
+{
+    public string ExamCode { get; set; } = string.Empty;
+    public string? VariantCode { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string VerificationStatus { get; set; } = "unverified";
+    public bool CanClaimOfficial { get; set; }
+    public string UserSafeVerificationLabel { get; set; } = string.Empty;
+    public bool HasEnoughEvidence { get; set; }
+    public int EvidenceCount { get; set; }
+    public int OutcomeCount { get; set; }
+    public int PublishedQuestionCount { get; set; }
+    public IReadOnlyList<ExamOutcomeReadinessDto> Outcomes { get; set; } = Array.Empty<ExamOutcomeReadinessDto>();
+    public IReadOnlyList<ExamPracticeReadinessDto> PracticeReadiness { get; set; } = Array.Empty<ExamPracticeReadinessDto>();
+    public IReadOnlyList<ExamNextActionDto> NextActions { get; set; } = Array.Empty<ExamNextActionDto>();
+    public IReadOnlyList<string> WeakOutcomes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> DueOutcomes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> StableOutcomes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ExamOutcomeReadinessDto
+{
+    public Guid ExamOutcomeId { get; set; }
+    public string OutcomeCode { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string TopicCode { get; set; } = string.Empty;
+    public string TopicLabel { get; set; } = string.Empty;
+    public string ReadinessStatus { get; set; } = "coverage_limited";
+    public string ReviewPriority { get; set; } = "low";
+    public string RecommendedAction { get; set; } = "run_diagnostic";
+    public string EvidenceBasis { get; set; } = "thin";
+    public int PublishedQuestionCount { get; set; }
+    public int AttemptCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankCount { get; set; }
+    public int DenemeMistakeCount { get; set; }
+    public decimal CorrectnessRate { get; set; }
+    public string QuestionCoverageStatus { get; set; } = "no_content";
+    public string SourceEvidenceStatus { get; set; } = "unverified";
+    public IReadOnlyList<string> QuestionTypes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = string.Empty;
+}
+
+public sealed class ExamPracticeReadinessDto
+{
+    public string QuestionType { get; set; } = "multiple_choice";
+    public int PublishedQuestionCount { get; set; }
+    public int AttemptCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankCount { get; set; }
+    public string ReadinessStatus { get; set; } = "coverage_limited";
+    public string RecommendedAction { get; set; } = "practice_question_type";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamNextActionDto
+{
+    public string ActionType { get; set; } = "run_diagnostic";
+    public string Label { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string Priority { get; set; } = "medium";
+    public string? OutcomeCode { get; set; }
+    public string? TopicCode { get; set; }
+    public string? QuestionType { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public ExamLearningContextDto ExamContext { get; set; } = new();
+}
+
+public sealed class OrkaExamWarRoomDto
+{
+    public ExamWarRoomActiveExamDto ActiveExam { get; set; } = new();
+    public string? Variant { get; set; }
+    public string ReadinessStatus { get; set; } = "thin_exam_evidence";
+    public IReadOnlyList<ExamWarRoomSubjectDto> WeakSubjects { get; set; } = Array.Empty<ExamWarRoomSubjectDto>();
+    public IReadOnlyList<ExamWarRoomTopicDto> WeakTopics { get; set; } = Array.Empty<ExamWarRoomTopicDto>();
+    public IReadOnlyList<ExamWarRoomOutcomeDto> WeakOutcomes { get; set; } = Array.Empty<ExamWarRoomOutcomeDto>();
+    public IReadOnlyList<ExamWarRoomOutcomeDto> DueOutcomes { get; set; } = Array.Empty<ExamWarRoomOutcomeDto>();
+    public IReadOnlyList<ExamWarRoomOutcomeDto> StableOutcomes { get; set; } = Array.Empty<ExamWarRoomOutcomeDto>();
+    public IReadOnlyList<ExamWarRoomPracticePlanDto> WeakQuestionTypes { get; set; } = Array.Empty<ExamWarRoomPracticePlanDto>();
+    public IReadOnlyList<ExamWarRoomDenemeInsightDto> DenemeMistakeClusters { get; set; } = Array.Empty<ExamWarRoomDenemeInsightDto>();
+    public IReadOnlyList<ExamWarRoomPracticePlanDto> PracticeReadiness { get; set; } = Array.Empty<ExamWarRoomPracticePlanDto>();
+    public ExamWarRoomActionDto TodayExamMission { get; set; } = new();
+    public IReadOnlyList<ExamWarRoomActionDto> WeeklyExamPlan { get; set; } = Array.Empty<ExamWarRoomActionDto>();
+    public IReadOnlyList<ExamWarRoomActionDto> RecommendedPracticeQueue { get; set; } = Array.Empty<ExamWarRoomActionDto>();
+    public IReadOnlyList<ExamWarRoomActionDto> TutorRepairHandoffs { get; set; } = Array.Empty<ExamWarRoomActionDto>();
+    public IReadOnlyList<ExamWarRoomActionDto> StudyRoomHandoffs { get; set; } = Array.Empty<ExamWarRoomActionDto>();
+    public IReadOnlyList<ExamWarRoomWarningDto> SourceWikiWarnings { get; set; } = Array.Empty<ExamWarRoomWarningDto>();
+    public IReadOnlyList<ExamWarRoomWarningDto> CurriculumCoverageWarnings { get; set; } = Array.Empty<ExamWarRoomWarningDto>();
+    public IReadOnlyList<ExamWarRoomWarningDto> ConflictWarnings { get; set; } = Array.Empty<ExamWarRoomWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Exam War Room sinav kanitlarini guvenli sekilde izliyor.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ExamWarRoomActiveExamDto
+{
+    public string ExamCode { get; set; } = string.Empty;
+    public string? VariantCode { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string VerificationStatus { get; set; } = "unverified";
+    public bool CanClaimOfficial { get; set; }
+    public string UserSafeVerificationLabel { get; set; } = string.Empty;
+}
+
+public sealed class ExamWarRoomSubjectDto
+{
+    public string SubjectCode { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int WeakOutcomeCount { get; set; }
+    public int DueOutcomeCount { get; set; }
+    public int DenemeMistakeCount { get; set; }
+    public string Priority { get; set; } = "normal";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamWarRoomTopicDto
+{
+    public string TopicCode { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int WeakOutcomeCount { get; set; }
+    public int DueOutcomeCount { get; set; }
+    public int DenemeMistakeCount { get; set; }
+    public string Priority { get; set; } = "normal";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamWarRoomOutcomeDto
+{
+    public Guid ExamOutcomeId { get; set; }
+    public string OutcomeCode { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string TopicCode { get; set; } = string.Empty;
+    public string TopicLabel { get; set; } = string.Empty;
+    public string ReadinessStatus { get; set; } = "diagnostic_needed";
+    public string ReviewPriority { get; set; } = "medium";
+    public string RecommendedAction { get; set; } = "run_exam_diagnostic";
+    public int AttemptCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankCount { get; set; }
+    public int DenemeMistakeCount { get; set; }
+    public int PublishedQuestionCount { get; set; }
+    public decimal CorrectnessRate { get; set; }
+    public string QuestionCoverageStatus { get; set; } = "no_content";
+    public string SourceEvidenceStatus { get; set; } = "unverified";
+    public IReadOnlyList<string> QuestionTypes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = string.Empty;
+}
+
+public sealed class ExamWarRoomPracticePlanDto
+{
+    public string QuestionType { get; set; } = "multiple_choice";
+    public string ReadinessStatus { get; set; } = "diagnostic_needed";
+    public string RecommendedAction { get; set; } = "practice_question_type";
+    public int PublishedQuestionCount { get; set; }
+    public int AttemptCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankCount { get; set; }
+    public string Priority { get; set; } = "normal";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamWarRoomDenemeInsightDto
+{
+    public string OutcomeCode { get; set; } = string.Empty;
+    public string TopicCode { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int MistakeCount { get; set; }
+    public string Priority { get; set; } = "urgent";
+    public string RecommendedAction { get; set; } = "review_deneme_mistakes";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamWarRoomActionDto
+{
+    public string ActionType { get; set; } = "run_exam_diagnostic";
+    public string Label { get; set; } = "Kisa sinav tani kontrolu";
+    public string Reason { get; set; } = "Sinav kaniti henuz sinirli.";
+    public string Priority { get; set; } = "medium";
+    public string EntryPoint { get; set; } = "run_exam_diagnostic";
+    public string TargetRoute { get; set; } = "central-exams";
+    public string? OutcomeCode { get; set; }
+    public string? TopicCode { get; set; }
+    public string? QuestionType { get; set; }
+    public ExamLearningContextDto ExamContext { get; set; } = new();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class ExamWarRoomWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "central-exams";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}

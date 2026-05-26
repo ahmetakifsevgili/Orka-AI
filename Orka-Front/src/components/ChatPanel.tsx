@@ -1,4 +1,4 @@
-﻿/*
+/*
  * ChatPanel — uygulamanın kalbi.
  * - POST /Chat/message ile mesaj gönderir.
  * - activeTopic NULL olabilir: backend yeni topic otomatik oluşturur.
@@ -447,17 +447,26 @@ export default function ChatPanel({
 
         if (reader) {
           setIsThinking(false);
+          let buffer = "";
+          let currentEventType = "message";
+          
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
+            buffer += chunk;
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
 
             for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                currentEventType = line.substring(7).trim();
+                continue;
+              }
               if (line.startsWith("data: ")) {
                 const data = line.substring(6).replace(/\r$/, "");
-                if (data === "[DONE]") break;
+                if (currentEventType === "done" || data === "[DONE]") break;
                 if (data.startsWith("[ERROR]:")) {
                   const errMsg = data.replace("[ERROR]:", "").trim() || "Yanıt akışında bir hata oluştu.";
                   toast.error(errMsg, { duration: 6000 });
@@ -590,8 +599,14 @@ export default function ChatPanel({
                     continue;
                   }
                 } else {
-                // First append the decoded chunk to our content buffer
-                currentContent += data.replaceAll("[NEWLINE]", "\n");
+                  // Prevent raw JSON metadata or error payloads from leaking into user chat bubble if parse fails
+                  const trimmed = data.trim();
+                  const isJsonLike = trimmed.startsWith("{") || trimmed.startsWith("[") || /^\s*\{/i.test(trimmed) || trimmed.includes('"type":') || trimmed.includes('"content":');
+                  if (!isJsonLike) {
+                    currentContent += data.replaceAll("[NEWLINE]", "\n");
+                  } else {
+                    console.warn("SSE stream parser discarded unparsed JSON chunk:", trimmed);
+                  }
                 }
 
                 // Konu tamamlanma sinyali — frontend'e wiki kısayol butonu göstermek için
@@ -628,8 +643,15 @@ export default function ChatPanel({
                   if (onOpenIDE) onOpenIDE();
                 }
 
+                // Clean the content before displaying, delaying any trailing partial tag
+                let displayContent = currentContent;
+                const trailingOpenBracketMatch = currentContent.match(/\[[^\]]*$/);
+                if (trailingOpenBracketMatch) {
+                  displayContent = currentContent.substring(0, trailingOpenBracketMatch.index);
+                }
+
                 setMessages((prev) =>
-                  prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
+                  prev.map(m => m.id === assistantId ? { ...m, content: displayContent } : m)
                 );
               }
             }
@@ -744,16 +766,25 @@ export default function ChatPanel({
         if (!response.ok) throw new Error("Korteks stream failed");
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
+        let currentEventType = "message";
         if (reader) {
           setIsThinking(false);
+          let buffer = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n")) {
+            buffer += chunk;
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                currentEventType = line.substring(7).trim();
+                continue;
+              }
               if (!line.startsWith("data: ")) continue;
               const data = line.substring(6).replace(/\r$/, "");
-              if (data === "[DONE]") break;
+              if (currentEventType === "done" || data === "[DONE]") break;
               if (data.startsWith("[ERROR]:")) {
                 toast.error(data.replace("[ERROR]:", "").trim(), { duration: 6000 });
                 break;
@@ -763,9 +794,22 @@ export default function ChatPanel({
                 setIsThinking(true);
                 continue;
               }
-              currentContent += data;
+              const trimmed = data.trim();
+              const isJsonLike = trimmed.startsWith("{") || trimmed.startsWith("[") || /^\s*\{/i.test(trimmed) || trimmed.includes('"type":') || trimmed.includes('"content":');
+              if (!isJsonLike) {
+                currentContent += data;
+              } else {
+                console.warn("Korteks SSE parser discarded unparsed JSON chunk:", trimmed);
+              }
+              // Clean the content before displaying, delaying any trailing partial tag
+              let displayContent = currentContent;
+              const trailingOpenBracketMatch = currentContent.match(/\[[^\]]*$/);
+              if (trailingOpenBracketMatch) {
+                displayContent = currentContent.substring(0, trailingOpenBracketMatch.index);
+              }
+
               setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
+                prev.map((m) => (m.id === assistantId ? { ...m, content: displayContent } : m))
               );
             }
           }

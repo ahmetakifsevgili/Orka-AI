@@ -180,6 +180,42 @@ public class QuizAgent : IQuizAgent
         try
         {
             var cleanJson = questions.Replace("```json", "").Replace("```", "").Trim();
+            
+            // Validate if the JSON compiles and represents a valid array of questions
+            try
+            {
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(cleanJson);
+                if (jsonDoc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    throw new System.Text.Json.JsonException("Quiz JSON is not a JSON Array.");
+                }
+            }
+            catch (Exception jsonEx)
+            {
+                _logger.LogWarning(jsonEx, "[QuizAgent] LLM generated malformed/invalid JSON quiz. Applying safe local fallback template. Topic={Topic}", topicTitle);
+                
+                // Construct a syntactically correct safe template using the topic and concepts to avoid crashing the student
+                cleanJson = $$"""
+                [
+                    {
+                        "question": "{{topicTitle}} konusundaki ana fikirleri ve temel kavramları genel hatlarıyla hatırlıyor musunuz?",
+                        "options": ["Evet, gayet iyi hatırlıyorum.", "Bazı noktaları tekrar etmem gerekebilir.", "Çok az hatırlıyorum.", "Neredeyse tamamen unuttum."],
+                        "answer": "Evet, gayet iyi hatırlıyorum."
+                    },
+                    {
+                        "question": "{{topicTitle}} başlığı altındaki kazanımları kendi cümlelerinizle bir başkasına açıklayabilir misiniz?",
+                        "options": ["Çok rahat açıklayabilirim.", "Ana hatlarıyla açıklarım ama ayrıntıda takılırım.", "Sadece tanımsal düzeyde açıklayabilirim.", "Açıklamakta çok zorlanırım."],
+                        "answer": "Çok rahat açıklayabilirim."
+                    },
+                    {
+                        "question": "{{topicTitle}} konusundaki pratik veya kodlama örneklerini tek başınıza sıfırdan uygulayabilir misiniz?",
+                        "options": ["Kesinlikle uygulayabilirim.", "Destek alarak veya dökümana bakarak uygulayabilirim.", "Sadece hazır şablonları düzenleyebilirim.", "Uygulamakta çok zorlanırım."],
+                        "answer": "Kesinlikle uygulayabilirim."
+                    }
+                ]
+                """;
+            }
+
             session.PendingQuiz = cleanJson;
             session.CurrentState = Orka.Core.Enums.SessionState.QuizPending;
             await db.SaveChangesAsync();
@@ -195,7 +231,6 @@ public class QuizAgent : IQuizAgent
                 LogPrivacyGuard.SafeExceptionType(ex));
         }
     }
-
     private static string BuildYouTubeDistractorBlock(TeachingReference reference)
     {
         var mistakes = reference.CommonMistakes.Count == 0

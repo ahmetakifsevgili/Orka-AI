@@ -6,6 +6,40 @@ namespace Orka.API.Tests;
 
 public sealed class RegressionGateScriptTests
 {
+    private static readonly string[] CommonTurkishMojibakePatterns =
+    [
+        "\u00C3\u00A7", // ç
+        "\u00C3\u0087", // Ç
+        "\u00C3\u00BC", // ü
+        "\u00C3\u009C", // Ü
+        "\u00C3\u00B6", // ö
+        "\u00C3\u0096", // Ö
+        "\u00C4\u00B1", // ı
+        "\u00C4\u00B0", // İ
+        "\u00C5\u009F", // ş
+        "\u00C5\u009E", // Ş
+        "\u00C4\u009F", // ğ
+        "\u00C4\u009E", // Ğ
+        "\u00C2\u00B7",
+        "\u00E2\u0080\u0094",
+        "\u00E2\u0080\u0093",
+        "\uFFFD"
+    ];
+
+    private static readonly string[] TextExtensions =
+    [
+        ".cs",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".mjs",
+        ".md",
+        ".ps1",
+        ".json",
+        ".css",
+        ".html"
+    ];
+
     private static readonly string[] MandatoryCoordinationTests =
     [
         "TopicTreeScopeContractTests",
@@ -25,6 +59,20 @@ public sealed class RegressionGateScriptTests
         "PedagogicalReleaseClosureTests"
     ];
 
+    private static readonly string[] MandatoryProductCoherenceTests =
+    [
+        "OrkaUnifiedEvaluationHarnessTests",
+        "StudentSimulationEvaluationTests",
+        "OrkaCodeLearningIdeTests",
+        "OrkaNotebookStudioProTests",
+        "OrkaStudyRoomTests",
+        "OrkaSourceWikiProTests",
+        "OrkaExamWarRoomTests",
+        "OrkaStudyCoachTests",
+        "OrkaMissionControlTests",
+        "OrkaLearningStateCoherenceTests"
+    ];
+
     [Fact]
     public void QuickCoordinationRunsMandatoryCoordinationTests()
     {
@@ -33,6 +81,31 @@ public sealed class RegressionGateScriptTests
         Assert.Contains("coordination regression baseline", script, StringComparison.OrdinalIgnoreCase);
         foreach (var testName in MandatoryCoordinationTests)
             Assert.Contains(testName, script);
+    }
+
+    [Fact]
+    public void SourceFilesDoNotContainCommonTurkishMojibake()
+    {
+        var root = FindRepoRoot();
+        var dirty = EnumerateTextFilesForMojibakeScan(root)
+            .Select(file => new
+            {
+                File = file,
+                Text = File.ReadAllText(file)
+            })
+            .Select(item => new
+            {
+                item.File,
+                Patterns = CommonTurkishMojibakePatterns
+                    .Where(pattern => item.Text.Contains(pattern, StringComparison.Ordinal))
+                    .Select(pattern => pattern == "\uFFFD" ? "replacement_char" : ToCodepoints(pattern))
+                    .ToArray()
+            })
+            .Where(item => item.Patterns.Length > 0)
+            .Select(item => $"{Path.GetRelativePath(root, item.File)} [{string.Join(", ", item.Patterns)}]")
+            .ToArray();
+
+        Assert.True(dirty.Length == 0, "Common Turkish mojibake patterns found:\n" + string.Join("\n", dirty));
     }
 
     [Fact]
@@ -52,6 +125,16 @@ public sealed class RegressionGateScriptTests
 
         Assert.Contains("backend lifetest release proof", script, StringComparison.OrdinalIgnoreCase);
         foreach (var testName in MandatoryBackendLifeTests)
+            Assert.Contains(testName, script);
+    }
+
+    [Fact]
+    public void QuickBackendRunsProductCoherenceReleaseProof()
+    {
+        var script = Read("scripts/quick-backend.ps1");
+
+        Assert.Contains("product coherence release proof", script, StringComparison.OrdinalIgnoreCase);
+        foreach (var testName in MandatoryProductCoherenceTests)
             Assert.Contains(testName, script);
     }
 
@@ -250,6 +333,54 @@ public sealed class RegressionGateScriptTests
         var root = FindRepoRoot();
         return File.ReadAllText(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
     }
+
+    private static IEnumerable<string> EnumerateTextFilesForMojibakeScan(string root)
+    {
+        string[] includeRoots =
+        [
+            "Orka.API",
+            "Orka.Core",
+            "Orka.Infrastructure",
+            "Orka.API.Tests",
+            "Orka.Infrastructure.UnitTests",
+            "Orka-Front/src",
+            "Orka-Front/scripts",
+            "docs",
+            "scripts"
+        ];
+
+        foreach (var includeRoot in includeRoots)
+        {
+            var absolute = Path.Combine(root, includeRoot.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(absolute)) continue;
+
+            foreach (var file in Directory.EnumerateFiles(absolute, "*", SearchOption.AllDirectories))
+            {
+                var normalized = file.Replace(Path.DirectorySeparatorChar, '/');
+                if (normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains("/obj/", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains("/node_modules/", StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains("/dist/", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (TextExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+                {
+                    yield return file;
+                }
+            }
+        }
+
+        foreach (var file in new[] { "README.md", "CODEX.md" })
+        {
+            var absolute = Path.Combine(root, file);
+            if (File.Exists(absolute)) yield return absolute;
+        }
+    }
+
+    private static string ToCodepoints(string value) =>
+        string.Join("+", value.Select(ch => $"U+{(int)ch:X4}"));
 
     private static string FindRepoRoot()
     {

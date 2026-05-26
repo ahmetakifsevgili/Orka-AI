@@ -33,7 +33,6 @@ public class QuizAttemptDto
     public string? Difficulty { get; set; }
     public string? CognitiveType { get; set; }
     public string? QuestionHash { get; set; }
-    public string? SourceRefsJson { get; set; }
     public int? ResponseTimeMs { get; set; }
     public bool WasSkipped { get; set; }
     public decimal? ConfidenceSelfRating { get; set; }

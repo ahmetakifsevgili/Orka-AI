@@ -287,11 +287,12 @@ public sealed class ContentSafetyTests
     [Fact]
     public async Task CorsPreflight_UsesConfiguredOriginAllowlist()
     {
-        using var refreshSecret = UseProductionAuthSecrets();
         using var factory = new ApiSmokeFactory(
             "Production",
             configurationOverrides: new Dictionary<string, string?>
             {
+                ["JWT:Secret"] = "ORKA_TEST_JWT_SIGNING_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
+                ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
                 ["Cors:AllowedOrigins:0"] = "https://app.example.com"
             });
         var client = factory.CreateClient();
@@ -317,11 +318,12 @@ public sealed class ContentSafetyTests
     [Fact]
     public async Task SecurityHeaders_AddsCspOutsideDevelopmentOnlyByDefault()
     {
-        using var refreshSecret = UseProductionAuthSecrets();
         using var productionFactory = new ApiSmokeFactory(
             "Production",
             configurationOverrides: new Dictionary<string, string?>
             {
+                ["JWT:Secret"] = "ORKA_TEST_JWT_SIGNING_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
+                ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
                 ["Cors:AllowedOrigins:0"] = "https://app.example.com"
             });
         var productionResponse = await productionFactory.CreateClient().GetAsync("/health/live");
@@ -339,14 +341,6 @@ public sealed class ContentSafetyTests
         Assert.False(developmentResponse.Headers.Contains("Content-Security-Policy"));
         Assert.False(developmentResponse.Headers.Contains("Content-Security-Policy-Report-Only"));
     }
-
-    private static IDisposable UseProductionAuthSecrets() =>
-        new EnvironmentVariableScope(new Dictionary<string, string?>
-        {
-            ["JWT__Secret"] = "ORKA_TEST_JWT_SIGNING_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
-            ["JWT__RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_FOR_PRODUCTION_FACTORY_64_CHARS_2026",
-            ["Cors__AllowedOrigins__0"] = "https://app.example.com"
-        });
 
     private static async Task<TestUser> RegisterAuthenticatedClientAsync(ApiSmokeFactory factory)
     {
@@ -411,26 +405,6 @@ public sealed class ContentSafetyTests
     }
 
     private sealed record TestUser(HttpClient Client, Guid UserId);
-
-    private sealed class EnvironmentVariableScope : IDisposable
-    {
-        private readonly Dictionary<string, string?> _previousValues = new(StringComparer.OrdinalIgnoreCase);
-
-        public EnvironmentVariableScope(IReadOnlyDictionary<string, string?> values)
-        {
-            foreach (var (key, value) in values)
-            {
-                _previousValues[key] = Environment.GetEnvironmentVariable(key);
-                Environment.SetEnvironmentVariable(key, value);
-            }
-        }
-
-        public void Dispose()
-        {
-            foreach (var (key, value) in _previousValues)
-                Environment.SetEnvironmentVariable(key, value);
-        }
-    }
 
     private static FileExtractionService CreateExtractor(UploadContentSafetyOptions uploadOptions) =>
         new(

@@ -1,10 +1,14 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Orka.Infrastructure.Data;
 
 #nullable disable
 
 namespace Orka.Infrastructure.Migrations
 {
+    [DbContext(typeof(OrkaDbContext))]
+    [Migration("20260515143000_AddWikiGraphContract")]
     public partial class AddWikiGraphContract : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -167,6 +171,15 @@ namespace Orka.Infrastructure.Migrations
                 nullable: false,
                 defaultValue: false);
 
+            migrationBuilder.AlterColumn<string>(
+                name: "BlockType",
+                table: "WikiBlocks",
+                type: "nvarchar(64)",
+                maxLength: 64,
+                nullable: false,
+                oldClrType: typeof(string),
+                oldType: "nvarchar(max)");
+
             migrationBuilder.CreateTable(
                 name: "WikiLinks",
                 columns: table => new
@@ -236,6 +249,15 @@ namespace Orka.Infrastructure.Migrations
             migrationBuilder.DropColumn(name: "Visibility", table: "WikiBlocks");
             migrationBuilder.DropColumn(name: "SafetyWarningsJson", table: "WikiBlocks");
             migrationBuilder.DropColumn(name: "IsDeleted", table: "WikiBlocks");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "BlockType",
+                table: "WikiBlocks",
+                type: "nvarchar(max)",
+                nullable: false,
+                oldClrType: typeof(string),
+                oldType: "nvarchar(64)",
+                oldMaxLength: 64);
         }
     }
 }

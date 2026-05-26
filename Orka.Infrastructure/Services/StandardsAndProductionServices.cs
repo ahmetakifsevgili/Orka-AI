@@ -695,15 +695,33 @@ public sealed class DbIndexAuditService : IDbIndexAuditService
 
     public Task<DbIndexAuditSummaryDto> AuditAsync(CancellationToken ct = default)
     {
-        var required = new Dictionary<string, string[]>
-        {
-            ["LearningEvent"] = ["UserId", "TopicId", "EventType", "OccurredAt"],
-            ["AssessmentItem"] = ["UserId", "TopicId", "ConceptKey"],
-            ["TutorTraceProjection"] = ["UserId", "SessionId", "OccurredAt"],
-            ["SourceRetrievalRun"] = ["UserId", "TopicId", "CreatedAt"],
-            ["CostRecord"] = ["UserId", "OccurredAt"],
-            ["ToolTelemetryEvent"] = ["ToolId", "OccurredAt"]
-        };
+        (string EntityName, string[] Columns)[] required =
+        [
+            ("LearningEvent", ["UserId", "TopicId", "EventType", "OccurredAt"]),
+            ("AssessmentItem", ["UserId", "TopicId", "ConceptKey"]),
+            ("LearningSignal", ["UserId", "TopicId", "SignalType", "CreatedAt"]),
+            ("QuizRun", ["UserId", "TopicId", "CreatedAt"]),
+            ("QuizAttempt", ["UserId", "TopicId", "QuestionHash"]),
+            ("QuizAttempt", ["UserId", "AssessmentItemId"]),
+            ("ReviewItem", ["UserId", "Status", "DueAt"]),
+            ("ConceptMastery", ["UserId", "TopicId", "ConceptKey"]),
+            ("KnowledgeTracingState", ["UserId", "TopicId", "ConceptKey"]),
+            ("ActiveLessonSnapshot", ["UserId", "TopicId", "SessionId", "CreatedAt"]),
+            ("TutorTraceProjection", ["UserId", "SessionId", "OccurredAt"]),
+            ("SourceRetrievalRun", ["UserId", "TopicId", "CreatedAt"]),
+            ("LearningSource", ["UserId", "TopicId", "IsDeleted"]),
+            ("SourceChunk", ["LearningSourceId", "IsDeleted", "PageNumber", "ChunkIndex"]),
+            ("WikiPage", ["UserId", "TopicId", "PageKey", "IsDeleted"]),
+            ("LearningNotebookPack", ["UserId", "TopicId", "SessionId", "UpdatedAt"]),
+            ("LearningArtifact", ["UserId", "TopicId", "SessionId", "CreatedAt"]),
+            ("QuestionItem", ["OwnerUserId", "ExamDefinitionId", "QualityStatus", "IsDeleted"]),
+            ("QuestionItem", ["QuestionType", "Difficulty", "QualityStatus", "IsDeleted"]),
+            ("CentralExamPracticeAttempt", ["UserId", "Status", "StartedAt", "IsDeleted"]),
+            ("CentralExamDenemeAttempt", ["UserId", "Status", "StartedAt", "IsDeleted"]),
+            ("CostRecord", ["UserId", "OccurredAt"]),
+            ("ToolTelemetryEvent", ["ToolId", "OccurredAt"]),
+            ("ToolTelemetryEvent", ["UserId", "OccurredAt"])
+        ];
         var missing = new List<string>();
         foreach (var (entityName, columns) in required)
         {
@@ -715,7 +733,7 @@ public sealed class DbIndexAuditService : IDbIndexAuditService
         return Task.FromResult(new DbIndexAuditSummaryDto
         {
             Status = missing.Count == 0 ? "healthy" : "watch",
-            RequiredIndexCount = required.Count,
+            RequiredIndexCount = required.Length,
             MissingIndexCount = missing.Count,
             MissingIndexes = missing
         });

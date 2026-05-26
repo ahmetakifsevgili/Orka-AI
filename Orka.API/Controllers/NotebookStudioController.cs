@@ -13,11 +13,40 @@ public sealed class NotebookStudioController : ControllerBase
 {
     private readonly ILearningNotebookStudioService _studio;
     private readonly INotebookExportService _exports;
+    private readonly IOrkaNotebookStudioProService _studioPro;
 
-    public NotebookStudioController(ILearningNotebookStudioService studio, INotebookExportService exports)
+    public NotebookStudioController(
+        ILearningNotebookStudioService studio,
+        INotebookExportService exports,
+        IOrkaNotebookStudioProService studioPro)
     {
         _studio = studio;
         _exports = exports;
+        _studioPro = studioPro;
+    }
+
+    [HttpGet("pro")]
+    public async Task<ActionResult<OrkaNotebookStudioProDto>> GetNotebookStudioPro(
+        [FromQuery] Guid? topicId,
+        [FromQuery] Guid? sessionId,
+        [FromQuery] Guid? sourceId,
+        [FromQuery] Guid? wikiPageId,
+        [FromQuery] string? examCode,
+        [FromQuery] string? variantCode,
+        [FromQuery] string? packType,
+        CancellationToken ct)
+    {
+        var pro = await _studioPro.BuildProAsync(
+            CurrentUserId(),
+            topicId,
+            sessionId,
+            sourceId,
+            wikiPageId,
+            string.IsNullOrWhiteSpace(examCode) ? "KPSS" : examCode,
+            variantCode,
+            packType,
+            ct);
+        return pro == null ? NotFound() : Ok(pro);
     }
 
     [HttpGet("topic/{topicId:guid}/packs")]

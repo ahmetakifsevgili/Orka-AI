@@ -25,17 +25,32 @@ public class LearningController : ControllerBase
     private readonly OrkaDbContext _db;
     private readonly IReviewSrsService _reviews;
     private readonly ResourceOwnershipGuard _ownership;
+    private readonly ITopicScopeResolver _topicScopeResolver;
+    private readonly ILongTermAdaptiveLearningService _longTermAdaptiveLearning;
+    private readonly IOrkaLearningStateService _orkaLearningState;
+    private readonly IOrkaMissionControlService _missionControl;
+    private readonly IOrkaStudyCoachService _studyCoach;
 
     public LearningController(
         ILearningSignalService signals,
         OrkaDbContext db,
         IReviewSrsService reviews,
-        ResourceOwnershipGuard ownership)
+        ResourceOwnershipGuard ownership,
+        ITopicScopeResolver topicScopeResolver,
+        ILongTermAdaptiveLearningService longTermAdaptiveLearning,
+        IOrkaLearningStateService orkaLearningState,
+        IOrkaMissionControlService missionControl,
+        IOrkaStudyCoachService studyCoach)
     {
         _signals = signals;
         _db = db;
         _reviews = reviews;
         _ownership = ownership;
+        _topicScopeResolver = topicScopeResolver;
+        _longTermAdaptiveLearning = longTermAdaptiveLearning;
+        _orkaLearningState = orkaLearningState;
+        _missionControl = missionControl;
+        _studyCoach = studyCoach;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -62,6 +77,91 @@ public class LearningController : ControllerBase
         var recommendations = await _signals.GetRecommendationsAsync(userId, topicId, HttpContext.RequestAborted);
         var durable = await _reviews.GetDueAsync(userId, topicId, HttpContext.RequestAborted);
         return Ok(new ReviewDueResponse(durable, recommendations));
+    }
+
+    [HttpGet("adaptive-profile")]
+    public async Task<ActionResult<LongTermLearningProfileDto>> GetAdaptiveProfile([FromQuery] Guid? topicId = null)
+    {
+        var userId = GetUserId();
+        var scope = await ResolveTopicScopeAsync(userId, topicId, HttpContext.RequestAborted);
+        if (scope == null)
+        {
+            return NotFound(new { message = "Konu bulunamadi." });
+        }
+
+        var profile = await _longTermAdaptiveLearning.BuildProfileAsync(
+            userId,
+            scope,
+            sourceHealth: null,
+            ct: HttpContext.RequestAborted);
+        return Ok(profile);
+    }
+
+    [HttpGet("topic/{topicId:guid}/adaptive-profile")]
+    public Task<ActionResult<LongTermLearningProfileDto>> GetTopicAdaptiveProfile(Guid topicId) =>
+        GetAdaptiveProfile(topicId);
+
+    [HttpGet("orka-state")]
+    public async Task<ActionResult<OrkaLearningStateDto>> GetOrkaState(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null)
+    {
+        var userId = GetUserId();
+        var state = await _orkaLearningState.BuildStateAsync(
+            userId,
+            topicId,
+            sessionId,
+            examCode,
+            variantCode,
+            HttpContext.RequestAborted);
+
+        return state == null
+            ? NotFound(new { message = "Ogrenme durumu bulunamadi." })
+            : Ok(state);
+    }
+
+    [HttpGet("mission-control")]
+    public async Task<ActionResult<OrkaMissionControlDto>> GetMissionControl(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null)
+    {
+        var userId = GetUserId();
+        var mission = await _missionControl.BuildMissionControlAsync(
+            userId,
+            topicId,
+            sessionId,
+            examCode,
+            variantCode,
+            HttpContext.RequestAborted);
+
+        return mission == null
+            ? NotFound(new { message = "Mission control durumu bulunamadi." })
+            : Ok(mission);
+    }
+
+    [HttpGet("study-coach")]
+    public async Task<ActionResult<OrkaStudyCoachDto>> GetStudyCoach(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null)
+    {
+        var userId = GetUserId();
+        var coach = await _studyCoach.BuildStudyCoachAsync(
+            userId,
+            topicId,
+            sessionId,
+            examCode,
+            variantCode,
+            HttpContext.RequestAborted);
+
+        return coach == null
+            ? NotFound(new { message = "Study coach durumu bulunamadi." })
+            : Ok(coach);
     }
 
     [HttpPost("review/{recommendationId:guid}/complete")]
@@ -177,5 +277,23 @@ public class LearningController : ControllerBase
         {
             return false;
         }
+    }
+
+    private async Task<IReadOnlyCollection<Guid>?> ResolveTopicScopeAsync(Guid userId, Guid? topicId, CancellationToken ct)
+    {
+        if (!topicId.HasValue)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId.Value, ct))
+        {
+            return null;
+        }
+
+        var scope = await _topicScopeResolver.ResolveAsync(userId, topicId.Value, ct);
+        return scope.IsValid && scope.TreeTopicIds.Count > 0
+            ? scope.TreeTopicIds.ToArray()
+            : [topicId.Value];
     }
 }

@@ -8,8 +8,6 @@ namespace Orka.API.Tests;
 
 public sealed class PublicSecuritySurfaceTests
 {
-    private static readonly SemaphoreSlim EnvironmentGate = new(1, 1);
-
     [Fact]
     public async Task LoginFailure_DoesNotDistinguishUnknownEmailFromWrongPassword()
     {
@@ -102,65 +100,48 @@ public sealed class PublicSecuritySurfaceTests
     [Fact]
     public async Task ChaosHeader_IsActiveInDevelopment()
     {
-        await EnvironmentGate.WaitAsync();
-        try
-        {
-            using var factory = new ApiSmokeFactory();
-            var client = factory.CreateClient();
-            var credentials = await RegisterAsync(client);
-            var token = (await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password));
-            ApiSmokeFactory.ResetChaosTracking();
+        using var factory = new ApiSmokeFactory();
+        var client = factory.CreateClient();
+        var credentials = await RegisterAsync(client);
+        var token = (await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password));
+        factory.ResetChaosTracking();
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            request.Headers.Add("X-Chaos-Fail", "Groq");
-            request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-Chaos-Fail", "Groq");
+        request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
 
-            var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request);
 
-            Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-            Assert.Contains("Groq", ApiSmokeFactory.GetChaosTrackingProviders());
-        }
-        finally
-        {
-            EnvironmentGate.Release();
-        }
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("Groq", factory.GetChaosTrackingProviders());
     }
 
     [Fact]
     public async Task ChaosHeader_IsIgnoredOutsideDevelopmentEvenForAdmin()
     {
-        await EnvironmentGate.WaitAsync();
-        var previousJwtSecret = Environment.GetEnvironmentVariable("JWT__Secret");
-        var previousRefreshSecret = Environment.GetEnvironmentVariable("JWT__RefreshTokenHashSecret");
-        Environment.SetEnvironmentVariable("JWT__Secret", "ORKA_TEST_PRODUCTION_JWT_SECRET_64_CHARS_2026_01");
-        Environment.SetEnvironmentVariable("JWT__RefreshTokenHashSecret", "ORKA_TEST_PRODUCTION_REFRESH_HASH_SECRET_64_CHARS_2026_01");
+        using var factory = new ApiSmokeFactory(
+            "Production",
+            new Dictionary<string, string?>
+            {
+                ["JWT:Secret"] = "ORKA_TEST_PRODUCTION_JWT_SECRET_64_CHARS_2026_01",
+                ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_PRODUCTION_REFRESH_HASH_SECRET_64_CHARS_2026_01"
+            });
+        var client = factory.CreateClient();
+        var credentials = await RegisterAsync(client);
+        var token = await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password);
+        factory.ResetChaosTracking();
 
-        try
-        {
-            using var factory = new ApiSmokeFactory("Production");
-            var client = factory.CreateClient();
-            var credentials = await RegisterAsync(client);
-            var token = await LoginAndReadTokenAsync(client, credentials.Email, credentials.Password);
-            ApiSmokeFactory.ResetChaosTracking();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-Chaos-Fail", "Groq");
+        request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            request.Headers.Add("X-Chaos-Fail", "Groq");
-            request.Content = JsonContent.Create(new { content = "Smoke chaos check" });
+        var response = await client.SendAsync(request);
 
-            var response = await client.SendAsync(request);
-
-            response.EnsureSuccessStatusCode();
-            Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
-            Assert.DoesNotContain("Groq", ApiSmokeFactory.GetChaosTrackingProviders());
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("JWT__Secret", previousJwtSecret);
-            Environment.SetEnvironmentVariable("JWT__RefreshTokenHashSecret", previousRefreshSecret);
-            EnvironmentGate.Release();
-        }
+        response.EnsureSuccessStatusCode();
+        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain("Groq", factory.GetChaosTrackingProviders());
     }
 
     private static Task<HttpResponseMessage> LoginAsync(HttpClient client, string email, string password) =>

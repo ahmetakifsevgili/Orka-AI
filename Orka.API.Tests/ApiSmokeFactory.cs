@@ -14,8 +14,8 @@ namespace Orka.API.Tests;
 
 public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 {
-    private static readonly object ChaosTrackingGate = new();
-    private static readonly List<string> ChaosTrackingProviders = [];
+    private readonly object _chaosTrackingGate = new();
+    private readonly List<string> _chaosTrackingProviders = [];
 
     private readonly string _databaseName = $"OrkaSmoke_{Guid.NewGuid():N}";
     private readonly string _environmentName;
@@ -33,23 +33,34 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
         Action<IServiceCollection>? configureServices = null)
     {
         _environmentName = environmentName;
-        _configurationOverrides = configurationOverrides ?? new Dictionary<string, string?>();
+        var overrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Testing:DisableBackgroundWorkers"] = "true"
+        };
+        if (configurationOverrides != null)
+        {
+            foreach (var kvp in configurationOverrides)
+            {
+                overrides[kvp.Key] = kvp.Value;
+            }
+        }
+        _configurationOverrides = overrides;
         _configureServices = configureServices;
     }
 
-    public static void ResetChaosTracking()
+    public void ResetChaosTracking()
     {
-        lock (ChaosTrackingGate)
+        lock (_chaosTrackingGate)
         {
-            ChaosTrackingProviders.Clear();
+            _chaosTrackingProviders.Clear();
         }
     }
 
-    public static IReadOnlyList<string> GetChaosTrackingProviders()
+    public IReadOnlyList<string> GetChaosTrackingProviders()
     {
-        lock (ChaosTrackingGate)
+        lock (_chaosTrackingGate)
         {
-            return ChaosTrackingProviders.ToArray();
+            return _chaosTrackingProviders.ToArray();
         }
     }
 
@@ -72,20 +83,22 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
         {
             var values = new Dictionary<string, string?>
             {
-                ["AllowedHosts"] = "localhost",
+                ["AllowedHosts"] = IsProtectedEnvironment(_environmentName) ? "localhost;app.example.com" : "localhost",
                 ["JWT:Issuer"] = "orka-api",
                 ["JWT:Audience"] = "orka-client",
+                ["JWT:Secret"] = "ORKA_TEST_JWT_SECRET_64_CHARS_2026_01",
                 ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01",
                 ["Database:Provider"] = "SqlServer",
                 ["Database:AutoMigrateOnStartup"] = "false",
                 ["ConnectionStrings:DefaultConnection"] = "Server=sql.example.invalid;Database=OrkaSmoke;User Id=orka;Password=SmokePass123!;TrustServerCertificate=True;",
-                ["ConnectionStrings:Redis"] = "127.0.0.1:6399,abortConnect=false",
-                ["Cors:AllowedOrigins:0"] = "http://localhost:3000",
+                ["ConnectionStrings:Redis"] = IsProtectedEnvironment(_environmentName) ? "redis.example.invalid:6379,abortConnect=false" : "127.0.0.1:6399,abortConnect=false",
+                ["Cors:AllowedOrigins:0"] = IsProtectedEnvironment(_environmentName) ? "https://app.example.com" : "http://localhost:3000",
                 ["RateLimits:Auth:Backend"] = IsProtectedEnvironment(_environmentName) ? "Redis" : "InMemory",
                 ["RateLimits:Auth:AllowInMemoryFallback"] = IsProtectedEnvironment(_environmentName) ? "false" : "true",
                 ["RateLimits:Auth:Login:PermitLimit"] = "1000",
                 ["RateLimits:Auth:Register:PermitLimit"] = "1000",
                 ["RateLimits:Auth:Refresh:PermitLimit"] = "1000",
+                ["RateLimits:Chat:ReplenishmentMinutes"] = "60",
                 ["AI:Cost:Enabled"] = "true",
                 ["AI:Cost:GlobalDailyUsdLimit"] = "100",
                 ["AI:Cost:UserDailyUsdLimit"] = "10",
@@ -206,7 +219,7 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
                 services.Remove(descriptor);
             }
 
-            services.AddScoped<IChaosContext, SmokeChaosContext>();
+            services.AddScoped<IChaosContext>(sp => new SmokeChaosContext(this));
 
             var authLimiterDescriptors = services
                 .Where(d => d.ServiceType == typeof(IAuthAttemptLimiter))
@@ -271,7 +284,13 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
     private sealed class SmokeChaosContext : IChaosContext
     {
+        private readonly ApiSmokeFactory _factory;
         private string? _failingProvider;
+
+        public SmokeChaosContext(ApiSmokeFactory factory)
+        {
+            _factory = factory;
+        }
 
         public bool IsProviderFailing(string providerName) =>
             !string.IsNullOrEmpty(_failingProvider) &&
@@ -283,9 +302,9 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             if (string.IsNullOrWhiteSpace(_failingProvider))
                 return;
 
-            lock (ChaosTrackingGate)
+            lock (_factory._chaosTrackingGate)
             {
-                ChaosTrackingProviders.Add(_failingProvider);
+                _factory._chaosTrackingProviders.Add(_failingProvider);
             }
         }
     }
@@ -462,8 +481,8 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             Task.FromResult(_lastPiston.TryGetValue(sessionId, out var value) ? value : string.Empty);
 
         public Task SetWikiReadyAsync(Guid topicId) => Task.CompletedTask;
-        public Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
-        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>([]);
+        public Task SaveGoldExampleAsync(Guid userId, Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
+        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid userId, Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>([]);
         public Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null) => Task.CompletedTask;
         public Task<IEnumerable<AgentMetricSummary>> GetSystemMetricsAsync() => Task.FromResult<IEnumerable<AgentMetricSummary>>([]);
         public Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20) => Task.FromResult<IEnumerable<EvaluatorLogEntry>>([]);

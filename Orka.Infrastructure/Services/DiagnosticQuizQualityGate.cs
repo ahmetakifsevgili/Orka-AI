@@ -472,46 +472,62 @@ public static class DiagnosticQuizQualityGate
             ? "verilen kosulu kavramla eslestirmek"
             : spec.EvidenceExpected;
 
+        List<DiagnosticOption> options;
         if (index % 4 == 0)
         {
-            return
-            [
+            options = new List<DiagnosticOption>
+            {
                 new DiagnosticOption($"{concept} icin verilen kosulu okuyup {evidence} kanitini aramak.", true),
                 new DiagnosticOption($"{concept} basligini gorunce ayrinti okumadan ezber cevap vermek.", false),
                 new DiagnosticOption("Benzer gorunen ama hedef kavrama ait olmayan ipucunu secmek.", false),
                 new DiagnosticOption("Kaynak veya soru kosulu olmadan tahmini kesin bilgi saymak.", false)
-            ];
+            };
         }
-
-        if (index % 4 == 1)
+        else if (index % 4 == 1)
         {
-            return
-            [
+            options = new List<DiagnosticOption>
+            {
                 new DiagnosticOption("Once on kosulu, sonra uygulama adimini kontrol etmek.", true),
                 new DiagnosticOption("On kosullari atlayip sonuca dogrudan atlamak.", false),
                 new DiagnosticOption("Yan kavrami asil kavramin yerine kullanmak.", false),
                 new DiagnosticOption("Sadece en uzun secenegi guvenilir kabul etmek.", false)
-            ];
+            };
         }
-
-        if (index % 4 == 2)
+        else if (index % 4 == 2)
         {
-            return
-            [
+            options = new List<DiagnosticOption>
+            {
                 new DiagnosticOption("Kucuk ornekte kavram, kanit ve sonucu birlikte eslestirmek.", true),
                 new DiagnosticOption("Ornekteki kisitlari gereksiz ayrinti saymak.", false),
                 new DiagnosticOption("Belirti ile kok nedeni ayni sey gibi yorumlamak.", false),
                 new DiagnosticOption("Ilk tanidik kelimeyi dogru cevap saymak.", false)
-            ];
+            };
+        }
+        else
+        {
+            options = new List<DiagnosticOption>
+            {
+                new DiagnosticOption("Kaniti, kavrami ve sonucu ayni anda kontrol etmek.", true),
+                new DiagnosticOption("Sadece basliga bakarak cevap secmek.", false),
+                new DiagnosticOption("Benzer terimleri kanitsiz ayni kabul etmek.", false),
+                new DiagnosticOption("Aciklamayi okumadan tahmin yapmak.", false)
+            };
         }
 
-        return
-        [
-            new DiagnosticOption("Kaniti, kavrami ve sonucu ayni anda kontrol etmek.", true),
-            new DiagnosticOption("Sadece basliga bakarak cevap secmek.", false),
-            new DiagnosticOption("Benzer terimleri kanitsiz ayni kabul etmek.", false),
-            new DiagnosticOption("Aciklamayi okumadan tahmin yapmak.", false)
-        ];
+        // Shuffling using a deterministic seed based on index & concept hash to avoid static random lock/contention
+        var seed = Math.Abs(index + concept.GetHashCode());
+        var rng = new Random(seed);
+        int n = options.Count;
+        while (n > 1)
+        {
+            n--;
+            int k = rng.Next(n + 1);
+            var value = options[k];
+            options[k] = options[n];
+            options[n] = value;
+        }
+
+        return options;
     }
 
     private static DiagnosticFallbackProfile DetectFallbackProfile(string topicTitle)

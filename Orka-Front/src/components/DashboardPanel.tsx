@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   BookOpen,
   AlertTriangle,
@@ -484,7 +484,7 @@ function CoordinationHealthPanel({ health }: { health?: DashboardTodayDto["coord
   const empty = !health || metrics.length === 0 || health.overallStatus === "no_plan";
 
   return (
-    <section className="mb-8 rounded-[1.5rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+    <section className="mb-8 rounded-[1.5rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl" style={{ transform: "translate3d(0, 0, 0)", willChange: "transform", backfaceVisibility: "hidden" }}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
@@ -807,7 +807,7 @@ function AdaptiveStudyPlanCard({
   };
 
   return (
-    <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+    <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl" style={{ transform: "translate3d(0, 0, 0)", willChange: "transform", backfaceVisibility: "hidden" }}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">
@@ -1181,7 +1181,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
               }
             />
             
-            <div id="tour-global-stats" className="hidden sm:flex items-center gap-6 bg-[#f7f9fa]/68 border border-[#526d82]/14 backdrop-blur-xl px-6 py-4 rounded-2xl">
+            <div id="tour-global-stats" className="hidden sm:flex items-center gap-6 bg-[#f7f9fa]/68 border border-[#526d82]/14 backdrop-blur-xl px-6 py-4 rounded-2xl" style={{ transform: 'translate3d(0, 0, 0)', willChange: 'transform', backfaceVisibility: 'hidden' }}>
                <div className="text-right">
                   <p className="text-[10px] text-[#667085] uppercase font-bold tracking-tighter mb-0.5">Global Başarı</p>
                   <p className="text-xl font-mono font-bold text-[#47725d]">%{accuracy}</p>
@@ -1199,7 +1199,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
           />
           <SourceCoverageCoach coach={sourceCoverageCoach} onViewChange={onViewChange} />
 
-          <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl">
+          <section className="mb-8 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f4ec]/76 p-5 shadow-sm backdrop-blur-xl" style={{ transform: "translate3d(0, 0, 0)", willChange: "transform", backfaceVisibility: "hidden" }}>
             <div className="grid gap-5 lg:grid-cols-[1.35fr_0.9fr]">
               <div>
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#9ec7d9]/35 bg-[#dcecf3]/65 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#2d5870]">
@@ -1326,7 +1326,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
             <WorkspaceMetric label="Öğrenme serisi" value={loading ? "—" : activeStreak} detail={activeStreak > 1 ? `${activeStreak} günlük seri` : "devam sinyali"} />
           </div>
 
-          <div className="mb-10 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl">
+          <div className="mb-10 rounded-[1.75rem] border border-[#526d82]/12 bg-[#f7f9fa]/72 p-5 shadow-sm backdrop-blur-xl" style={{ transform: 'translate3d(0, 0, 0)', willChange: 'transform', backfaceVisibility: 'hidden' }}>
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">

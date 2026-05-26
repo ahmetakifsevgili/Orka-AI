@@ -56,7 +56,24 @@ public class KorteksAgent : IKorteksAgent
     {
         var provider = _factory.GetProvider(AgentRole.Korteks);
         var model    = _factory.GetModel(AgentRole.Korteks);
+        return BuildKorteksKernelWithProvider(provider, model, captureFilter);
+    }
 
+    private (string Provider, string Model)? GetFallbackProvider(string primaryProvider)
+    {
+        // Fallback chain: OpenRouter -> Gemini -> Groq -> OpenRouter
+        return primaryProvider.ToLowerInvariant() switch
+        {
+            "openrouter" => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:Model"] ?? "gemini-2.0-flash"),
+            "gemini"     => ("groq", _config["AI:Groq:ModelKorteks"] ?? _config["AI:Groq:Model"] ?? "llama-3.3-70b-versatile"),
+            "groq"       => ("openrouter", _config["AI:OpenRouter:ModelKorteks"] ?? _config["AI:OpenRouter:Model"] ?? "meta-llama/llama-4-maverick"),
+            "sambanova"  => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:Model"] ?? "gemini-2.0-flash"),
+            _            => null
+        };
+    }
+
+    private Kernel BuildKorteksKernelWithProvider(string provider, string model, KorteksToolCaptureFilter? captureFilter = null)
+    {
         string apiKey;
         string baseUrl;
 
@@ -76,13 +93,13 @@ public class KorteksAgent : IKorteksAgent
                 break;
             case "gemini":
                 apiKey  = _config["AI:Gemini:ApiKey"] ?? throw new InvalidOperationException("AI:Gemini:ApiKey eksik.");
-                baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/"; // Semantic Kernel compatible endpoint
+                baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
                 break;
             case "sambanova":
                 apiKey  = _config["AI:SambaNova:ApiKey"] ?? throw new InvalidOperationException("AI:SambaNova:ApiKey eksik.");
                 baseUrl = _config["AI:SambaNova:BaseUrl"] ?? "https://api.sambanova.ai/v1";
                 break;
-            default: // GitHubModels fallback
+            default:
                 apiKey  = _config["AI:GitHubModels:Token"] ?? throw new InvalidOperationException("AI:GitHubModels:Token eksik.");
                 baseUrl = "https://models.inference.ai.azure.com";
                 break;
@@ -90,7 +107,6 @@ public class KorteksAgent : IKorteksAgent
 
         _logger.LogInformation("[Korteks] Kernel: Provider={Provider} Model={Model}", provider, model);
 
-        // BaseUrl normalizasyonu (Semantic Kernel sadece ana dizini bekler)
         if (baseUrl.EndsWith("/chat/completions")) baseUrl = baseUrl.Replace("/chat/completions", "");
         if (baseUrl.EndsWith("/chat"))            baseUrl = baseUrl.Replace("/chat", "");
         if (!baseUrl.EndsWith("/"))               baseUrl += "/";
@@ -99,29 +115,12 @@ public class KorteksAgent : IKorteksAgent
             .AddOpenAIChatCompletion(modelId: model, apiKey: apiKey, endpoint: new Uri(baseUrl))
             .Build();
 
-        // Plugin 1: Web araması (paralel + raw content)
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<TavilySearchPlugin>(), "WebSearch");
-
-        // Plugin 2: Wikipedia (hallucination önleme + kavram doğrulama)
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<WikipediaPlugin>(), "Wikipedia");
-
-        // Plugin 3: Akademik kaynak (Semantic Scholar + ArXiv) — V4 derin doğrulama
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<AcademicSearchPlugin>(), "Academic");
-
-        // Plugin 4: Orka topic bilgisi
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<TopicPlugin>(), "Topics");
-
-        // Plugin 5: Orka wiki (mevcut öğrenme içeriği)
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<WikiPlugin>(), "OrkaWiki");
-
-        // Plugin 6: YouTube eğitim videosu arama ve transcript çekme
-        kernel.Plugins.AddFromObject(
-            _serviceProvider.GetRequiredService<YouTubeTranscriptPlugin>(), "YouTube");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<TavilySearchPlugin>(), "WebSearch");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<WikipediaPlugin>(), "Wikipedia");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<AcademicSearchPlugin>(), "Academic");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<TopicPlugin>(), "Topics");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<WikiPlugin>(), "OrkaWiki");
+        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<YouTubeTranscriptPlugin>(), "YouTube");
 
         if (captureFilter != null)
         {
@@ -227,6 +226,49 @@ public class KorteksAgent : IKorteksAgent
                 LogPrivacyGuard.SafeTextRef(diagnostic, "diag"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             providerFailures.Add(diagnostic);
+        }
+
+        // Fallback: if primary produced no output, try an alternative provider once
+        if (string.IsNullOrWhiteSpace(fullResponse.ToString()))
+        {
+            var fallback = GetFallbackProvider(provider);
+            if (fallback != null)
+            {
+                _logger.LogWarning(
+                    "[Korteks] Primary provider failed, attempting fallback. Primary={Primary} Fallback={Fallback}",
+                    provider, fallback.Value.Provider);
+                try
+                {
+                    var fbCapture = new KorteksToolCaptureFilter();
+                    var fbKernel = BuildKorteksKernelWithProvider(fallback.Value.Provider, fallback.Value.Model, fbCapture);
+                    var fbChat = fbKernel.GetRequiredService<IChatCompletionService>();
+                    var fbHistory = new ChatHistory(BuildStructuredSystemPrompt(topic, userId, topicId, fileContext));
+                    fbHistory.AddUserMessage($"Approved study intent: \"{topic}\"\n\nResearch this topic thoroughly.");
+
+                    await foreach (var chunk in fbChat.GetStreamingChatMessageContentsAsync(
+                        fbHistory,
+                        new OpenAIPromptExecutionSettings { Temperature = 0.2, MaxTokens = 4096, ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions },
+                        fbKernel, ct))
+                    {
+                        if (chunk.Content != null) fullResponse.Append(chunk.Content);
+                    }
+
+                    // Merge fallback evidence
+                    foreach (var c in fbCapture.Calls) ((List<ToolCallEvidenceDto>)capture.Calls).Add(c);
+                    foreach (var s in fbCapture.Sources) ((List<SourceEvidenceDto>)capture.Sources).Add(s);
+                }
+                catch (Exception fbEx)
+                {
+                    var fbDiag = KorteksFailureDiagnostic.Create(
+                        fbEx, KorteksFailureStage.ModelStreamStart,
+                        fallback.Value.Provider, fallback.Value.Model,
+                        ResolveEndpointHost(fallback.Value.Provider), capture);
+                    _logger.LogError(
+                        "[Korteks] Fallback provider also failed. Fallback={Fallback} DiagnosticRef={DiagnosticRef}",
+                        fallback.Value.Provider, LogPrivacyGuard.SafeTextRef(fbDiag, "diag"));
+                    providerFailures.Add(fbDiag);
+                }
+            }
         }
 
         stage = KorteksFailureStage.ResultBuild;

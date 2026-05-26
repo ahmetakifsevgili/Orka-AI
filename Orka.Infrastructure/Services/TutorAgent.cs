@@ -138,57 +138,70 @@ public class TutorAgent : ITutorAgent
 
     public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
     {
-        // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var hasTopic = session.TopicId.HasValue;
+        var isStrictGrounding = (content ?? "").Contains("FocusSourceRef:");
 
         var parallelResults = await Task.WhenAll(
-            hasTopic ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            FetchPerformanceProfileAsync(session.Id, session.TopicId),
-            hasTopic ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
-            FetchPistonContextAsync(session.Id),
-            hasTopic ? FetchGoldExamplesAsync(session.TopicId) : Task.FromResult(string.Empty),
-            FetchLowQualityFeedbackAsync(session.Id),
-            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content) : Task.FromResult(string.Empty),
-            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchReviewPressureContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
+            (!isStrictGrounding && hasTopic) ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchPerformanceProfileAsync(session.Id, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchPistonContextAsync(session.Id) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchGoldExamplesAsync(session.UserId, session.TopicId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchLowQualityFeedbackAsync(session.Id) : Task.FromResult(string.Empty),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content ?? "") : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchLearningSignalContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchReviewPressureContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
         );
 
+        var activeTopicContext = isStrictGrounding ? string.Empty : parallelResults[0];
+        var memoryContext = isStrictGrounding ? string.Empty : parallelResults[1];
+        var performanceHint = isStrictGrounding ? string.Empty : parallelResults[2];
+        var wikiContext = isStrictGrounding ? string.Empty : parallelResults[3];
+        var pistonContext = isStrictGrounding ? string.Empty : parallelResults[4];
+        var goldExamples = isStrictGrounding ? string.Empty : parallelResults[5];
+        var lowQualityHint = isStrictGrounding ? string.Empty : parallelResults[6];
+        var notebookContext = parallelResults[7];
+        var learningSignalContext = isStrictGrounding ? string.Empty : parallelResults[8];
+        var youtubeContext = isStrictGrounding ? string.Empty : parallelResults[9];
+        var reviewPressureContext = isStrictGrounding ? string.Empty : parallelResults[10];
+
         var contextMessages = await contextTask;
-        var learnerEvidenceContext = BuildTutorEvidenceContext(parallelResults);
+        var learnerEvidenceContext = isStrictGrounding ? string.Empty : BuildTutorEvidenceContext(parallelResults);
         var teacherContext = await _educatorCore.BuildTeacherContextAsync(
             userId,
             session.TopicId,
             session.Id,
             content,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext,
-            parallelResults[9]);
+            youtubeContext);
         var tutorPolicy = await _tutorPolicy.BuildAsync(
             userId,
             session.TopicId,
             session.Id,
             content,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext);
         var orchestration = await BuildTutorOrchestrationAsync(
             userId,
             content,
             session,
             contextMessages,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext,
-            parallelResults[4],
+            pistonContext,
             tutorPolicy,
             CancellationToken.None);
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
+            content: content,
             educatorCoreContext: teacherContext.PromptBlock,
             tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
@@ -406,43 +419,55 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
     {
         yield return BuildStreamEvent("thinking", new { message = "Tutor state hazırlanıyor" });
 
-        // Faz 11+12+16: Context kaynakları paralel çekilir — topicId yoksa topic-bağımlı olanlar atlanır
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var hasTopic = session.TopicId.HasValue;
+        var isStrictGrounding = (content ?? "").Contains("FocusSourceRef:");
 
         var parallelResults = await Task.WhenAll(
-            hasTopic ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            FetchPerformanceProfileAsync(session.Id, session.TopicId),
-            hasTopic ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
-            FetchPistonContextAsync(session.Id),
-            hasTopic ? FetchGoldExamplesAsync(session.TopicId) : Task.FromResult(string.Empty),
-            FetchLowQualityFeedbackAsync(session.Id),
-            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content, ct) : Task.FromResult(string.Empty),
-            hasTopic ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty),
-            hasTopic ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
-            hasTopic ? FetchReviewPressureContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
+            (!isStrictGrounding && hasTopic) ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchUserMemoryProfileAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchPerformanceProfileAsync(session.Id, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchWikiContextAsync(session.TopicId, userId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchPistonContextAsync(session.Id) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchGoldExamplesAsync(session.UserId, session.TopicId) : Task.FromResult(string.Empty),
+            !isStrictGrounding ? FetchLowQualityFeedbackAsync(session.Id) : Task.FromResult(string.Empty),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content ?? "", ct) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
+            (!isStrictGrounding && hasTopic) ? FetchReviewPressureContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
         );
 
+        var activeTopicContext = isStrictGrounding ? string.Empty : parallelResults[0];
+        var memoryContext = isStrictGrounding ? string.Empty : parallelResults[1];
+        var performanceHint = isStrictGrounding ? string.Empty : parallelResults[2];
+        var wikiContext = isStrictGrounding ? string.Empty : parallelResults[3];
+        var pistonContext = isStrictGrounding ? string.Empty : parallelResults[4];
+        var goldExamples = isStrictGrounding ? string.Empty : parallelResults[5];
+        var lowQualityHint = isStrictGrounding ? string.Empty : parallelResults[6];
+        var notebookContext = parallelResults[7];
+        var learningSignalContext = isStrictGrounding ? string.Empty : parallelResults[8];
+        var youtubeContext = isStrictGrounding ? string.Empty : parallelResults[9];
+        var reviewPressureContext = isStrictGrounding ? string.Empty : parallelResults[10];
+
         var contextMessages = await contextTask;
-        var learnerEvidenceContext = BuildTutorEvidenceContext(parallelResults);
+        var learnerEvidenceContext = isStrictGrounding ? string.Empty : BuildTutorEvidenceContext(parallelResults);
         var teacherContext = await _educatorCore.BuildTeacherContextAsync(
             userId,
             session.TopicId,
             session.Id,
             content,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext,
-            parallelResults[9],
+            youtubeContext,
             ct);
         var tutorPolicy = await _tutorPolicy.BuildAsync(
             userId,
             session.TopicId,
             session.Id,
             content,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext,
             ct);
         var orchestrationState = await BuildTutorStateAndActionPlanAsync(
@@ -450,10 +475,10 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             content,
             session,
             contextMessages,
-            parallelResults[7],
-            parallelResults[3],
+            notebookContext,
+            wikiContext,
             learnerEvidenceContext,
-            parallelResults[4],
+            pistonContext,
             tutorPolicy,
             ct);
         var startedToolIds = orchestrationState.ActionPlan.ToolPlans.Select(p => p.ToolId).ToArray();
@@ -501,6 +526,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
+            content: content,
             educatorCoreContext: teacherContext.PromptBlock,
             tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
@@ -924,13 +950,13 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
     /// Faz 12: Konu için Redis'te kayıtlı altın örnekleri çeker ve few-shot formatına çevirir.
     /// EvaluatorAgent'ın 9-10 puan verdiği başarılı diyaloglar bu havuza düşer.
     /// </summary>
-    private async Task<string> FetchGoldExamplesAsync(Guid? topicId)
+    private async Task<string> FetchGoldExamplesAsync(Guid userId, Guid? topicId)
     {
         if (!topicId.HasValue) return string.Empty;
 
         try
         {
-            var examples = (await _redisService.GetGoldExamplesAsync(topicId.Value, 2)).ToList();
+            var examples = (await _redisService.GetGoldExamplesAsync(userId, topicId.Value, 2)).ToList();
             if (examples.Count == 0) return string.Empty;
 
             _logger.LogInformation("[TutorAgent] {Count} altin ornek yuklendi. TopicRef={TopicRef}",
@@ -1131,7 +1157,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         string learningSignalContext = "",
         string educatorCoreContext = "",
         string tutorPolicyContext = "",
-        string reviewPressureContext = "")
+        string reviewPressureContext = "",
+        string content = "")
     {
         var prompt = $$"""
             Sen Orka AI — Kullanıcının özel öğretmeni ve bilge bir mentorusun.
@@ -1211,6 +1238,16 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
                 [SİSTEM BİLDİRİMİ]: Konu özeti Wiki'ye kaydedildi.
                 Kullanıcıya konuyu tamamladığını bildir ve kısa bir pekiştirme testi çözmek isteyip istemediğini sor.
+                """;
+        }
+
+        if ((content ?? "").Contains("FocusSourceRef:"))
+        {
+            prompt += """
+
+                [STRICT DOCUMENT GROUNDING ACTIVE]:
+                Sen şu an belgeden cevaplama modundasın. SADECE enjekte edilen 'doc' (NotebookLM) kaynaklarındaki bilgileri kullanmalısın.
+                Dış bilgileri, varsayımları veya diğer genel bilgileri karıştırma. Eğer cevap belgede yoksa, 'Bu bilgi belgede yer alamamaktadır.' veya 'Bu bilgi belgede yer almıyor.' şeklinde cevap ver.
                 """;
         }
 

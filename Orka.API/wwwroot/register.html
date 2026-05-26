@@ -78,7 +78,6 @@ async function doRegister() {
     const data = await res.json();
     if (!res.ok) { showErr(data.message || 'Kayıt başarısız.'); return; }
     localStorage.setItem('orka_token', data.token);
-    localStorage.setItem('orka_refresh', data.refreshToken);
     localStorage.setItem('orka_user', JSON.stringify(data.user));
     window.location.href = '/app.html';
   } catch { showErr('Sunucuya bağlanılamadı.'); }

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Linq;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Orka.Core.DTOs;
 using Orka.API.Services;
 using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
@@ -22,7 +25,6 @@ public sealed class ProductionSafetyLiteTests
     [Fact]
     public async Task ProtectedHealthEndpoints_ArePublicButSanitized()
     {
-        using var secrets = UseProtectedAuthSecrets();
         using var factory = new ApiSmokeFactory("Production");
         var client = factory.CreateClient();
 
@@ -44,7 +46,6 @@ public sealed class ProductionSafetyLiteTests
     [Fact]
     public async Task SecurityHeaders_ProtectedEnvironmentAddsLiteHeadersAndDevelopmentKeepsHstsOff()
     {
-        using var secrets = UseProtectedAuthSecrets();
         using var productionFactory = new ApiSmokeFactory("Production");
         var production = await productionFactory.CreateClient().GetAsync("/health/live");
 
@@ -65,7 +66,6 @@ public sealed class ProductionSafetyLiteTests
     [Fact]
     public async Task SystemHealth_RemainsAdminOnly()
     {
-        using var secrets = UseProtectedAuthSecrets();
         using var factory = new ApiSmokeFactory("Production");
         var client = factory.CreateClient();
         var credentials = await RegisterAsync(client);
@@ -205,9 +205,130 @@ public sealed class ProductionSafetyLiteTests
         Assert.Equal("global_daily_cost", globalDecision.Reason);
     }
 
+    [Fact]
+    public async Task ChatRateLimiter_PartitionedByUser_DifferentUsersHaveSeparateBuckets()
+    {
+        using var factory = new ApiSmokeFactory();
+        var client = factory.CreateClient();
+
+        // 1. Register and login User A
+        var credsA = await RegisterAsync(client);
+        var tokenA = await LoginAndReadTokenAsync(client, credsA.Email, credsA.Password);
+
+        // 2. Register and login User B
+        var credsB = await RegisterAsync(client);
+        var tokenB = await LoginAndReadTokenAsync(client, credsB.Email, credsB.Password);
+
+        // We make 11 requests for User A. The 11th request must return 429 Too Many Requests.
+        HttpResponseMessage lastResponseA = null;
+        for (int i = 0; i < 11; i++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenA);
+            req.Content = JsonContent.Create(new { content = "selam" });
+            lastResponseA = await client.SendAsync(req);
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, lastResponseA.StatusCode);
+
+        // Now, make a request for User B. User B should NOT be rate limited!
+        using var reqB = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
+        reqB.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenB);
+        reqB.Content = JsonContent.Create(new { content = "selam" });
+        var responseB = await client.SendAsync(reqB);
+
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, responseB.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("selam", true)]
+    [InlineData("merhaba!", true)]
+    [InlineData("tamam.", true)]
+    [InlineData("ok", true)]
+    [InlineData("anladım", true)]
+    [InlineData("anladim", true)]
+    [InlineData("teşekkürler?", true)]
+    [InlineData("tesekkurler", true)]
+    [InlineData("anladım ama...", false)]
+    [InlineData("ok neden", false)]
+    [InlineData("nasil yapicam?", false)]
+    [InlineData("bilgisayar bilimi arastirmasi", false)]
+    public async Task SupervisorFastPath_BypassesClassifierOnlyForExactTrivialMessages(string message, bool shouldBypass)
+    {
+        var factoryFake = new FakeAIAgentFactory();
+        var classifierFake = new FakeIntentClassifier();
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<SupervisorAgent>();
+
+        var supervisor = new SupervisorAgent(factoryFake, classifierFake, logger);
+
+        var recentMessages = new List<Message> { new Message { Content = message, Role = "user" } };
+
+        var result = await supervisor.DetermineActionRouteAsync(message, recentMessages);
+
+        if (shouldBypass)
+        {
+            Assert.Equal(0, classifierFake.Calls);
+            Assert.Equal("TUTOR", result);
+        }
+        else
+        {
+            Assert.Equal(1, classifierFake.Calls);
+            Assert.Equal("QUIZ", result);
+        }
+    }
+
+    private sealed class FakeIntentClassifier : IIntentClassifierAgent
+    {
+        public int Calls { get; private set; }
+        public Task<IntentResult> ClassifyAsync(IEnumerable<Message> messages, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(new IntentResult(
+                "QUIZ_REQUEST",
+                1.0,
+                "Reasoning",
+                10,
+                "Weaknesses"
+            ));
+        }
+    }
+
+    private sealed class FakeAIAgentFactory : IAIAgentFactory
+    {
+        public string GetModel(AgentRole role) => "fake-model";
+        public string GetProvider(AgentRole role) => "fake-provider";
+
+        public Task<string> CompleteChatAsync(
+            AgentRole role,
+            string systemPrompt,
+            string userMessage,
+            CancellationToken ct = default)
+            => Task.FromResult("ok");
+
+        public IAsyncEnumerable<string> StreamChatAsync(
+            AgentRole role,
+            string systemPrompt,
+            string userMessage,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<string> CompleteChatWithHistoryAsync(
+            AgentRole role,
+            string systemPrompt,
+            IEnumerable<(string Role, string Content)> messages,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
+    }
+
     private static void AssertHeader(HttpResponseMessage response, string name, string expected)
     {
-        Assert.True(response.Headers.TryGetValues(name, out var values), $"{name} header missing.");
+        if (!response.Headers.TryGetValues(name, out var values))
+        {
+            var status = response.StatusCode;
+            var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var headers = string.Join(", ", response.Headers.Select(h => $"{h.Key}={string.Join(";", h.Value)}"));
+            throw new Xunit.Sdk.XunitException($"{name} header missing. Status: {status}. Body: {body}. Current headers: {headers}");
+        }
         Assert.Equal(expected, values.Single());
     }
 
@@ -280,34 +401,7 @@ public sealed class ProductionSafetyLiteTests
         return new OrkaDbContext(options);
     }
 
-    private static IDisposable UseProtectedAuthSecrets() =>
-        new EnvironmentVariableScope(new Dictionary<string, string?>
-        {
-            ["JWT__Secret"] = "ORKA_TEST_JWT_SECRET_64_CHARS_2026_01",
-            ["JWT__RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01"
-        });
-
     private sealed record AuthCredentials(string Email, string Password);
-
-    private sealed class EnvironmentVariableScope : IDisposable
-    {
-        private readonly Dictionary<string, string?> _previous = new(StringComparer.OrdinalIgnoreCase);
-
-        public EnvironmentVariableScope(IReadOnlyDictionary<string, string?> values)
-        {
-            foreach (var (key, value) in values)
-            {
-                _previous[key] = Environment.GetEnvironmentVariable(key);
-                Environment.SetEnvironmentVariable(key, value);
-            }
-        }
-
-        public void Dispose()
-        {
-            foreach (var (key, value) in _previous)
-                Environment.SetEnvironmentVariable(key, value);
-        }
-    }
 
     private sealed class TestEnvironment : IHostEnvironment
     {

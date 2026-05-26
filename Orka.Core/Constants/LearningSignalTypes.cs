@@ -20,6 +20,8 @@ public static class LearningSignalTypes
     public const string IdeRuntimeError = "IdeRuntimeError";
     public const string IdeExecutionTimeout = "IdeExecutionTimeout";
     public const string IdeProviderUnavailable = "IdeProviderUnavailable";
+    public const string IdeTestFailure = "IdeTestFailure";
+    public const string IdeBlankAttempt = "IdeBlankAttempt";
     public const string IdeSentToTutor = "IdeSentToTutor";
     public const string RemediationStarted = "RemediationStarted";
     public const string RemediationCompleted = "RemediationCompleted";
@@ -54,6 +56,8 @@ public static class LearningSignalTypes
         IdeRuntimeError,
         IdeExecutionTimeout,
         IdeProviderUnavailable,
+        IdeTestFailure,
+        IdeBlankAttempt,
         IdeSentToTutor,
         RemediationStarted,
         RemediationCompleted,

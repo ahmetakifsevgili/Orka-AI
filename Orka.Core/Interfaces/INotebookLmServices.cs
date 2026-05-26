@@ -182,6 +182,16 @@ public interface ISourceCompareService
         CancellationToken ct = default);
 }
 
+public interface ISourceWikiIntelligenceService
+{
+    Task<SourceWikiIntelligenceProfileDto?> BuildProfileAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sourceId = null,
+        Guid? wikiPageId = null,
+        CancellationToken ct = default);
+}
+
 public interface ISourceEvidenceLifecycleService
 {
     Task<SourceEvidenceBundleDto> BuildSourceEvidenceBundleAsync(

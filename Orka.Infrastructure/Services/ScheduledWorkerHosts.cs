@@ -26,7 +26,6 @@ public sealed class SrsReminderWorker : BackgroundService
     {
         if (!IsEnabled("Workers:SrsReminder:Enabled"))
         {
-            await RunDisabledProofAsync(stoppingToken);
             _logger.LogInformation("[SrsReminderWorker] Hosted worker disabled.");
             return;
         }
@@ -80,7 +79,6 @@ public sealed class DailyChallengeWorker : BackgroundService
     {
         if (!IsEnabled("Workers:DailyChallenge:Enabled"))
         {
-            await RunDisabledProofAsync(stoppingToken);
             _logger.LogInformation("[DailyChallengeWorker] Hosted worker disabled.");
             return;
         }

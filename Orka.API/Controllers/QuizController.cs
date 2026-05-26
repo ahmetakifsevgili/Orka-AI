@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.PlanDiagnostic;
+using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Utilities;
@@ -14,6 +17,7 @@ namespace Orka.API.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/quiz")]
+[EnableRateLimiting("QuizLimiter")]
 public class QuizController : ControllerBase
 {
     private readonly OrkaDbContext _db;
@@ -23,6 +27,7 @@ public class QuizController : ControllerBase
     private readonly IStudyIntentAnalyzer _studyIntentAnalyzer;
     private readonly IAdaptiveAssessmentSessionService _adaptiveAssessment;
     private readonly ILogger<QuizController> _logger;
+    private readonly ResourceOwnershipGuard _ownership;
 
     public QuizController(
         OrkaDbContext db,
@@ -31,7 +36,8 @@ public class QuizController : ControllerBase
         IPlanDiagnosticService planDiagnostic,
         IStudyIntentAnalyzer studyIntentAnalyzer,
         IAdaptiveAssessmentSessionService adaptiveAssessment,
-        ILogger<QuizController> logger)
+        ILogger<QuizController> logger,
+        ResourceOwnershipGuard ownership)
     {
         _db = db;
         _quizRecorder = quizRecorder;
@@ -40,12 +46,19 @@ public class QuizController : ControllerBase
         _studyIntentAnalyzer = studyIntentAnalyzer;
         _adaptiveAssessment = adaptiveAssessment;
         _logger = logger;
+        _ownership = ownership;
     }
 
     [HttpGet("generate")]
     public async Task<IActionResult> Generate([FromQuery] Guid? topicId)
     {
         if (topicId == null) return BadRequest(new { error = "topicId zorunlu." });
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId.Value, HttpContext.RequestAborted))
+            return NotFound(new { error = "Konu bulunamadı." });
 
         var topic = await _db.Topics.FindAsync(topicId);
         if (topic == null) return NotFound(new { error = "Konu bulunamadı." });
@@ -66,9 +79,92 @@ public class QuizController : ControllerBase
             var e = cleaned.LastIndexOf(']');
             if (s >= 0 && e > s) cleaned = cleaned[s..(e + 1)];
 
-            var questions = System.Text.Json.JsonSerializer.Deserialize<object>(cleaned);
+            using var doc = JsonDocument.Parse(cleaned);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return BadRequest(new { error = "Quiz üretimi geçersiz format." });
+            }
 
-            return Ok(new { topicId, questions });
+            var quizRun = new QuizRun
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                QuizType = "lesson",
+                Status = "active",
+                TotalQuestions = 0,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.QuizRuns.Add(quizRun);
+
+            var questionList = doc.RootElement.EnumerateArray().ToList();
+            quizRun.TotalQuestions = questionList.Count;
+
+            var sanitizedQuestions = new List<object>();
+            var order = 1;
+
+            foreach (var q in questionList)
+            {
+                var assessmentItemId = Guid.NewGuid();
+
+                var conceptKey = q.TryGetProperty("conceptTag", out var ck) ? ck.GetString() ?? "" : "";
+                var conceptLabel = q.TryGetProperty("conceptTag", out var cl) ? cl.GetString() ?? "" : "";
+                var qType = q.TryGetProperty("questionType", out var qt) ? qt.GetString() ?? "conceptual" : "conceptual";
+                var diff = q.TryGetProperty("difficulty", out var df) ? df.GetString() ?? "orta" : "orta";
+                var cog = q.TryGetProperty("questionType", out var cg) ? cg.GetString() ?? "conceptual" : "conceptual";
+
+                var assessmentItem = new AssessmentItem
+                {
+                    Id = assessmentItemId,
+                    UserId = userId,
+                    TopicId = topicId,
+                    QuizRunId = quizRun.Id,
+                    ConceptGraphSnapshotId = Guid.Empty,
+                    ConceptKey = conceptKey,
+                    ConceptLabel = conceptLabel,
+                    QuestionType = qType,
+                    CognitiveSkill = cog,
+                    Difficulty = diff,
+                    Order = order++,
+                    GeneratedQuestionJson = q.ToString(),
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _db.AssessmentItems.Add(assessmentItem);
+
+                var questionText = q.TryGetProperty("question", out var qtext) ? qtext.GetString() ?? "" : "";
+                var skillTag = q.TryGetProperty("skillTag", out var stag) ? stag.GetString() ?? "" : "";
+                var conceptTag = q.TryGetProperty("conceptTag", out var ctag) ? ctag.GetString() ?? "" : "";
+                var learningObjective = q.TryGetProperty("learningObjective", out var lobj) ? lobj.GetString() ?? "" : "";
+                var qTypeStr = q.TryGetProperty("type", out var qtype) ? qtype.GetString() ?? "multiple_choice" : "multiple_choice";
+
+                var sanitizedOptions = new List<object>();
+                if (q.TryGetProperty("options", out var optionsArray) && optionsArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var opt in optionsArray.EnumerateArray())
+                    {
+                        var optText = opt.TryGetProperty("text", out var otext) ? otext.GetString() ?? "" : "";
+                        sanitizedOptions.Add(new { text = optText });
+                    }
+                }
+
+                sanitizedQuestions.Add(new
+                {
+                    id = assessmentItemId,
+                    type = qTypeStr,
+                    question = questionText,
+                    options = sanitizedOptions,
+                    skillTag,
+                    difficulty = diff,
+                    conceptTag,
+                    learningObjective,
+                    topic = topic.Title
+                });
+            }
+
+            await _db.SaveChangesAsync(HttpContext.RequestAborted);
+
+            return Ok(new { topicId, quizRunId = quizRun.Id, questions = sanitizedQuestions });
         }
         catch (Exception ex)
         {
@@ -84,6 +180,12 @@ public class QuizController : ControllerBase
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
 
         try
         {
@@ -135,6 +237,12 @@ public class QuizController : ControllerBase
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
+        if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
+
         try
         {
             var result = await _adaptiveAssessment.StartAsync(userId, request, HttpContext.RequestAborted);
@@ -154,6 +262,11 @@ public class QuizController : ControllerBase
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (!await _ownership.AdaptiveSessionBelongsToUserAsync(userId, adaptiveSessionId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
 
         try
         {
@@ -179,6 +292,13 @@ public class QuizController : ControllerBase
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (!await _ownership.AdaptiveSessionBelongsToUserAsync(userId, adaptiveSessionId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
 
         try
         {
@@ -326,6 +446,11 @@ public class QuizController : ControllerBase
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
+
         var attempts = await _db.QuizAttempts
             .AsNoTracking()
             .Where(a => a.TopicId == topicId && a.UserId == userId)
@@ -361,7 +486,6 @@ public class QuizController : ControllerBase
                 Difficulty = a.Difficulty,
                 CognitiveType = a.CognitiveType,
                 QuestionHash = a.QuestionHash,
-                SourceRefsJson = a.SourceRefsJson,
                 ResponseTimeMs = a.ResponseTimeMs,
                 WasSkipped = a.WasSkipped,
                 ConfidenceSelfRating = a.ConfidenceSelfRating,

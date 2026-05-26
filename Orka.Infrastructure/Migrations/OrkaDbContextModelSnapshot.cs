@@ -8562,7 +8562,8 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("BlockType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Content")
                         .IsRequired()

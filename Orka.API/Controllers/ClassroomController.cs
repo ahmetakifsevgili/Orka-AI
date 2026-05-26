@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
@@ -11,13 +12,59 @@ namespace Orka.API.Controllers;
 public class ClassroomController : ControllerBase
 {
     private readonly IClassroomService _classroom;
+    private readonly IOrkaStudyRoomService _studyRoom;
 
-    public ClassroomController(IClassroomService classroom)
+    public ClassroomController(IClassroomService classroom, IOrkaStudyRoomService studyRoom)
     {
         _classroom = classroom;
+        _studyRoom = studyRoom;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    [HttpGet("study-room")]
+    public async Task<ActionResult<OrkaStudyRoomDto>> GetStudyRoom(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null,
+        [FromQuery] Guid? sourceId = null,
+        [FromQuery] Guid? wikiPageId = null,
+        [FromQuery] string? mode = null)
+    {
+        var result = await _studyRoom.BuildStudyRoomAsync(
+            GetUserId(),
+            topicId,
+            sessionId,
+            examCode,
+            variantCode,
+            sourceId,
+            wikiPageId,
+            mode,
+            HttpContext.RequestAborted);
+
+        return result == null
+            ? NotFound(new { message = "Study Room durumu bulunamadi." })
+            : Ok(result);
+    }
+
+    [HttpPost("study-room/start")]
+    public async Task<ActionResult<OrkaStudyRoomDto>> StartStudyRoom([FromBody] OrkaStudyRoomStartRequestDto request)
+    {
+        var result = await _studyRoom.StartStudyRoomAsync(GetUserId(), request, HttpContext.RequestAborted);
+        return result == null
+            ? NotFound(new { message = "Study Room baslatilamadi." })
+            : Ok(result);
+    }
+
+    [HttpPost("study-room/checkpoint")]
+    public async Task<ActionResult<OrkaStudyRoomDto>> SubmitStudyRoomCheckpoint([FromBody] OrkaStudyRoomCheckpointRequestDto request)
+    {
+        var result = await _studyRoom.SubmitCheckpointAsync(GetUserId(), request, HttpContext.RequestAborted);
+        return result == null
+            ? NotFound(new { message = "Study Room checkpoint bulunamadi." })
+            : Ok(result);
+    }
 
     [HttpPost("session")]
     public async Task<IActionResult> Start([FromBody] ClassroomStartRequest request)

@@ -5,6 +5,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$commit = "unknown"
+$branch = "unknown"
+try {
+    $commit = (git rev-parse HEAD 2>$null).Trim()
+    $branch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+} catch {}
+Write-Host "[quick-coordination] Active Git Branch: $branch | Commit: $commit"
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
 $coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 

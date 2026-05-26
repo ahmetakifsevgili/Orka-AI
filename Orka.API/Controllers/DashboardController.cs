@@ -24,7 +24,19 @@ public class DashboardController : ControllerBase
     private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ILearningMemoryService _learningMemory;
     private readonly IAdaptiveStudyPlannerService _adaptiveStudyPlanner;
+    private readonly ILongTermAdaptiveLearningService _longTermAdaptiveLearning;
+    private readonly IExamLearningProfileService _examLearningProfile;
+    private readonly ISourceWikiIntelligenceService _sourceWikiIntelligence;
+    private readonly IOrkaLearningStateService _orkaLearningState;
+    private readonly IOrkaMissionControlService _missionControl;
+    private readonly IOrkaStudyCoachService _studyCoach;
+    private readonly IOrkaExamWarRoomService _examWarRoom;
+    private readonly IOrkaSourceWikiProService _sourceWikiPro;
+    private readonly IOrkaStudyRoomService _studyRoom;
+    private readonly IOrkaNotebookStudioProService _notebookStudioPro;
+    private readonly IOrkaCodeLearningIdeService _codeLearningIde;
     private readonly IAiProviderTelemetryService _aiProviderTelemetry;
+    private readonly ICostAggregationService _costAggregation;
     private readonly IConfiguration _configuration;
     private readonly IWebHostEnvironment _environment;
 
@@ -34,7 +46,19 @@ public class DashboardController : ControllerBase
         ITopicScopeResolver topicScopeResolver,
         ILearningMemoryService learningMemory,
         IAdaptiveStudyPlannerService adaptiveStudyPlanner,
+        ILongTermAdaptiveLearningService longTermAdaptiveLearning,
+        IExamLearningProfileService examLearningProfile,
+        ISourceWikiIntelligenceService sourceWikiIntelligence,
+        IOrkaLearningStateService orkaLearningState,
+        IOrkaMissionControlService missionControl,
+        IOrkaStudyCoachService studyCoach,
+        IOrkaExamWarRoomService examWarRoom,
+        IOrkaSourceWikiProService sourceWikiPro,
+        IOrkaStudyRoomService studyRoom,
+        IOrkaNotebookStudioProService notebookStudioPro,
+        IOrkaCodeLearningIdeService codeLearningIde,
         IAiProviderTelemetryService aiProviderTelemetry,
+        ICostAggregationService costAggregation,
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
@@ -43,7 +67,19 @@ public class DashboardController : ControllerBase
         _topicScopeResolver = topicScopeResolver;
         _learningMemory = learningMemory;
         _adaptiveStudyPlanner = adaptiveStudyPlanner;
+        _longTermAdaptiveLearning = longTermAdaptiveLearning;
+        _examLearningProfile = examLearningProfile;
+        _sourceWikiIntelligence = sourceWikiIntelligence;
+        _orkaLearningState = orkaLearningState;
+        _missionControl = missionControl;
+        _studyCoach = studyCoach;
+        _examWarRoom = examWarRoom;
+        _sourceWikiPro = sourceWikiPro;
+        _studyRoom = studyRoom;
+        _notebookStudioPro = notebookStudioPro;
+        _codeLearningIde = codeLearningIde;
         _aiProviderTelemetry = aiProviderTelemetry;
+        _costAggregation = costAggregation;
         _configuration = configuration;
         _environment = environment;
     }
@@ -108,6 +144,18 @@ public class DashboardController : ControllerBase
                 report.CitationCoverageStatus)
         };
     }
+
+    private static string DashboardViewForUnifiedAction(string? actionType) => actionType switch
+    {
+        "review_due_concept" or "create_flashcards" => "learning",
+        "source_review" or "citation_review" => "sources",
+        "practice_exam_outcome" or "review_deneme_mistakes" => "central-exams",
+        "open_study_room" => "classroom",
+        "update_wiki_note" => "wiki",
+        "take_checkpoint_quiz" or "repair_concept" or "repair_prerequisite" or "ask_tutor" => "chat",
+        "start_diagnostic" => "chat",
+        _ => "chat"
+    };
 
     [HttpGet("today")]
     public async Task<ActionResult<DashboardTodayDto>> GetToday(CancellationToken ct)
@@ -218,6 +266,24 @@ public class DashboardController : ControllerBase
                     EvidenceQuality = EvidenceQualityEvaluator.Build(scopedSourceCount, scopedReadySourceCount, 0, 0m, 0, 0, "unverified", "unverified")
                 }
                 : BuildSourceHealth(null);
+        var longTermLearningProfile = await _longTermAdaptiveLearning.BuildProfileAsync(
+            userId,
+            activeScopeTopicIds,
+            sourceHealth,
+            ct);
+        var examLearningProfile = await _examLearningProfile.BuildProfileAsync(
+            userId,
+            "KPSS",
+            variantCode: null,
+            examTopicId: null,
+            examOutcomeId: null,
+            ct);
+        var sourceWikiIntelligenceProfile = await _sourceWikiIntelligence.BuildProfileAsync(
+            userId,
+            activeTopicId,
+            sourceId: null,
+            wikiPageId: null,
+            ct);
         var learningMemory = await _learningMemory.BuildAsync(userId, activeScopeTopicIds, sourceHealth.EvidenceQuality, ct);
         var adaptiveStudyPlan = await _adaptiveStudyPlanner.BuildAsync(
             userId,
@@ -235,8 +301,73 @@ public class DashboardController : ControllerBase
             latestSourceQuality is not null ||
             scopedSourceCount > 0 ||
             scopedQuizAttemptCount > 0 ||
-            scopedLearningSignalCount > 0;
-        var entry = dueReviews > 0
+            scopedLearningSignalCount > 0 ||
+            examLearningProfile?.EvidenceCount > 0;
+        var orkaLearningState = await _orkaLearningState.BuildStateAsync(
+            userId,
+            activeTopicId,
+            sessionId: null,
+            examCode: "KPSS",
+            variantCode: null,
+            ct);
+        var missionControl = orkaLearningState is null
+            ? null
+            : await _missionControl.BuildFromStateAsync(userId, orkaLearningState, ct);
+        var studyCoach = orkaLearningState is null || missionControl is null
+            ? null
+            : await _studyCoach.BuildFromMissionControlAsync(userId, orkaLearningState, missionControl, ct);
+        var examWarRoom = await _examWarRoom.BuildWarRoomAsync(
+            userId,
+            "KPSS",
+            variantCode: null,
+            examTopicId: null,
+            examOutcomeId: null,
+            ct);
+        var sourceWikiPro = await _sourceWikiPro.BuildProAsync(
+            userId,
+            activeTopicId,
+            sourceId: null,
+            wikiPageId: null,
+            examCode: "KPSS",
+            variantCode: null,
+            ct);
+        var studyRoom = await _studyRoom.BuildStudyRoomAsync(
+            userId,
+            activeTopicId,
+            sessionId: null,
+            examCode: "KPSS",
+            variantCode: null,
+            sourceId: null,
+            wikiPageId: null,
+            mode: null,
+            ct);
+        var notebookStudioPro = await _notebookStudioPro.BuildProAsync(
+            userId,
+            activeTopicId,
+            sessionId: null,
+            sourceId: null,
+            wikiPageId: null,
+            examCode: "KPSS",
+            variantCode: null,
+            packType: null,
+            ct);
+        var codeLearningIde = await _codeLearningIde.BuildIdeAsync(
+            userId,
+            activeTopicId,
+            sessionId: null,
+            language: null,
+            exerciseId: null,
+            mode: null,
+            ct);
+        var unifiedPrimary = orkaLearningState?.PrimaryNextAction;
+        var entry = unifiedPrimary is not null
+            ? new DashboardEntryPointDto
+            {
+                View = DashboardViewForUnifiedAction(unifiedPrimary.ActionType),
+                Label = unifiedPrimary.Label,
+                Reason = unifiedPrimary.Reason
+            }
+            : dueReviews > 0
             ? new DashboardEntryPointDto { View = "learning", Label = "Tekrar", Reason = "Bugun zamani gelen tekrarlarin var." }
             : weakConcepts.Count > 0
                 ? new DashboardEntryPointDto { View = "chat", Label = "Ogren", Reason = "Zayif kavrami Tutor ile toparla." }
@@ -280,13 +411,24 @@ public class DashboardController : ControllerBase
             RecommendedEntryPoint = entry,
             LearningMemory = learningMemory,
             AdaptiveStudyPlan = adaptiveStudyPlan,
+            LongTermLearningProfile = longTermLearningProfile,
+            ExamLearningProfile = examLearningProfile,
+            ExamWarRoom = examWarRoom,
+            SourceWikiIntelligenceProfile = sourceWikiIntelligenceProfile,
+            SourceWikiPro = sourceWikiPro,
+            OrkaLearningState = orkaLearningState,
+            MissionControl = missionControl,
+            StudyCoach = studyCoach,
+            StudyRoom = studyRoom,
+            NotebookStudioPro = notebookStudioPro,
+            CodeLearningIde = codeLearningIde,
             HasRealLearningData = hasRealData,
             NextAction = new DashboardNextActionDto
             {
                 Label = entry.Label,
                 Reason = entry.Reason,
                 View = entry.View,
-                TopicId = activeTopic?.TopicId,
+                TopicId = unifiedPrimary?.TopicId ?? activeTopic?.TopicId,
                 UserSafeStatus = hasRealData ? "Hazir" : "Veri bekleniyor"
             },
             GeneratedAt = DateTimeOffset.UtcNow
@@ -819,6 +961,14 @@ public class DashboardController : ControllerBase
             .ToListAsync();
 
         return Ok(recentTopics);
+    }
+
+    [HttpGet("cost-report")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetCostReport([FromQuery] int days = 7, CancellationToken ct = default)
+    {
+        var report = await _costAggregation.GetReportAsync(days, ct);
+        return Ok(report);
     }
 
     [HttpGet("system-health")]

@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -135,7 +136,16 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
     }
 
-    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
+    public async IAsyncEnumerable<string> ProcessMessageStreamAsync(
+        Guid userId,
+        string content,
+        Guid? topicId,
+        Guid? sessionId,
+        bool isPlanMode = false,
+        Guid? focusTopicId = null,
+        string? focusTopicPath = null,
+        string? focusSourceRef = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         // SESSION - Controller already called GetOrCreateSessionAsync and passed the real sessionId.
         // We MUST NOT call it again here or we will create a second topic every time.
@@ -147,7 +157,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         var session = await _db.Sessions
             .Include(s => s.Messages)
-            .FirstOrDefaultAsync(s => s.Id == sessionId.Value && s.UserId == userId);
+            .FirstOrDefaultAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
 
         if (session == null)
         {
@@ -182,7 +192,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             _db.Messages.Add(userMsg);
             session.Messages ??= new List<Message>();
             session.Messages.Add(userMsg);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(ct);
         }
 
         string fullResponse = "";
@@ -300,6 +310,21 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     syncAgentRole,
                     entryState,
                     isStream: true);
+
+                var metadata = await BuildTutorMetadataAsync(userId, session, syncResponse);
+                var isQuizResponse = syncResponse.Contains("```json") || syncResponse.Contains("```quiz") ||
+                                     (syncResponse.Contains("[{") && syncResponse.Contains("\"question\""));
+                var msgType = isQuizResponse ? MessageType.Quiz : MessageType.General;
+
+                await AppendTutorTurnToWikiAsync(userId, session, content, syncResponse, syncMsgId, metadata, syncAgentRole, msgType);
+
+                yield return syncResponse;
+                yield return System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    type = "metadata",
+                    data = new { metadata }
+                });
+                yield break;
             }
 
             yield return syncResponse;
@@ -307,19 +332,63 @@ public class AgentOrchestratorService : IAgentOrchestrator
         }
 
         // 2B. Dinamik Yönlendirme (Supervisor Intent Check)
-        var actionRoute = await _supervisor.DetermineActionRouteAsync(content, session.Messages);
+        var actionRoute = LooksLikeResearchRequest(content)
+            ? "RESEARCH"
+            : await _supervisor.DetermineActionRouteAsync(content, session.Messages);
         _logger.LogInformation("[Orchestrator] Supervisor Route Kararı: {Route}", actionRoute);
 
         if (actionRoute == "QUIZ" && session.CurrentState == SessionState.Learning)
         {
             _logger.LogInformation("[Orchestrator] Kullanıcı organik olarak quiz talep etti. Durum QuizPending'e çekiliyor.");
             session.CurrentState = SessionState.QuizPending;
-            // Veri kaydedilir ancak akış Tutor'un pekiştirme veya soru hazırlama mesajına devredilir (Aşağıda isQuizPending = true olarak algılar)
+        }
+
+        string streamingContent = tutorContent;
+        if (actionRoute == "RESEARCH")
+        {
+            using var researchScope = _scopeFactory.CreateScope();
+            var korteks = researchScope.ServiceProvider.GetRequiredService<IKorteksAgent>();
+            var synthesisService = researchScope.ServiceProvider.GetService<IKorteksSynthesisService>();
+
+            string researchContext;
+            try
+            {
+                var researchResult = await korteks.RunResearchWithEvidenceAsync(content, userId, session.TopicId);
+                var synthesis = synthesisService == null
+                    ? null
+                    : await synthesisService.BuildAndSaveAsync(
+                        userId,
+                        researchResult,
+                        new Orka.Core.DTOs.Korteks.KorteksResearchSynthesisContextDto
+                        {
+                            TopicId = session.TopicId,
+                            SessionId = session.Id,
+                            Purpose = "tutor_research_route"
+                        });
+                researchContext = synthesis?.ConsumerContexts.Tutor.PromptBlock
+                                  ?? KorteksResearchContextFormatter.FormatForTutor(researchResult);
+
+                _logger.LogInformation(
+                    "[Orchestrator] Research route completed. GroundingMode={GroundingMode}, IsFallback={IsFallback}, SourceCount={SourceCount}, ToolCallCount={ToolCallCount}, SynthesisWorkflowRef={SynthesisWorkflowRef}",
+                    researchResult.GroundingMode,
+                    researchResult.IsFallback,
+                    researchResult.SourceCount,
+                    researchResult.ProviderCalls.Count(c => c.Invoked),
+                    LogPrivacyGuard.SafeId(synthesis?.Id, "workflow"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[Orchestrator] Research route failed; Tutor will answer with explicit source limits. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
+                researchContext = "[KORTEKS SOURCE-GROUNDING]\nStatus: failed\nFallback: true\nGroundingWarning: Source-backed research could not be completed. Tell the user that external source grounding is unavailable for this answer.";
+            }
+
+            streamingContent = $"[KORTEKS ARAŞTIRMA SONUÇLARI]:{Environment.NewLine}{researchContext}{Environment.NewLine}{Environment.NewLine}[KULLANICI MESAJI]:{Environment.NewLine}{tutorContent}";
         }
 
         // Varsayılan: Normal ders anlatımı - gerçek zamanlı STREAM
         bool isQuizPending = session.CurrentState == SessionState.QuizPending;
-        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, tutorContent, session, isQuizPending))
+        await foreach (var chunk in _tutorAgent.GetResponseStreamAsync(userId, streamingContent, session, isQuizPending, ct))
         {
             fullResponse += chunk;
             yield return chunk;
@@ -491,7 +560,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             MetadataJson: null));
     }
 
-    private async ValueTask ScheduleTurnPostProcessingAsync(
+    private ValueTask ScheduleTurnPostProcessingAsync(
         Session session,
         Guid userId,
         string userContent,
@@ -501,31 +570,32 @@ public class AgentOrchestratorService : IAgentOrchestrator
         SessionState entryState,
         bool isStream)
     {
-        try
-        {
-            await _chatTurnPostProcessor.ScheduleAsync(new ChatTurnPostProcessRequest(
-                UserId: userId,
-                SessionId: session.Id,
-                TopicId: session.TopicId,
-                AssistantMessageId: assistantMessageId,
-                UserContent: userContent,
-                AssistantContent: assistantContent,
-                AgentRole: agentRole,
-                CorrelationId: _correlationContext.CorrelationId,
-                EntryState: entryState,
-                IsStream: isStream));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                "[ChatPostProcess] Schedule skipped. UserRef={UserRef} SessionRef={SessionRef} MessageRef={MessageRef} AgentRole={AgentRole} IsStream={IsStream} ErrorType={ErrorType}",
-                LogPrivacyGuard.SafeId(userId, "usr"),
-                LogPrivacyGuard.SafeId(session.Id, "session"),
-                LogPrivacyGuard.SafeId(assistantMessageId, "msg"),
-                LogPrivacyGuard.SafeMessage(agentRole, 80),
-                isStream,
-                LogPrivacyGuard.SafeExceptionType(ex));
-        }
+        var postProcessor = _chatTurnPostProcessor;
+        var correlationId = _correlationContext.CorrelationId;
+        var sessionId = session.Id;
+        var topicId = session.TopicId;
+
+        _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
+            JobType: "chat_turn_post_process",
+            UserId: userId,
+            CorrelationId: correlationId,
+            Work: async (token) =>
+            {
+                await postProcessor.ProcessSynchronouslyAsync(new ChatTurnPostProcessRequest(
+                    UserId: userId,
+                    SessionId: sessionId,
+                    TopicId: topicId,
+                    AssistantMessageId: assistantMessageId,
+                    UserContent: userContent,
+                    AssistantContent: assistantContent,
+                    AgentRole: agentRole,
+                    CorrelationId: correlationId,
+                    EntryState: entryState,
+                    IsStream: isStream));
+            }
+        ));
+
+        return ValueTask.CompletedTask;
     }
 
     public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
@@ -922,6 +992,9 @@ public class AgentOrchestratorService : IAgentOrchestrator
         {
             return null;
         }
+
+        userContent = ScrubGdprPatterns(userContent);
+        assistantContent = ScrubGdprPatterns(assistantContent);
 
         try
         {
@@ -1846,6 +1919,19 @@ public class AgentOrchestratorService : IAgentOrchestrator
             (content.Contains("evet", StringComparison.OrdinalIgnoreCase) ||
              content.Contains("başla", StringComparison.OrdinalIgnoreCase)))
         {
+            if (string.IsNullOrWhiteSpace(session.PendingQuiz))
+            {
+                string topicTitle = "Genel Değerlendirme";
+                if (session.TopicId.HasValue)
+                {
+                    var topic = await _db.Topics.FindAsync(session.TopicId.Value);
+                    if (topic != null && !string.IsNullOrWhiteSpace(topic.Title))
+                    {
+                        topicTitle = topic.Title;
+                    }
+                }
+                session.PendingQuiz = await _tutorAgent.GenerateTopicQuizAsync(topicTitle);
+            }
             session.CurrentState = SessionState.QuizMode;
             await _db.SaveChangesAsync();
             return $"Harika! İşte senin için hazırladığım test:\n\n{session.PendingQuiz}";
@@ -2590,7 +2676,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
 
         if (topic == null)
         {
-            string title = content.Replace("/plan", "").Trim();
+            string title = (content ?? "").Replace("/plan", "").Trim();
             if (string.IsNullOrWhiteSpace(title)) title = "Yeni Öğrenme Planı";
             if (title.Length > 50) title = title[..50] + "...";
 
@@ -2635,7 +2721,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         // Sadece ProcessMessageAsync (non-stream) path'inden çağrıldığında kaydet.
         // Stream path session.Id gönderir, ProcessMessageAsync ise sessionId null gönderebilir.
 
-        var quizResponse = await TriggerBaselineQuizForPlanAsync(userId, content, session);
+        var quizResponse = await TriggerBaselineQuizForPlanAsync(userId, content ?? "", session);
 
         return new ChatMessageResponse
         {
@@ -2920,5 +3006,23 @@ public class AgentOrchestratorService : IAgentOrchestrator
         IMediator mediator)
     {
         await _topicProgress.HandleCompletionAnalysisProgressionAsync(userId, sessionId, topicId);
+    }
+
+    private static string ScrubGdprPatterns(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+
+        var emailRegex = new System.Text.RegularExpressions.Regex(
+            @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", 
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+        
+        var result = emailRegex.Replace(input, "[MASKED_EMAIL]");
+
+        var phoneRegex = new System.Text.RegularExpressions.Regex(
+            @"\+?\d{10,12}", 
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+        result = phoneRegex.Replace(result, "[PHONE_MASKED]");
+
+        return result;
     }
 }

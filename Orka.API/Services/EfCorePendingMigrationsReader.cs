@@ -12,6 +12,12 @@ public sealed class EfCorePendingMigrationsReader : IPendingEfMigrationsReader
         _db = db;
     }
 
-    public async Task<IReadOnlyCollection<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default) =>
-        (await _db.Database.GetPendingMigrationsAsync(cancellationToken)).ToArray();
+    public async Task<IReadOnlyCollection<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            return Array.Empty<string>();
+        }
+        return (await _db.Database.GetPendingMigrationsAsync(cancellationToken)).ToArray();
+    }
 }

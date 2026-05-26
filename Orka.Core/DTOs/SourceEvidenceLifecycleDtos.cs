@@ -259,3 +259,226 @@ public sealed class SourceConceptGraphEdgeDto
     public bool IsSuggestion { get; set; }
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
 }
+
+public sealed class SourceWikiIntelligenceProfileDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string ProfileStatus { get; set; } = "empty";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CitationReadiness { get; set; } = "not_checked";
+    public string WikiHealthStatus { get; set; } = "unknown";
+    public bool CanClaimSourceGrounded { get; set; }
+    public int SourceCount { get; set; }
+    public int ReadySourceCount { get; set; }
+    public int WikiPageCount { get; set; }
+    public int LinkedConceptCount { get; set; }
+    public int CitationWarningCount { get; set; }
+    public int SourceQuestionThreadCount { get; set; }
+    public int SourceQuestionTurnCount { get; set; }
+    public int RepairPendingPageCount { get; set; }
+    public int SourceLimitedPageCount { get; set; }
+    public IReadOnlyList<SourceWikiEvidenceReadinessDto> EvidenceReadiness { get; set; } = Array.Empty<SourceWikiEvidenceReadinessDto>();
+    public IReadOnlyList<WikiLearningPageReadinessDto> WikiPages { get; set; } = Array.Empty<WikiLearningPageReadinessDto>();
+    public IReadOnlyList<SourceConceptLinkDto> LinkedConcepts { get; set; } = Array.Empty<SourceConceptLinkDto>();
+    public IReadOnlyList<SourceWikiNextActionDto> NextActions { get; set; } = Array.Empty<SourceWikiNextActionDto>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SourceWikiEvidenceReadinessDto
+{
+    public Guid SourceId { get; set; }
+    public Guid? TopicId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Status { get; set; } = "unknown";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CitationReadiness { get; set; } = "not_checked";
+    public int PageCount { get; set; }
+    public int ChunkCount { get; set; }
+    public int LinkedConceptCount { get; set; }
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class WikiLearningPageReadinessDto
+{
+    public Guid WikiPageId { get; set; }
+    public Guid TopicId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string PageType { get; set; } = "concept";
+    public string? ConceptKey { get; set; }
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CurationStatus { get; set; } = "unknown";
+    public int BlockCount { get; set; }
+    public int RepairSignalCount { get; set; }
+    public int SourceLimitedSignalCount { get; set; }
+    public bool ManualNotePreserved { get; set; }
+    public string NextAction { get; set; } = "continue_learning";
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class SourceWikiNextActionDto
+{
+    public string ActionType { get; set; } = "continue_learning";
+    public string Label { get; set; } = "Devam et";
+    public string Priority { get; set; } = "normal";
+    public string TargetType { get; set; } = "topic";
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaSourceWikiProDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string ReadinessStatus { get; set; } = "thin_evidence";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string WikiReadiness { get; set; } = "empty";
+    public string CitationReadiness { get; set; } = "not_checked";
+    public SourceWikiProEvidenceMapDto EvidenceMap { get; set; } = new();
+    public IReadOnlyList<SourceWikiProSourceDto> SourceReadinessItems { get; set; } = Array.Empty<SourceWikiProSourceDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> WikiReadinessItems { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public IReadOnlyList<SourceWikiProCitationDto> CitationReadinessItems { get; set; } = Array.Empty<SourceWikiProCitationDto>();
+    public IReadOnlyList<SourceWikiProConceptLinkDto> LinkedConcepts { get; set; } = Array.Empty<SourceWikiProConceptLinkDto>();
+    public IReadOnlyList<string> LinkedExamOutcomes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<SourceWikiProConceptLinkDto> SourceBackedConcepts { get; set; } = Array.Empty<SourceWikiProConceptLinkDto>();
+    public IReadOnlyList<SourceWikiProConceptLinkDto> SourceLimitedConcepts { get; set; } = Array.Empty<SourceWikiProConceptLinkDto>();
+    public IReadOnlyList<SourceWikiProSourceDto> StaleSources { get; set; } = Array.Empty<SourceWikiProSourceDto>();
+    public IReadOnlyList<SourceWikiProSourceDto> DeletedSources { get; set; } = Array.Empty<SourceWikiProSourceDto>();
+    public IReadOnlyList<SourceWikiProSourceDto> InsufficientSources { get; set; } = Array.Empty<SourceWikiProSourceDto>();
+    public IReadOnlyList<SourceWikiProSourceDto> DegradedSources { get; set; } = Array.Empty<SourceWikiProSourceDto>();
+    public IReadOnlyList<SourceWikiProWarningDto> CitationWarnings { get; set; } = Array.Empty<SourceWikiProWarningDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> WikiRepairPages { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> DuplicateTracePages { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> ManualNotePages { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> TutorTracePages { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public IReadOnlyList<SourceWikiProWikiPageDto> SourceBackedPages { get; set; } = Array.Empty<SourceWikiProWikiPageDto>();
+    public string NotebookPackReadiness { get; set; } = "not_requested";
+    public SourceWikiProActionDto TodaySourceWikiMission { get; set; } = new();
+    public IReadOnlyList<SourceWikiProActionDto> RecommendedActions { get; set; } = Array.Empty<SourceWikiProActionDto>();
+    public IReadOnlyList<SourceWikiProActionDto> TutorHandoffs { get; set; } = Array.Empty<SourceWikiProActionDto>();
+    public IReadOnlyList<SourceWikiProActionDto> StudyRoomHandoffs { get; set; } = Array.Empty<SourceWikiProActionDto>();
+    public IReadOnlyList<SourceWikiProActionDto> NotebookHandoffs { get; set; } = Array.Empty<SourceWikiProActionDto>();
+    public IReadOnlyList<SourceWikiProWarningDto> ExamWarRoomWarnings { get; set; } = Array.Empty<SourceWikiProWarningDto>();
+    public IReadOnlyList<SourceWikiProWarningDto> MissionControlWarnings { get; set; } = Array.Empty<SourceWikiProWarningDto>();
+    public IReadOnlyList<SourceWikiProWarningDto> ConflictWarnings { get; set; } = Array.Empty<SourceWikiProWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Source / Wiki Pro kanit durumunu guvenli sekilde izliyor.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SourceWikiProSourceDto
+{
+    public Guid SourceId { get; set; }
+    public Guid? TopicId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Status { get; set; } = "unknown";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CitationReadiness { get; set; } = "not_checked";
+    public int PageCount { get; set; }
+    public int ChunkCount { get; set; }
+    public int LinkedConceptCount { get; set; }
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class SourceWikiProWikiPageDto
+{
+    public Guid WikiPageId { get; set; }
+    public Guid TopicId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string PageType { get; set; } = "concept";
+    public string? ConceptKey { get; set; }
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CurationStatus { get; set; } = "unknown";
+    public int BlockCount { get; set; }
+    public int RepairSignalCount { get; set; }
+    public int SourceLimitedSignalCount { get; set; }
+    public bool ManualNotePreserved { get; set; }
+    public bool HasTutorTrace { get; set; }
+    public string NextAction { get; set; } = "continue_learning";
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class SourceWikiProCitationDto
+{
+    public Guid CitationCheckId { get; set; }
+    public string CitationId { get; set; } = string.Empty;
+    public Guid? SourceId { get; set; }
+    public string SourceTitle { get; set; } = string.Empty;
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public string CitationStatus { get; set; } = "not_checked";
+    public decimal? Confidence { get; set; }
+    public string UserSafeWarning { get; set; } = string.Empty;
+}
+
+public sealed class SourceWikiProConceptLinkDto
+{
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public string ConceptTitle { get; set; } = string.Empty;
+    public string SourceTitle { get; set; } = string.Empty;
+    public string LinkType { get; set; } = "source_mentions";
+    public string Confidence { get; set; } = "low";
+    public decimal? ConfidenceScore { get; set; }
+    public string Basis { get; set; } = "existing_wiki_link";
+    public string SourceReadiness { get; set; } = "evidence_insufficient";
+    public string EvidenceStatus { get; set; } = "evidence_insufficient";
+    public bool IsSuggestion { get; set; }
+    public bool IsSourceBacked { get; set; }
+    public bool IsLimited { get; set; }
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class SourceWikiProEvidenceMapDto
+{
+    public int UploadedSourceCount { get; set; }
+    public int ReadySourceCount { get; set; }
+    public int WikiPageCount { get; set; }
+    public int ManualNoteCount { get; set; }
+    public int TutorTraceCount { get; set; }
+    public int SourceBackedPageCount { get; set; }
+    public int LinkedConceptCount { get; set; }
+    public int LinkedExamOutcomeCount { get; set; }
+    public int CitationWarningCount { get; set; }
+    public bool CanClaimSourceGrounded { get; set; }
+    public bool ProviderOutputCountsAsEvidence { get; set; }
+    public bool WikiMemoryCountsAsCitationEvidence { get; set; }
+}
+
+public sealed class SourceWikiProActionDto
+{
+    public string ActionType { get; set; } = "continue_learning";
+    public string Label { get; set; } = "Devam et";
+    public string Reason { get; set; } = "Kanit durumu izleniyor.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "continue_learning";
+    public string TargetRoute { get; set; } = "sources";
+    public Guid? TopicId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class SourceWikiProWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "sources";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}

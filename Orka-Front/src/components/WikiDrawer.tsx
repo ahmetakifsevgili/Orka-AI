@@ -203,13 +203,16 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let aiContent = "";
+      let buffer = "";
 
       while (reader) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const str = line.substring(6).replace(/\r$/, "");

@@ -11,10 +11,14 @@ public sealed class TutorResponsePolicyService : ITutorResponsePolicyService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly OrkaDbContext _db;
+    private readonly IOrkaLearningStateService _orkaLearningState;
 
-    public TutorResponsePolicyService(OrkaDbContext db)
+    public TutorResponsePolicyService(
+        OrkaDbContext db,
+        IOrkaLearningStateService orkaLearningState)
     {
         _db = db;
+        _orkaLearningState = orkaLearningState;
     }
 
     public async Task<TutorResponsePolicyDto> BuildPolicyAsync(
@@ -33,7 +37,16 @@ public sealed class TutorResponsePolicyService : ITutorResponsePolicyService
                 .OrderBy(t => t.CreatedAt)
                 .ToListAsync(ct);
 
-        return BuildPolicy(turn, trace, latestAttempt, latestBundle, toolCalls, request.ActiveQuizUnsubmitted);
+        var policy = BuildPolicy(turn, trace, latestAttempt, latestBundle, toolCalls, request.ActiveQuizUnsubmitted);
+        var topicId = request.TopicId ?? turn?.TopicId ?? latestAttempt?.TopicId ?? latestBundle?.TopicId;
+        var unifiedState = await _orkaLearningState.BuildStateAsync(
+            userId,
+            topicId,
+            request.SessionId ?? turn?.SessionId ?? latestAttempt?.SessionId ?? latestBundle?.SessionId,
+            "KPSS",
+            variantCode: null,
+            ct);
+        return EnrichWithOrkaLearningState(policy, unifiedState);
     }
 
     public async Task<TutorResponseQualityEvaluationDto> EvaluateTutorResponseAsync(
@@ -313,6 +326,322 @@ public sealed class TutorResponsePolicyService : ITutorResponsePolicyService
         ];
     }
 
+    private static TutorResponsePolicyDto EnrichWithOrkaLearningState(
+        TutorResponsePolicyDto policy,
+        OrkaLearningStateDto? state)
+    {
+        if (state == null)
+        {
+            return policy;
+        }
+
+        var unifiedActions = new[] { state.PrimaryNextAction }
+            .Concat(state.SecondaryNextActions)
+            .Select(ToTutorAction)
+            .Where(a => !string.IsNullOrWhiteSpace(a.ActionType))
+            .ToArray();
+
+        policy.NextActions = unifiedActions
+            .Concat(policy.NextActions)
+            .GroupBy(a => $"{a.ActionType}:{a.TargetConceptKey}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderByDescending(a => PriorityScore(a.Priority))
+            .Take(6)
+            .ToArray();
+
+        policy.ContextUse = policy.ContextUse
+            .Concat(
+            [
+                new TutorContextUseDto
+                {
+                    ContextType = "orka_learning_state",
+                    Status = state.SignalSummary.HasRealLearningData ? "available" : "limited",
+                    UserSafeSummary = state.PrimaryNextAction.Label
+                },
+                new TutorContextUseDto
+                {
+                    ContextType = "long_term_learning",
+                    Status = state.LongTermLearningProfile.HasEnoughEvidence ? "available" : "limited",
+                    UserSafeSummary = state.LongTermLearningProfile.WeeklyRhythm.NextBestAction.Label
+                },
+                new TutorContextUseDto
+                {
+                    ContextType = "exam_learning_profile",
+                    Status = state.ExamLearningProfile?.HasEnoughEvidence == true ? "available" : "limited",
+                    UserSafeSummary = state.ExamLearningProfile?.NextActions.FirstOrDefault()?.Label ?? "Sinav profili izleniyor."
+                },
+                new TutorContextUseDto
+                {
+                    ContextType = "source_wiki_intelligence",
+                    Status = state.SourceWikiIntelligenceProfile?.ProfileStatus is "ready" ? "available" : "limited",
+                    UserSafeSummary = state.SourceWikiIntelligenceProfile?.NextActions.FirstOrDefault()?.Label ?? "Source/Wiki profili izleniyor."
+                }
+            ])
+            .GroupBy(c => c.ContextType, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToArray();
+
+        policy.Warnings = policy.Warnings
+            .Concat(state.ConflictWarnings.Select(w => Issue(w.ConflictCode, w.Severity, w.UserSafeSummary)))
+            .Concat(state.SafetyWarnings.Select(w => Issue("orka_state_safety_warning", "warning", w)))
+            .GroupBy(w => $"{w.Code}:{w.UserSafeMessage}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Take(10)
+            .ToArray();
+
+        if (state.ConflictWarnings.Any(w => w.ConflictCode == "source_grounding_blocked") &&
+            policy.GroundingPolicy == "cite_sources")
+        {
+            policy.GroundingPolicy = "mention_source_limits";
+        }
+
+        return policy;
+    }
+
+    private static TutorNextLearningActionDto ToTutorAction(OrkaUnifiedNextActionDto action)
+    {
+        var actionType = action.ActionType switch
+        {
+            "repair_concept" or "repair_prerequisite" or "practice_exam_outcome" or "take_checkpoint_quiz" => "start_micro_quiz",
+            "review_due_concept" => "review_due_concept",
+            "review_deneme_mistakes" => "review_exam_mistakes",
+            "source_review" => "open_source_evidence",
+            "citation_review" => "review_citations",
+            "open_study_room" => "open_study_room",
+            "update_wiki_note" => "review_wiki_section",
+            "create_flashcards" => "create_flashcards",
+            "start_diagnostic" => "ask_socratic_check",
+            "ask_tutor" => "ask_tutor",
+            _ => "continue_plan"
+        };
+
+        return new TutorNextLearningActionDto
+        {
+            ActionType = actionType,
+            UserSafeLabel = action.Label,
+            TargetConceptKey = action.ConceptKey,
+            Priority = action.Priority is "urgent" or "high" ? "high" : action.Priority is "medium" or "normal" ? "normal" : "low"
+        };
+    }
+
+    private static TutorResponsePolicyDto EnrichWithLongTermProfile(
+        TutorResponsePolicyDto policy,
+        LongTermLearningProfileDto profile)
+    {
+        var longTermActions = profile.NextActions
+            .Select(ToTutorAction)
+            .Where(a => !string.IsNullOrWhiteSpace(a.ActionType))
+            .ToArray();
+
+        policy.NextActions = longTermActions
+            .Concat(policy.NextActions)
+            .GroupBy(a => $"{a.ActionType}:{a.TargetConceptKey}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderByDescending(a => PriorityScore(a.Priority))
+            .Take(6)
+            .ToArray();
+
+        policy.ContextUse = policy.ContextUse
+            .Concat(
+            [
+                new TutorContextUseDto
+                {
+                    ContextType = "long_term_learning",
+                    Status = profile.HasEnoughEvidence ? "available" : "limited",
+                    UserSafeSummary = profile.WeeklyRhythm.NextBestAction.Label
+                }
+            ])
+            .GroupBy(c => c.ContextType, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToArray();
+
+        if (profile.Warnings.Count > 0)
+        {
+            policy.Warnings = policy.Warnings
+                .Concat(profile.Warnings.Select(w => Issue("long_term_learning_warning", "warning", w)))
+                .GroupBy(w => $"{w.Code}:{w.UserSafeMessage}", StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(8)
+                .ToArray();
+        }
+
+        return policy;
+    }
+
+    private static TutorNextLearningActionDto ToTutorAction(AdaptiveNextStudyActionDto action)
+    {
+        var actionType = action.ActionType switch
+        {
+            "repair" => "start_micro_quiz",
+            "review" => "review_due_concept",
+            "checkpoint" => "ask_socratic_check",
+            "source_review" => "open_source_evidence",
+            "take_quiz" => "start_micro_quiz",
+            "create_flashcards" => "create_flashcards",
+            _ => "continue_plan"
+        };
+
+        return new TutorNextLearningActionDto
+        {
+            ActionType = actionType,
+            UserSafeLabel = action.Label,
+            TargetConceptKey = action.ConceptKey,
+            Priority = action.Priority is "urgent" or "high" ? "high" : action.Priority is "medium" ? "normal" : "low"
+        };
+    }
+
+    private static TutorResponsePolicyDto EnrichWithExamLearningProfile(
+        TutorResponsePolicyDto policy,
+        ExamLearningProfileDto? profile)
+    {
+        if (profile is null)
+        {
+            return policy;
+        }
+
+        var examActions = profile.NextActions
+            .Select(ToTutorAction)
+            .Where(a => !string.IsNullOrWhiteSpace(a.ActionType))
+            .ToArray();
+
+        policy.NextActions = examActions
+            .Concat(policy.NextActions)
+            .GroupBy(a => $"{a.ActionType}:{a.TargetConceptKey}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderByDescending(a => PriorityScore(a.Priority))
+            .Take(6)
+            .ToArray();
+
+        policy.ContextUse = policy.ContextUse
+            .Concat(
+            [
+                new TutorContextUseDto
+                {
+                    ContextType = "exam_learning_profile",
+                    Status = profile.HasEnoughEvidence ? "available" : "limited",
+                    UserSafeSummary = profile.NextActions.FirstOrDefault()?.Label ?? "Sinav profili izleniyor."
+                }
+            ])
+            .GroupBy(c => c.ContextType, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToArray();
+
+        if (profile.Warnings.Count > 0)
+        {
+            policy.Warnings = policy.Warnings
+                .Concat(profile.Warnings.Select(w => Issue("exam_learning_warning", "warning", w)))
+                .GroupBy(w => $"{w.Code}:{w.UserSafeMessage}", StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(8)
+                .ToArray();
+        }
+
+        return policy;
+    }
+
+    private static TutorNextLearningActionDto ToTutorAction(ExamNextActionDto action)
+    {
+        var actionType = action.ActionType switch
+        {
+            "repair_outcome" => "start_micro_quiz",
+            "review_deneme_mistakes" => "review_exam_mistakes",
+            "review_due_outcome" => "review_due_concept",
+            "run_diagnostic" => "ask_socratic_check",
+            "source_review" => "open_source_evidence",
+            "practice_question_type" => "start_micro_quiz",
+            "create_flashcards" => "create_flashcards",
+            _ => "continue_plan"
+        };
+
+        return new TutorNextLearningActionDto
+        {
+            ActionType = actionType,
+            UserSafeLabel = action.Label,
+            TargetConceptKey = action.OutcomeCode ?? action.TopicCode ?? action.QuestionType,
+            Priority = action.Priority is "urgent" or "high" ? "high" : action.Priority is "medium" ? "normal" : "low"
+        };
+    }
+
+    private static TutorResponsePolicyDto EnrichWithSourceWikiProfile(
+        TutorResponsePolicyDto policy,
+        SourceWikiIntelligenceProfileDto? profile)
+    {
+        if (profile is null)
+        {
+            return policy;
+        }
+
+        var sourceWikiActions = profile.NextActions
+            .Select(ToTutorAction)
+            .Where(a => !string.IsNullOrWhiteSpace(a.ActionType))
+            .ToArray();
+
+        policy.NextActions = sourceWikiActions
+            .Concat(policy.NextActions)
+            .GroupBy(a => $"{a.ActionType}:{a.TargetConceptKey}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderByDescending(a => PriorityScore(a.Priority))
+            .Take(6)
+            .ToArray();
+
+        policy.ContextUse = policy.ContextUse
+            .Concat(
+            [
+                new TutorContextUseDto
+                {
+                    ContextType = "source_wiki_intelligence",
+                    Status = profile.ProfileStatus is "ready" ? "available" : profile.ProfileStatus is "empty" ? "not_available" : "limited",
+                    UserSafeSummary = profile.NextActions.FirstOrDefault()?.Label ?? "Source/Wiki profili izleniyor."
+                }
+            ])
+            .GroupBy(c => c.ContextType, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToArray();
+
+        if (profile.Warnings.Count > 0)
+        {
+            policy.Warnings = policy.Warnings
+                .Concat(profile.Warnings.Select(w => Issue("source_wiki_warning", "warning", w)))
+                .GroupBy(w => $"{w.Code}:{w.UserSafeMessage}", StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(8)
+                .ToArray();
+        }
+
+        if (!profile.CanClaimSourceGrounded &&
+            policy.GroundingPolicy == "cite_sources" &&
+            profile.Warnings.Contains("source_grounded_claim_blocked", StringComparer.OrdinalIgnoreCase))
+        {
+            policy.GroundingPolicy = "mention_source_limits";
+        }
+
+        return policy;
+    }
+
+    private static TutorNextLearningActionDto ToTutorAction(SourceWikiNextActionDto action)
+    {
+        var actionType = action.ActionType switch
+        {
+            "repair_concept" => "start_micro_quiz",
+            "review_source" => "open_source_evidence",
+            "citation_review" => "review_citations",
+            "review_source_questions" => "review_source_questions",
+            "compare_sources" => "compare_sources",
+            "sync_source_concepts" => "review_wiki_section",
+            "open_notebook_pack" => "open_notebook_pack",
+            "add_source" => "open_source_evidence",
+            _ => "continue_plan"
+        };
+
+        return new TutorNextLearningActionDto
+        {
+            ActionType = actionType,
+            UserSafeLabel = action.Label,
+            TargetConceptKey = action.ConceptKey,
+            Priority = action.Priority is "urgent" or "high" ? "high" : action.Priority is "medium" or "normal" ? "normal" : "low"
+        };
+    }
+
     private static IReadOnlyList<TutorResponseQualityIssueDto> BuildWarnings(TutorTurnStateDto? turn, SourceEvidenceBundle? bundle, IReadOnlyList<TutorToolCall> toolCalls, string sourceReadiness, string misconceptionConfidence)
     {
         var warnings = new List<TutorResponseQualityIssueDto>();
@@ -432,6 +761,16 @@ public sealed class TutorResponsePolicyService : ITutorResponsePolicyService
     };
 
     private static decimal Score(bool contextAvailable, bool weak) => !contextAvailable ? 0.45m : weak ? 0.55m : 0.85m;
+
+    private static int PriorityScore(string? priority) => Normalize(priority) switch
+    {
+        "urgent" => 5,
+        "high" => 4,
+        "normal" => 3,
+        "medium" => 3,
+        "low" => 2,
+        _ => 1
+    };
 
     private static bool IsTeachingMove(string value) =>
         Normalize(value) is "explain" or "scaffold" or "example" or "analogy" or "socratic_check" or "misconception_repair" or "prerequisite_repair" or "guided_practice" or "retrieval_prompt" or "source_review" or "plan_redirect" or "tool_guided_help" or "confidence_check" or "summarize" or "next_action";

@@ -240,4 +240,71 @@ public class GeminiService : IGeminiService
             }
         }
     }
+
+    public async IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var (taskType, _, temperature, maxTokens, topP, topK, stopSequences) = DetectTask(systemPrompt);
+        _logger.LogInformation("[GEMINI STREAM DIRECT] Görev={Task} → Model={Model}", taskType, model);
+
+        var endpoint = $"{_baseUrl.TrimEnd('/')}/{model}:streamGenerateContent?alt=sse&key={_apiKey}";
+
+        var requestBody = new
+        {
+            systemInstruction = new
+            {
+                parts = new[] { new { text = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt } }
+            },
+            contents = new[]
+            {
+                new { role = "user", parts = new[] { new { text = userMessage } } }
+            },
+            generationConfig = new
+            {
+                temperature,
+                topP,
+                topK,
+                candidateCount = 1,
+                responseMimeType = "text/plain",
+                stopSequences = stopSequences ?? Array.Empty<string>()
+            }
+        };
+
+        var json = JsonSerializer.Serialize(requestBody, _jsonOpts);
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync(ct);
+            throw AiProviderFailureMapper.FromResponse("Gemini", model, response, err);
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new System.IO.StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6).Trim();
+                using var doc = JsonDocument.Parse(data);
+                
+                var text = doc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text")
+                    .GetString();
+
+                if (!string.IsNullOrEmpty(text))
+                {
+                    yield return text;
+                }
+            }
+        }
+    }
 }

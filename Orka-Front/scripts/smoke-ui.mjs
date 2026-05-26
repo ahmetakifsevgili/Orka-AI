@@ -117,7 +117,7 @@ addCheck("Plan diagnostic has explicit intent gate API", api.includes("analyzePl
 addCheck("Stream APIs use authenticated fetch wrapper", api.includes("export const authenticatedFetch") && api.includes("ChatAPI") && api.includes('authenticatedFetch("/api/chat/stream"') && api.includes('authenticatedFetch("/api/korteks/research-stream"') && api.includes('authenticatedFetch("/api/korteks/research-file"'));
 addCheck("Stream APIs never send null bearer tokens", !api.includes("Bearer null") && !api.includes("Bearer undefined"));
 addCheck("Auth fetch and axios requests include refresh cookie credentials", api.includes("withCredentials: true") && api.includes('credentials: init.credentials ?? "include"'));
-addCheck("Auth logout API and scoped cleanup are exposed", api.includes("logout: (refreshToken?: string)") && api.includes("/auth/logout") && api.includes("storage.clear") && !api.includes("localStorage.clear()"));
+addCheck("Auth logout API and scoped cleanup are exposed", api.includes("logout: () =>") && api.includes("/auth/logout") && api.includes("storage.clear") && !api.includes("localStorage.clear()"));
 addCheck("Dashboard coordination contract is typed", api.includes("coordinationScope?:") && api.includes("coordinationHealth?:") && api.includes("activeLessonTopicId"));
 addCheck("Korteks sync and stream contracts are separate", api.includes("KorteksSyncResponseDto") && api.includes("researchSync") && api.includes("/api/korteks/research-stream"));
 addCheck("Korteks synthesis contract exposed", api.includes("synthesisWorkflowId") && api.includes("getLatestSynthesis") && api.includes("/korteks/synthesis/latest") && types.includes("KorteksResearchWorkflow"));
@@ -284,7 +284,8 @@ addCheck("Programming fallback is generic concept-graph based", deepPlanAgent.in
 addCheck("Tutor coding lessons default to Orka IDE", tutorAgent.includes("ORKA IDE VARSAYILAN ORTAMDIR") && tutorAgent.includes("harici kurulumları ilk adım gibi anlatma"));
 addCheck("P4 language-specific plan template is removed", !deepPlanAgent.includes("[DOMAIN SABLONU - DIL OGRENIMI]") && !deepPlanAgent.includes("Spaced Repetition") && !deepPlanAgent.includes("Speaking Prompt") && deepPlanAgent.includes("GENERIC CONCEPT GRAPH"));
 addCheck("P4 plan quality backend guard checks generic architecture", planQualityTests.includes("PlanQualityGuardTests") && planQualityTests.includes("DeepPlan_FallbackModulesComeFromGenericConceptGraph") && planQualityTests.includes("DeepPlan_NoLongerExposesDomainSpecificPlanningMode"));
-addCheck("P5 YouTube transcript plugin is in SK bridge", program.includes("YouTubeTranscriptPlugin") && program.includes("AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())"));
+const aiExtensions = readRepo("Orka.API/Extensions/AiProviderExtensions.cs");
+addCheck("P5 YouTube transcript plugin is in SK bridge", aiExtensions.includes("YouTubeTranscriptPlugin") && aiExtensions.includes("AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())"));
 
 for (const check of checks) {
   const icon = check.pass ? "OK" : "FAIL";

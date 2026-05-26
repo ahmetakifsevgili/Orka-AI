@@ -299,6 +299,143 @@ public interface IAdaptiveStudyPlannerService
         CancellationToken ct = default);
 }
 
+public interface ILongTermAdaptiveLearningService
+{
+    Task<LongTermLearningProfileDto> BuildProfileAsync(
+        Guid userId,
+        IReadOnlyCollection<Guid> topicScopeIds,
+        DashboardSourceHealthDto? sourceHealth = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaLearningStateService
+{
+    Task<OrkaLearningStateDto?> BuildStateAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaMissionControlService
+{
+    Task<OrkaMissionControlDto?> BuildMissionControlAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<OrkaMissionControlDto> BuildFromStateAsync(
+        Guid userId,
+        OrkaLearningStateDto state,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaStudyCoachService
+{
+    Task<OrkaStudyCoachDto?> BuildStudyCoachAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+
+    Task<OrkaStudyCoachDto> BuildFromMissionControlAsync(
+        Guid userId,
+        OrkaLearningStateDto state,
+        OrkaMissionControlDto missionControl,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaExamWarRoomService
+{
+    Task<OrkaExamWarRoomDto?> BuildWarRoomAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        Guid? examTopicId = null,
+        Guid? examOutcomeId = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaSourceWikiProService
+{
+    Task<OrkaSourceWikiProDto?> BuildProAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sourceId = null,
+        Guid? wikiPageId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaStudyRoomService
+{
+    Task<OrkaStudyRoomDto?> BuildStudyRoomAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        Guid? sourceId = null,
+        Guid? wikiPageId = null,
+        string? mode = null,
+        CancellationToken ct = default);
+
+    Task<OrkaStudyRoomDto?> StartStudyRoomAsync(
+        Guid userId,
+        OrkaStudyRoomStartRequestDto request,
+        CancellationToken ct = default);
+
+    Task<OrkaStudyRoomDto?> SubmitCheckpointAsync(
+        Guid userId,
+        OrkaStudyRoomCheckpointRequestDto request,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaNotebookStudioProService
+{
+    Task<OrkaNotebookStudioProDto?> BuildProAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        Guid? sourceId = null,
+        Guid? wikiPageId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        string? packType = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaCodeLearningIdeService
+{
+    Task<OrkaCodeLearningIdeDto?> BuildIdeAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? language = null,
+        string? exerciseId = null,
+        string? mode = null,
+        CancellationToken ct = default);
+}
+
+public interface IOrkaUnifiedEvaluationService
+{
+    Task<OrkaUnifiedEvaluationDto?> EvaluateAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+}
+
 public interface IPlanSequencingService
 {
     Task<PlanCurriculumSequenceDto> BuildPlanSequenceAsync(
@@ -660,6 +797,17 @@ public interface ICentralExamStudyService
     Task<PracticeResultDto?> GetPracticeAttemptAsync(
         Guid userId,
         Guid practiceAttemptId,
+        CancellationToken ct = default);
+}
+
+public interface IExamLearningProfileService
+{
+    Task<ExamLearningProfileDto?> BuildProfileAsync(
+        Guid userId,
+        string examCode,
+        string? variantCode = null,
+        Guid? examTopicId = null,
+        Guid? examOutcomeId = null,
         CancellationToken ct = default);
 }
 

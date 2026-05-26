@@ -5,7 +5,7 @@
  * - onTopicAutoCreated: mesaj sonrası backend yeni topic oluşturduysa sidebar güncellenir.
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
 import { AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -13,15 +13,33 @@ import type { ChatMessage, ApiTopic, ApiSession } from "@/lib/types";
 import { AuthAPI, TopicsAPI, storage } from "@/services/api";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import LeftSidebar from "@/components/LeftSidebar";
-import ChatPanel from "@/components/ChatPanel";
-import WikiMainPanel from "@/components/WikiMainPanel";
-import SettingsPanel from "@/components/SettingsPanel";
-import DashboardPanel from "@/components/DashboardPanel";
-import CentralExamsPanel from "@/components/CentralExamsPanel";
-import InteractiveIDE from "@/components/InteractiveIDE";
-import LearningPanel from "@/components/LearningPanel";
-import SplitPane from "@/components/SplitPane";
 import { usePremiumOnboarding } from "@/components/PremiumOnboardingTour";
+import {
+  MissionControlHome,
+  StudyRoomPanel,
+  ExamWarRoomPanel,
+  SourceWikiProPanel,
+  NotebookStudioProPanel,
+  CodeLearningIdePanel
+} from "@/components/ProductCoherencePanels";
+
+const ChatPanel = lazy(() => import("@/components/ChatPanel"));
+const WikiMainPanel = lazy(() => import("@/components/WikiMainPanel"));
+const SettingsPanel = lazy(() => import("@/components/SettingsPanel"));
+const DashboardPanel = lazy(() => import("@/components/DashboardPanel"));
+const CentralExamsPanel = lazy(() => import("@/components/CentralExamsPanel"));
+const InteractiveIDE = lazy(() => import("@/components/InteractiveIDE"));
+const LearningPanel = lazy(() => import("@/components/LearningPanel"));
+const SplitPane = lazy(() => import("@/components/SplitPane"));
+
+const LoadingFallback = () => (
+  <div className="flex-1 flex items-center justify-center h-full">
+    <svg className="h-8 w-8 animate-spin text-sky-500" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  </div>
+);
 
 // ── F5 Sonrası Context Kalıcılığı (localStorage keys) ─────────────────────
 // Kullanıcı sayfayı yenilediğinde son aktif topic / view / wiki ekranı
@@ -30,7 +48,10 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set(["chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress", "central-exams"]);
+const VALID_VIEWS = new Set([
+  "chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress", "central-exams",
+  "home", "study-room", "exams", "sources-wiki", "notebook", "code", "review", "tutor"
+]);
 
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
@@ -261,8 +282,7 @@ export default function Home() {
     let revokeFailed = false;
 
     try {
-      const refreshToken = storage.getRefresh();
-      await AuthAPI.logout(refreshToken ?? undefined);
+      await AuthAPI.logout();
     } catch {
       revokeFailed = true;
     } finally {
@@ -376,6 +396,26 @@ export default function Home() {
         return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="review" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
       case "practice":
         return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="practice" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
+      case "home":
+        return <MissionControlHome activeTopic={activeTopic} sessionId={sessionId} topics={topics} onViewChange={handleViewChange} />;
+      case "study-room":
+        return <StudyRoomPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
+      case "exams":
+        return <ExamWarRoomPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
+      case "sources-wiki":
+        return <SourceWikiProPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
+      case "notebook":
+        return <NotebookStudioProPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
+      case "code":
+        return (
+          <CodeLearningIdePanel
+            activeTopic={activeTopic}
+            sessionId={sessionId}
+            onViewChange={handleViewChange}
+            onSendToTutor={handleIDESendToChat}
+            onCloseQuiz={handleIDEClose}
+          />
+        );
       case "wiki":
         return wikiTopicId ? (
           <WikiMainPanel topicId={wikiTopicId} onClose={() => handleViewChange("chat")} />
@@ -393,6 +433,10 @@ export default function Home() {
             Kaynaklar için önce bir konu seç.
           </div>
         );
+      case "tutor":
+      case "chat":
+        // explicitly handle tutor/chat as standard ChatPanel
+        break;
       case "ide": {
         return (
           <SplitPane
@@ -470,7 +514,9 @@ export default function Home() {
 
       <div className="relative z-10 flex flex-1 overflow-hidden p-3 pl-0">
         <div className="flex-1 overflow-hidden rounded-[2rem] bg-[#f5f7f9]/90 shadow-sm border border-white/40 backdrop-blur-2xl ring-1 ring-[#526d82]/5 flex flex-col relative">
-          {renderMain()}
+          <Suspense fallback={<LoadingFallback />}>
+            {renderMain()}
+          </Suspense>
         </div>
       </div>
     </div>

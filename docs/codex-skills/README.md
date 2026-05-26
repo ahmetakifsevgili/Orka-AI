@@ -16,6 +16,8 @@ feature work. It can be converted into a Codex skill later if that becomes usefu
 - Backend/API/data changes: `backend-feature-constitution.md`
 - AI, RAG, Wiki, Chat, Korteks, provider, source/citation work: `ai-rag-feature-constitution.md`
 - Frontend API client, DTO, stream/sync, UI contract work: `frontend-contract-constitution.md`
+- Frontend generation pipeline or multi-agent frontend orchestration:
+  `../architecture/frontend-generation-pipeline-agent-blueprint.md`
 - New persistent data, Redis/cache/session/telemetry data, delete/privacy impact: `data-lifecycle-constitution.md`
 - Every feature plan and completion report: `testing-gate-constitution.md`
 

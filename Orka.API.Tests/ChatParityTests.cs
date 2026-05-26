@@ -314,12 +314,21 @@ public sealed class ChatParityTests
             Requests.Enqueue(request);
             return ValueTask.CompletedTask;
         }
+
+        public Task ProcessSynchronouslyAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default)
+        {
+            Requests.Enqueue(request);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class ThrowingPostProcessor : IChatTurnPostProcessor
     {
         public ValueTask ScheduleAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default) =>
             throw new InvalidOperationException("schedule failed");
+
+        public Task ProcessSynchronouslyAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default) =>
+            throw new InvalidOperationException("process failed");
     }
 
     private sealed class FakeDeepPlanAgent : IDeepPlanAgent
@@ -372,7 +381,8 @@ public sealed class ChatParityTests
             string agentResponse,
             string agentRole,
             Guid? topicId = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            Guid targetUserId = default)
         {
             CallCount++;
             if (Throw) throw new InvalidOperationException("evaluator failed");

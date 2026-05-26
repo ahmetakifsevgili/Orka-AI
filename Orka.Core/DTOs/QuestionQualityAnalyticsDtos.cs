@@ -51,7 +51,7 @@ public sealed class CentralExamQualityOverviewDto
 {
     public string ExamCode { get; set; } = string.Empty;
     public string? VariantCode { get; set; }
-    public string UserSafeLabel { get; set; } = "Orka icerik kapsami ve kalite sinyalleri; resmi mufredat tamamlama iddiasi degildir.";
+    public string UserSafeLabel { get; set; } = "Orka içerik kapsamı ve kalite sinyalleri; resmi müfredat tamamlama iddiası değildir.";
     public int VisibleQuestionCount { get; set; }
     public int PublishedQuestionCount { get; set; }
     public int AnalyticsSnapshotCount { get; set; }
@@ -81,7 +81,7 @@ public sealed class CentralExamBlueprintCoverageDto
 {
     public string ExamCode { get; set; } = string.Empty;
     public string? VariantCode { get; set; }
-    public string UserSafeLabel { get; set; } = "Orka icerik kapsami; resmi sinav kapsami veya basari tahmini degildir.";
+    public string UserSafeLabel { get; set; } = "Orka içerik kapsamı; resmi sınav kapsamı veya başarı tahmini değildir.";
     public int TopicCount { get; set; }
     public int NoContentCount { get; set; }
     public int LowContentCount { get; set; }

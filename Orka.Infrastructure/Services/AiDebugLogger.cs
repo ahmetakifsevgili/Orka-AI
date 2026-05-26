@@ -100,13 +100,17 @@ public static class AiDebugLogger
         }
     }
 
+    public static string? EnvironmentNameOverride { get; set; }
+    public static string? DebugLoggingOverride { get; set; }
+
     private static bool IsFileLoggingEnabled()
     {
-        if (!IsTrue(Environment.GetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING")))
+        var debugLogging = DebugLoggingOverride ?? Environment.GetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING");
+        if (!IsTrue(debugLogging))
             return false;
 
-        return IsDevelopment(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")) ||
-               IsDevelopment(Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"));
+        var env = EnvironmentNameOverride ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        return IsDevelopment(env);
     }
 
     private static bool IsDevelopment(string? value) =>

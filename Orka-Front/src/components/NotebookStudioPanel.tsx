@@ -13,6 +13,7 @@ import {
 import toast from "react-hot-toast";
 import RichMarkdown from "./RichMarkdown";
 import { AudioOverviewAPI, NotebookStudioAPI } from "@/services/api";
+import { useAudioOverviewPolling } from "@/hooks/useAudioOverviewPolling";
 import type { LearningArtifactDto, LearningNotebookPackDto, NotebookExportResultDto, NotebookSlideExportPreviewDto } from "@/lib/types";
 
 interface NotebookStudioPanelProps {
@@ -147,6 +148,9 @@ export default function NotebookStudioPanel({
   const [exportResult, setExportResult] = useState<NotebookExportResultDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { job: pollingAudioJob, loading: audioPolling, startPolling: startAudioPolling } = useAudioOverviewPolling();
+
+
 
   const refresh = async () => {
     setLoading(true);
@@ -271,6 +275,29 @@ export default function NotebookStudioPanel({
     () => artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null,
     [artifacts, selectedArtifactId]
   );
+
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let currentBlobUrl: string | null = null;
+    const isReady = pollingAudioJob?.status === "ready" || pollingAudioJob?.status === "completed";
+    const statusReady = selectedArtifact && getAudioStatus(selectedArtifact) === "ready";
+    const jobId = selectedArtifact ? getAudioJobId(selectedArtifact) : null;
+    
+    if (jobId && (isReady || statusReady)) {
+      AudioOverviewAPI.fetchBlob(jobId)
+        .then(url => {
+          currentBlobUrl = url;
+          setAudioBlobUrl(url);
+        })
+        .catch(console.error);
+    } else {
+      setAudioBlobUrl(null);
+    }
+    return () => {
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    };
+  }, [pollingAudioJob?.status, selectedArtifact]);
 
   const groupedArtifacts = useMemo(() => {
     const groups: Record<string, LearningArtifactDto[]> = {
@@ -575,14 +602,28 @@ export default function NotebookStudioPanel({
                       <Headphones className="h-3.5 w-3.5 text-[#47725d]" />
                       Audio overview
                       <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] text-[#667085]">
-                        {getAudioStatus(selectedArtifact) ?? "script-only"}
+                        {(audioPolling && pollingAudioJob?.id === getAudioJobId(selectedArtifact)) ? "hazırlanıyor..." : (pollingAudioJob?.id === getAudioJobId(selectedArtifact) && (pollingAudioJob?.status === "ready" || pollingAudioJob?.status === "completed")) ? "ready" : getAudioStatus(selectedArtifact) ?? "script-only"}
                       </span>
                     </div>
-                    {getAudioStatus(selectedArtifact) === "ready" ? (
-                      <audio controls src={AudioOverviewAPI.streamUrl(getAudioJobId(selectedArtifact)!)} className="w-full" />
+                    {(pollingAudioJob?.id === getAudioJobId(selectedArtifact) && (pollingAudioJob?.status === "ready" || pollingAudioJob?.status === "completed")) || getAudioStatus(selectedArtifact) === "ready" ? (
+                      <audio controls src={audioBlobUrl || ""} className="w-full" />
+                    ) : audioPolling && pollingAudioJob?.id === getAudioJobId(selectedArtifact) ? (
+                      <div className="flex items-center gap-2 text-[11px] font-semibold leading-5 text-sky-700">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Edge-TTS ses dosyası hazırlanıyor...
+                      </div>
                     ) : (
-                      <div className="text-[11px] font-semibold leading-5 text-[#8a6a33]">
-                        Ses dosyasi hazir degil; transcript ve tarayici TTS fallback kullanilabilir.
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-semibold leading-5 text-[#8a6a33]">
+                          Ses dosyasi hazir degil; transcript ve tarayici TTS fallback kullanilabilir.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => startAudioPolling(getAudioJobId(selectedArtifact)!)}
+                          className="rounded-lg border border-sky-500/20 bg-sky-500/8 px-2.5 py-1 text-[11px] font-bold text-sky-700 transition hover:bg-sky-500/15"
+                        >
+                          Durumu kontrol et
+                        </button>
                       </div>
                     )}
                   </div>

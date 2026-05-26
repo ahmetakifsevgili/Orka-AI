@@ -535,7 +535,9 @@ public class OrkaDbContext : DbContext
             .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<QuizAttempt>()
-            .HasIndex(qa => new { qa.UserId, qa.TopicId, qa.QuestionHash });
+            .HasIndex(qa => new { qa.UserId, qa.TopicId, qa.QuestionHash })
+            .IsUnique()
+            .HasFilter("[QuestionHash] IS NOT NULL");
 
         modelBuilder.Entity<QuizAttempt>()
             .Property(qa => qa.QuestionHash)
@@ -548,6 +550,11 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuizAttempt>()
             .Property(qa => qa.ConfidenceSelfRating)
             .HasPrecision(6, 4);
+
+        modelBuilder.Entity<QuizAttempt>()
+            .HasIndex(qa => new { qa.UserId, qa.QuizRunId, qa.AssessmentItemId })
+            .IsUnique()
+            .HasFilter("[QuizRunId] IS NOT NULL AND [AssessmentItemId] IS NOT NULL");
 
         modelBuilder.Entity<QuizAttempt>()
             .HasIndex(qa => new { qa.UserId, qa.TopicId, qa.SkillTag });
@@ -4982,5 +4989,63 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<CentralExamDenemeAnswer>()
             .HasIndex(a => new { a.ExamSectionId, a.ExamSubjectId, a.ExamTopicId, a.ExamOutcomeId });
+
+        // ── Global Soft-Delete Query Filters ──
+        // Prevents accidental queries returning deleted rows.
+        // Use .IgnoreQueryFilters() in queries that explicitly need deleted records.
+        modelBuilder.Entity<LearningSource>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceChunk>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<WikiPage>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<WikiBlock>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<WikiLink>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionAsset>().HasQueryFilter(e => !e.IsDeleted);
+
+        modelBuilder.Entity<QuestionContentVersion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionContentBlock>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionExplanation>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionOptionContentBlock>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionStimulus>().HasQueryFilter(e => !e.IsDeleted);
+
+        modelBuilder.Entity<QuestionOutcomeLink>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionImportPreview>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionImportPreviewItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceRegistryItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceVerificationRecord>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceEvidenceBundle>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceLifecycleEvent>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumVersion>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumNode>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CurriculumOutcomeMapping>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<OfficialClaimPolicy>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ContentLicenseReview>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamDefinition>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamVariant>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamSection>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamSubject>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamTopic>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamOutcome>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamScoringRule>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamTimeRule>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ExamContentPack>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamPracticeAttempt>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamDenemeBlueprint>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamDenemeBlueprintSection>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamDenemeAttempt>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<LearningArtifact>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<LearningNotebookPack>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<LearningPlanQualitySnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<KorteksResearchWorkflow>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ToolRuntimeTrace>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<AssessmentQualitySnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ActiveLessonSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<StudentContextSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionItemAnalyticsSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionOptionAnalyticsSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionPublishReadinessSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionQualityReviewSignal>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionReviewEvent>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionReviewWorkflow>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>().HasQueryFilter(e => !e.IsDeleted);
     }
 }

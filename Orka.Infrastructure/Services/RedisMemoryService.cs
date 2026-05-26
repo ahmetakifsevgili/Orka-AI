@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -225,16 +226,40 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
+    // ── PII Scrubbing — Redis'e yazılan kullanıcı/ajan metinlerinde PII temizliği ──
+
+    private static string ScrubPii(string text, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var s = text.Trim();
+        // Email
+        s = Regex.Replace(s, @"[\w.+-]+@[\w-]+\.[\w.]+", "[redacted_email]", RegexOptions.None, TimeSpan.FromMilliseconds(500));
+        // Phone
+        s = Regex.Replace(s, @"\+?\d[\d\s\-()]{7,14}\d", "[redacted_phone]", RegexOptions.None, TimeSpan.FromMilliseconds(500));
+        // Windows paths
+        s = Regex.Replace(s, @"[A-Za-z]:\\[^\s,;]+", "[redacted_path]", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        // Unix paths
+        s = Regex.Replace(s, @"/(?:home|users|var|tmp|workspace|app)/[^\s,;]+", "[redacted_path]", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        // Credentials
+        s = Regex.Replace(s, @"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['""]?[^'""\s,;]+", "[redacted_credential]", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        return s.Length <= maxLength ? s : s[..maxLength];
+    }
+
     // ── Faz 12: Dynamic Few-Shot — Altın Örnek Kütüphanesi ──────────────────
 
-    public async Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score)
+    public async Task SaveGoldExampleAsync(Guid userId, Guid topicId, string userMessage, string agentResponse, int score)
     {
         try
         {
-            var key     = $"orka:gold:{topicId}";
+            var key     = $"orka:gold:{userId}:{topicId}";
+            var scrubbedUser = ScrubPii(userMessage, 100000);
+            var truncatedUser = scrubbedUser.Length > 300 ? scrubbedUser[..300] + "..." : scrubbedUser;
+            var scrubbedAgent = ScrubPii(agentResponse, 100000);
+            var truncatedAgent = scrubbedAgent.Length > 800 ? scrubbedAgent[..800] + "..." : scrubbedAgent;
+
             var payload = JsonSerializer.Serialize(new GoldExample(
-                UserMessage:   userMessage.Length > 300 ? userMessage[..300] + "..." : userMessage,
-                AgentResponse: agentResponse.Length > 800 ? agentResponse[..800] + "..." : agentResponse,
+                UserMessage:   truncatedUser,
+                AgentResponse: truncatedAgent,
                 Score:         score,
                 CreatedAt:     DateTime.UtcNow.ToString("O")
             ));
@@ -252,11 +277,11 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
-    public async Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2)
+    public async Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid userId, Guid topicId, int count = 2)
     {
         try
         {
-            var key   = $"orka:gold:{topicId}";
+            var key   = $"orka:gold:{userId}:{topicId}";
             var items = await _db.ListRangeAsync(key, 0, count - 1);
 
             return items
@@ -1025,7 +1050,7 @@ public class RedisMemoryService : IRedisMemoryService
         try
         {
             var key = $"orka:student_profile:{topicId}";
-            var record = new StudentProfileRecord(understandingScore, weaknesses ?? string.Empty, DateTime.UtcNow);
+            var record = new StudentProfileRecord(understandingScore, ScrubPii(weaknesses ?? string.Empty, 500), DateTime.UtcNow);
 
             // Konu bazında sadece en güncel profili tek record olarak tutmak isteyebiliriz.
             // Ama zaman içerisindeki değişimi anlamak için liste de tutulabilir.

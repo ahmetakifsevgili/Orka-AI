@@ -1,0 +1,175 @@
+using Microsoft.Extensions.DependencyInjection;
+using Orka.Core.Interfaces;
+using Orka.Infrastructure.Services;
+using Orka.API.Services;
+
+namespace Orka.API.Extensions
+{
+    public static class LearningOsExtensions
+    {
+        public static IServiceCollection AddLearningOs(this IServiceCollection services)
+        {
+            // Services
+            services.AddScoped<IRedisMemoryService, RedisMemoryService>();
+            services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<ITopicService, TopicService>();
+            services.AddScoped<ITopicScopeResolver, TopicScopeResolver>();
+            services.AddScoped<ITopicProgressPropagator, TopicProgressPropagator>();
+            services.AddScoped<IDataLifecycleService, DataLifecycleService>();
+            services.AddScoped<IContextBuilder, ContextBuilder>();
+            services.AddScoped<IWikiService, WikiService>();
+            services.AddScoped<IWikiLearningTraceWriter, WikiLearningTraceWriter>();
+            services.AddScoped<IWikiAutoCurationService, WikiAutoCurationService>();
+            services.AddScoped<IWikiCopilotService, WikiCopilotService>();
+            services.AddScoped<ITopicDetectorService, TopicDetectorService>();
+            services.AddScoped<SessionService>();
+
+            // Router
+            services.AddScoped<IRouterService, RouterService>();
+
+            // Agent Orchestration
+            services.AddScoped<IAgentOrchestrator, AgentOrchestratorService>();
+            services.AddScoped<IChatTurnPostProcessor, ChatTurnPostProcessor>();
+            services.AddScoped<ITutorAgent, TutorAgent>();
+            services.AddScoped<IAnalyzerAgent, AnalyzerAgent>();
+            services.AddScoped<ISummarizerAgent, SummarizerAgent>();
+            services.AddScoped<IQuizAgent, QuizAgent>();
+            services.AddScoped<IDeepPlanAgent, DeepPlanAgent>();
+            services.AddScoped<IPlanResearchCompressor, PlanResearchCompressor>();
+            services.AddScoped<IAdaptiveLearningContextBuilder, AdaptiveLearningContextBuilder>();
+            services.AddScoped<IQuizAttemptRecorder, QuizAttemptRecorder>();
+            services.AddScoped<IPlanDiagnosticStateStore, RedisPlanDiagnosticStateStore>();
+            services.AddScoped<IPlanDiagnosticService, PlanDiagnosticService>();
+            services.AddScoped<IStudyIntentAnalyzer, StudyIntentAnalyzer>();
+            services.AddScoped<IConceptGraphBuilder, ConceptGraphBuilder>();
+            services.AddScoped<IConceptGraphQualityService, ConceptGraphQualityService>();
+            services.AddScoped<IAssessmentGrammarEngine, AssessmentGrammarEngine>();
+            services.AddScoped<IAssessmentQualityService, AssessmentQualityService>();
+            services.AddScoped<IAssessmentBlueprintService, AssessmentBlueprintService>();
+            services.AddScoped<IAssessmentCalibrationService, AssessmentCalibrationService>();
+            services.AddScoped<IAdaptiveAssessmentSelector, AdaptiveAssessmentSelector>();
+            services.AddScoped<IAdaptiveAssessmentSessionService, AdaptiveAssessmentSessionService>();
+            services.AddScoped<IDiagnosticProfileBuilder, DiagnosticProfileBuilder>();
+            services.AddScoped<IConceptMasteryService, ConceptMasteryService>();
+            services.AddScoped<IKnowledgeTracingService, KnowledgeTracingService>();
+            services.AddScoped<ILearningMemoryService, LearningMemoryService>();
+            services.AddScoped<IActiveLessonSnapshotService, ActiveLessonSnapshotService>();
+            services.AddScoped<IUnifiedToolRuntimeService, UnifiedToolRuntimeService>();
+            services.AddScoped<ILearningRuntimeTelemetryService, LearningRuntimeTelemetryService>();
+            services.AddScoped<IAgenticTrustPolicyService, AgenticTrustPolicyService>();
+            services.AddScoped<IKorteksSynthesisService, KorteksSynthesisService>();
+            services.AddScoped<IAdaptiveStudyPlannerService, AdaptiveStudyPlannerService>();
+            services.AddScoped<ILongTermAdaptiveLearningService, LongTermAdaptiveLearningService>();
+            services.AddScoped<IOrkaLearningStateService, OrkaLearningStateService>();
+            services.AddScoped<IOrkaMissionControlService, OrkaMissionControlService>();
+            services.AddScoped<IOrkaStudyCoachService, OrkaStudyCoachService>();
+            services.AddScoped<IOrkaExamWarRoomService, OrkaExamWarRoomService>();
+            services.AddScoped<IOrkaSourceWikiProService, OrkaSourceWikiProService>();
+            services.AddScoped<IOrkaStudyRoomService, OrkaStudyRoomService>();
+            services.AddScoped<IOrkaNotebookStudioProService, OrkaNotebookStudioProService>();
+            services.AddScoped<IOrkaCodeLearningIdeService, OrkaCodeLearningIdeService>();
+            services.AddScoped<IOrkaUnifiedEvaluationService, OrkaUnifiedEvaluationService>();
+            services.AddScoped<IPlanSequencingService, PlanSequencingService>();
+            services.AddScoped<IExamFrameworkService, ExamFrameworkService>();
+            services.AddScoped<IQuestionBankService, QuestionBankService>();
+            services.AddScoped<IQuestionImportService, QuestionImportService>();
+            services.AddScoped<IQuestionDraftGenerationService, QuestionDraftGenerationService>();
+            services.AddScoped<IContentOperationsService, ContentOperationsService>();
+            services.AddScoped<ICurriculumSourceRegistryService, CurriculumSourceRegistryService>();
+            services.AddScoped<ICentralExamStudyService, CentralExamStudyService>();
+            services.AddScoped<IExamLearningProfileService, ExamLearningProfileService>();
+            services.AddScoped<ICentralExamDenemeService, CentralExamDenemeService>();
+            services.AddScoped<IQuestionQualityAnalyticsService, QuestionQualityAnalyticsService>();
+            services.AddScoped<ILearningEventSchemaService, LearningEventSchemaService>();
+            services.AddScoped<ILearningEventNormalizer, LearningEventNormalizer>();
+            services.AddScoped<ITutorPolicyEngine, TutorPolicyEngine>();
+            services.AddScoped<ITutorResponsePolicyService, TutorResponsePolicyService>();
+            services.AddScoped<ITutorPolicyTraceService, TutorPolicyTraceService>();
+            services.AddScoped<ILearningStyleSignalService, LearningStyleSignalService>();
+            services.AddScoped<IAffectiveSignalService, AffectiveSignalService>();
+            services.AddScoped<ICognitiveLoadService, CognitiveLoadService>();
+            services.AddScoped<ILearnerProfileService, LearnerProfileService>();
+            services.AddScoped<ITutorWorkingMemoryService, TutorWorkingMemoryService>();
+            services.AddScoped<ITutorTraceProjectionService, TutorTraceProjectionService>();
+            services.AddScoped<ITutorTurnStateAssembler, TutorTurnStateAssembler>();
+            services.AddScoped<ITutorActionPlanner, TutorActionPlanner>();
+            services.AddScoped<ITutorToolOrchestrator, TutorToolOrchestrator>();
+            services.AddScoped<ILearningArtifactService, LearningArtifactService>();
+            services.AddScoped<ILearningNotebookStudioService, LearningNotebookStudioService>();
+            services.AddScoped<INotebookExportService, NotebookExportService>();
+            services.AddScoped<ITeachingArtifactService, TeachingArtifactService>();
+            services.AddScoped<ITutorReflectionService, TutorReflectionService>();
+            services.AddScoped<ITutorPedagogyRubricService, TutorPedagogyRubricService>();
+            services.AddScoped<ITutorPedagogyQualityGate, TutorPedagogyQualityGate>();
+            services.AddScoped<ITutorPedagogyFeedbackService, TutorPedagogyFeedbackService>();
+            services.AddScoped<ITutorPedagogyEvaluationService, TutorPedagogyEvaluationService>();
+            services.AddScoped<ITutorGoldenScenarioService, TutorGoldenScenarioService>();
+            services.AddScoped<IResourceConceptAlignmentService, ResourceConceptAlignmentService>();
+            services.AddScoped<ILearningQualityReportService, LearningQualityReportService>();
+            services.AddScoped<IRagEvaluationService, RagEvaluationService>();
+            services.AddScoped<ITutorMemoryFragmentService, TutorMemoryFragmentService>();
+            services.AddScoped<ITeachingEvidenceRouter, TeachingEvidenceRouter>();
+            services.AddScoped<IRealWorldEvidenceService, RealWorldEvidenceService>();
+            services.AddScoped<IWikiEvidenceService, WikiEvidenceService>();
+            services.AddScoped<IWikiAnswerPolicyEngine, WikiAnswerPolicyEngine>();
+            services.AddScoped<IWikiCitationGuard, WikiCitationGuard>();
+            services.AddScoped<IWikiArtifactService, WikiArtifactService>();
+            services.AddScoped<IWikiLearningAssistant, WikiLearningAssistant>();
+            services.AddScoped<ISourceEvidenceLifecycleService, SourceEvidenceLifecycleService>();
+            services.AddScoped<ITextHealthService, TextHealthService>();
+            services.AddScoped<IKorteksAgent, KorteksAgent>();
+            services.AddScoped<ISupervisorAgent, SupervisorAgent>();
+            services.AddScoped<IGraderAgent, GraderAgent>();
+            services.AddScoped<IEvaluatorAgent, EvaluatorAgent>();
+            services.AddScoped<ISkillMasteryService, SkillMasteryService>();
+            services.AddScoped<IIntentClassifierAgent, IntentClassifierAgent>();
+            services.AddScoped<IEducatorCoreService, EducatorCoreService>();
+            services.AddScoped<ILearningSourceService, LearningSourceService>();
+            services.AddScoped<ISourceConceptLinkingService, SourceConceptLinkingService>();
+            services.AddScoped<ISourceQuestionService, SourceQuestionService>();
+            services.AddScoped<ISourceCompareService, SourceCompareService>();
+            services.AddScoped<ISourceQuestionThreadService, SourceQuestionThreadService>();
+            services.AddScoped<ISourceWikiIntelligenceService, SourceWikiIntelligenceService>();
+            services.AddScoped<IAudioOverviewService, AudioOverviewService>();
+            services.AddScoped<ILearningSignalService, LearningSignalService>();
+            services.AddScoped<IClassroomService, ClassroomService>();
+            services.AddScoped<IEdgeTtsService, EdgeTtsService>();
+            services.AddScoped<IReviewSrsService, ReviewSrsService>();
+            services.AddScoped<IFlashcardService, FlashcardService>();
+            services.AddScoped<IDailyChallengeService, DailyChallengeService>();
+            services.AddScoped<IXpEventService, XpEventService>();
+            services.AddScoped<INotificationService, NotificationService>();
+            services.AddScoped<IPushDeliveryService, PushDeliveryService>();
+            services.AddScoped<ISrsReminderWorkerService, SrsReminderWorkerService>();
+            services.AddScoped<IDailyChallengeWorkerService, DailyChallengeWorkerService>();
+            services.AddScoped<IChatMetadataService, ChatMetadataService>();
+            services.AddScoped<IToolCapabilityService, ToolCapabilityService>();
+            services.AddScoped<IRuntimeTelemetryService, RuntimeTelemetryService>();
+            services.AddScoped<IAiProviderTelemetryService, AiProviderTelemetryService>();
+            services.AddScoped<IAiUsageBudgetService, AiUsageBudgetService>();
+            services.AddScoped<ICostAggregationService, CostAggregationService>();
+            services.AddSingleton<IAiProviderCircuitBreaker, AiProviderCircuitBreaker>();
+            services.AddSingleton<IAiRequestContextAccessor, AsyncLocalAiRequestContextAccessor>();
+            services.AddScoped<IStandardsAlignmentService, StandardsAlignmentService>();
+            services.AddScoped<IStandardsValidationService, StandardsValidationService>();
+            services.AddScoped<IStandardsExportService, StandardsExportService>();
+            services.AddScoped<IProviderGovernanceService, ProviderGovernanceService>();
+            services.AddScoped<IRetentionCleanupService, RetentionCleanupService>();
+            services.AddScoped<IRedisStreamMaintenanceService, RedisStreamMaintenanceService>();
+            services.AddScoped<IDbIndexAuditService, DbIndexAuditService>();
+            services.AddScoped<IV1RegressionGateService, V1RegressionGateService>();
+            services.AddScoped<IProductionReadinessService, ProductionReadinessService>();
+            services.AddScoped<IWolframProvider, WolframProvider>();
+            services.AddScoped<INewsProvider, NewsProvider>();
+            services.AddScoped<IWeatherProvider, WeatherProvider>();
+            services.AddScoped<IGeocodingProvider, GeocodingProvider>();
+            services.AddScoped<IMarketDataProvider, MarketDataProvider>();
+            services.AddScoped<IVisualArtifactProvider, VisualArtifactProvider>();
+            services.AddScoped<IMistakeClassifierService, MistakeClassifierService>();
+            services.AddScoped<IYouTubeTranscriptProvider, YouTubeTranscriptProvider>();
+            services.AddScoped<IYouTubeTeachingReferenceService, YouTubeTeachingReferenceService>();
+
+            return services;
+        }
+    }
+}

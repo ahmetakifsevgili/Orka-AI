@@ -140,7 +140,9 @@ public sealed class AssessmentCalibrationService : IAssessmentCalibrationService
     internal static void ApplyCalibration(AssessmentItemStat stat)
     {
         stat.DifficultyEstimate = Clamp(Math.Round(1m - stat.CorrectRate, 4), 0.05m, 0.95m);
-        stat.DiscriminationEstimate = Clamp(Math.Round(Math.Abs(stat.CorrectRate - 0.50m) * 2m - stat.SkipRate * 0.35m, 4), 0m, 1m);
+        // Point-Biserial binomial variance proxy to avoid discrimination inversion:
+        decimal varianceFactor = 4m * stat.CorrectRate * (1m - stat.CorrectRate); // Peak at 1.0 when CorrectRate = 0.5
+        stat.DiscriminationEstimate = Clamp(Math.Round(varianceFactor * (1m - stat.SkipRate), 4), 0m, 1m);
         stat.CalibrationStatus = stat.Attempts < 3
             ? "usable_low_evidence"
             : stat.QualityStatus == "healthy" && stat.DiscriminationEstimate >= 0.10m
@@ -282,7 +284,7 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
                 var confidence = state?.Confidence ?? 0.20m;
                 var uncertainty = 1m - Math.Abs(mastery - 0.50m) * 2m;
                 var weakBoost = mastery < 0.65m || confidence < 0.60m ? 0.25m : 0m;
-                var qualityScore = ItemQualityScore(stat, item);
+                var qualityScore = ItemQualityScore(stat, item, mastery);
                 var exposurePenalty = Math.Min(0.35m, (stat?.ExposureCount ?? 0) * 0.03m);
                 var score = Math.Round(uncertainty * 0.45m + weakBoost + qualityScore * 0.35m - exposurePenalty, 4);
                 return new
@@ -495,12 +497,12 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
         return "micro_quiz";
     }
 
-    private static decimal ItemQualityScore(AssessmentItemStat? stat, AssessmentItem item)
+    private static decimal ItemQualityScore(AssessmentItemStat? stat, AssessmentItem item, decimal mastery = 0.50m)
     {
         if (stat == null) return 0.45m;
         var statusBoost = stat.CalibrationStatus == "healthy" ? 0.25m : stat.CalibrationStatus == "usable_low_evidence" ? 0.10m : -0.10m;
         var discrimination = stat.DiscriminationEstimate == 0m ? Math.Abs(stat.DiscriminationProxy) : stat.DiscriminationEstimate;
-        var difficultyFit = 1m - Math.Abs((stat.DifficultyEstimate == 0m ? AssessmentCalibrationService.DifficultyFromBand(item.Difficulty) : stat.DifficultyEstimate) - 0.50m);
+        var difficultyFit = 1m - Math.Abs((stat.DifficultyEstimate == 0m ? AssessmentCalibrationService.DifficultyFromBand(item.Difficulty) : stat.DifficultyEstimate) - mastery);
         return Math.Clamp(Math.Round(0.35m + discrimination * 0.30m + difficultyFit * 0.20m + statusBoost, 4), 0m, 1m);
     }
 
@@ -765,9 +767,16 @@ public sealed class AdaptiveAssessmentSessionService : IAdaptiveAssessmentSessio
             .AsNoTracking()
             .Where(s => s.UserId == session.UserId && s.TopicId == session.TopicId && targets.Contains(s.ConceptKey))
             .ToListAsync(ct);
-        return states.Count > 0 && states.All(s => s.EvidenceCount >= 3 && s.Confidence >= 0.60m)
-            ? "evidence_sufficient"
-            : string.Empty;
+        
+        if (states.Count > 0 && states.All(s => s.EvidenceCount >= 3 && s.Confidence >= 0.60m))
+        {
+            if (states.Any(s => s.IncorrectCount >= 2 || s.MasteryProbability < 0.50m))
+            {
+                return "remediation_required";
+            }
+            return "evidence_sufficient";
+        }
+        return string.Empty;
     }
 
     private async Task CompleteAsync(AdaptiveAssessmentSession session, string reason, CancellationToken ct)

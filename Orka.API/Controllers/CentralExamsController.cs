@@ -12,10 +12,17 @@ namespace Orka.API.Controllers;
 public sealed class CentralExamsController : ControllerBase
 {
     private readonly ICentralExamStudyService _centralExams;
+    private readonly IExamLearningProfileService _examLearningProfile;
+    private readonly IOrkaExamWarRoomService _examWarRoom;
 
-    public CentralExamsController(ICentralExamStudyService centralExams)
+    public CentralExamsController(
+        ICentralExamStudyService centralExams,
+        IExamLearningProfileService examLearningProfile,
+        IOrkaExamWarRoomService examWarRoom)
     {
         _centralExams = centralExams;
+        _examLearningProfile = examLearningProfile;
+        _examWarRoom = examWarRoom;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -57,6 +64,42 @@ public sealed class CentralExamsController : ControllerBase
     public async Task<ActionResult<CentralExamCountdownDto>> GetKpssCountdown([FromQuery] string? variantCode, CancellationToken ct)
     {
         return Ok(await _centralExams.GetKpssCountdownAsync(GetUserId(), variantCode, ct));
+    }
+
+    [HttpGet("{examCode}/learning-profile")]
+    public async Task<ActionResult<ExamLearningProfileDto>> GetExamLearningProfile(
+        string examCode,
+        [FromQuery] string? variantCode,
+        [FromQuery] Guid? examTopicId,
+        [FromQuery] Guid? examOutcomeId,
+        CancellationToken ct)
+    {
+        var profile = await _examLearningProfile.BuildProfileAsync(
+            GetUserId(),
+            examCode,
+            variantCode,
+            examTopicId,
+            examOutcomeId,
+            ct);
+        return profile is null ? NotFound() : Ok(profile);
+    }
+
+    [HttpGet("{examCode}/war-room")]
+    public async Task<ActionResult<OrkaExamWarRoomDto>> GetExamWarRoom(
+        string examCode,
+        [FromQuery] string? variantCode,
+        [FromQuery] Guid? examTopicId,
+        [FromQuery] Guid? examOutcomeId,
+        CancellationToken ct)
+    {
+        var warRoom = await _examWarRoom.BuildWarRoomAsync(
+            GetUserId(),
+            examCode,
+            variantCode,
+            examTopicId,
+            examOutcomeId,
+            ct);
+        return warRoom is null ? NotFound() : Ok(warRoom);
     }
 
     [HttpGet("kpss/turkce-paragraf")]

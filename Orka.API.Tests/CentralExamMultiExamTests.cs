@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using AnyAscii;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orka.Core.DTOs;
@@ -63,7 +64,7 @@ public sealed class CentralExamMultiExamTests
             Assert.Null(home.RecommendedEntryPoint);
             Assert.NotEmpty(home.SupportedVariants);
             Assert.NotEmpty(home.Sections);
-            Assert.Contains("resmi mufredat iddiasi degildir", home.EmptyState, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("resmi mufredat iddiasi degildir", home.EmptyState.Transliterate(), StringComparison.OrdinalIgnoreCase);
         }
     }
 

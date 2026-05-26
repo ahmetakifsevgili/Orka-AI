@@ -42,10 +42,12 @@ public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
             isCorrect = false,
             explanation = "Payda eşitleme eksik.",
             skillTag = "kesirlerde-payda-esitleme",
+            conceptKey = "safe-fractions",
             topicPath = "Matematik > Kesirler > Payda eşitleme",
             difficulty = "orta",
             cognitiveType = "uygulama",
-            questionHash = "smoke-fractions-001"
+            questionHash = "smoke-fractions-001",
+            sourceRefsJson = """{"sourceReadiness":"source_limited","rawSourceRefs":"should-not-be-public"}"""
         });
         quiz.EnsureSuccessStatusCode();
 
@@ -58,6 +60,10 @@ public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
 
         var history = await _client.GetStringAsync($"/api/quiz/history/{topicId}");
         Assert.Contains("smoke-fractions-001", history);
+        Assert.Contains("safe-fractions", history);
+        Assert.Contains("source_limited", history);
+        Assert.DoesNotContain("sourceRefsJson", history, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawSourceRefs", history, StringComparison.OrdinalIgnoreCase);
 
         var signal = await _client.PostAsJsonAsync("/api/learning/signal", new
         {

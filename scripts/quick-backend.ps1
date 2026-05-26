@@ -1,8 +1,16 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$commit = "unknown"
+$branch = "unknown"
+try {
+    $commit = (git rev-parse HEAD 2>$null).Trim()
+    $branch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+} catch {}
+Write-Host "[quick-backend] Active Git Branch: $branch | Commit: $commit"
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
 $lifeTestFilter = "BackendLifeTests|PedagogicalReleaseClosureTests"
+$productCoherenceFilter = "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests"
 $regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|ProductionSafetyLiteTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
 $coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 
@@ -51,6 +59,13 @@ Write-Host "[quick-backend] Running backend lifetest release proof..."
     -WorkingDirectory $root `
     -FilePath $dotnet `
     -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $lifeTestFilter, "--blame-hang", "--blame-hang-timeout", "45s")
+
+Write-Host "[quick-backend] Running product coherence release proof..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 300 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $productCoherenceFilter, "--blame-hang", "--blame-hang-timeout", "60s")
 
 Write-Host "[quick-backend] Running stabilization regression baseline..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `

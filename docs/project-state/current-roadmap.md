@@ -10,6 +10,10 @@ Pedagogical Productization - in progress
 
 Backend Release Hardening - in progress
 
+Learning OS Feature Completion - in progress
+
+Orka Product Coherence - in progress
+
 ## Completed Phases
 
 - V1 system-life
@@ -130,6 +134,133 @@ Backend Release Hardening - in progress
     - Uses deterministic smoke services only; no paid provider calls, Stripe calls, OpenAI migration, real PPTX/video, Realtime, or graph-canvas scope is added.
     - Stripe/payment code was not found in the audited repo surface, so payment release safety is not applicable for this phase.
     - Remaining pedagogical backlog: live provider pedagogy E2E proof, human-reviewed advanced Tutor evaluation harness, long-term adaptive syllabus optimization, optional graph canvas, optional semantic multi-source synthesis, optional real PPTX/video/Realtime voice.
+
+12. Learning OS Feature Completion - implemented pending full validation
+  - Phase 1 - Long-Term Adaptive Learning Engine - implemented pending full validation
+    - Adds a deterministic `ILongTermAdaptiveLearningService` that derives long-term learner profile, concept state, review pressure, next study actions, and weekly rhythm from existing durable evidence.
+    - Reuses existing quiz attempts, knowledge tracing, concept mastery, SRS review items, learning signals, Wiki repair notes, and source evidence bundles; no migration is required.
+    - Tracks safe concept states such as new, learning, weak, repaired, stable, due for review, and likely forgotten.
+    - Tutor next actions and dashboard now consume the long-term adaptive profile through bounded safe DTOs.
+    - One correct answer does not mark mastery stable; repeated correct answers can reduce pressure; repeated wrong or blank/skipped answers trigger cautious repair/prerequisite review.
+    - Stale or insufficient source evidence creates source-review warnings without treating provider text or Wiki memory as source evidence.
+    - No new AI/provider calls, paid calls, Google Cloud, OpenAI Responses/Agents migration, medical/psychological claims, or exam success guarantees were added.
+  - Phase 2 - Exam & Curriculum Depth Pack - implemented pending full validation
+    - Adds deterministic `IExamLearningProfileService` / `ExamLearningProfileService` on top of the existing exam framework, question bank, practice attempts, mini-deneme attempts, curriculum mappings, and source verification metadata.
+    - Exam prep now exposes safe outcome readiness, question type readiness, weak/due/stable outcomes, exam next actions, and coverage/source warnings.
+    - Repeated wrong answers trigger outcome repair; repeated blank answers trigger diagnostic/prerequisite review without fake misconception certainty; repeated success can mark an outcome stable without success guarantees.
+    - Deneme mistake clusters can create `review_deneme_mistakes`; thin question coverage creates `question_coverage_limited`; unverified curriculum/source state creates honest source warnings.
+    - Central Exams, Dashboard, and Tutor next-action metadata consume the exam profile through bounded DTOs with no raw prompts, provider payloads, source chunks, owner/user ids, or pre-submit answer keys.
+    - No scraping, official curriculum/exam alignment claim, success guarantee, new AI/provider call, OpenAI API migration, migration, frontend redesign, teacher/classroom/dershane workflow, or payment feature was added.
+  - Phase 3 - Source/Wiki Intelligence Deepening - implemented pending full validation
+    - Adds deterministic `ISourceWikiIntelligenceService` / `SourceWikiIntelligenceService` over existing source lifecycle, source-to-concept links, source Q&A memory, citation review, Wiki curation, and Wiki page health.
+    - Source/Wiki now exposes one safe profile for source readiness, citation readiness, Wiki repair/source-limited/stale state, linked concepts, source Q&A review pressure, warnings, and next actions.
+    - Dashboard and Tutor next-action metadata consume this profile through bounded DTOs; raw source chunks, Wiki block bodies, prompts, provider payloads, tool/debug payloads, owner/user ids, paths, stack traces, and answer keys are not exposed.
+    - Provider output and Wiki memory are still not treated as citation evidence; source-grounded claims remain blocked when evidence is stale, insufficient, deleted, degraded, or citation review needs attention.
+    - No scraping, official/source-grounded overclaim, success guarantee, new AI/provider call, OpenAI API migration, migration, frontend redesign, teacher/classroom/dershane workflow, or payment feature was added.
+  - Phase 4 - Student Simulation & Evaluation Harness - implemented pending full validation
+    - Adds a deterministic provider-free student simulation harness in API tests, not a public diagnostic endpoint.
+    - Scenario pack covers new learner, repeated wrong learner, blank/skipped learner, improving learner, forgotten/due-review learner, exam prep learner, source/wiki learner, and mixed Learning OS journey.
+    - Evaluation scorecard checks long-term learning, exam profile, source/wiki profile, Tutor next actions, dashboard consistency, Wiki curation, privacy, overclaim safety, and cross-user protection through reason-code based pass/fail checks.
+    - Serialized public simulation payloads are swept for raw prompt/provider/source/tool/debug markers, local paths, secrets, owner/user ids, stack traces, answer keys, arbitrary learner text, and arbitrary source text.
+    - No AI judge, paid provider call, official/source-grounded/success guarantee, new AI/provider call, OpenAI API migration, migration, frontend redesign, mobile app, teacher/classroom/dershane workflow, or payment feature was added.
+  - Closure decision:
+    - Learning OS Feature Completion 1-4 is ready to close after the Phase 4 validation gate passes locally.
+
+13. Orka Product Coherence - in progress
+  - Phase 1 - Orka OS Binding Layer / Unified Learning State - implemented pending full validation
+    - Adds deterministic `IOrkaLearningStateService` / `OrkaLearningStateService` as the central safe backend contract over long-term adaptive learning, exam learning profile, source/wiki intelligence, quiz/mastery/review evidence, Wiki repair state, source lifecycle, and personal Study Room/Classroom readiness.
+    - Adds `OrkaLearningStateDto`, `OrkaUnifiedNextActionDto`, `OrkaLearningSignalSummaryDto`, `OrkaFeatureReadinessDto`, and `OrkaLearningStateConflictDto` so future Home/Mission Control surfaces can read one compact state object instead of stitching module-specific rules.
+    - Adds `/api/learning/orka-state` and includes the unified state in `/api/dashboard/today`.
+    - `TutorResponsePolicyService` now consumes the unified next action and conflict/safety warnings before adding Tutor next-action metadata.
+    - Unified arbitration can choose safe actions such as diagnostic, repair, review, source/citation review, exam practice, Study Room, flashcards, Wiki note update, or plan continuation from existing evidence only.
+    - Conflict detection surfaces bounded reason codes such as `next_action_conflict`, `source_grounding_blocked`, `exam_learning_conflict`, `missing_topic_context`, and `thin_evidence`.
+    - Study Room/Classroom remains a personal AI study room signal, not teacher/classroom/dershane management.
+    - No new AI/provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, migration, frontend redesign, official/success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 2 - Orka Home / Mission Control Backend - implemented pending full validation
+    - Adds deterministic `IOrkaMissionControlService` / `OrkaMissionControlService` on top of the unified Orka learning state.
+    - Adds `OrkaMissionControlDto`, `OrkaTodayMissionDto`, `OrkaMissionActionDto`, `OrkaMissionSectionDto`, `OrkaMissionModuleCardDto`, and `OrkaMissionWarningDto`.
+    - Adds `/api/learning/mission-control` and includes `MissionControl` in `/api/dashboard/today`.
+    - Mission Control exposes one primary mission, primary entry point, secondary actions, urgent warnings, today focus, review/repair/exam/source-wiki load, Study Room suggestion, module cards, sections, evidence confidence, safe reason codes, and a bounded user-safe summary.
+    - Mission prioritization respects source-grounding blocks, repeated wrong/prerequisite repair, blank/skipped guided diagnostic, due review, weak exam outcomes, source/wiki warnings, checkpoint quiz, plan continuation, and optional Notebook/Wiki cleanup.
+    - Module cards cover Tutor, Study Room, Review, Exam, Sources, Wiki, Notebook Studio, Quiz/Checkpoint, and Progress as handoffs only; Study Room/Classroom remains a personal AI study room, not teacher/classroom/dershane management.
+    - `StudentSimulationEvaluationTests` now sweeps Mission Control payloads and checks that the mixed Learning OS journey includes the Home contract.
+    - No new AI/provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, migration, frontend redesign, official/success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 3 - Study Rhythm Coach / Life-Study Coach Backend - implemented pending full validation
+    - Adds deterministic `IOrkaStudyCoachService` / `OrkaStudyCoachService` on top of unified Orka learning state and Mission Control.
+    - Adds `OrkaStudyCoachDto`, workload, focus plan, comeback plan, action, and warning DTOs.
+    - Adds `/api/learning/study-coach` and includes `StudyCoach` in `/api/dashboard/today`.
+    - Study Coach answers how hard/how long/in what rhythm to study; Mission Control still answers what to do first.
+    - Pacing can return light, normal, focused, repair-heavy, review-heavy, exam-heavy, source-cleanup, comeback, or thin-evidence rhythm from existing review, repair, exam, source/wiki, Study Room, and activity evidence.
+    - Comeback planning is practical study pacing only; it does not make therapy, psychology, medical, wellbeing, ADHD, burnout, or diagnosis claims.
+    - Study Room/Classroom remains a personal AI study room handoff, not teacher/classroom/dershane management.
+    - No new AI/provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, official/success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 4 - Exam War Room Backend - implemented pending full validation
+    - Adds deterministic `IOrkaExamWarRoomService` / `OrkaExamWarRoomService` on top of the existing exam learning profile, unified Orka state, Mission Control, and Study Coach.
+    - Adds `OrkaExamWarRoomDto` and compact subject/topic/outcome/practice/deneme/action/warning DTOs for the future Exam War Room UI.
+    - Adds `/api/central-exams/{examCode}/war-room` and includes `ExamWarRoom` in `/api/dashboard/today`.
+    - Exam War Room exposes active exam, readiness status, weak/due/stable outcomes, weak question types, deneme mistake clusters, recommended practice queue, today exam mission, weekly exam plan, Tutor repair handoffs, personal Study Room handoffs when safe topic context exists, source/wiki warnings, curriculum coverage warnings, and conflict warnings.
+    - Deneme mistake clusters create `review_deneme_mistakes`; repeated wrong creates `repair_exam_outcome`; repeated blank/skipped creates `run_exam_diagnostic`; due outcomes create `review_due_outcome`; stable repeated success can expose low-priority `continue_exam_plan`.
+    - Source/curriculum verification limits create honest warnings such as `source_unverified`, `source_evidence_limited`, `question_coverage_limited`, `official_claim_blocked`, and `answer_key_guard`.
+    - `StudentSimulationEvaluationTests` now includes Exam War Room in serialized public payload sweeps and mixed Learning OS consistency checks.
+    - No new AI/provider calls, scraping, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, official alignment claim, success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 5 - Source / Wiki Pro Pack Backend - implemented pending full validation
+    - Adds deterministic `IOrkaSourceWikiProService` / `OrkaSourceWikiProService` on top of existing source lifecycle, Source/Wiki Intelligence, citation review, source-to-concept links, Notebook Studio, unified Orka state, Mission Control, Study Coach, and Exam War Room.
+    - Adds `OrkaSourceWikiProDto` and compact source/wiki/citation/concept/action/warning/evidence-map DTOs for the future Source / Wiki Pro UI.
+    - Adds `/api/sources/wiki-pro` and includes `SourceWikiPro` in `/api/dashboard/today`.
+    - Source / Wiki Pro exposes source readiness, Wiki readiness, citation readiness, linked concepts, linked exam outcomes, source-backed/source-limited concepts, stale/deleted/insufficient/degraded sources, Wiki repair/duplicate/manual/tutor-trace/source-backed pages, Notebook pack readiness, today source/wiki mission, handoffs, and conflict warnings.
+    - Evidence priority blocks source-grounded overclaims for stale/deleted/insufficient/degraded sources or missing/unsupported/stale citations; provider output and Wiki memory alone never count as citation evidence.
+    - `StudentSimulationEvaluationTests` now includes Source / Wiki Pro in serialized public payload sweeps and mixed Learning OS consistency checks.
+    - No new AI/provider calls, scraping, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, official/source-grounded overclaim, success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 6 - AI Study Room Backend - implemented pending full validation
+    - Adds deterministic `IOrkaStudyRoomService` / `OrkaStudyRoomService` on top of unified Orka state, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, Tutor handoffs, quiz/review/memory/Wiki/source evidence, and the existing Classroom session foundation.
+    - Adds `OrkaStudyRoomDto` and compact session/plan/role/checkpoint/turn/action/warning DTOs for the future AI Study Room UI.
+    - Adds `/api/classroom/study-room`, `/api/classroom/study-room/start`, and `/api/classroom/study-room/checkpoint`, and includes compact `StudyRoom` metadata in `/api/dashboard/today`.
+    - Study Room modes include quick start, repair lesson, review lesson, exam outcome practice, source review lesson, Wiki repair lesson, checkpoint quiz, and continue plan.
+    - Checkpoint handling hides answer keys before submit, records only bounded safe response signals, and writes safe Classroom learning traces through existing durable paths.
+    - Study Room/Classroom remains a personal AI study room, not teacher/classroom/dershane management; Realtime voice is not implemented in this phase.
+    - `StudentSimulationEvaluationTests` now includes Study Room in serialized public payload sweeps and mixed Learning OS consistency checks.
+    - No new AI/provider calls, paid provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, therapy/medical/psychological claim, official/source-grounded overclaim, success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 7 - Notebook Studio / Artifact Pro Pack Backend - implemented pending full validation
+    - Adds deterministic `IOrkaNotebookStudioProService` / `OrkaNotebookStudioProService` on top of unified Orka state, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, AI Study Room, existing Notebook Studio packs, learning artifacts, Wiki/source evidence, and export preview metadata.
+    - Adds `OrkaNotebookStudioProDto` and compact pack/artifact/action/warning/export-preview/evidence-link DTOs for the future Notebook Studio / Artifact Pro UI.
+    - Adds `/api/notebook-studio/pro` and includes compact `NotebookStudioPro` metadata in `/api/dashboard/today`.
+    - Notebook Studio Pro recommends repair, review, exam outcome, deneme mistake, source study, Wiki cleanup, Study Room summary, flashcard, checkpoint quiz, slide outline, audio script, and artifact collection packs from existing durable evidence.
+    - Export behavior remains preview-only: deterministic manifest/outline metadata can be surfaced, but real PPTX/video generation is not implemented or claimed.
+    - Provider output and Wiki memory alone are not citation evidence; source-backed artifact claims are downgraded when source/citation evidence is stale, insufficient, degraded, or missing.
+    - `StudentSimulationEvaluationTests` now includes Notebook Studio Pro in serialized public payload sweeps and mixed Learning OS consistency checks.
+    - No new AI/provider calls, paid provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, real PPTX/video generation, therapy/medical/psychological claim, official/source-grounded overclaim, success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 8 - Code Learning IDE + Tool Runtime Polish Backend - implemented pending full validation
+    - Adds deterministic `IOrkaCodeLearningIdeService` / `OrkaCodeLearningIdeService` on top of unified Orka state, Mission Control, Study Coach, Tutor handoffs, quiz/mastery/review/memory, Wiki traces, Notebook Studio Pro, and tool capability metadata.
+    - Adds `OrkaCodeLearningIdeDto` and compact runtime-readiness, session, exercise, attempt, action, handoff, and warning DTOs for the future Code Learning IDE UI.
+    - Adds `GET /api/code/learning-ide` and includes compact `CodeLearningIde` metadata in `/api/dashboard/today`.
+    - Code Learning IDE recommends deterministic coding actions for quick start, syntax repair, runtime error repair, test failure repair, blank/no-attempt diagnostic, weak coding concept practice, due review, checkpoint, and stable continuation.
+    - Existing code run responses and learning-signal payloads are sanitized before public return so stack traces, local paths, secrets, raw tool/debug markers, and unsafe identifiers are redacted.
+    - Notebook Studio Pro can surface code repair and code checkpoint pack handoffs from existing code learning signals without creating hidden artifacts.
+    - `StudentSimulationEvaluationTests` now includes Code Learning IDE in serialized public payload sweeps and mixed Learning OS consistency checks.
+    - No new AI/provider calls, paid provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, migration, frontend redesign, unsafe runtime permission expansion, official/success guarantee claim, or teacher/classroom management workflow was added.
+  - Phase 9 - Unified Evaluation / CI / Release Harness - implemented pending full validation
+    - Adds deterministic `IOrkaUnifiedEvaluationService` / `OrkaUnifiedEvaluationService` as a provider-free release harness over Unified State, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, AI Study Room, Notebook Studio Pro, Code Learning IDE, Tutor policy, quiz/mastery/review/memory readiness, and safety/privacy gates.
+    - Adds `OrkaUnifiedEvaluationDto`, scenario result, scorecard, check, warning, safety sweep, and release gate summary DTOs with status/reason-code/user-safe summaries only.
+    - Strengthens `StudentSimulationEvaluationTests` coverage through the new `OrkaUnifiedEvaluationHarnessTests`, which validates module consistency, public DTO safety sweeps, cross-user endpoint blocking, and release script coverage.
+    - `scripts/quick-backend.ps1` now includes a Product Coherence release proof group for Phase 1-9 backend coherence tests; `RegressionGateScriptTests` locks that local release gate.
+    - The harness remains deterministic/provider-free by default, uses no AI judge, calls no paid providers, adds no frontend redesign, and makes no official/source-grounded/success guarantee claims.
+    - It blocks raw prompts, provider payloads, source chunks, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, raw transcripts, and pre-submit answer keys from public evaluation payloads.
+  - Phase 10 - UX Research / Product Map - implemented and locally validated
+    - Adds product architecture docs under `docs/product/` for Orka's post-backend Learning OS frontend direction.
+    - Defines the Orka product map, main screens, beta cutline, primary experience loop, work modes, and visible handoff model before Phase 11 frontend redesign.
+    - Adds a backend-to-frontend contract matrix mapping Home, Tutor, Study Room, Review/Quiz, Exam War Room, Sources/Wiki Pro, Notebook Studio, Code Learning IDE, Progress, and Settings to backend endpoints/DTOs and safe UI states.
+    - Adds learner journey maps for new learner, repeated wrong, blank/skipped, improving, forgotten/due review, exam prep, source/wiki, Study Room, Notebook/artifact, code learning, and mixed Learning OS journeys.
+    - Adds the Phase 11 frontend redesign brief, existing frontend audit, and product readiness scorecard.
+    - This phase is documentation/product architecture only: no frontend implementation, no migration, no provider call, no payment/subscription feature, no teacher/classroom/dershane management workflow, and no official/source-grounded/success guarantee claim.
+  - Phase 11 - Frontend Redesign / Product Beta Polish - implemented pending full validation
+    - Makes Home / Mission Control the first logged-in student surface in `Orka-Front/src/pages/Home.tsx`.
+    - Adds typed frontend API wrappers and DTOs for Unified State, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, AI Study Room, Notebook Studio Pro, and Code Learning IDE.
+    - Adds compact frontend work-mode panels for Home, Study Room, Exam War Room, Sources / Wiki Pro, Notebook Studio Pro, and Code Learning IDE while preserving Tutor, Review/Quiz, Progress, and existing detailed modules.
+    - Updates navigation to the product map: Home, Tutor, Study Room, Review, Exams, Sources/Wiki, Notebook, Code, Progress, and Settings.
+    - Keeps Study Room/Classroom as a personal AI study room only.
+    - Adds no new AI/provider calls, OpenAI Responses/Agents/Realtime migration, Google Cloud, Stripe/payment feature, mobile app, unsafe runtime expansion, teacher/classroom/dershane management workflow, official/source-grounded overclaim, or success guarantee claim.
+  - Remaining:
+    - Product Coherence Phase 1-11 validation and beta user testing.
 
 ## OrkaLM Phase 24-25 Closure Summary
 

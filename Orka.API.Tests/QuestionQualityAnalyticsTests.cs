@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using AnyAscii;
 using Microsoft.Extensions.DependencyInjection;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
@@ -164,7 +165,7 @@ public sealed class QuestionQualityAnalyticsTests
         Assert.Equal(1, paragraf.CallerDraftCount);
         Assert.Equal(1, paragraf.CallerNeedsReviewCount);
         Assert.NotEqual("strong", paragraf.CoverageStatus);
-        Assert.Contains("resmi sinav kapsami", coverage.UserSafeLabel);
+        Assert.Contains("resmi sinav kapsami", coverage.UserSafeLabel.Transliterate());
 
         var yks = await user.Client.GetFromJsonAsync<CentralExamBlueprintCoverageDto>("/api/question-quality/central-exams/YKS/coverage");
         Assert.Equal(0, yks!.Topics.Sum(t => t.PracticeReadyCount));

@@ -23,10 +23,7 @@ public interface IGeminiService
 
     /// <summary>Gemini üzerinden streaming (akış) desteği sunar.</summary>
     IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+
+    /// <summary>Spesifik olarak belirli bir modeli kullanarak streaming (akış) desteği sunar.</summary>
+    IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default);
 }
-
-/// <summary>Cohere — kurumsal düzeyde içerik üretimi ve özetleme.</summary>
-public interface ICohereService : IAIService { }
-
-/// <summary>HuggingFace Router — dinamik yük dengeleme ile Llama 3.1-8B.</summary>
-public interface IHuggingFaceService : IAIService { }

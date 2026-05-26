@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -31,6 +33,10 @@ public interface ISupervisorAgent
 
 public class SupervisorAgent : ISupervisorAgent
 {
+    private static readonly ConcurrentDictionary<string, (string Route, DateTime CachedAt)> _intentCache = new();
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(3);
+    private const int MaxCacheSize = 200;
+
     private readonly IAIAgentFactory          _factory;
     private readonly IIntentClassifierAgent   _intentClassifier;
     private readonly ILogger<SupervisorAgent> _logger;
@@ -58,20 +64,20 @@ public class SupervisorAgent : ISupervisorAgent
             """;
 
         try
-        {
-            var result  = await _factory.CompleteChatAsync(AgentRole.Supervisor, prompt, userMessage, ct);
-            var cleaned = result.Trim().ToUpperInvariant();
+         {
+             var result  = await _factory.CompleteChatAsync(AgentRole.Supervisor, prompt, userMessage, ct);
+             var cleaned = result.Trim().ToUpperInvariant();
 
-            if (cleaned.Contains("IT_SOFTWARE")) return "IT_SOFTWARE";
-            if (cleaned.Contains("HISTORY"))     return "HISTORY";
-            if (cleaned.Contains("SCIENCE"))     return "SCIENCE";
-            if (cleaned.Contains("LANGUAGE"))    return "LANGUAGE";
-            if (cleaned.Contains("MATH"))        return "MATH";
-            if (cleaned.Contains("ART"))         return "ART";
-            return "GENERAL";
-        }
-        catch { return "GENERAL"; }
-    }
+             if (cleaned.Contains("IT_SOFTWARE")) return "IT_SOFTWARE";
+             if (cleaned.Contains("HISTORY"))     return "HISTORY";
+             if (cleaned.Contains("SCIENCE"))     return "SCIENCE";
+             if (cleaned.Contains("LANGUAGE"))    return "LANGUAGE";
+             if (cleaned.Contains("MATH"))        return "MATH";
+             if (cleaned.Contains("ART"))         return "ART";
+             return "GENERAL";
+         }
+         catch { return "GENERAL"; }
+     }
 
     /// <summary>
     /// Kullanıcının bağlam içindeki niyetine göre aksiyon rotasını belirler.
@@ -83,27 +89,65 @@ public class SupervisorAgent : ISupervisorAgent
         IEnumerable<Message>? recentMessages = null,
         CancellationToken ct = default)
     {
+        // ── MUHAFAZAKAR FAST-PATH KONTROLÜ ──────────────────────────────────
+        var cleanedMessage = (userMessage ?? "").Trim().ToLowerInvariant().TrimEnd('.', '!', '?', ',');
+        if (cleanedMessage.Length < 15)
+        {
+            var fastPathWords = new[] { "selam", "merhaba", "meraba", "tamam", "ok", "anladım", "anladim", "teşekkürler", "tesekkurler" };
+            var triggerWords = new[] { "ama", "neden", "nasıl", "nasil", "anlamadım", "anlamadim", "soru", "test", "araştır", "arastir" };
+
+            var messageWords = cleanedMessage.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (fastPathWords.Contains(cleanedMessage) && !messageWords.Any(word => triggerWords.Contains(word)))
+            {
+                _logger.LogInformation(
+                    "[SupervisorAgent] Fast-path triggered for message: '{MessageRef}'. Routing directly to TUTOR.",
+                    LogPrivacyGuard.SafeTextRef(userMessage, "userMessage"));
+                return "TUTOR";
+            }
+        }
+
         // ── BAĞLAM VARSA: IntentClassifier ile karar ──────────────────────
         if (recentMessages != null && recentMessages.Any())
         {
+            var cacheKey = NormalizeCacheKey(cleanedMessage);
+            if (_intentCache.TryGetValue(cacheKey, out var cached) &&
+                DateTime.UtcNow - cached.CachedAt < CacheTtl)
+            {
+                _logger.LogInformation(
+                    "[SupervisorAgent] Intent cache HIT. Key={KeyRef} Route={Route}",
+                    LogPrivacyGuard.SafeTextRef(cacheKey, "key"), cached.Route);
+                return cached.Route;
+            }
+
             var intent = await _intentClassifier.ClassifyAsync(recentMessages, ct);
 
             _logger.LogInformation(
                 "[SupervisorAgent] IntentClassifier Route: {Intent} | Confidence: {Conf:P0}",
                 intent.Intent, intent.Confidence);
 
-            return intent.Intent switch
+            var route = intent.Intent switch
             {
                 "QUIZ_REQUEST"  => "QUIZ",
                 "CHANGE_TOPIC"  => "CHANGE_TOPIC",
-                "CONFUSED"      => "TUTOR",   // Devam et ama daha yavaş anlat
-                "UNDERSTOOD"    => "TUTOR",   // AnalyzerAgent konu bitişini zaten yakalar
+                "CONFUSED"      => "TUTOR",
+                "UNDERSTOOD"    => "TUTOR",
                 _               => "TUTOR"
             };
+
+            // Cache the result; evict oldest if full
+            if (_intentCache.Count >= MaxCacheSize)
+            {
+                var oldest = _intentCache.OrderBy(kv => kv.Value.CachedAt).FirstOrDefault();
+                if (!string.IsNullOrEmpty(oldest.Key))
+                    _intentCache.TryRemove(oldest.Key, out _);
+            }
+            _intentCache[cacheKey] = (route, DateTime.UtcNow);
+
+            return route;
         }
 
         // ── BAĞLAM YOKSA: Tek mesajdan hızlı keyword karar (uyumluluk) ──
-        var lower = userMessage.ToLowerInvariant();
+        var lower = (userMessage ?? "").ToLowerInvariant();
         if (lower.Contains("araştır") || lower.Contains("google") || lower.Contains("internetten"))
             return "RESEARCH";
         if (lower.Contains("sınav") || lower.Contains("test") || lower.Contains("soru sor"))
@@ -111,4 +155,7 @@ public class SupervisorAgent : ISupervisorAgent
 
         return "TUTOR";
     }
+
+    private static string NormalizeCacheKey(string message) =>
+        message.Trim().ToLowerInvariant().TrimEnd('.', '!', '?', ',', ' ');
 }

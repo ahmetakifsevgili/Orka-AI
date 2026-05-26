@@ -160,13 +160,21 @@ public sealed class QuestionBankService : IQuestionBankService
             .Take(take)
             .ToListAsync(ct);
 
-        return questions.Select(ToDto).ToList();
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var isAdmin = user?.IsAdmin ?? false;
+
+        return questions.Select(q => ToDto(q, stripAnswerKey: !isAdmin && q.OwnerUserId == null)).ToList();
     }
 
     public async Task<QuestionItemDto?> GetQuestionAsync(Guid userId, Guid questionId, CancellationToken ct = default)
     {
         var question = await VisibleQuestions(userId).FirstOrDefaultAsync(q => q.Id == questionId, ct);
-        return question is null ? null : ToDto(question);
+        if (question is null) return null;
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var isAdmin = user?.IsAdmin ?? false;
+
+        return ToDto(question, stripAnswerKey: !isAdmin && question.OwnerUserId == null);
     }
 
     public async Task<QuestionItemDto> CreateQuestionAsync(
@@ -1121,7 +1129,7 @@ public sealed class QuestionBankService : IQuestionBankService
         }
     }
 
-    private static QuestionItemDto ToDto(QuestionItem question) => new()
+    private static QuestionItemDto ToDto(QuestionItem question, bool stripAnswerKey = false) => new()
     {
         Id = question.Id,
         OwnershipState = question.OwnerUserId is null ? "system" : "user",
@@ -1140,7 +1148,7 @@ public sealed class QuestionBankService : IQuestionBankService
         SourceOrigin = question.SourceOrigin,
         SourceTitle = question.SourceTitle,
         SourceUrl = question.SourceUrl,
-        Explanation = question.Explanation,
+        Explanation = stripAnswerKey ? null : question.Explanation,
         CreatedAt = question.CreatedAt,
         UpdatedAt = question.UpdatedAt,
         Options = question.Options
@@ -1151,7 +1159,7 @@ public sealed class QuestionBankService : IQuestionBankService
                 Id = o.Id,
                 OptionKey = o.OptionKey,
                 Text = o.Text,
-                IsCorrect = o.IsCorrect,
+                IsCorrect = stripAnswerKey ? false : o.IsCorrect,
                 SortOrder = o.SortOrder,
                 ContentBlocks = o.ContentBlocks
                     .Where(b => !b.IsDeleted)
@@ -1162,6 +1170,7 @@ public sealed class QuestionBankService : IQuestionBankService
             .ToList(),
         Explanations = question.Explanations
             .Where(e => !e.IsDeleted)
+            .Where(e => !stripAnswerKey || e.IsSafeForLearners)
             .OrderBy(e => e.CreatedAt)
             .Select(e => new QuestionExplanationDto
             {
@@ -1199,7 +1208,7 @@ public sealed class QuestionBankService : IQuestionBankService
             .OrderBy(l => l.SortOrder)
             .Select(l => ToDto(l.QuestionStimulus, l.SortOrder))
             .ToList(),
-        Validation = ValidateQuestion(question, forPublish: question.QualityStatus == "approved")
+        Validation = stripAnswerKey ? null : ValidateQuestion(question, forPublish: question.QualityStatus == "approved")
     };
 
     private static QuestionContentBlockDto ToDto(QuestionContentBlock block) => new()

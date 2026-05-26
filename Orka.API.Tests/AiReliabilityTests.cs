@@ -208,39 +208,8 @@ public sealed class AiReliabilityTests
         AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
-    [Fact]
-    public async Task CohereService_FailureDiagnostic_DoesNotRetainProviderBody()
-    {
-        var service = new CohereService(
-            new StaticHttpClientFactory(HttpStatusCode.InternalServerError, UnsafeProviderBody()),
-            ProviderConfig("AI:Cohere:ApiKey", "test-key", "AI:Cohere:Model", "command-test"),
-            NullLogger<CohereService>.Instance);
 
-        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
-            service.GenerateResponseAsync("system", "hello"));
 
-        Assert.Equal(AiProviderFailureKind.ServerError, exception.FailureKind);
-        Assert.Contains("provider=Cohere", exception.RedactedDiagnostic);
-        Assert.Contains("bodyLength=", exception.RedactedDiagnostic);
-        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
-    }
-
-    [Fact]
-    public async Task HuggingFaceService_FailureDiagnostic_DoesNotRetainProviderBody()
-    {
-        var service = new HuggingFaceService(
-            new StaticHttpClientFactory(HttpStatusCode.BadGateway, UnsafeProviderBody()),
-            ProviderConfig("AI:HuggingFace:ApiKey", "test-key", "AI:HuggingFace:Model", "test-model"),
-            NullLogger<HuggingFaceService>.Instance);
-
-        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
-            service.GenerateResponseAsync("system", "hello"));
-
-        Assert.Equal(AiProviderFailureKind.ServerError, exception.FailureKind);
-        Assert.Contains("provider=HuggingFace", exception.RedactedDiagnostic);
-        Assert.Contains("bodyHash=sha256:", exception.RedactedDiagnostic);
-        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
-    }
 
     [Fact]
     public async Task CohereEmbeddingService_FailureDiagnostic_DoesNotRetainProviderBody()
@@ -401,6 +370,7 @@ public sealed class AiReliabilityTests
         public Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
         public Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
         public IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
+        public IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
         public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
         public Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
         public IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
@@ -498,8 +468,8 @@ public sealed class AiReliabilityTests
         public Task SetLastPistonResultAsync(Guid sessionId, string code, string stdout, string stderr, string language, string phase = "run", string? compileError = null, string? runtimeError = null, bool success = true, string? safeTutorSummary = null) => Task.CompletedTask;
         public Task<string> GetLastPistonResultAsync(Guid sessionId) => Task.FromResult(string.Empty);
         public Task SetWikiReadyAsync(Guid topicId) => Task.CompletedTask;
-        public Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
-        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>(Array.Empty<GoldExample>());
+        public Task SaveGoldExampleAsync(Guid userId, Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
+        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid userId, Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>(Array.Empty<GoldExample>());
         public Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null) => Task.CompletedTask;
         public Task<IEnumerable<AgentMetricSummary>> GetSystemMetricsAsync() => Task.FromResult<IEnumerable<AgentMetricSummary>>(Array.Empty<AgentMetricSummary>());
         public Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20) => Task.FromResult<IEnumerable<EvaluatorLogEntry>>(Array.Empty<EvaluatorLogEntry>());

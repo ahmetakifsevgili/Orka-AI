@@ -44,6 +44,19 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
             Timeout: TimeSpan.FromSeconds(120)), ct);
     }
 
+    public async Task ProcessSynchronouslyAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default)
+    {
+        if (request.UserId == Guid.Empty ||
+            request.SessionId == Guid.Empty ||
+            request.AssistantMessageId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(request.AssistantContent))
+        {
+            return;
+        }
+
+        await ProcessAsync(request, ct);
+    }
+
     private async Task ProcessAsync(ChatTurnPostProcessRequest request, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -89,7 +102,8 @@ public sealed class ChatTurnPostProcessor : IChatTurnPostProcessor
                 request.AssistantContent,
                 request.AgentRole,
                 request.TopicId,
-                ct);
+                ct,
+                request.UserId);
 
             var stillMissing = !await db.AgentEvaluations.AnyAsync(e =>
                 e.UserId == request.UserId &&

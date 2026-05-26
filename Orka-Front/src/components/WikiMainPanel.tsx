@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useAudioOverviewPolling } from "@/hooks/useAudioOverviewPolling";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X,
@@ -579,13 +580,26 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [flippedCards, setFlippedCards] = useState<Record<number, boolean>>({});
   const [notebookToolsLoading, setNotebookToolsLoading] = useState(false);
   const [notebookRefreshTick, setNotebookRefreshTick] = useState(0);
-  const [audioJob, setAudioJob] = useState<{
-    id: string;
-    status: string;
-    script: string;
-    speakers: string[];
-    errorMessage?: string;
-  } | null>(null);
+  const { job: audioJob, loading: audioPolling, error: audioError, startPolling: startAudioPolling, setJob: setAudioJob } = useAudioOverviewPolling();
+
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let currentBlobUrl: string | null = null;
+    if (audioJob && (audioJob.status === "ready" || audioJob.status === "completed") && !audioJob.errorMessage) {
+      AudioOverviewAPI.fetchBlob(audioJob.id)
+        .then(url => {
+          currentBlobUrl = url;
+          setAudioBlobUrl(url);
+        })
+        .catch(console.error);
+    } else {
+      setAudioBlobUrl(null);
+    }
+    return () => {
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    };
+  }, [audioJob]);
   const [audioLoading, setAudioLoading] = useState(false);
 
   const patchLastAssistantMessage = (patch: Partial<CopilotMessage>) => {
@@ -1248,10 +1262,13 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     try {
       const job = await AudioOverviewAPI.create({ topicId });
       setAudioJob(job);
-      if (job.status === "ready") {
+      if (job.status === "ready" || job.status === "completed") {
         toast.success("Sesli özet hazırlandı.");
+      } else if (job.status === "failed" || job.errorMessage) {
+        toast.error(job.errorMessage || "Sesli özet hazırlanamadı.");
       } else {
-        toast("Ses dosyası üretilemedi; metin modu hazır.", { icon: "ℹ️" });
+        startAudioPolling(job.id);
+        toast("Ses dosyası hazırlanıyor...", { icon: "⏳" });
       }
     } catch {
       toast.error("Sesli özet hazırlanamadı.");
@@ -1631,13 +1648,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let aiContent = "";
+      let buffer = "";
 
       while (reader) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const str = line.replace("data: ", "").trim();
@@ -3238,20 +3258,26 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       </div>
                       <button
                         onClick={handleCreateAudioOverview}
-                        disabled={audioLoading}
+                        disabled={audioLoading || audioPolling}
                         className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 text-sky-300 transition disabled:opacity-50"
                       >
-                        {audioLoading ? "Hazırlanıyor..." : "Sesli Özet"}
+                        {audioLoading ? "Hazırlanıyor..." : audioPolling ? "Ses üretiliyor..." : "Sesli Özet"}
                       </button>
                     </div>
                     {audioJob ? (
                       <div className="space-y-3">
-                        {audioJob.status === "ready" && !audioJob.errorMessage ? (
-                          <audio controls src={AudioOverviewAPI.streamUrl(audioJob.id)} className="w-full" />
+                        {(audioJob.status === "ready" || audioJob.status === "completed") && !audioJob.errorMessage ? (
+                          <audio controls preload="auto" src={audioBlobUrl || ""} className="w-full" />
+                        ) : audioPolling ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-sky-500/20 bg-sky-500/8 px-3 py-2 text-xs font-semibold leading-5 text-sky-300">
+                            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                            Edge-TTS ses dosyası hazırlanıyor, otomatik olarak yüklenecek...
+                          </div>
                         ) : (
                           <div className="rounded-xl border border-amber-500/20 bg-[#fff8ee]/80 px-3 py-2 text-xs font-semibold leading-5 text-[#8a641f]">
                             Ses dosyası hazır değil. Orka metin akışını gösteriyor; bu canlı sınıf ya da üretilmiş ses gibi sunulmaz.
                             {audioJob.errorMessage && <span className="mt-1 block font-medium">{audioJob.errorMessage}</span>}
+                            {audioError && <span className="mt-1 block font-medium">{audioError}</span>}
                           </div>
                         )}
                         <div className="text-[11px] text-[#667085]">

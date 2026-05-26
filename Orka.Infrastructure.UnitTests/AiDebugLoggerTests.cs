@@ -107,26 +107,20 @@ public sealed class AiDebugLoggerTests
     [Fact]
     public void FileLogging_IsDisabledByDefaultOutsideDevelopment()
     {
-        var previousFlag = Environment.GetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING");
-        var previousAspNet = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        var previousDotnet = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
-
         try
         {
-            Environment.SetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING", null);
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+            AiDebugLogger.DebugLoggingOverride = "false";
+            AiDebugLogger.EnvironmentNameOverride = "Production";
 
             Assert.False(AiDebugLogger.IsFileLoggingEnabledForCurrentEnvironment());
 
-            Environment.SetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING", "true");
+            AiDebugLogger.DebugLoggingOverride = "true";
             Assert.False(AiDebugLogger.IsFileLoggingEnabledForCurrentEnvironment());
         }
         finally
         {
-            Environment.SetEnvironmentVariable("ORKA_AI_DEBUG_LOGGING", previousFlag);
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", previousAspNet);
-            Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", previousDotnet);
+            AiDebugLogger.DebugLoggingOverride = null;
+            AiDebugLogger.EnvironmentNameOverride = null;
         }
     }
 

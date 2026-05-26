@@ -12,16 +12,18 @@ internal static class CoordinationTestHelpers
 {
     public static async Task<CoordinationTestUser> RegisterAuthenticatedClientAsync(
         ApiSmokeFactory factory,
-        string prefix = "coord")
+        string prefix = "coord",
+        bool isAdmin = false)
     {
         var client = factory.CreateClient();
         var email = $"{prefix}-{Guid.NewGuid():N}@orka.local";
+        var password = "CoordPass123!";
         var response = await client.PostAsJsonAsync("/api/auth/register", new
         {
             firstName = "Coord",
             lastName = "User",
             email,
-            password = "CoordPass123!"
+            password
         });
         response.EnsureSuccessStatusCode();
 
@@ -29,6 +31,31 @@ internal static class CoordinationTestHelpers
         var token = body.RootElement.GetProperty("token").GetString()
                     ?? throw new InvalidOperationException("Register token missing.");
         var userId = Guid.Parse(body.RootElement.GetProperty("user").GetProperty("id").GetString()!);
+
+        if (isAdmin)
+        {
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+                var user = await db.Users.FindAsync(userId);
+                if (user != null)
+                {
+                    user.IsAdmin = true;
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new
+            {
+                email,
+                password
+            });
+            loginResponse.EnsureSuccessStatusCode();
+
+            using var loginBody = await JsonDocument.ParseAsync(await loginResponse.Content.ReadAsStreamAsync());
+            token = loginBody.RootElement.GetProperty("token").GetString()
+                    ?? throw new InvalidOperationException("Login token missing.");
+        }
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return new CoordinationTestUser(client, userId);

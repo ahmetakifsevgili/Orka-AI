@@ -34,6 +34,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("sources")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<SourceRegistryItemDto>> RegisterSource(
         [FromBody] RegisterSourceRegistryItemDto request,
         CancellationToken ct)
@@ -50,6 +51,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("sources/{id:guid}/verify")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<SourceRegistryItemDto>> VerifySource(
         Guid id,
         [FromBody] VerifySourceRegistryItemDto request,
@@ -67,6 +69,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("sources/{id:guid}/license-review")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<ContentLicenseReviewDto>> ReviewSourceLicense(
         Guid id,
         [FromBody] ReviewSourceLicenseDto request,
@@ -77,6 +80,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("versions")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CurriculumVersionDto>> CreateVersion(
         [FromBody] CreateCurriculumVersionDto request,
         CancellationToken ct)
@@ -108,6 +112,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("versions/{id:guid}/deprecate")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CurriculumVersionDto>> DeprecateVersion(
         Guid id,
         [FromBody] DeprecateCurriculumVersionDto request,
@@ -118,6 +123,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("versions/{id:guid}/supersede")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CurriculumVersionDto>> SupersedeVersion(
         Guid id,
         [FromBody] SupersedeCurriculumVersionDto request,
@@ -135,6 +141,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("versions/{id:guid}/nodes")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CurriculumNodeDto>> AddNode(
         Guid id,
         [FromBody] CreateCurriculumNodeDto request,
@@ -152,6 +159,7 @@ public sealed class CurriculumController : ControllerBase
     }
 
     [HttpPost("versions/{id:guid}/outcome-mappings")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CurriculumOutcomeMappingDto>> MapOutcome(
         Guid id,
         [FromBody] CreateCurriculumOutcomeMappingDto request,

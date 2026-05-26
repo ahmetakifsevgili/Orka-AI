@@ -643,10 +643,7 @@ function switchTab(tab) {
 // ────────────────────────────────────────────────
 async function doLogout() {
   try {
-    var refresh = localStorage.getItem('orka_refresh');
-    if (refresh) {
-      await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({refreshToken: refresh}) });
-    }
+    await fetch('/api/auth/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body: '{}' });
   } catch(e) {}
   clearOrkaStorage();
   window.location.href = '/login.html';
@@ -655,7 +652,6 @@ async function doLogout() {
 function clearOrkaStorage() {
   [
     'orka_token',
-    'orka_refresh',
     'orka_user',
     'orka_active_topic_id',
     'orka_active_view',

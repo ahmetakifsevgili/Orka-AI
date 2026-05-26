@@ -87,7 +87,6 @@ public class AuthController : ControllerBase
         return StatusCode(201, new AuthResponse
         {
             Token = result.Token,
-            RefreshToken = result.RefreshToken,
             UserId = result.User.Id.ToString(),
             User = ToUserDto(result.User)
         });
@@ -131,7 +130,6 @@ public class AuthController : ControllerBase
         return Ok(new AuthResponse
         {
             Token = result.Token,
-            RefreshToken = result.RefreshToken,
             UserId = result.User.Id.ToString(),
             User = ToUserDto(result.User)
         });
@@ -157,9 +155,7 @@ public class AuthController : ControllerBase
         {
             token = result.Token,
             jwt = result.Token,
-            access_token = result.Token,
-            refreshToken = result.RefreshToken,
-            refresh_token = result.RefreshToken
+            access_token = result.Token
         });
     }
 
@@ -199,10 +195,10 @@ public class AuthController : ControllerBase
 
     private string? ResolveRefreshToken(RefreshRequest? request)
     {
-        if (!string.IsNullOrWhiteSpace(request?.RefreshToken))
-            return request.RefreshToken.Trim();
-
-        return RefreshTokenCookie.Read(Request, _configuration);
+        var cookieToken = RefreshTokenCookie.Read(Request, _configuration);
+        if (!string.IsNullOrWhiteSpace(cookieToken))
+            return cookieToken;
+        return request?.RefreshToken;
     }
 
     private void SetRefreshCookie(string refreshToken) =>
@@ -260,9 +256,14 @@ public class AuthController : ControllerBase
 
     private string GetClientPartition()
     {
-        var forwardedFor = Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrWhiteSpace(forwardedFor))
-            return HashPartition(forwardedFor.Split(',')[0].Trim());
+        // Only trust X-Forwarded-For in Development; production must use RemoteIpAddress
+        // to prevent rate-limit bypass via header spoofing.
+        if (_environment.IsDevelopment())
+        {
+            var forwardedFor = Request.Headers["X-Forwarded-For"].ToString();
+            if (!string.IsNullOrWhiteSpace(forwardedFor))
+                return HashPartition(forwardedFor.Split(',')[0].Trim());
+        }
 
         var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
         return HashPartition(string.IsNullOrWhiteSpace(remoteIp) ? "unknown" : remoteIp);

@@ -18,7 +18,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task SourceRegistry_BlocksOfficialClaimWithoutOfficialSourceMetadata()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-unsafe-official");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-unsafe-official", isAdmin: true);
 
         var source = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
@@ -46,7 +46,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task OfficialSourceVerification_AllowsClaimAndDoesNotExposeInternalNotes()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-official-source");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-official-source", isAdmin: true);
 
         var source = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
@@ -82,7 +82,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task CurriculumVersion_MapsOutcomeToSourceAndReturnsSourceBackedOutcomeEvidence()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-map");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-map", isAdmin: true);
         var outcomeId = await GetKpssParagrafOutcomeIdAsync(factory);
         var examDefinitionId = await GetKpssExamDefinitionIdAsync(factory);
         var source = await RegisterOfficialSourceAsync(user);
@@ -138,7 +138,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task UserOwnedSourcesVersionsAndMappings_AreNotVisibleAcrossUsers()
     {
         using var factory = new ApiSmokeFactory();
-        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-owner");
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-owner", isAdmin: true);
         var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-other");
         var outcomeId = await GetKpssParagrafOutcomeIdAsync(factory);
         var examDefinitionId = await GetKpssExamDefinitionIdAsync(factory);
@@ -181,7 +181,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task LicenseReview_BlocksRestrictedSourcesFromPublishAllowedState()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-license");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-license", isAdmin: true);
         var source = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
             SourceKey = "restricted-source",
@@ -215,7 +215,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task SourceTaxonomy_NormalizesOfficialTypesAndFallsBackUnknownTypes()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-source-taxonomy");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-source-taxonomy", isAdmin: true);
 
         var official = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
@@ -253,7 +253,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task VerificationLevels_OfficialSourceBackedAndDeprecatedDoNotAllowOfficialClaim()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-verification-levels");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-verification-levels", isAdmin: true);
         var source = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
             SourceKey = "osym-source-backed",
@@ -284,7 +284,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task CurriculumLifecycle_SupersedesActiveVersionAndDeprecatesOfficialClaims()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-lifecycle");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-lifecycle", isAdmin: true);
         var examDefinitionId = await GetKpssExamDefinitionIdAsync(factory);
         var source = await RegisterOfficialSourceAsync(user);
 
@@ -332,7 +332,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task CurriculumNodeHierarchy_RejectsDuplicateSiblingsAndExcludesSoftDeletedNodes()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-node-hardening");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-node-hardening", isAdmin: true);
         var version = await CreateSourceBackedKpssVersionAsync(factory, user, "KPSS_NODE_HARDENING");
 
         var root = await AddNodeAsync(user, version.Id, new CreateCurriculumNodeDto
@@ -385,7 +385,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task OutcomeMappingConfidence_ExposesSafeLocatorFieldsAndMarksNonFinalMappings()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-mapping-hardening");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-mapping-hardening", isAdmin: true);
         var outcomeId = await GetKpssParagrafOutcomeIdAsync(factory);
         var source = await RegisterSourceAsync(user, new RegisterSourceRegistryItemDto
         {
@@ -433,7 +433,7 @@ public sealed class CurriculumSourceRegistryTests
     public async Task KpssAndLgsProofMappings_AreRepresentableWithoutCompleteCurriculumClaims()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-proof-mapping");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "curriculum-proof-mapping", isAdmin: true);
         var kpssOutcomeId = await GetKpssParagrafOutcomeIdAsync(factory);
         var kpssVersion = await CreateSourceBackedKpssVersionAsync(factory, user, "KPSS_PROOF_PATH");
 

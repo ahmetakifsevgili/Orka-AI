@@ -54,15 +54,15 @@ public interface IRedisMemoryService
 
     /// <summary>
     /// 9-10 puan alan başarılı diyalog çiftini Redis listesine yazar.
-    /// Key: "orka:gold:{topicId}" | Max 10 kayıt (LTRIM) | TTL: 30 gün.
+    /// Key: "orka:gold:{userId}:{topicId}" | Max 10 kayıt (LTRIM) | TTL: 30 gün.
     /// </summary>
-    Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score);
+    Task SaveGoldExampleAsync(Guid userId, Guid topicId, string userMessage, string agentResponse, int score);
 
     /// <summary>
     /// Konu için kaydedilmiş altın örnekleri döner.
     /// TutorAgent bunları few-shot olarak system prompt'a enjekte eder.
     /// </summary>
-    Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2);
+    Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid userId, Guid topicId, int count = 2);
 
     // ── HUD: Gerçek Zamanlı Ajan Telemetrisi ────────────────────────────────
 

@@ -39,6 +39,12 @@ public sealed class EfPendingMigrationsHealthCheck : IHealthCheck
         try
         {
             using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetService<Orka.Infrastructure.Data.OrkaDbContext>();
+            if (db != null && db.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+            {
+                return HealthCheckResult.Healthy("InMemory database does not support migrations.");
+            }
+
             var reader = scope.ServiceProvider.GetRequiredService<IPendingEfMigrationsReader>();
             var pending = await reader.GetPendingMigrationsAsync(cancellationToken);
 

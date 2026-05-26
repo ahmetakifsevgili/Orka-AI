@@ -265,11 +265,317 @@ public sealed class AdaptiveStudyPlanDto
     public bool HasEnoughSignals { get; set; }
 }
 
+public sealed class OrkaLearningStateDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string ScopeStatus { get; set; } = "global";
+    public OrkaLearningSignalSummaryDto SignalSummary { get; set; } = new();
+    public DashboardSourceHealthDto SourceHealth { get; set; } = new();
+    public LongTermLearningProfileDto LongTermLearningProfile { get; set; } = new();
+    public ExamLearningProfileDto? ExamLearningProfile { get; set; }
+    public SourceWikiIntelligenceProfileDto? SourceWikiIntelligenceProfile { get; set; }
+    public OrkaUnifiedNextActionDto PrimaryNextAction { get; set; } = new();
+    public IReadOnlyList<OrkaUnifiedNextActionDto> SecondaryNextActions { get; set; } = Array.Empty<OrkaUnifiedNextActionDto>();
+    public IReadOnlyList<OrkaFeatureReadinessDto> FeatureReadiness { get; set; } = Array.Empty<OrkaFeatureReadinessDto>();
+    public IReadOnlyList<OrkaLearningStateConflictDto> ConflictWarnings { get; set; } = Array.Empty<OrkaLearningStateConflictDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SafetyWarnings { get; set; } = Array.Empty<string>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaUnifiedNextActionDto
+{
+    public string ActionType { get; set; } = "continue_plan";
+    public string Label { get; set; } = "Plana devam et";
+    public string Reason { get; set; } = "Mevcut kanitlarla plana devam etmek uygun.";
+    public string Priority { get; set; } = "normal";
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string Source { get; set; } = "orka_state";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> AppliesTo { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaLearningSignalSummaryDto
+{
+    public int EvidenceCount { get; set; }
+    public int QuizAttemptCount { get; set; }
+    public int CorrectAttemptCount { get; set; }
+    public int WrongAttemptCount { get; set; }
+    public int BlankOrSkippedAttemptCount { get; set; }
+    public int DueReviewCount { get; set; }
+    public int LearningSignalCount { get; set; }
+    public int SourceCount { get; set; }
+    public int ReadySourceCount { get; set; }
+    public int WikiPageCount { get; set; }
+    public int StudyRoomSessionCount { get; set; }
+    public int StudyRoomQuestionCount { get; set; }
+    public bool HasRealLearningData { get; set; }
+}
+
+public sealed class OrkaFeatureReadinessDto
+{
+    public string FeatureKey { get; set; } = string.Empty;
+    public string Status { get; set; } = "not_available";
+    public string UserSafeSummary { get; set; } = string.Empty;
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaLearningStateConflictDto
+{
+    public string ConflictCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "warning";
+    public string UserSafeSummary { get; set; } = string.Empty;
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaMissionControlDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string ScopeStatus { get; set; } = "global";
+    public OrkaTodayMissionDto PrimaryMission { get; set; } = new();
+    public string PrimaryEntryPoint { get; set; } = "ask_tutor";
+    public IReadOnlyList<OrkaMissionActionDto> SecondaryActions { get; set; } = Array.Empty<OrkaMissionActionDto>();
+    public IReadOnlyList<OrkaMissionWarningDto> UrgentWarnings { get; set; } = Array.Empty<OrkaMissionWarningDto>();
+    public string TodayFocus { get; set; } = "Kisa tani ile basla";
+    public string ReviewLoad { get; set; } = "none";
+    public string RepairLoad { get; set; } = "none";
+    public string ExamLoad { get; set; } = "none";
+    public string SourceWikiLoad { get; set; } = "none";
+    public OrkaMissionActionDto? StudyRoomSuggestion { get; set; }
+    public IReadOnlyList<OrkaMissionModuleCardDto> ModuleCards { get; set; } = Array.Empty<OrkaMissionModuleCardDto>();
+    public IReadOnlyList<OrkaMissionSectionDto> Sections { get; set; } = Array.Empty<OrkaMissionSectionDto>();
+    public string EvidenceConfidence { get; set; } = "thin_evidence";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Orka bugunku en guvenli calisma adimini hazirladi.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaTodayMissionDto
+{
+    public string MissionKey { get; set; } = "start_here";
+    public string ActionType { get; set; } = "start_diagnostic";
+    public string Label { get; set; } = "Kisa tani ile basla";
+    public string Reason { get; set; } = "Henuz yeterli ogrenme kaniti yok.";
+    public string Priority { get; set; } = "high";
+    public string EntryPoint { get; set; } = "ask_tutor";
+    public string TargetRoute { get; set; } = "chat";
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaMissionActionDto
+{
+    public string ActionType { get; set; } = "continue_plan";
+    public string Label { get; set; } = "Plana devam et";
+    public string Reason { get; set; } = "Mevcut kanitlarla plana devam etmek uygun.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "ask_tutor";
+    public string TargetRoute { get; set; } = "chat";
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public bool IsPrimary { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaMissionSectionDto
+{
+    public string SectionKey { get; set; } = "start_here";
+    public string Status { get; set; } = "empty";
+    public string Label { get; set; } = "Baslangic";
+    public int Priority { get; set; }
+    public string TargetRoute { get; set; } = "chat";
+    public IReadOnlyList<OrkaMissionActionDto> Actions { get; set; } = Array.Empty<OrkaMissionActionDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<OrkaMissionWarningDto> Warnings { get; set; } = Array.Empty<OrkaMissionWarningDto>();
+}
+
+public sealed class OrkaMissionModuleCardDto
+{
+    public string ModuleKey { get; set; } = string.Empty;
+    public string Status { get; set; } = "empty";
+    public string Label { get; set; } = string.Empty;
+    public string EntryPoint { get; set; } = "ask_tutor";
+    public string TargetRoute { get; set; } = "chat";
+    public string Priority { get; set; } = "normal";
+    public string UserSafeSummary { get; set; } = string.Empty;
+    public int ActionCount { get; set; }
+    public int WarningCount { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaMissionWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "dashboard";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyCoachDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string ScopeStatus { get; set; } = "global";
+    public string RhythmStatus { get; set; } = "thin_evidence";
+    public string RecommendedPace { get; set; } = "light";
+    public string TodayPlan { get; set; } = "Kisa kontrol ile basla";
+    public string WeeklyPlan { get; set; } = "Ogrenme kaniti biriktir";
+    public OrkaStudyLoadDto Workload { get; set; } = new();
+    public OrkaFocusPlanDto FocusPlan { get; set; } = new();
+    public OrkaComebackPlanDto ComebackPlan { get; set; } = new();
+    public IReadOnlyList<OrkaStudyCoachActionDto> Actions { get; set; } = Array.Empty<OrkaStudyCoachActionDto>();
+    public IReadOnlyList<OrkaStudyCoachWarningDto> Warnings { get; set; } = Array.Empty<OrkaStudyCoachWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Orka bugunku calisma ritmini guvenli ogrenme kanitlarindan hazirladi.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaStudyLoadDto
+{
+    public string ReviewLoad { get; set; } = "none";
+    public string RepairLoad { get; set; } = "none";
+    public string ExamLoad { get; set; } = "none";
+    public string SourceWikiLoad { get; set; } = "none";
+    public string NewLearningLoad { get; set; } = "light";
+    public string OverallLoad { get; set; } = "light";
+    public int LoadScore { get; set; }
+}
+
+public sealed class OrkaStudyCoachActionDto
+{
+    public string ActionType { get; set; } = "continue_plan";
+    public string Label { get; set; } = "Plana devam et";
+    public string Reason { get; set; } = "Mevcut ogrenme ritmine uygun.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "ask_tutor";
+    public string TargetRoute { get; set; } = "chat";
+    public string DurationBand { get; set; } = "short";
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyCoachWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "dashboard";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaFocusPlanDto
+{
+    public string FocusMode { get; set; } = "quick_start";
+    public string DurationBand { get; set; } = "short";
+    public string EntryPoint { get; set; } = "ask_tutor";
+    public string TargetRoute { get; set; } = "chat";
+    public IReadOnlyList<string> Steps { get; set; } = Array.Empty<string>();
+    public string StopCondition { get; set; } = "after short diagnostic";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaComebackPlanDto
+{
+    public string ComebackStatus { get; set; } = "thin_evidence";
+    public string FirstStep { get; set; } = "Kisa kontrol ile basla";
+    public string SecondStep { get; set; } = "Sonuca gore tek sonraki adimi sec";
+    public string AvoidToday { get; set; } = "Ayni anda tum kuyrugu kapatmaya calisma.";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Donus plani pratik calisma adimlariyla sinirlidir.";
+}
+
+public sealed class LongTermLearningProfileDto
+{
+    public string Summary { get; set; } = "Henüz uzun vadeli öğrenme ritmi için yeterli kanıt yok.";
+    public int WindowDays { get; set; } = 7;
+    public bool HasEnoughEvidence { get; set; }
+    public int EvidenceCount { get; set; }
+    public IReadOnlyList<LongTermLearningConceptDto> Concepts { get; set; } = Array.Empty<LongTermLearningConceptDto>();
+    public IReadOnlyList<AdaptiveReviewPressureDto> ReviewPressure { get; set; } = Array.Empty<AdaptiveReviewPressureDto>();
+    public AdaptiveLearningRhythmDto WeeklyRhythm { get; set; } = new();
+    public IReadOnlyList<AdaptiveNextStudyActionDto> NextActions { get; set; } = Array.Empty<AdaptiveNextStudyActionDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class LongTermLearningConceptDto
+{
+    public Guid? TopicId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string State { get; set; } = "new";
+    public decimal? MasteryProbability { get; set; }
+    public decimal? Confidence { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public int EvidenceCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankOrSkippedCount { get; set; }
+    public int RepairCount { get; set; }
+    public DateTimeOffset? LastPracticedAt { get; set; }
+    public DateTimeOffset? LastSuccessAt { get; set; }
+    public DateTimeOffset? LastFailureAt { get; set; }
+    public string ReviewPriority { get; set; } = "none";
+    public string RecommendedAction { get; set; } = "continue_plan";
+    public string UserSafeReason { get; set; } = "Bu kavram izleniyor.";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+}
+
+public sealed class AdaptiveReviewPressureDto
+{
+    public Guid? TopicId { get; set; }
+    public string ConceptKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Priority { get; set; } = "none";
+    public string RecommendedAction { get; set; } = "continue_plan";
+    public string UserSafeReason { get; set; } = "Tekrar baskısı düşük.";
+    public int DaysOverdue { get; set; }
+    public DateTimeOffset? DueAt { get; set; }
+    public string ConfidenceStatus { get; set; } = "observed_only";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> EvidenceBasis { get; set; } = Array.Empty<string>();
+}
+
+public sealed class AdaptiveLearningRhythmDto
+{
+    public string TodayFocus { get; set; } = "Kısa seviye tespiti";
+    public string ThisWeekFocus { get; set; } = "Öğrenme kanıtı biriktir";
+    public string ReviewLoad { get; set; } = "none";
+    public string NewLearningLoad { get; set; } = "light";
+    public string RepairLoad { get; set; } = "none";
+    public IReadOnlyList<string> WeakConcepts { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> DueConcepts { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> StableConcepts { get; set; } = Array.Empty<string>();
+    public AdaptiveNextStudyActionDto NextBestAction { get; set; } = new();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class AdaptiveNextStudyActionDto
+{
+    public string ActionType { get; set; } = "continue_plan";
+    public string Label { get; set; } = "Plana devam et";
+    public string Reason { get; set; } = "Mevcut kanıtlarla plana devam etmek uygun.";
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string Priority { get; set; } = "normal";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
 public sealed class AdaptiveStudyPlanItemDto
 {
     public string Title { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
     public string ActionType { get; set; } = "continue_lesson";
     public int EstimatedMinutes { get; set; } = 20;
     public int Priority { get; set; }
@@ -716,4 +1022,434 @@ public sealed class RagEvaluationRunDto
     public decimal CitationCoverageScore { get; set; }
     public int ItemCount { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaNotebookStudioProDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string ReadinessStatus { get; set; } = "thin_evidence";
+    public string PackReadiness { get; set; } = "limited";
+    public IReadOnlyList<NotebookStudioPackDto> RecommendedPacks { get; set; } = Array.Empty<NotebookStudioPackDto>();
+    public NotebookStudioPackDto? ActivePack { get; set; }
+    public IReadOnlyList<NotebookStudioArtifactDto> ArtifactQueue { get; set; } = Array.Empty<NotebookStudioArtifactDto>();
+    public IReadOnlyList<NotebookStudioExportPreviewDto> ExportPreviews { get; set; } = Array.Empty<NotebookStudioExportPreviewDto>();
+    public IReadOnlyList<NotebookStudioEvidenceLinkDto> SourceEvidenceLinks { get; set; } = Array.Empty<NotebookStudioEvidenceLinkDto>();
+    public IReadOnlyList<NotebookStudioEvidenceLinkDto> WikiEvidenceLinks { get; set; } = Array.Empty<NotebookStudioEvidenceLinkDto>();
+    public IReadOnlyList<NotebookStudioEvidenceLinkDto> ConceptLinks { get; set; } = Array.Empty<NotebookStudioEvidenceLinkDto>();
+    public IReadOnlyList<NotebookStudioEvidenceLinkDto> ExamOutcomeLinks { get; set; } = Array.Empty<NotebookStudioEvidenceLinkDto>();
+    public IReadOnlyList<NotebookStudioEvidenceLinkDto> StudyRoomTraceLinks { get; set; } = Array.Empty<NotebookStudioEvidenceLinkDto>();
+    public IReadOnlyList<NotebookStudioPackActionDto> TutorHandoffs { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+    public IReadOnlyList<NotebookStudioPackActionDto> ReviewHandoffs { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+    public IReadOnlyList<NotebookStudioPackActionDto> SourceWikiHandoffs { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+    public IReadOnlyList<NotebookStudioPackActionDto> ExamWarRoomHandoffs { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+    public IReadOnlyList<NotebookStudioPackActionDto> StudyRoomHandoffs { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+    public IReadOnlyList<NotebookStudioPackWarningDto> MissionControlWarnings { get; set; } = Array.Empty<NotebookStudioPackWarningDto>();
+    public IReadOnlyList<NotebookStudioPackWarningDto> Warnings { get; set; } = Array.Empty<NotebookStudioPackWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Notebook Studio Pro artifact calisma alanini guvenli metadata ile hazirladi.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class NotebookStudioPackDto
+{
+    public Guid? PackId { get; set; }
+    public string PackType { get; set; } = "artifact_collection";
+    public string Status { get; set; } = "suggested";
+    public string Title { get; set; } = "Artifact paketi";
+    public string Summary { get; set; } = "Mevcut ogrenme kanitindan guvenli paket onerisi.";
+    public string Priority { get; set; } = "normal";
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public IReadOnlyList<string> ConceptKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> WarningCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<NotebookStudioPackActionDto> Actions { get; set; } = Array.Empty<NotebookStudioPackActionDto>();
+}
+
+public sealed class NotebookStudioArtifactDto
+{
+    public Guid? ArtifactId { get; set; }
+    public Guid? PackId { get; set; }
+    public string ArtifactType { get; set; } = "study_guide";
+    public string Status { get; set; } = "suggested";
+    public string Origin { get; set; } = "notebook_studio_pro";
+    public string RenderFormat { get; set; } = "metadata";
+    public string Title { get; set; } = "Artifact";
+    public string SourceBasis { get; set; } = "evidence_insufficient";
+    public bool PreviewOnly { get; set; } = true;
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+}
+
+public sealed class NotebookStudioPackActionDto
+{
+    public string ActionType { get; set; } = "continue_learning";
+    public string Label { get; set; } = "Ogrenmeye devam et";
+    public string Reason { get; set; } = "Mevcut kanitla guvenli devam edilebilir.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "continue_learning";
+    public string TargetRoute { get; set; } = "dashboard";
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public Guid? PackId { get; set; }
+    public Guid? ArtifactId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ExamOutcomeKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class NotebookStudioPackWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string Source { get; set; } = "notebook_studio_pro";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class NotebookStudioExportPreviewDto
+{
+    public string PreviewType { get; set; } = "manifest";
+    public string ReadinessStatus { get; set; } = "preview_only";
+    public Guid? PackId { get; set; }
+    public Guid? ArtifactId { get; set; }
+    public int ArtifactCount { get; set; }
+    public string SourceWarning { get; set; } = "none";
+    public string AccessibilityWarning { get; set; } = "review_required";
+    public IReadOnlyList<string> ExportLimitations { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class NotebookStudioEvidenceLinkDto
+{
+    public string LinkType { get; set; } = "concept";
+    public string Status { get; set; } = "limited";
+    public string Label { get; set; } = string.Empty;
+    public Guid? TopicId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public Guid? PackId { get; set; }
+    public Guid? ArtifactId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ExamOutcomeKey { get; set; }
+    public string SourceBasis { get; set; } = "evidence_insufficient";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomDto
+{
+    public Guid? ClassroomSessionId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ExamCode { get; set; }
+    public string? VariantCode { get; set; }
+    public string SessionReadiness { get; set; } = "limited";
+    public string StudyRoomMode { get; set; } = "quick_start";
+    public string? SelectedTopic { get; set; }
+    public string? SelectedConcept { get; set; }
+    public string? SelectedExamOutcome { get; set; }
+    public string SourceReadiness { get; set; } = "unknown";
+    public string WikiReadiness { get; set; } = "unknown";
+    public string RhythmStatus { get; set; } = "thin_evidence";
+    public string RecommendedPace { get; set; } = "light";
+    public OrkaStudyRoomPlanDto LessonPlan { get; set; } = new();
+    public IReadOnlyList<OrkaStudyRoomRoleDto> Roles { get; set; } = Array.Empty<OrkaStudyRoomRoleDto>();
+    public OrkaStudyRoomCheckpointDto CheckpointPlan { get; set; } = new();
+    public OrkaStudyRoomTurnDto CurrentTurn { get; set; } = new();
+    public string SafeStudentSummary { get; set; } = "Study Room guvenli calisma akisini hazirladi.";
+    public IReadOnlyList<OrkaStudyRoomActionDto> NextActions { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomActionDto> TutorHandoffs { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomActionDto> QuizHandoffs { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomActionDto> ReviewHandoffs { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomActionDto> SourceWikiHandoffs { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomActionDto> NotebookHandoffs { get; set; } = Array.Empty<OrkaStudyRoomActionDto>();
+    public IReadOnlyList<OrkaStudyRoomWarningDto> Warnings { get; set; } = Array.Empty<OrkaStudyRoomWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaStudyRoomPlanDto
+{
+    public string PlanKey { get; set; } = "quick_start";
+    public string Title { get; set; } = "Kisa baslangic";
+    public string Objective { get; set; } = "Kanit biriktir ve tek sonraki adimi sec.";
+    public string DurationBand { get; set; } = "short";
+    public IReadOnlyList<string> Steps { get; set; } = Array.Empty<string>();
+    public string StopCondition { get; set; } = "after short check";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomRoleDto
+{
+    public string RoleKey { get; set; } = "student";
+    public string Label { get; set; } = "Student";
+    public string Responsibility { get; set; } = "Cevap verir ve checkpoint sonucunu olusturur.";
+}
+
+public sealed class OrkaStudyRoomCheckpointDto
+{
+    public string CheckpointStatus { get; set; } = "not_started";
+    public string Prompt { get; set; } = "Kisa checkpoint hazir.";
+    public string ResponseSignal { get; set; } = "needs_review";
+    public string PostSubmitFeedback { get; set; } = string.Empty;
+    public bool KeyVisible { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomTurnDto
+{
+    public string TurnStatus { get; set; } = "planned";
+    public string SpeakerRole { get; set; } = "ai_teacher";
+    public string UserSafeSummary { get; set; } = "Ders plani hazir.";
+    public string ResponseSignal { get; set; } = "needs_review";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomActionDto
+{
+    public string ActionType { get; set; } = "continue_plan";
+    public string Label { get; set; } = "Plana devam et";
+    public string Reason { get; set; } = "Mevcut kanitlarla normal akisa devam edilebilir.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "continue_plan";
+    public string TargetRoute { get; set; } = "dashboard";
+    public Guid? TopicId { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ExamOutcomeCode { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "classroom";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaStudyRoomStartRequestDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string? ExamCode { get; set; } = "KPSS";
+    public string? VariantCode { get; set; }
+    public Guid? SourceId { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public string? Mode { get; set; }
+}
+
+public sealed class OrkaStudyRoomCheckpointRequestDto
+{
+    public Guid ClassroomSessionId { get; set; }
+    public string? ResponseSignal { get; set; }
+    public string? AnswerText { get; set; }
+    public bool Skipped { get; set; }
+    public string? ConceptKey { get; set; }
+}
+
+public sealed class OrkaCodeLearningIdeDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string ReadinessStatus { get; set; } = "thin_evidence";
+    public string Mode { get; set; } = "quick_start";
+    public string ActiveLanguage { get; set; } = "csharp";
+    public string? ActiveTopic { get; set; }
+    public string? ActiveSkill { get; set; }
+    public CodeLearningRuntimeReadinessDto RuntimeReadiness { get; set; } = new();
+    public CodeLearningSessionDto Session { get; set; } = new();
+    public CodeLearningExerciseDto ActiveExercise { get; set; } = new();
+    public CodeLearningAttemptDto LastAttemptSummary { get; set; } = new();
+    public CodeLearningErrorSummaryDto RepeatedErrorSummary { get; set; } = new();
+    public string CheckpointStatus { get; set; } = "not_started";
+    public string RepairStatus { get; set; } = "not_needed";
+    public IReadOnlyList<CodeLearningActionDto> RecommendedActions { get; set; } = Array.Empty<CodeLearningActionDto>();
+    public IReadOnlyList<CodeLearningHandoffDto> TutorHandoffs { get; set; } = Array.Empty<CodeLearningHandoffDto>();
+    public IReadOnlyList<CodeLearningHandoffDto> QuizHandoffs { get; set; } = Array.Empty<CodeLearningHandoffDto>();
+    public IReadOnlyList<CodeLearningHandoffDto> ReviewHandoffs { get; set; } = Array.Empty<CodeLearningHandoffDto>();
+    public IReadOnlyList<CodeLearningHandoffDto> WikiHandoffs { get; set; } = Array.Empty<CodeLearningHandoffDto>();
+    public IReadOnlyList<CodeLearningHandoffDto> NotebookHandoffs { get; set; } = Array.Empty<CodeLearningHandoffDto>();
+    public IReadOnlyList<CodeLearningWarningDto> MissionControlWarnings { get; set; } = Array.Empty<CodeLearningWarningDto>();
+    public IReadOnlyList<CodeLearningWarningDto> RuntimeWarnings { get; set; } = Array.Empty<CodeLearningWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Code Learning IDE durumu guvenli metadata ile hazirlandi.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class CodeLearningRuntimeReadinessDto
+{
+    public string Status { get; set; } = "limited";
+    public string ToolId { get; set; } = "ide_execution";
+    public string Decision { get; set; } = "CORE_ENABLED_BEHIND_AUTH_AND_SANDBOX";
+    public string RiskLevel { get; set; } = "High";
+    public int TimeoutMs { get; set; }
+    public IReadOnlyList<string> SupportedLanguages { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningSessionDto
+{
+    public string SessionStatus { get; set; } = "thin_evidence";
+    public int SignalCount { get; set; }
+    public int SuccessCount { get; set; }
+    public int CompileErrorCount { get; set; }
+    public int RuntimeErrorCount { get; set; }
+    public int TimeoutCount { get; set; }
+    public int TestFailureCount { get; set; }
+    public int BlankAttemptCount { get; set; }
+    public DateTimeOffset? LastSignalAt { get; set; }
+}
+
+public sealed class CodeLearningExerciseDto
+{
+    public string? ExerciseId { get; set; }
+    public string ExerciseStatus { get; set; } = "suggested";
+    public string ExerciseType { get; set; } = "checkpoint_challenge";
+    public string SourceBasis { get; set; } = "learning_metadata";
+    public string? ConceptKey { get; set; }
+    public bool PreSubmitKeyVisible { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningAttemptDto
+{
+    public string Status { get; set; } = "not_started";
+    public string Phase { get; set; } = "none";
+    public bool Success { get; set; }
+    public string Language { get; set; } = "csharp";
+    public string SafeErrorCategory { get; set; } = "none";
+    public string SafeTutorSummary { get; set; } = "Kod denemesi henuz yok.";
+    public long DurationMs { get; set; }
+    public bool OutputTruncated { get; set; }
+    public DateTimeOffset? CreatedAt { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningErrorSummaryDto
+{
+    public string DominantErrorType { get; set; } = "none";
+    public int RepetitionCount { get; set; }
+    public string RepairSuggestion { get; set; } = "Kisa checkpoint ile basla.";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningActionDto
+{
+    public string ActionType { get; set; } = "start_code_diagnostic";
+    public string Label { get; set; } = "Kisa kod tanisi baslat";
+    public string Reason { get; set; } = "Kod ogrenme kaniti sinirli.";
+    public string Priority { get; set; } = "normal";
+    public string EntryPoint { get; set; } = "Code IDE";
+    public string TargetRoute { get; set; } = "code-learning";
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string? Language { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningHandoffDto
+{
+    public string HandoffType { get; set; } = "ask_tutor";
+    public string Label { get; set; } = "Tutor ile acikla";
+    public string TargetRoute { get; set; } = "chat";
+    public string Priority { get; set; } = "normal";
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string? Language { get; set; }
+    public string? ConceptKey { get; set; }
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class CodeLearningWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info";
+    public string Label { get; set; } = string.Empty;
+    public string TargetRoute { get; set; } = "code-learning";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+}
+
+public sealed class OrkaUnifiedEvaluationDto
+{
+    public string OverallStatus { get; set; } = "blocked";
+    public IReadOnlyList<OrkaEvaluationScenarioResultDto> ScenarioResults { get; set; } = Array.Empty<OrkaEvaluationScenarioResultDto>();
+    public OrkaEvaluationScorecardDto Scorecard { get; set; } = new();
+    public IReadOnlyList<OrkaEvaluationCheckDto> ModuleConsistency { get; set; } = Array.Empty<OrkaEvaluationCheckDto>();
+    public OrkaEvaluationSafetySweepDto SafetySweep { get; set; } = new();
+    public OrkaEvaluationReleaseGateSummaryDto ReleaseGateSummary { get; set; } = new();
+    public IReadOnlyList<OrkaEvaluationCheckDto> FailingChecks { get; set; } = Array.Empty<OrkaEvaluationCheckDto>();
+    public IReadOnlyList<OrkaEvaluationCheckDto> WarningChecks { get; set; } = Array.Empty<OrkaEvaluationCheckDto>();
+    public IReadOnlyList<string> RecommendedFixes { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Unified evaluation release harness hazirlandi.";
+    public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class OrkaEvaluationScenarioResultDto
+{
+    public string ScenarioKey { get; set; } = string.Empty;
+    public string Status { get; set; } = "blocked";
+    public string ModuleKey { get; set; } = string.Empty;
+    public string PrimaryAction { get; set; } = "continue_plan";
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = string.Empty;
+}
+
+public sealed class OrkaEvaluationScorecardDto
+{
+    public string OverallStatus { get; set; } = "blocked";
+    public IReadOnlyList<OrkaEvaluationCheckDto> Checks { get; set; } = Array.Empty<OrkaEvaluationCheckDto>();
+}
+
+public sealed class OrkaEvaluationCheckDto
+{
+    public string CheckKey { get; set; } = string.Empty;
+    public string Status { get; set; } = "blocked";
+    public string ReasonCode { get; set; } = string.Empty;
+    public string RelatedScenarioKey { get; set; } = string.Empty;
+    public string UserSafeSummary { get; set; } = string.Empty;
+}
+
+public sealed class OrkaEvaluationWarningDto
+{
+    public string WarningCode { get; set; } = string.Empty;
+    public string Severity { get; set; } = "warning";
+    public string RelatedModule { get; set; } = string.Empty;
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = string.Empty;
+}
+
+public sealed class OrkaEvaluationSafetySweepDto
+{
+    public string Status { get; set; } = "blocked";
+    public int ScannedPayloadCount { get; set; }
+    public int UnsafeMarkerHitCount { get; set; }
+    public IReadOnlyList<OrkaEvaluationWarningDto> Warnings { get; set; } = Array.Empty<OrkaEvaluationWarningDto>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Public payload safety sweep henuz calismadi.";
+}
+
+public sealed class OrkaEvaluationReleaseGateSummaryDto
+{
+    public string Status { get; set; } = "blocked";
+    public IReadOnlyList<string> LocalCommands { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> RequiredTestGroups { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> ReasonCodes { get; set; } = Array.Empty<string>();
+    public string UserSafeSummary { get; set; } = "Release gate ozeti hazir degil.";
 }

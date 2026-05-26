@@ -25,14 +25,44 @@ public sealed class QuestionsController : ControllerBase
         [FromQuery] QuestionBankFilterDto filters,
         CancellationToken ct)
     {
-        return Ok(await _questionBank.GetQuestionsAsync(GetUserId(), filters, ct));
+        var questions = await _questionBank.GetQuestionsAsync(GetUserId(), filters, ct);
+        if (!User.IsInRole("Admin") && !User.IsInRole("Author"))
+        {
+            foreach (var q in questions)
+            {
+                MaskQuestionAnswersForLearner(q);
+            }
+        }
+        return Ok(questions);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<QuestionItemDto>> GetQuestion(Guid id, CancellationToken ct)
     {
         var result = await _questionBank.GetQuestionAsync(GetUserId(), id, ct);
-        return result is null ? NotFound() : Ok(result);
+        if (result is null) return NotFound();
+
+        if (!User.IsInRole("Admin") && !User.IsInRole("Author"))
+        {
+            MaskQuestionAnswersForLearner(result);
+        }
+        return Ok(result);
+    }
+
+    private static void MaskQuestionAnswersForLearner(QuestionItemDto q)
+    {
+        q.Explanation = string.Empty;
+        if (q.Options != null)
+        {
+            foreach (var o in q.Options)
+            {
+                o.IsCorrect = false;
+            }
+        }
+        if (q.Explanations != null)
+        {
+            q.Explanations.Clear();
+        }
     }
 
     [HttpPost]

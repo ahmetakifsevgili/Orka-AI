@@ -78,8 +78,19 @@ public static class ProductionSafetyStartupPolicy
 
     private static void ValidateRedis(IConfiguration configuration, List<string> errors)
     {
-        if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("Redis")))
+        var redis = configuration.GetConnectionString("Redis");
+        if (string.IsNullOrWhiteSpace(redis))
+        {
             errors.Add("ConnectionStrings:Redis is required");
+            return;
+        }
+
+        if (redis.Contains("localhost", StringComparison.OrdinalIgnoreCase) ||
+            redis.Contains("127.0.0.1") ||
+            redis.StartsWith("::1"))
+        {
+            errors.Add("ConnectionStrings:Redis must not point to localhost in Staging/Production");
+        }
     }
 
     private static void ValidateCors(

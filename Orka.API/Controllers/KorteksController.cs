@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Orka.API.Services;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.Exceptions;
@@ -16,6 +17,7 @@ namespace Orka.API.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/korteks")]
+[EnableRateLimiting("ResearchLimiter")]
 public class KorteksController : ControllerBase
 {
     private readonly IKorteksAgent _korteks;

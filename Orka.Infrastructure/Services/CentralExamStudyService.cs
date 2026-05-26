@@ -15,7 +15,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
     private const string ParagrafCode = "PARAGRAF";
     private const string GenelYetenekCode = "GENEL_YETENEK";
     private const string KpssUnverifiedLabel = "Resmi müfredat iddiası değildir; doğrulanmış kaynak eklendiğinde resmi kaynak etiketi gösterilir.";
-    private const string KpssUnverifiedLabelAscii = "Resmi mufredat iddiasi degildir";
+    private const string KpssUnverifiedLabelAscii = "Resmi müfredat iddiası değildir";
     private const string NoPracticeEmptyState = "Bu alanda henüz yayına hazır pratik sorusu yok. İçerik eklendiğinde burada çözülebilir hale gelir.";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -62,7 +62,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         {
             ExamCode = tree.Code,
             DisplayName = tree.Name,
-            Description = "Merkezi Sinavlar icinde KPSS icin sabit calisma baslangici.",
+            Description = "Merkezi Sınavlar içinde KPSS için sabit çalışma başlangıcı.",
             VerificationStatus = tree.VerificationStatus,
             CanClaimOfficial = tree.CanClaimOfficial,
             UserSafeVerificationLabel = SafeVerificationLabel(tree.UserSafeVerificationLabel),
@@ -117,7 +117,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         {
             ExamCode = tree.Code,
             DisplayName = tree.Name,
-            Description = $"{tree.Code} icin Orka merkezi sinav hazirlik iskeleti. Bu alan henuz pratik veya mini deneme akisi acmaz.",
+            Description = $"{tree.Code} için Orka merkezi sınav hazırlık iskeleti. Bu alan henüz pratik veya mini deneme akışı açmaz.",
             VerificationStatus = tree.VerificationStatus,
             CanClaimOfficial = tree.CanClaimOfficial,
             UserSafeVerificationLabel = SafeVerificationLabel(tree.UserSafeVerificationLabel),
@@ -139,7 +139,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
                 HasCountdown = false,
                 HasStudyPlan = false
             },
-            EmptyState = $"{tree.Code} hazirlik iskeleti temsilidir; resmi mufredat iddiasi degildir ve henuz yayina hazir pratik akisi yok.",
+            EmptyState = $"{tree.Code} hazırlık iskeleti temsilidir; resmi müfredat iddiası değildir ve henüz yayına hazır pratik akışı yok.",
             GeneratedAt = DateTimeOffset.UtcNow
         };
     }
@@ -542,9 +542,15 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         };
     }
 
-    private IQueryable<QuestionItem> QueryPracticeReadyQuestions(Guid userId, Guid examDefinitionId, IReadOnlyList<ResolvedExamPath> paths) =>
-        ScopedQuestions(examDefinitionId, paths)
-            .Where(q => q.QualityStatus == "published" && (q.OwnerUserId == null || q.OwnerUserId == userId));
+    private IQueryable<QuestionItem> QueryPracticeReadyQuestions(Guid userId, Guid examDefinitionId, IReadOnlyList<ResolvedExamPath> paths)
+    {
+        var answeredQuestionIds = _db.CentralExamPracticeAnswers
+            .Where(a => _db.CentralExamPracticeAttempts.Any(att => att.Id == a.PracticeAttemptId && att.UserId == userId))
+            .Select(a => a.QuestionItemId);
+
+        return ScopedQuestions(examDefinitionId, paths)
+            .Where(q => q.QualityStatus == "published" && (q.OwnerUserId == null || q.OwnerUserId == userId) && !answeredQuestionIds.Contains(q.Id));
+    }
 
     private IQueryable<QuestionItem> ScopedQuestions(Guid examDefinitionId, IReadOnlyList<ResolvedExamPath> paths)
     {
@@ -562,12 +568,34 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
                             || q.OutcomeLinks.Any(l => !l.IsDeleted && outcomeIds.Contains(l.ExamOutcomeId))));
     }
 
+    private async Task<Guid?> ResolveStandardTopicIdAsync(Guid? examOutcomeId, CancellationToken ct)
+    {
+        if (!examOutcomeId.HasValue) return null;
+
+        var mapping = await _db.CurriculumOutcomeMappings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(m => m.ExamOutcomeId == examOutcomeId.Value && !m.IsDeleted, ct);
+
+        return mapping?.CurriculumNodeId;
+    }
+
     private async Task RecordPracticeLearningSignalsAsync(CentralExamPracticeAttempt attempt, CancellationToken ct)
     {
+        Guid? overallTopicId = null;
+        foreach (var answer in attempt.Answers)
+        {
+            var resolved = await ResolveStandardTopicIdAsync(answer.ExamOutcomeId, ct);
+            if (resolved.HasValue)
+            {
+                overallTopicId = resolved;
+                break;
+            }
+        }
+
         var score = attempt.TotalQuestions == 0 ? 0 : (int)Math.Round(attempt.CorrectCount * 100m / attempt.TotalQuestions);
         await _signals.RecordSignalAsync(
             attempt.UserId,
-            topicId: null,
+            topicId: overallTopicId,
             sessionId: null,
             LearningSignalTypes.CentralExamPracticeAnswered,
             skillTag: BuildConceptKey(ToContext(attempt)),
@@ -609,9 +637,11 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
                 evidenceBasis = remediation.EvidenceBasis
             }, JsonOptions);
 
+            var answerTopicId = await ResolveStandardTopicIdAsync(answer.ExamOutcomeId, ct);
+
             await _signals.RecordSignalAsync(
                 attempt.UserId,
-                topicId: null,
+                topicId: answerTopicId,
                 sessionId: null,
                 LearningSignalTypes.CentralExamWeaknessDetected,
                 skillTag: remediation.ConceptKey,
@@ -1043,18 +1073,18 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
         ExamDate = null,
         DaysRemaining = null,
         VerificationStatus = "not_configured",
-        UserSafeLabel = $"{examCode} sinav tarihi dogrulanmis kaynakla yapilandirilmadi."
+        UserSafeLabel = $"{examCode} sınav tarihi doğrulanmış kaynakla yapılandırılmadı."
     };
 
     private static CentralExamDto ComingSoon(string code, string displayName) => new()
     {
         ExamCode = code,
         DisplayName = displayName,
-        Description = "Bu merkezi sinav alani icin icerik motoru daha sonra baglanacak.",
+        Description = "Bu merkezi sınav alanı için içerik motoru daha sonra bağlanacak.",
         AvailabilityStatus = "coming_soon",
         VerificationStatus = "unverified",
         CanClaimOfficial = false,
-        UserSafeVerificationLabel = "Henuz dogrulanmis resmi kapsam iddiasi yok.",
+        UserSafeVerificationLabel = "Henüz doğrulanmış resmi kapsam iddiası yok.",
         Capabilities = new CentralExamCapabilityDto()
     };
 

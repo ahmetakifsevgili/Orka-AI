@@ -1,0 +1,451 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Orka.Core.DTOs;
+using Orka.Core.Entities;
+using Orka.Core.Enums;
+using Orka.Core.Interfaces;
+using Orka.Infrastructure.Data;
+using Xunit;
+
+namespace Orka.API.Tests;
+
+public sealed class OrkaStudyCoachTests
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public async Task StudyCoach_NewLearnerDegradesToQuickStartWithoutMasteryClaim()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-new");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach New Learner");
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.Equal("thin_evidence", coach.RhythmStatus);
+        Assert.Equal("light", coach.RecommendedPace);
+        Assert.Equal("quick_start", coach.FocusPlan.FocusMode);
+        Assert.Contains("thin_evidence", coach.ReasonCodes);
+        Assert.DoesNotContain("stable", JsonSerializer.Serialize(coach, JsonOptions), StringComparison.OrdinalIgnoreCase);
+        AssertSafePayload(JsonSerializer.Serialize(coach, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_OneWrongAnswerDoesNotCreateHeavyRepairDay()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-one-wrong");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Single Wrong");
+        await SeedSingleWrongAsync(factory, user.UserId, topicId);
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.NotEqual("repair_heavy", coach.RhythmStatus);
+        Assert.DoesNotContain(coach.Warnings, w => w.WarningCode == "overload_risk");
+        Assert.DoesNotContain("misconception", JsonSerializer.Serialize(coach, JsonOptions), StringComparison.OrdinalIgnoreCase);
+        AssertSafePayload(JsonSerializer.Serialize(coach, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_RepeatedWrongAndBlankAnswersCreateRepairRhythmAndStudyRoomHandoff()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-repair");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Repair Topic");
+        await SeedRepairSignalsAsync(factory, user.UserId, topicId, includeStudyRoom: true);
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.Equal("repair_heavy", coach.RhythmStatus);
+        Assert.Contains(coach.FocusPlan.FocusMode, new[] { "repair_block", "study_room_lesson" });
+        Assert.Contains(coach.Actions, a => a.ActionType is "repair_concept" or "repair_prerequisite");
+        Assert.Contains(coach.Actions, a => a.ActionType == "open_study_room");
+        Assert.Contains(coach.ReasonCodes, r => r is "repeated_wrong" or "repeated_blank" or "prerequisite_gap");
+        AssertSafePayload(JsonSerializer.Serialize(coach, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_DueReviewCreatesReviewSprint()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-review");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Review Topic");
+        await SeedDueReviewAsync(factory, user.UserId, topicId);
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.Equal("review_heavy", coach.RhythmStatus);
+        Assert.Equal("review_sprint", coach.RecommendedPace);
+        Assert.Equal("review_sprint", coach.FocusPlan.FocusMode);
+        Assert.Contains(coach.Actions, a => a.ActionType == "review_due_concept");
+        AssertSafePayload(JsonSerializer.Serialize(coach, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_SourceInsufficientCreatesSourceCleanupWarning()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-source");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Source Topic");
+        await SeedSourceWikiWarningAsync(factory, user.UserId, topicId);
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.Equal("source_cleanup", coach.RhythmStatus);
+        Assert.Equal("source_cleanup", coach.FocusPlan.FocusMode);
+        Assert.Contains(coach.Warnings, w => w.WarningCode is "source_grounding_blocked" or "source_grounded_claim_blocked");
+        Assert.Contains(coach.Actions, a => a.ActionType is "source_review" or "citation_review");
+        var json = JsonSerializer.Serialize(coach, JsonOptions);
+        Assert.DoesNotContain("source-grounded answer", json, StringComparison.OrdinalIgnoreCase);
+        AssertSafePayload(json, user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_ExamWeakOutcomeCreatesExamFocusedRhythmWithoutGuarantee()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-exam");
+        await SeedExamWeakOutcomeAsync(factory, user);
+
+        var coach = await GetCoachAsync(user, topicId: null);
+
+        Assert.Equal("exam_heavy", coach.RhythmStatus);
+        Assert.Equal("exam_block", coach.FocusPlan.FocusMode);
+        Assert.Contains(coach.Actions, a => a.ActionType is "practice_exam_outcome" or "review_deneme_mistakes");
+        var json = JsonSerializer.Serialize(coach, JsonOptions);
+        Assert.DoesNotContain("guarantee", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("%100", json, StringComparison.OrdinalIgnoreCase);
+        AssertSafePayload(json, user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_ComebackPlanUsesPracticalLanguageWithoutMedicalOrPsychClaims()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-comeback");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Comeback Topic");
+        await SeedOldActivityAsync(factory, user.UserId, topicId);
+
+        var coach = await GetCoachAsync(user, topicId);
+
+        Assert.Equal("comeback", coach.RhythmStatus);
+        Assert.Equal("needed", coach.ComebackPlan.ComebackStatus);
+        Assert.Equal("comeback_ramp", coach.RecommendedPace);
+        AssertSafePayload(JsonSerializer.Serialize(coach, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_DashboardTodayCarriesCoachAlignedWithMissionControl()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-dashboard");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Coach Dashboard Topic");
+        await SeedRepairSignalsAsync(factory, user.UserId, topicId, includeStudyRoom: true);
+
+        var dashboard = await user.Client.GetFromJsonAsync<DashboardTodayDto>("/api/dashboard/today")
+            ?? throw new InvalidOperationException("Dashboard payload missing.");
+
+        Assert.NotNull(dashboard.MissionControl);
+        Assert.NotNull(dashboard.StudyCoach);
+        Assert.Contains(
+            dashboard.StudyCoach!.Actions,
+            a => a.ActionType == dashboard.MissionControl!.PrimaryMission.ActionType ||
+                 a.ActionType is "repair_concept" or "repair_prerequisite");
+        Assert.NotEqual("normal", dashboard.StudyCoach.RhythmStatus);
+        AssertSafePayload(JsonSerializer.Serialize(new { dashboard.MissionControl, dashboard.StudyCoach }, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task StudyCoach_BlocksCrossUserTopicAccess()
+    {
+        using var factory = new ApiSmokeFactory();
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-owner");
+        var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "coach-other");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, owner.UserId, "Coach Private Topic");
+
+        var response = await other.Client.GetAsync($"/api/learning/study-coach?topicId={topicId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    private static async Task<OrkaStudyCoachDto> GetCoachAsync(CoordinationTestUser user, Guid? topicId)
+    {
+        var path = topicId.HasValue
+            ? $"/api/learning/study-coach?topicId={topicId.Value}"
+            : "/api/learning/study-coach";
+        var response = await user.Client.GetAsync(path);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<OrkaStudyCoachDto>())!;
+    }
+
+    private static async Task SeedSingleWrongAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.QuizAttempts.Add(Attempt(userId, topicId, "single-wrong", correct: false, skipped: false, DateTime.UtcNow.AddMinutes(-3)));
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedOldActivityAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.QuizAttempts.Add(Attempt(userId, topicId, "old-correct", correct: true, skipped: false, DateTime.UtcNow.AddDays(-15)));
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedDueReviewAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+
+        db.ReviewItems.Add(new ReviewItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ReviewKey = $"coach-review:{topicId}",
+            SkillTag = "Coach Due Review",
+            ConceptTag = "coach-due-review",
+            LearningObjective = "Coach Due Review",
+            DueAt = now.AddDays(-2),
+            Status = "active",
+            CreatedAt = now.AddDays(-10),
+            UpdatedAt = now.AddDays(-2)
+        });
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedRepairSignalsAsync(ApiSmokeFactory factory, Guid userId, Guid topicId, bool includeStudyRoom)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+
+        db.KnowledgeTracingStates.AddRange(
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "coach-repeated-wrong",
+                Label = "Coach Repeated Wrong",
+                EvidenceCount = 3,
+                CorrectCount = 0,
+                IncorrectCount = 3,
+                MasteryProbability = 0.22m,
+                Confidence = 0.78m,
+                RemediationNeed = "high",
+                PracticeReadiness = "guided",
+                LastEvidenceAt = now.AddMinutes(-2),
+                CreatedAt = now.AddDays(-1),
+                UpdatedAt = now
+            },
+            new KnowledgeTracingState
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                ConceptKey = "coach-blank-gap",
+                Label = "Coach Blank Gap",
+                EvidenceCount = 2,
+                CorrectCount = 0,
+                IncorrectCount = 0,
+                MasteryProbability = 0.40m,
+                Confidence = 0.44m,
+                RemediationNeed = "medium",
+                PracticeReadiness = "guided",
+                LastEvidenceAt = now.AddMinutes(-1),
+                CreatedAt = now.AddDays(-1),
+                UpdatedAt = now
+            });
+
+        db.QuizAttempts.AddRange(
+            Attempt(userId, topicId, "coach-repeated-wrong", correct: false, skipped: false, now.AddMinutes(-12)),
+            Attempt(userId, topicId, "coach-repeated-wrong", correct: false, skipped: false, now.AddMinutes(-8)),
+            Attempt(userId, topicId, "coach-repeated-wrong", correct: false, skipped: false, now.AddMinutes(-4)),
+            Attempt(userId, topicId, "coach-blank-gap", correct: false, skipped: true, now.AddMinutes(-6)),
+            Attempt(userId, topicId, "coach-blank-gap", correct: false, skipped: true, now.AddMinutes(-3)));
+
+        if (includeStudyRoom)
+        {
+            db.ClassroomSessions.Add(new ClassroomSession
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                Transcript = "[HOCA]: Safe personal study room context.",
+                LastSegment = "Safe personal study room context.",
+                Status = "active",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static QuizAttempt Attempt(Guid userId, Guid topicId, string conceptKey, bool correct, bool skipped, DateTime createdAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        TopicId = topicId,
+        Question = "Safe question",
+        UserAnswer = skipped ? string.Empty : "B",
+        IsCorrect = correct,
+        WasSkipped = skipped,
+        Explanation = "Safe explanation",
+        SkillTag = conceptKey,
+        CreatedAt = createdAt
+    };
+
+    private static async Task SeedSourceWikiWarningAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
+    {
+        var sourceId = await CoordinationTestHelpers.SeedSourceAsync(factory, userId, topicId, "Coach Source", "safe source fixture");
+        var pageId = await CoordinationTestHelpers.SeedWikiPageAsync(factory, userId, topicId, "Coach Wiki", "manual safe note");
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var page = await db.WikiPages.SingleAsync(p => p.Id == pageId);
+        page.ConceptKey = "coach-source-gap";
+        page.SourceReadiness = "evidence_insufficient";
+        page.EvidenceStatus = "evidence_insufficient";
+
+        var block = await db.WikiBlocks.SingleAsync(b => b.WikiPageId == pageId);
+        block.BlockType = WikiBlockType.RepairNote;
+        block.ConceptKey = "coach-source-gap";
+        block.SourceBasis = "evidence_insufficient";
+        block.SafetyWarningsJson = "[\"source_limited\"]";
+
+        var lifecycle = scope.ServiceProvider.GetRequiredService<ISourceEvidenceLifecycleService>();
+        await lifecycle.BuildSourceEvidenceBundleAsync(userId, topicId, question: "safe source coach check");
+        await lifecycle.MarkSourceStaleAsync(userId, sourceId, "study_coach_test_stale");
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedExamWeakOutcomeAsync(ApiSmokeFactory factory, CoordinationTestUser user)
+    {
+        var ids = await GetKpssIdsAsync(factory);
+        for (var i = 0; i < 5; i++)
+        {
+            await SeedQuestionAsync(factory, ids, $"Coach exam stem {i}");
+        }
+
+        var sessionResponse = await user.Client.PostAsJsonAsync(
+            "/api/central-exams/kpss/denemeler/KPSS_MINI_TURKCE_PARAGRAF/start",
+            new CentralExamDenemeStartRequestDto());
+        sessionResponse.EnsureSuccessStatusCode();
+        var session = (await sessionResponse.Content.ReadFromJsonAsync<CentralExamDenemeSessionDto>())!;
+
+        var submit = await user.Client.PostAsJsonAsync("/api/central-exams/kpss/denemeler/submit", new CentralExamDenemeSubmitRequestDto
+        {
+            DenemeAttemptId = session.DenemeAttemptId,
+            Answers = session.Questions.Select((q, index) => new CentralExamDenemeAnswerDto
+            {
+                QuestionId = q.QuestionId,
+                SelectedOptionKey = index < 3 ? "B" : "A"
+            }).ToList()
+        });
+        submit.EnsureSuccessStatusCode();
+    }
+
+    private static async Task<KpssPath> GetKpssIdsAsync(ApiSmokeFactory factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IExamFrameworkService>();
+        var tree = await service.CreateSystemSkeletonAsync();
+        var variant = tree.Variants.Single(v => v.Code == "KPSS_LISANS");
+        var section = variant.Sections.Single(s => s.Code == "GENEL_YETENEK");
+        var subject = section.Subjects.Single(s => s.Code == "TURKCE");
+        var topic = subject.Topics.Single(t => t.Code == "PARAGRAF");
+        return new KpssPath(tree.Id, variant.Id, section.Id, subject.Id, topic.Id, topic.Outcomes.Single().Id);
+    }
+
+    private static async Task SeedQuestionAsync(ApiSmokeFactory factory, KpssPath ids, string stem)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        db.QuestionItems.Add(new QuestionItem
+        {
+            ExamDefinitionId = ids.DefinitionId,
+            ExamVariantId = ids.VariantId,
+            ExamSectionId = ids.SectionId,
+            ExamSubjectId = ids.SubjectId,
+            ExamTopicId = ids.TopicId,
+            ExamOutcomeId = ids.OutcomeId,
+            QuestionType = "multiple_choice",
+            Stem = stem,
+            Difficulty = "medium",
+            CognitiveSkill = "reading_comprehension",
+            QualityStatus = "published",
+            LicenseStatus = "open",
+            SourceOrigin = "test_fixture",
+            Explanation = "Post-submit safe explanation.",
+            Options =
+            [
+                new QuestionOption { OptionKey = "A", Text = "Correct option", IsCorrect = true, SortOrder = 0 },
+                new QuestionOption { OptionKey = "B", Text = "Wrong option", IsCorrect = false, SortOrder = 1 }
+            ],
+            OutcomeLinks =
+            [
+                new QuestionOutcomeLink { ExamOutcomeId = ids.OutcomeId, IsPrimary = true, LinkStrength = 1.0m }
+            ]
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static void AssertSafePayload(string json, Guid userId)
+    {
+        var unsafeMarkers = new[]
+        {
+            "rawPrompt",
+            "hiddenPrompt",
+            "systemPrompt",
+            "developerPrompt",
+            "rawProviderPayload",
+            "rawSourceChunk",
+            "rawToolPayload",
+            "debugTrace",
+            "localPath",
+            "apiKey",
+            "secret",
+            "answerKey",
+            "correctAnswer",
+            "stackTrace",
+            "ownerId",
+            "userId",
+            "therapy",
+            "therapist",
+            "psychologist",
+            "medical",
+            "diagnosis",
+            "ADHD",
+            "burnout",
+            "mental health",
+            "wellbeing"
+        };
+
+        foreach (var marker in unsafeMarkers)
+        {
+            Assert.DoesNotContain(marker, json, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.DoesNotContain(userId.ToString(), json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("C:\\", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("success guarantee", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("%100", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record KpssPath(
+        Guid DefinitionId,
+        Guid VariantId,
+        Guid SectionId,
+        Guid SubjectId,
+        Guid TopicId,
+        Guid OutcomeId);
+}

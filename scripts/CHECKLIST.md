@@ -244,6 +244,9 @@ dotnet ef migrations script --idempotent --project Orka.Infrastructure --startup
   - Protected Staging/Production startup DB/Redis/CORS/AllowedHosts/JWT/refresh
     cookie/rate limit/migration readiness/global-user AI cost limit guard'larini
     fail-closed kontrol eder.
+  - Code Learning IDE Redis handoff context summary-only kalir; raw student code,
+    stdout, stderr, stack trace, local path, secret veya raw tool payload cache'e
+    yazilmaz.
   - Source upload/file/extraction/chunk/embedding/hourly/daily/topic limitleri
     korunur; raw source chunk loglanmaz.
   - Provider-free quick script/CI baseline'a live provider veya paid load testi
@@ -716,6 +719,445 @@ Before release-polish closure:
   scripts\quick-coordination.ps1
   scripts\quick-backend.ps1
   cd Orka-Front; npm run typecheck; npm run quick:smoke; npm run quick:build
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Learning OS Feature Completion Phase 1 Gate
+
+Before closing Long-Term Adaptive Learning Engine:
+
+- Confirm `ILongTermAdaptiveLearningService` builds a provider-free long-term learner profile from existing durable evidence.
+- Confirm concept states distinguish new, learning, weak, repaired, stable, due for review, and likely forgotten without overclaiming from a single answer.
+- Confirm review pressure emits safe priority, reason codes, and recommended actions for SRS due items, repeated wrong answers, blank/skipped answers, Wiki repair notes, and source-limited evidence.
+- Confirm Tutor next actions and dashboard consume the long-term profile without raw transcripts, prompts, provider payloads, source chunks, tool payloads, local paths, owner/user ids, or answer keys.
+- Confirm blank/skipped answers trigger prerequisite/guided review rather than fake misconception certainty.
+- Confirm no new AI/provider calls, OpenAI API migration, official curriculum claim, medical/psychological claim, or exam success guarantee was added.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LongTermAdaptiveLearningTests|LearningSnapshotTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|TutorPedagogyPolicyTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Learning OS Feature Completion Phase 2 Gate
+
+Before closing Exam & Curriculum Depth Pack:
+
+- Confirm `IExamLearningProfileService` builds a provider-free exam learning profile from the existing exam framework, question bank, practice attempts, deneme attempts, curriculum mappings, and source verification metadata.
+- Confirm weak outcomes, due outcomes, stable outcomes, question type readiness, practice readiness, deneme mistake clusters, and next exam actions are exposed through bounded DTOs.
+- Confirm repeated wrong answers can trigger `repair_outcome`; repeated blank/skipped answers trigger diagnostic/prerequisite review rather than fake misconception certainty; repeated success can allow `continue_exam_plan` without any success guarantee.
+- Confirm thin question coverage and unverified curriculum/source state surface honest warnings instead of official alignment claims.
+- Confirm Central Exams, Dashboard, and Tutor consume exam profile metadata without pre-submit answer keys, raw prompts, provider payloads, source chunks, tool/debug payloads, local paths, owner/user ids, or stack traces.
+- Confirm no scraping, new AI/provider calls, OpenAI API migration, frontend redesign, mobile app, teacher/classroom/dershane workflow, payment/subscription, official exam claim, or success guarantee was added.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "ExamCurriculumDepthTests|CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentBlueprintTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LongTermAdaptiveLearningTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningSnapshotTests|QuizLearningPipelineTests|TutorPedagogyPolicyTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Learning OS Feature Completion Phase 3 Gate
+
+Before closing Source/Wiki Intelligence Deepening:
+
+- Confirm `ISourceWikiIntelligenceService` builds a provider-free source/wiki intelligence profile from existing source lifecycle, source-to-concept links, source Q&A memory, citation review, Wiki pages/blocks, and Wiki curation state.
+- Confirm source readiness, citation readiness, Wiki repair/source-limited/stale/duplicate state, linked concepts, source Q&A review pressure, warnings, and next actions are exposed through bounded DTOs.
+- Confirm stale/deleted/insufficient/degraded source state blocks source-grounded overclaims and creates source-review/citation-review actions.
+- Confirm Wiki repair-pending pages create targeted repair actions, manual notes are preserved, and duplicate trace cleanup remains curation metadata rather than destructive deletion.
+- Confirm Dashboard and Tutor consume source/wiki profile metadata without raw source chunks, raw Wiki block bodies, prompts, provider payloads, tool/debug payloads, local paths, owner/user ids, stack traces, or answer keys.
+- Confirm provider output and Wiki memory are not treated as citation evidence, and no scraping, new AI/provider call, OpenAI API migration, frontend redesign, mobile app, teacher/classroom/dershane workflow, payment/subscription, official/source-grounded overclaim, or success guarantee was added.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "SourceWikiIntelligenceTests|SourceEvidenceLifecycleTests|WikiGraphContractTests|LearningNotebookStudioTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|LearningSnapshotTests|QuizLearningPipelineTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Learning OS Feature Completion Phase 4 Gate
+
+Before closing Student Simulation & Evaluation Harness:
+
+- Confirm `StudentSimulationEvaluationTests` runs a deterministic provider-free scenario pack for new learner, repeated wrong learner, blank/skipped learner, improving learner, forgotten/due-review learner, exam prep learner, source/wiki learner, and mixed Learning OS journey.
+- Confirm the harness evaluates long-term adaptive profile, exam learning profile, source/wiki intelligence profile, Tutor next actions, dashboard today metadata, Wiki curation, source evidence state, privacy/overclaim safety, and cross-user protection together.
+- Confirm scorecards use pass/fail reason codes and user-safe summaries only, with no AI judge, no paid provider calls, no scraped official content, and no success/score/placement guarantee.
+- Confirm serialized public simulation payloads do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, answer keys, arbitrary learner phrases, or arbitrary source phrases.
+- Confirm Tutor/dashboard/long-term/exam/source-wiki next actions do not contradict each other dangerously; source-grounded actions remain blocked when source evidence is stale, insufficient, deleted, degraded, or citation review needs attention.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "StudentSimulationEvaluationTests|BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|SourceEvidenceLifecycleTests|WikiGraphContractTests|LearningNotebookStudioTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 1 Gate
+
+Before closing Orka OS Binding Layer / Unified Learning State:
+
+- Confirm `IOrkaLearningStateService` composes long-term adaptive learning, exam learning profile, source/wiki intelligence, quiz/mastery/review evidence, Wiki repair state, source lifecycle state, Dashboard, Tutor, and personal Study Room/Classroom readiness through one safe contract.
+- Confirm `/api/learning/orka-state` and `/api/dashboard/today` expose `OrkaLearningStateDto` with safe statuses, counts, reason codes, next actions, and warnings only.
+- Confirm Tutor and Dashboard consume the unified primary next action or expose explicit conflict warnings instead of silently disagreeing.
+- Confirm one wrong answer does not overreact, repeated wrong answers trigger repair/prerequisite action, blank/skipped answers trigger guided diagnostic/prerequisite review, and due review items create review action.
+- Confirm stale/deleted/insufficient/degraded source evidence blocks source-grounded action and creates source/citation review warnings.
+- Confirm exam weak outcomes can create exam practice/repair actions without official, score, placement, or success guarantees.
+- Confirm Study Room/Classroom is treated as personal AI study room readiness only, not teacher/classroom/dershane management.
+- Confirm public DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, arbitrary learner phrases, or arbitrary source phrases.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|SourceEvidenceLifecycleTests|WikiGraphContractTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 2 Gate
+
+Before closing Orka Home / Mission Control Backend:
+
+- Confirm `IOrkaMissionControlService` derives Mission Control from `IOrkaLearningStateService` and existing long-term, exam, source/wiki, review, Wiki, personal Study Room, Dashboard, and Notebook Studio readiness signals.
+- Confirm `/api/learning/mission-control` is authenticated, user-scoped, and returns NotFound/forbidden-equivalent behavior for other-user topic/session scope.
+- Confirm `/api/dashboard/today` includes `MissionControl` without contradicting the unified primary next action.
+- Confirm Mission Control exposes one primary mission, primary entry point, secondary actions, urgent warnings, today focus, review/repair/exam/source-wiki load, Study Room suggestion, module cards, sections, evidence confidence, reason codes, and a bounded user-safe summary.
+- Confirm new learner state degrades to diagnostic/thin-evidence without mastery claim.
+- Confirm one wrong answer does not overreact, repeated wrong answers trigger repair/prerequisite mission, blank/skipped answers trigger guided diagnostic/prerequisite repair, and due review items create review section/action.
+- Confirm stale/deleted/insufficient/degraded source evidence blocks source-grounded action and creates source/citation warning.
+- Confirm exam weak outcome creates exam focus without official, score, placement, or success guarantee.
+- Confirm Study Room/Classroom is a personal AI study room handoff only and is suggested only with safe topic/lesson context.
+- Confirm public Mission Control DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, arbitrary learner phrases, or arbitrary source phrases.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaMissionControlTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 3 Gate
+
+Before closing Study Rhythm Coach / Life-Study Coach Backend:
+
+- Confirm `IOrkaStudyCoachService` derives Study Coach from `IOrkaLearningStateService`, `IOrkaMissionControlService`, long-term weekly rhythm, review due state, repair pressure, exam profile, source/wiki warnings, personal Study Room readiness, and recent activity evidence.
+- Confirm `/api/learning/study-coach` is authenticated, user-scoped, and returns NotFound/forbidden-equivalent behavior for other-user topic/session scope.
+- Confirm `/api/dashboard/today` includes `StudyCoach` without contradicting Mission Control or the unified primary next action.
+- Confirm Study Coach exposes rhythm status, recommended pace, today plan, weekly plan, workload, focus plan, comeback plan, actions, warnings, reason codes, and a bounded user-safe summary.
+- Confirm Mission Control answers "what first" while Study Coach answers "pace/rhythm/focus".
+- Confirm new learner state degrades to short quick-start/thin-evidence without mastery claim.
+- Confirm one wrong answer does not create a heavy repair day; repeated wrong answers trigger repair-heavy rhythm; blank/skipped answers trigger guided repair/prerequisite rhythm without fake misconception certainty.
+- Confirm due review creates review sprint/review-heavy rhythm.
+- Confirm exam weak outcome creates exam-focused rhythm without official, score, placement, or success guarantee.
+- Confirm stale/deleted/insufficient/degraded source evidence creates source cleanup/source warning and blocks source-grounded overclaim.
+- Confirm comeback planning after inactivity uses practical study pacing only and does not make therapy, psychology, medical, wellbeing, ADHD, burnout, or diagnosis claims.
+- Confirm Study Room/Classroom is a personal AI study room handoff only and is suggested only with safe topic/lesson context.
+- Confirm public Study Coach DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, arbitrary learner phrases, arbitrary source phrases, medical/psychological claims, or success guarantees.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests|LongTermAdaptiveLearningTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "ExamCurriculumDepthTests|SourceWikiIntelligenceTests|SourceEvidenceLifecycleTests|WikiGraphContractTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 4 Gate
+
+Before closing Exam War Room Backend:
+
+- Confirm `IOrkaExamWarRoomService` derives Exam War Room from `IExamLearningProfileService`, exam framework/question coverage, practice/deneme evidence, curriculum/source warnings, unified Orka learning state, Mission Control, and Study Coach.
+- Confirm `/api/central-exams/{examCode}/war-room` is authenticated and user-scoped by evidence ownership.
+- Confirm `/api/dashboard/today` includes compact `ExamWarRoom` metadata without contradicting the exam learning profile, Mission Control, or Study Coach silently.
+- Confirm Exam War Room exposes active exam, readiness status, weak/due/stable outcomes, weak question types, deneme mistake clusters, practice queue, today exam mission, weekly exam plan, Tutor repair handoffs, personal Study Room handoffs, source/wiki warnings, curriculum coverage warnings, conflict warnings, reason codes, and bounded user-safe summary.
+- Confirm deneme mistake clusters create `review_deneme_mistakes`; repeated wrong creates `repair_exam_outcome`; repeated blank/skipped creates `run_exam_diagnostic` without fake misconception certainty; due outcomes create `review_due_outcome`; stable repeated success can expose low-priority `continue_exam_plan`.
+- Confirm source/curriculum verification warnings block official/source-backed overclaim and do not claim official alignment, score, percentile, placement, or exam success guarantees.
+- Confirm pre-submit answer keys and correct answers do not appear in Exam War Room or practice/deneme session payloads.
+- Confirm Study Room/Classroom is a personal AI study room handoff only and appears only with safe topic/lesson context.
+- Confirm public Exam War Room DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, arbitrary source phrases, official claims, or success guarantees.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaExamWarRoomTests|ExamCurriculumDepthTests|OrkaMissionControlTests|OrkaStudyCoachTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentBlueprintTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|TutorPedagogyPolicyTests|LongTermAdaptiveLearningTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 5 Gate
+
+Before closing Source / Wiki Pro Pack Backend:
+
+- Confirm `IOrkaSourceWikiProService` derives Source / Wiki Pro from Source/Wiki Intelligence, source lifecycle, citation review, source-to-concept links, Wiki curation, Notebook Studio, unified Orka learning state, Mission Control, Study Coach, and Exam War Room warnings.
+- Confirm `/api/sources/wiki-pro` is authenticated and user-scoped by topic/source/wiki page ownership.
+- Confirm `/api/dashboard/today` includes compact `SourceWikiPro` metadata without contradicting Source/Wiki Intelligence, Mission Control, Study Coach, or Exam War Room silently.
+- Confirm Source / Wiki Pro exposes source readiness, Wiki readiness, citation readiness, evidence map, linked concepts, linked exam outcomes, source-backed/source-limited concepts, stale/deleted/insufficient/degraded sources, Wiki repair/duplicate/manual/tutor-trace/source-backed pages, Notebook pack readiness, today mission, handoffs, warnings, reason codes, and bounded user-safe summary.
+- Confirm provider output and Wiki memory alone are not treated as citation/source evidence.
+- Confirm stale/deleted/insufficient/degraded sources or missing/unsupported/stale citations block source-grounded/source-backed overclaims and create `source_review` or `citation_review` actions.
+- Confirm Wiki repair/duplicate/stale trace cleanup preserves manual notes and does not expose raw Wiki block bodies.
+- Confirm Tutor, personal Study Room, Notebook Studio, Exam War Room, Mission Control, Study Coach, and Dashboard handoffs are suggestions only, with no hidden autonomous edits/actions.
+- Confirm public Source / Wiki Pro DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, arbitrary source phrases, official claims, source-grounded overclaims, or success guarantees.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaSourceWikiProTests|SourceWikiIntelligenceTests|SourceEvidenceLifecycleTests|WikiGraphContractTests|LearningNotebookStudioTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|DashboardAggregationTests|DashboardCoordinationHealthTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 6 Gate
+
+Before closing AI Study Room Backend:
+
+- Confirm `IOrkaStudyRoomService` derives Study Room from unified Orka learning state, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, Tutor handoffs, quiz/review/memory/Wiki/source evidence, and user-owned Classroom session context.
+- Confirm `/api/classroom/study-room`, `/api/classroom/study-room/start`, and `/api/classroom/study-room/checkpoint` are authenticated and user-scoped by topic/session/source/wiki/classroom ownership.
+- Confirm `/api/dashboard/today` includes compact `StudyRoom` metadata without contradicting Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, or the unified primary next action silently.
+- Confirm Study Room/Classroom is a personal AI study room only, not teacher/classroom/dershane management.
+- Confirm supported modes include quick start, repair lesson, review lesson, exam outcome practice, source review lesson, Wiki repair lesson, checkpoint quiz, and continue plan.
+- Confirm Study Room planning does not overreact from one wrong answer, repeated wrong triggers repair lesson, blank/skipped triggers guided repair/diagnostic, due review triggers review lesson, weak exam outcome triggers exam practice, and source insufficient/stale/deleted blocks source-grounded lessons.
+- Confirm checkpoint payloads hide pre-submit answer keys, expose only bounded post-submit feedback, and store only safe response signals/traces.
+- Confirm starts/checkpoints can write bounded safe learning signals/traces through existing Classroom paths without raw transcript dumps, raw student free text, source chunks, provider payloads, or debug JSON.
+- Confirm Study Room remains deterministic/provider-free by default and does not implement Realtime voice or hidden provider calls.
+- Confirm public Study Room DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, arbitrary source phrases, therapy/medical/psychological claims, official claims, source-grounded overclaims, or success guarantees.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|SourceEvidenceLifecycleTests|WikiGraphContractTests|LearningNotebookStudioTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 7 Gate
+
+Before closing Notebook Studio / Artifact Pro Pack Backend:
+
+- Confirm `IOrkaNotebookStudioProService` derives Notebook Studio Pro from unified Orka learning state, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, AI Study Room, existing Notebook Studio packs, learning artifacts, Wiki/source evidence, quiz/review/memory, and export-preview metadata.
+- Confirm `/api/notebook-studio/pro` is authenticated, user-scoped, and returns safe 404 behavior for cross-user topic/source/wiki/session/artifact access.
+- Confirm `/api/dashboard/today` includes compact `NotebookStudioPro` metadata without contradicting Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, Study Room, or the unified primary next action silently.
+- Confirm Notebook Studio Pro recommends repair, review, exam outcome, deneme mistake, source study, Wiki cleanup, Study Room summary, Tutor lesson, flashcard, checkpoint quiz, slide outline, audio script, and artifact collection packs only from existing evidence.
+- Confirm source-backed artifact claims are blocked/downgraded when source/citation evidence is stale, deleted, insufficient, degraded, unsupported, or missing.
+- Confirm provider output and Wiki memory alone are not treated as citation evidence.
+- Confirm Study Room traces are linked only as bounded safe metadata and never expose raw transcripts.
+- Confirm export preview remains preview-only and does not claim real PPTX/video generation unless a later explicit phase implements and validates it.
+- Confirm Tutor, Review, Source/Wiki, Exam War Room, Study Room, Dashboard, and Notebook Studio handoffs are suggestions only, with no hidden autonomous edits/actions.
+- Confirm no new AI/provider calls, paid provider calls, AI judge, OpenAI API migration, Realtime voice, Google Cloud, Stripe/payment, frontend redesign, migration, real PPTX/video generation, official scraping, teacher/classroom/dershane workflow, medical/psychological claim, official/source-grounded overclaim, or success guarantee was added.
+- Confirm public Notebook Studio Pro DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, raw transcripts, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, arbitrary source phrases, medical/psychological claims, official claims, source-grounded overclaims, or success guarantees.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaNotebookStudioProTests|LearningNotebookStudioTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|SourceEvidenceLifecycleTests|WikiGraphContractTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 8 Gate
+
+Before closing Code Learning IDE + Tool Runtime Polish Backend:
+
+- Confirm `IOrkaCodeLearningIdeService` derives Code Learning IDE from unified Orka learning state, Mission Control, Study Coach, Tutor handoffs, quiz/mastery/review/memory, Wiki traces, Notebook Studio Pro, and tool capability metadata.
+- Confirm `/api/code/learning-ide` is authenticated, user-scoped, and returns safe 404 behavior for cross-user topic/session/exercise access.
+- Confirm `/api/dashboard/today` includes compact `CodeLearningIde` metadata without contradicting Mission Control, Study Coach, Tutor, Notebook Studio Pro, or the unified primary next action silently.
+- Confirm Code Learning IDE recommends quick diagnostic, syntax repair, runtime error repair, test failure repair, blank/no-attempt diagnostic, weak code concept practice, due review, checkpoint, Tutor, Wiki note, Notebook pack, and stable continuation actions only from existing evidence.
+- Confirm one code error does not overreact, while repeated syntax/runtime/test/blank signals can create bounded repair or diagnostic actions.
+- Confirm unsupported or unsafe runtime requests return safe limited/blocked status without broadening host execution permissions.
+- Confirm existing code-run responses and public code learning DTOs redact stack traces, local paths, secrets, tokens, API keys, raw tool/debug markers, prompts, provider payloads, owner/user ids, pre-submit answer keys, and correct answers.
+- Confirm Notebook Studio Pro can receive code repair/checkpoint handoffs as suggestions only, with no hidden artifact creation.
+- Confirm no new AI/provider calls, paid provider calls, AI judge, OpenAI API migration, Realtime voice, Google Cloud, Stripe/payment, frontend redesign, migration, unsafe shell/system access, official scraping, teacher/classroom/dershane workflow, official/source-grounded overclaim, or success guarantee was added.
+- Confirm public Code Learning IDE DTOs do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, raw transcripts, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, official claims, source-grounded overclaims, success guarantees, or unsafe runtime details.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|DashboardAggregationTests|DashboardCoordinationHealthTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 9 Gate
+
+Phase 9 - Unified Evaluation / CI / Release Harness.
+
+Before closing Unified Evaluation / CI / Release Harness:
+
+- Confirm `IOrkaUnifiedEvaluationService` derives a unified release scorecard from Unified Orka state, Mission Control, Study Coach, Exam War Room, Source / Wiki Pro, AI Study Room, Notebook Studio Pro, Code Learning IDE, Tutor policy, Dashboard readiness, quiz/mastery/memory, review/SRS, safety/privacy, no-overclaim, cross-user, provider-free, and release gate signals.
+- Confirm evaluation DTOs expose only pass/warning/fail/blocked style status, reason codes, counts, user-safe summaries, and recommended fix labels.
+- Confirm scenario coverage includes new learner, repeated wrong, blank/skipped, improving, forgotten/due review, exam prep, source/wiki, Study Room, Notebook/artifact, code learning, and mixed Learning OS learner journeys through deterministic tests.
+- Confirm module consistency checks catch source-grounding, dashboard/mission, Tutor policy, Exam War Room, Study Coach, Study Room context, Notebook source-backed pack, and Code IDE runtime conflicts or expose bounded warnings.
+- Confirm public evaluation and simulation payloads do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, raw transcripts, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, pre-submit answer keys, correct answers, arbitrary learner phrases, arbitrary source phrases, official claims, source-grounded overclaims, or success guarantees.
+- Confirm `scripts/quick-backend.ps1` includes the Product Coherence release proof group and remains provider-free, non-destructive, and free of live API key requirements.
+- Confirm no new AI/provider calls, paid provider calls, AI judge, OpenAI API migration, Realtime voice, Google Cloud, Stripe/payment, frontend redesign, migration, unsafe runtime expansion, official scraping, teacher/classroom/dershane workflow, official/source-grounded overclaim, or success guarantee was added.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|LearningSnapshotTests|DashboardAggregationTests|DashboardCoordinationHealthTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 10 Gate
+
+Phase 10 - UX Research / Product Map.
+
+Before closing UX Research / Product Map:
+
+- Confirm `docs/product/orka-product-map.md` defines Orka as a personal Learning OS / AI study OS, not a generic chatbot, teacher panel, or institutional classroom system.
+- Confirm `docs/product/orka-frontend-contract-map.md` maps Home, Tutor, Study Room, Review / Quiz, Exam War Room, Sources / Wiki Pro, Notebook Studio, Code Learning IDE, Progress / Memory, and Settings / Safety to backend endpoints, DTOs, states, actions, handoffs, and safety constraints.
+- Confirm `docs/product/orka-learner-journeys.md` covers new, repeated wrong, blank/skipped, improving, forgotten/due review, exam prep, source/wiki, Study Room, Notebook/artifact, code learning, and mixed Learning OS journeys.
+- Confirm `docs/product/phase-11-frontend-redesign-brief.md` defines the Phase 11 goal, routes, beta cutline, component zones, state handling, what not to build, and validation plan without implementing UI.
+- Confirm `docs/product/orka-product-readiness-scorecard.md` scores backend readiness, frontend readiness, UX clarity, beta priority, risk, and next action for the main modules.
+- Confirm `docs/product/orka-existing-frontend-audit.md` documents current routes/views, reusable parts, stale/missing Product Coherence contract consumption, redesign candidates, and postponed scope.
+- Confirm Study Room/Classroom remains personal AI study room only, not teacher/classroom/dershane management.
+- Confirm this phase added no AI/provider calls, paid provider calls, OpenAI API migration, Realtime, Google Cloud, Stripe/payment, mobile app, frontend implementation, migration, unsafe runtime expansion, official scraping, official/source-grounded overclaim, or success guarantee.
+- Confirm product docs do not instruct frontend to expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, raw transcripts, pre-submit answer keys, or correct answers.
+- Run:
+  ```powershell
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
+  git diff --check
+  git status --short
+  git diff --cached --name-only
+  ```
+
+## Orka Product Coherence Phase 11 Gate
+
+Phase 11 - Frontend Redesign / Product Beta Polish.
+
+Before closing Frontend Redesign / Product Beta Polish:
+
+- Confirm `/app` opens Home / Mission Control as the first logged-in student surface.
+- Confirm sidebar navigation exposes Home, Tutor, Study Room, Review, Exams, Sources/Wiki, Notebook, Code, Progress, and Settings.
+- Confirm frontend API/types include `getOrkaState`, `getMissionControl`, `getStudyCoach`, `getWarRoom`, `getWikiPro`, `getStudyRoom`, `startStudyRoom`, `submitStudyRoomCheckpoint`, `getPro`, and `getLearningIde`.
+- Confirm Home shows primary mission, reason labels, urgent warnings, load summaries, module cards, progress snapshot, and visible handoff buttons.
+- Confirm Study Room/Classroom copy means personal AI study room only, not teacher/classroom/dershane management.
+- Confirm Exam War Room, Sources / Wiki Pro, Notebook Studio Pro, and Code Learning IDE consume their Phase 4-8 contracts with compact status/action/warning states.
+- Confirm loading, empty, thin-evidence, warning, blocked, and ready states do not render raw JSON or internal/debug payloads.
+- Confirm frontend surfaces do not expose raw prompts, provider payloads, source chunks, Wiki block bodies, tool/debug payloads, local paths, secrets, owner/user ids, stack traces, raw transcripts, pre-submit answer keys, or correct answers.
+- Confirm no new AI/provider calls, paid provider calls, OpenAI API migration, Realtime, Google Cloud, Stripe/payment, mobile app, unsafe runtime expansion, official scraping, official/source-grounded overclaim, success guarantee, or teacher/classroom management workflow was added.
+- Run:
+  ```powershell
+  cd Orka-Front
+  npm run typecheck
+  npm run build
+  npm run quick:smoke
+  npm run quick:frontend
+  cd ..
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
+  dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+  scripts\quick-backend.ps1
+  scripts\quick-coordination.ps1
   git diff --check
   git status --short
   git diff --cached --name-only

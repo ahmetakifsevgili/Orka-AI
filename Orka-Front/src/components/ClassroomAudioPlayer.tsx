@@ -224,6 +224,10 @@ export default function ClassroomAudioPlayer({
   const [status, setStatus] = useState<"idle" | "playing" | "paused" | "done">(
     "idle"
   );
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
   const [question, setQuestion] = useState("");
   const [classroomId, setClassroomId] = useState<string | null>(null);
   const [isAsking, setIsAsking] = useState(false);
@@ -305,12 +309,22 @@ export default function ClassroomAudioPlayer({
     u.rate = line.speaker === "HOCA" ? 0.95 : 1.05;
     u.pitch = line.speaker === "HOCA" ? 0.95 : 1.1;
     u.onend = () => {
+      if (statusRef.current !== "playing") return;
       setCurrentIdx(idx + 1);
       speakLine(idx + 1, queuedLines);
     };
-    u.onerror = () => setStatus("done");
+    u.onerror = () => {
+      if (statusRef.current === "playing") {
+        setStatus("done");
+      }
+    };
     utterRef.current = u;
-    window.speechSynthesis.speak(u);
+    try {
+      window.speechSynthesis.speak(u);
+    } catch (err) {
+      console.error("speechSynthesis.speak failed:", err);
+      setStatus("done");
+    }
   };
 
   const handlePlay = () => {

@@ -151,7 +151,7 @@ public sealed class AssessmentQualityService : IAssessmentQualityService
         }
 
         var skipPenalty = Math.Min(0.25m, stat.SkipRate * 0.25m);
-        stat.DiscriminationProxy = Math.Round((stat.CorrectRate - 0.50m) - skipPenalty, 4);
+        stat.DiscriminationProxy = Math.Round((1m - Math.Abs(stat.CorrectRate - 0.50m) * 2m) - skipPenalty, 4);
         stat.QualityStatus = stat.Attempts < 5 ? "insufficient_data" :
             stat.SkipRate > 0.35m || stat.CorrectRate is < 0.20m or > 0.95m ? "needs_review" : "healthy";
         AssessmentCalibrationService.ApplyCalibration(stat);

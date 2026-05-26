@@ -91,7 +91,8 @@ public class ExceptionMiddleware
 
         context.Response.StatusCode = statusCode;
 
-        var response = new { message, statusCode };
+        var safeMessage = exposeDetails ? message : SensitiveDataRedactor.Redact(message);
+        var response = new { message = safeMessage, statusCode };
         return context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
 

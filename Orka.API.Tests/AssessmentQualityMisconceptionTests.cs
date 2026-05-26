@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Xunit;
@@ -219,6 +220,91 @@ public sealed class AssessmentQualityMisconceptionTests
         var attempt = await db.QuizAttempts.AsNoTracking().OrderByDescending(a => a.CreatedAt).FirstAsync(a => a.UserId == user.UserId);
         Assert.DoesNotContain("rawSourceRefs", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("invalid_json_ignored", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WrongQuizAttempt_CarriesRemediationIntoTutorMovePlanActionAndWikiTrace()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "assessment-remediation-chain");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Functions");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(factory, user.UserId, topicId, DateTime.UtcNow);
+        var pageId = await CoordinationTestHelpers.SeedWikiPageAsync(factory, user.UserId, topicId, "Function misconceptions", "safe wiki note");
+        var (quizRunId, assessmentItemId) = await CoordinationTestHelpers.SeedDurableAssessmentItemAsync(
+            factory,
+            user.UserId,
+            topicId,
+            questionId: "function-domain-q",
+            question: "Bir fonksiyonun tanim kumesi neyi belirler?",
+            conceptKey: "function-domain",
+            correctOptionId: "A",
+            correctOptionText: "Girdilerin hangi degerlerden gelebilecegini",
+            wrongOptionId: "B",
+            wrongOptionText: "Ciktilarin her zaman pozitif olacagini",
+            explanation: "Tanim kumesi fonksiyona verilebilecek girdi degerlerini sinirlar.");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var page = await db.WikiPages.SingleAsync(p => p.Id == pageId);
+            page.ConceptKey = "function-domain";
+            var block = await db.WikiBlocks.SingleAsync(b => b.WikiPageId == pageId);
+            block.ConceptKey = "function-domain";
+            await db.SaveChangesAsync();
+        }
+
+        var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId,
+            sessionId,
+            quizRunId,
+            assessmentItemId,
+            questionId = "function-domain-q",
+            question = "Bir fonksiyonun tanim kumesi neyi belirler?",
+            selectedOptionId = "B) Ciktilarin her zaman pozitif olacagini",
+            skillTag = "function-domain",
+            conceptKey = "function-domain",
+            conceptTag = "function-domain",
+            misconceptionTarget = "range-as-domain",
+            assessmentMode = "misconception_probe",
+            questionHash = Guid.NewGuid().ToString("N")
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+        var impact = root.GetProperty("learningImpact");
+        var attemptId = root.GetProperty("id").GetGuid();
+
+        Assert.Equal("wrong", impact.GetProperty("result").GetString());
+        Assert.Equal("insert_remediation_step", impact.GetProperty("nextPlanAction").GetString());
+        Assert.Contains(
+            impact.GetProperty("nextTutorMove").GetString(),
+            new[] { "guided_practice", "misconception_repair", "prerequisite_scaffold", "source_review_then_explain" });
+        Assert.NotEqual("none", impact.GetProperty("remediationNeed").GetString());
+        Assert.True(impact.TryGetProperty("remediationLesson", out var lesson) && lesson.ValueKind == JsonValueKind.Object);
+        Assert.True(lesson.GetProperty("checkpoint").GetProperty("avoidsPreSubmitReveal").GetBoolean());
+
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var signal = await verifyDb.LearningSignals
+            .AsNoTracking()
+            .Where(s => s.UserId == user.UserId && s.QuizAttemptId == attemptId)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstAsync(s => s.PayloadJson != null && s.PayloadJson.Contains("remediationSeed"));
+        Assert.Contains("misconceptionSignal", signal.PayloadJson);
+
+        var wikiBlocks = await verifyDb.WikiBlocks
+            .AsNoTracking()
+            .Where(b => b.QuizAttemptId == attemptId)
+            .ToListAsync();
+        Assert.Contains(wikiBlocks, b => b.BlockType == WikiBlockType.QuizResult);
+        var repairBlock = Assert.Single(wikiBlocks.Where(b => b.BlockType is WikiBlockType.RepairNote or WikiBlockType.MisconceptionNote));
+        Assert.Equal("highlighted", repairBlock.Visibility);
+        Assert.Contains("Tutor sonraki hamlesi", repairBlock.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Plan aksiyonu", repairBlock.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctAnswer", repairBlock.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("answerKey", repairBlock.Content, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

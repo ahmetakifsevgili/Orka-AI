@@ -1,11 +1,25 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Orka.Core.DTOs;
+using Orka.Core.Entities;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Data;
 
 namespace Orka.Infrastructure.Services;
 
 public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
 {
-    public Task<AdaptiveStudyPlanDto> BuildAsync(
+    private readonly OrkaDbContext? _db;
+
+    public AdaptiveStudyPlannerService(OrkaDbContext? db = null)
+    {
+        _db = db;
+    }
+
+    public async Task<AdaptiveStudyPlanDto> BuildAsync(
         Guid userId,
         AdaptiveStudyPlanRequestDto? request,
         LearningMemoryLiteDto? learningMemory,
@@ -16,16 +30,34 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
         IReadOnlyCollection<Guid> topicScopeIds,
         CancellationToken ct = default)
     {
-        _ = userId;
-        _ = topicScopeIds;
         ct.ThrowIfCancellationRequested();
+
+        Guid? activeTopicId = activePlan?.TopicId;
+        List<ConceptRelation> relations = [];
+
+        if (_db != null)
+        {
+            var latestSnapshot = await _db.ConceptGraphSnapshots
+                .AsNoTracking()
+                .Where(s => s.UserId == userId && (!activeTopicId.HasValue || s.TopicId == activeTopicId.Value))
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (latestSnapshot != null)
+            {
+                relations = await _db.ConceptRelations
+                    .AsNoTracking()
+                    .Where(r => r.ConceptGraphSnapshotId == latestSnapshot.Id && r.RelationType == "prerequisite")
+                    .ToListAsync(ct);
+            }
+        }
 
         var effectiveRequest = NormalizeRequest(request);
         var warnings = BuildWarnings(effectiveRequest, sourceHealth, activePlan);
         var diagnostic = BuildDiagnostic(effectiveRequest, learningMemory);
         if (effectiveRequest.WeeklyAvailableMinutes <= 0)
         {
-            return Task.FromResult(new AdaptiveStudyPlanDto
+            return new AdaptiveStudyPlanDto
             {
                 Summary = "Plan üretmek için haftalık çalışma süresi 0'dan büyük olmalı.",
                 WindowDays = 7,
@@ -34,7 +66,7 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
                 Diagnostic = diagnostic,
                 HasEnoughSignals = false,
                 GeneratedAt = DateTimeOffset.UtcNow
-            });
+            };
         }
 
         var items = new List<AdaptiveStudyPlanItemDto>();
@@ -63,6 +95,7 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
                 Title = RemediationTitle(seed?.FirstAction, concept.Label),
                 Reason = UserSafeReason(seed?.Reason, concept.ConfidenceStatus),
                 TopicId = concept.TopicId,
+                ConceptKey = concept.ConceptKey,
                 ActionType = NormalizeAction(seed?.FirstAction, "tutor_explain"),
                 EstimatedMinutes = minutes,
                 Priority = concept.ConfidenceStatus == "usable" ? 90 : 58,
@@ -78,6 +111,7 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
                 Title = RemediationTitle(concept.RemediationSeed?.FirstAction, concept.Label),
                 Reason = UserSafeReason(concept.RemediationSeed?.Reason, concept.LearningSignalConfidence?.Status),
                 TopicId = concept.TopicId,
+                ConceptKey = concept.ConceptKey,
                 ActionType = NormalizeAction(concept.RemediationSeed?.FirstAction, "tutor_explain"),
                 EstimatedMinutes = minutes,
                 Priority = concept.LearningSignalConfidence?.Status == "usable" ? 85 : 52,
@@ -136,13 +170,10 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
             AddFallbackItems(items, seenKeys, activePlan, minutes);
         }
 
-        var ordered = items
-            .OrderByDescending(i => i.Priority)
-            .ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase)
-            .Take(5)
-            .ToArray();
+        var sorted = TopologicalSort(items, relations);
+        var ordered = sorted.Take(5).ToArray();
 
-        return Task.FromResult(new AdaptiveStudyPlanDto
+        return new AdaptiveStudyPlanDto
         {
             Summary = BuildSummary(effectiveRequest, learningMemory, ordered),
             WindowDays = 7,
@@ -151,7 +182,7 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
             Diagnostic = diagnostic,
             HasEnoughSignals = learningMemory?.HasEnoughSignals == true,
             GeneratedAt = DateTimeOffset.UtcNow
-        });
+        };
     }
 
     private static AdaptiveStudyPlanRequestDto NormalizeRequest(AdaptiveStudyPlanRequestDto? request)
@@ -404,5 +435,120 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
 
         var trimmed = string.Join(' ', value.Split(default(string[]), StringSplitOptions.RemoveEmptyEntries));
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static List<AdaptiveStudyPlanItemDto> TopologicalSort(
+        IReadOnlyList<AdaptiveStudyPlanItemDto> items,
+        IReadOnlyList<ConceptRelation> relations)
+    {
+        if (items == null || items.Count == 0)
+        {
+            return new List<AdaptiveStudyPlanItemDto>();
+        }
+
+        var allItems = items.ToList();
+        var conceptToItems = new Dictionary<string, List<AdaptiveStudyPlanItemDto>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in allItems)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ConceptKey))
+            {
+                if (!conceptToItems.TryGetValue(item.ConceptKey, out var itemList))
+                {
+                    itemList = new List<AdaptiveStudyPlanItemDto>();
+                    conceptToItems[item.ConceptKey] = itemList;
+                }
+                itemList.Add(item);
+            }
+        }
+
+        var inDegree = new Dictionary<AdaptiveStudyPlanItemDto, int>();
+        var adj = new Dictionary<AdaptiveStudyPlanItemDto, List<AdaptiveStudyPlanItemDto>>();
+
+        foreach (var item in allItems)
+        {
+            inDegree[item] = 0;
+            adj[item] = new List<AdaptiveStudyPlanItemDto>();
+        }
+
+        foreach (var rel in relations)
+        {
+            var sourceKey = rel.SourceConceptKey;
+            var targetKey = rel.TargetConceptKey;
+
+            if (conceptToItems.TryGetValue(sourceKey, out var sourceItems) &&
+                conceptToItems.TryGetValue(targetKey, out var targetItems))
+            {
+                foreach (var sItem in sourceItems)
+                {
+                    foreach (var tItem in targetItems)
+                    {
+                        adj[sItem].Add(tItem);
+                        inDegree[tItem]++;
+                    }
+                }
+            }
+        }
+
+        var zeroInDegree = allItems.Where(item => inDegree[item] == 0).ToList();
+        var result = new List<AdaptiveStudyPlanItemDto>();
+
+        var itemToIndex = new Dictionary<AdaptiveStudyPlanItemDto, int>();
+        for (int i = 0; i < allItems.Count; i++)
+        {
+            itemToIndex[allItems[i]] = i;
+        }
+
+        while (zeroInDegree.Count > 0)
+        {
+            var current = zeroInDegree[0];
+            int bestIdx = 0;
+            for (int i = 1; i < zeroInDegree.Count; i++)
+            {
+                var candidate = zeroInDegree[i];
+                if (candidate.Priority > current.Priority)
+                {
+                    current = candidate;
+                    bestIdx = i;
+                }
+                else if (candidate.Priority == current.Priority)
+                {
+                    int candidateOutDegree = adj.TryGetValue(candidate, out var cAdj) ? cAdj.Count : 0;
+                    int currentOutDegree = adj.TryGetValue(current, out var curAdj) ? curAdj.Count : 0;
+                    if (candidateOutDegree > currentOutDegree)
+                    {
+                        current = candidate;
+                        bestIdx = i;
+                    }
+                    else if (candidateOutDegree == currentOutDegree)
+                    {
+                        if (itemToIndex[candidate] < itemToIndex[current])
+                        {
+                            current = candidate;
+                            bestIdx = i;
+                        }
+                    }
+                }
+            }
+
+            zeroInDegree.RemoveAt(bestIdx);
+            result.Add(current);
+
+            foreach (var neighbor in adj[current])
+            {
+                inDegree[neighbor]--;
+                if (inDegree[neighbor] == 0)
+                {
+                    zeroInDegree.Add(neighbor);
+                }
+            }
+        }
+
+        if (result.Count < allItems.Count)
+        {
+            var missing = allItems.Where(item => !result.Contains(item));
+            result.AddRange(missing);
+        }
+
+        return result;
     }
 }

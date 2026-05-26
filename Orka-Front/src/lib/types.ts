@@ -4343,3 +4343,993 @@ export interface QuestionContentVersionDto {
   createdAt: string;
   reason?: string | null;
 }
+
+// ─── Orka Learning OS Coherence DTOs ──────────────────────────────────────────
+
+export interface OrkaLearningContractQuery {
+  topicId?: string;
+  sessionId?: string;
+  examCode?: string;
+  variantCode?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  language?: string;
+  exerciseId?: string;
+  mode?: string;
+}
+
+export interface OrkaMissionControlDto {
+  topicId?: string;
+  sessionId?: string;
+  scopeStatus: string;
+  primaryMission: OrkaTodayMissionDto;
+  primaryEntryPoint: string;
+  secondaryActions: OrkaMissionActionDto[];
+  urgentWarnings: OrkaMissionWarningDto[];
+  todayFocus: string;
+  reviewLoad: string;
+  repairLoad: string;
+  examLoad: string;
+  sourceWikiLoad: string;
+  studyRoomSuggestion?: OrkaMissionActionDto;
+  moduleCards: OrkaMissionModuleCardDto[];
+  sections: OrkaMissionSectionDto[];
+  evidenceConfidence: string;
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface OrkaTodayMissionDto {
+  missionKey: string;
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaMissionActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  conceptKey?: string;
+  isPrimary: boolean;
+  reasonCodes: string[];
+}
+
+export interface OrkaMissionWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaMissionModuleCardDto {
+  moduleKey: string;
+  status: string;
+  label: string;
+  entryPoint: string;
+  targetRoute: string;
+  priority: string;
+  userSafeSummary: string;
+  actionCount: number;
+  warningCount: number;
+  reasonCodes: string[];
+}
+
+export interface OrkaMissionSectionDto {
+  sectionKey: string;
+  status: string;
+  label: string;
+  priority: number;
+  targetRoute: string;
+  actions: OrkaMissionActionDto[];
+  reasonCodes: string[];
+  warnings: OrkaMissionWarningDto[];
+}
+
+export interface OrkaStudyCoachDto {
+  topicId?: string;
+  sessionId?: string;
+  scopeStatus: string;
+  rhythmStatus: string;
+  recommendedPace: string;
+  todayPlan: string;
+  weeklyPlan: string;
+  workload: OrkaStudyLoadDto;
+  focusPlan: OrkaFocusPlanDto;
+  comebackPlan: OrkaComebackPlanDto;
+  actions: OrkaStudyCoachActionDto[];
+  warnings: OrkaStudyCoachWarningDto[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface OrkaStudyLoadDto {
+  reviewLoad: string;
+  repairLoad: string;
+  examLoad: string;
+  sourceWikiLoad: string;
+  newLearningLoad: string;
+  overallLoad: string;
+  loadScore: number;
+}
+
+export interface OrkaFocusPlanDto {
+  focusMode: string;
+  durationBand: string;
+  entryPoint: string;
+  targetRoute: string;
+  steps: string[];
+  stopCondition: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaComebackPlanDto {
+  comebackStatus: string;
+  firstStep: string;
+  secondStep: string;
+  avoidToday: string;
+  reasonCodes: string[];
+  userSafeSummary: string;
+}
+
+export interface OrkaStudyCoachActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  durationBand: string;
+  topicId?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyCoachWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaLearningStateDto {
+  topicId?: string;
+  sessionId?: string;
+  scopeStatus: string;
+  signalSummary: OrkaLearningSignalSummaryDto;
+  sourceHealth: DashboardSourceHealthDto;
+  longTermLearningProfile: LongTermLearningProfileDto;
+  examLearningProfile?: ExamLearningProfileDto;
+  sourceWikiIntelligenceProfile?: SourceWikiIntelligenceProfileDto;
+  primaryNextAction: OrkaUnifiedNextActionDto;
+  secondaryNextActions: OrkaUnifiedNextActionDto[];
+  featureReadiness: OrkaFeatureReadinessDto[];
+  conflictWarnings: OrkaLearningStateConflictDto[];
+  reasonCodes: string[];
+  safetyWarnings: string[];
+  generatedAt: string;
+}
+
+export interface OrkaLearningSignalSummaryDto {
+  evidenceCount: number;
+  quizAttemptCount: number;
+  correctAttemptCount: number;
+  wrongAttemptCount: number;
+  blankOrSkippedAttemptCount: number;
+  dueReviewCount: number;
+  learningSignalCount: number;
+  sourceCount: number;
+  readySourceCount: number;
+  wikiPageCount: number;
+  studyRoomSessionCount: number;
+  studyRoomQuestionCount: number;
+  hasRealLearningData: boolean;
+}
+
+export interface DashboardSourceHealthDto {
+  status: string;
+  userSafeLabel: string;
+  userSafeDetail: string;
+  citationCoverage: number;
+  unsupportedCitationCount: number;
+  evidenceQuality?: EvidenceQualityDto;
+}
+
+export interface LongTermLearningProfileDto {
+  summary: string;
+  windowDays: number;
+  hasEnoughEvidence: boolean;
+  evidenceCount: number;
+  concepts: LongTermLearningConceptDto[];
+  reviewPressure: AdaptiveReviewPressureDto[];
+  weeklyRhythm: AdaptiveLearningRhythmDto;
+  nextActions: AdaptiveNextStudyActionDto[];
+  reasonCodes: string[];
+  warnings: string[];
+  generatedAt: string;
+}
+
+export interface LongTermLearningConceptDto {
+  topicId?: string;
+  conceptKey: string;
+  label: string;
+  state: string;
+  masteryProbability?: number;
+  confidence?: number;
+  confidenceStatus: string;
+  evidenceCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankOrSkippedCount: number;
+  repairCount: number;
+  lastPracticedAt?: string;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  reviewPriority: string;
+  recommendedAction: string;
+  userSafeReason: string;
+  reasonCodes: string[];
+  evidenceBasis: string[];
+}
+
+export interface AdaptiveReviewPressureDto {
+  topicId?: string;
+  conceptKey: string;
+  label: string;
+  priority: string;
+  recommendedAction: string;
+  userSafeReason: string;
+  daysOverdue: number;
+  dueAt?: string;
+  confidenceStatus: string;
+  reasonCodes: string[];
+  evidenceBasis: string[];
+}
+
+export interface AdaptiveLearningRhythmDto {
+  todayFocus: string;
+  thisWeekFocus: string;
+  reviewLoad: string;
+  newLearningLoad: string;
+  repairLoad: string;
+  weakConcepts: string[];
+  dueConcepts: string[];
+  stableConcepts: string[];
+  nextBestAction: AdaptiveNextStudyActionDto;
+  reasonCodes: string[];
+  warnings: string[];
+}
+
+export interface AdaptiveNextStudyActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  topicId?: string;
+  conceptKey?: string;
+  priority: string;
+  reasonCodes: string[];
+}
+
+export interface ExamLearningProfileDto {
+  examCode: string;
+  variantCode?: string;
+  readinessStatus: string;
+  overallCoverage: number;
+  weakOutcomeCount: number;
+  dueOutcomeCount: number;
+  generatedAt: string;
+}
+
+export interface SourceWikiIntelligenceProfileDto {
+  topicId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  profileStatus: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  citationReadiness: string;
+  wikiHealthStatus: string;
+  canClaimSourceGrounded: boolean;
+  sourceCount: number;
+  readySourceCount: number;
+  wikiPageCount: number;
+  linkedConceptCount: number;
+  citationWarningCount: number;
+  sourceQuestionThreadCount: number;
+  sourceQuestionTurnCount: number;
+  repairPendingPageCount: number;
+  sourceLimitedPageCount: number;
+  evidenceReadiness: SourceWikiEvidenceReadinessDto[];
+  wikiPages: WikiLearningPageReadinessDto[];
+  linkedConcepts: SourceConceptLinkDto[];
+  nextActions: SourceWikiNextActionDto[];
+  warnings: string[];
+  reasonCodes: string[];
+  generatedAt: string;
+}
+
+export interface SourceWikiEvidenceReadinessDto {
+  sourceId: string;
+  topicId?: string;
+  title: string;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  citationReadiness: string;
+  pageCount: number;
+  chunkCount: number;
+  linkedConceptCount: number;
+  warnings: string[];
+}
+
+export interface WikiLearningPageReadinessDto {
+  wikiPageId: string;
+  topicId: string;
+  title: string;
+  pageType: string;
+  conceptKey?: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  curationStatus: string;
+  blockCount: number;
+  repairSignalCount: number;
+  sourceLimitedSignalCount: number;
+  manualNotePreserved: boolean;
+  nextAction: string;
+  warnings: string[];
+}
+
+
+
+export interface SourceWikiNextActionDto {
+  actionType: string;
+  label: string;
+  priority: string;
+  targetType: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaUnifiedNextActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  topicId?: string;
+  conceptKey?: string;
+  source: string;
+  reasonCodes: string[];
+  appliesTo: string[];
+}
+
+export interface OrkaFeatureReadinessDto {
+  featureKey: string;
+  status: string;
+  userSafeSummary: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaLearningStateConflictDto {
+  conflictCode: string;
+  severity: string;
+  userSafeSummary: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomDto {
+  classroomSessionId?: string;
+  topicId?: string;
+  sessionId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  examCode?: string;
+  variantCode?: string;
+  sessionReadiness: string;
+  studyRoomMode: string;
+  selectedTopic?: string;
+  selectedConcept?: string;
+  selectedExamOutcome?: string;
+  sourceReadiness: string;
+  wikiReadiness: string;
+  rhythmStatus: string;
+  recommendedPace: string;
+  lessonPlan: OrkaStudyRoomPlanDto;
+  roles: OrkaStudyRoomRoleDto[];
+  checkpointPlan: OrkaStudyRoomCheckpointDto;
+  currentTurn: OrkaStudyRoomTurnDto;
+  safeStudentSummary: string;
+  nextActions: OrkaStudyRoomActionDto[];
+  tutorHandoffs: OrkaStudyRoomActionDto[];
+  quizHandoffs: OrkaStudyRoomActionDto[];
+  reviewHandoffs: OrkaStudyRoomActionDto[];
+  sourceWikiHandoffs: OrkaStudyRoomActionDto[];
+  notebookHandoffs: OrkaStudyRoomActionDto[];
+  warnings: OrkaStudyRoomWarningDto[];
+  reasonCodes: string[];
+  generatedAt: string;
+}
+
+export interface OrkaStudyRoomPlanDto {
+  planKey: string;
+  title: string;
+  objective: string;
+  durationBand: string;
+  steps: string[];
+  stopCondition: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomRoleDto {
+  roleKey: string;
+  label: string;
+  responsibility: string;
+}
+
+export interface OrkaStudyRoomCheckpointDto {
+  checkpointStatus: string;
+  prompt: string;
+  responseSignal: string;
+  postSubmitFeedback: string;
+  keyVisible: boolean;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomTurnDto {
+  turnStatus: string;
+  speakerRole: string;
+  userSafeSummary: string;
+  responseSignal: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  conceptKey?: string;
+  examOutcomeCode?: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaStudyRoomStartRequestDto {
+  topicId?: string;
+  sessionId?: string;
+  examCode?: string;
+  variantCode?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  mode?: string;
+}
+
+export interface OrkaStudyRoomCheckpointRequestDto {
+  classroomSessionId: string;
+  responseSignal?: string;
+  answerText?: string;
+  skipped: boolean;
+  conceptKey?: string;
+}
+
+export interface OrkaExamWarRoomDto {
+  activeExam: ExamWarRoomActiveExamDto;
+  variant?: string;
+  readinessStatus: string;
+  weakSubjects: ExamWarRoomSubjectDto[];
+  weakTopics: ExamWarRoomTopicDto[];
+  weakOutcomes: ExamWarRoomOutcomeDto[];
+  dueOutcomes: ExamWarRoomOutcomeDto[];
+  stableOutcomes: ExamWarRoomOutcomeDto[];
+  weakQuestionTypes: ExamWarRoomPracticePlanDto[];
+  denemeMistakeClusters: ExamWarRoomDenemeInsightDto[];
+  practiceReadiness: ExamWarRoomPracticePlanDto[];
+  todayExamMission: ExamWarRoomActionDto;
+  weeklyExamPlan: ExamWarRoomActionDto[];
+  recommendedPracticeQueue: ExamWarRoomActionDto[];
+  tutorRepairHandoffs: ExamWarRoomActionDto[];
+  studyRoomHandoffs: ExamWarRoomActionDto[];
+  sourceWikiWarnings: ExamWarRoomWarningDto[];
+  curriculumCoverageWarnings: ExamWarRoomWarningDto[];
+  conflictWarnings: ExamWarRoomWarningDto[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface ExamWarRoomActiveExamDto {
+  examCode: string;
+  variantCode?: string;
+  displayName: string;
+  verificationStatus: string;
+  canClaimOfficial: boolean;
+  userSafeVerificationLabel: string;
+}
+
+export interface ExamWarRoomSubjectDto {
+  subjectCode: string;
+  label: string;
+  weakOutcomeCount: number;
+  dueOutcomeCount: number;
+  denemeMistakeCount: number;
+  priority: string;
+  reasonCodes: string[];
+}
+
+export interface ExamWarRoomTopicDto {
+  topicCode: string;
+  label: string;
+  weakOutcomeCount: number;
+  dueOutcomeCount: number;
+  denemeMistakeCount: number;
+  priority: string;
+  reasonCodes: string[];
+}
+
+export interface ExamWarRoomOutcomeDto {
+  examOutcomeId: string;
+  outcomeCode: string;
+  label: string;
+  topicCode: string;
+  topicLabel: string;
+  readinessStatus: string;
+  reviewPriority: string;
+  recommendedAction: string;
+  attemptCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  denemeMistakeCount: number;
+  publishedQuestionCount: number;
+  correctnessRate: number;
+  questionCoverageStatus: string;
+  sourceEvidenceStatus: string;
+  questionTypes: string[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+}
+
+export interface ExamWarRoomPracticePlanDto {
+  questionType: string;
+  readinessStatus: string;
+  recommendedAction: string;
+  publishedQuestionCount: number;
+  attemptCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  priority: string;
+  reasonCodes: string[];
+}
+
+export interface ExamWarRoomDenemeInsightDto {
+  outcomeCode: string;
+  topicCode: string;
+  label: string;
+  mistakeCount: number;
+  priority: string;
+  recommendedAction: string;
+  reasonCodes: string[];
+}
+
+export interface ExamWarRoomActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  outcomeCode?: string;
+  topicCode?: string;
+  questionType?: string;
+  examContext: ExamLearningContextDto;
+  reasonCodes: string[];
+}
+
+
+
+export interface ExamWarRoomWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaSourceWikiProDto {
+  topicId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  examCode?: string;
+  variantCode?: string;
+  readinessStatus: string;
+  sourceReadiness: string;
+  wikiReadiness: string;
+  citationReadiness: string;
+  evidenceMap: SourceWikiProEvidenceMapDto;
+  sourceReadinessItems: SourceWikiProSourceDto[];
+  wikiReadinessItems: SourceWikiProWikiPageDto[];
+  citationReadinessItems: SourceWikiProCitationDto[];
+  linkedConcepts: SourceWikiProConceptLinkDto[];
+  linkedExamOutcomes: string[];
+  sourceBackedConcepts: SourceWikiProConceptLinkDto[];
+  sourceLimitedConcepts: SourceWikiProConceptLinkDto[];
+  staleSources: SourceWikiProSourceDto[];
+  deletedSources: SourceWikiProSourceDto[];
+  insufficientSources: SourceWikiProSourceDto[];
+  degradedSources: SourceWikiProSourceDto[];
+  citationWarnings: SourceWikiProWarningDto[];
+  wikiRepairPages: SourceWikiProWikiPageDto[];
+  duplicateTracePages: SourceWikiProWikiPageDto[];
+  manualNotePages: SourceWikiProWikiPageDto[];
+  tutorTracePages: SourceWikiProWikiPageDto[];
+  sourceBackedPages: SourceWikiProWikiPageDto[];
+  notebookPackReadiness: string;
+  todaySourceWikiMission: SourceWikiProActionDto;
+  recommendedActions: SourceWikiProActionDto[];
+  tutorHandoffs: SourceWikiProActionDto[];
+  studyRoomHandoffs: SourceWikiProActionDto[];
+  notebookHandoffs: SourceWikiProActionDto[];
+  examWarRoomWarnings: SourceWikiProWarningDto[];
+  missionControlWarnings: SourceWikiProWarningDto[];
+  conflictWarnings: SourceWikiProWarningDto[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface SourceWikiProEvidenceMapDto {
+  uploadedSourceCount: number;
+  readySourceCount: number;
+  wikiPageCount: number;
+  manualNoteCount: number;
+  tutorTraceCount: number;
+  sourceBackedPageCount: number;
+  linkedConceptCount: number;
+  linkedExamOutcomeCount: number;
+  citationWarningCount: number;
+  canClaimSourceGrounded: boolean;
+  providerOutputCountsAsEvidence: boolean;
+  wikiMemoryCountsAsCitationEvidence: boolean;
+}
+
+export interface SourceWikiProSourceDto {
+  sourceId: string;
+  topicId?: string;
+  title: string;
+  status: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  citationReadiness: string;
+  pageCount: number;
+  chunkCount: number;
+  linkedConceptCount: number;
+  warnings: string[];
+}
+
+export interface SourceWikiProWikiPageDto {
+  wikiPageId: string;
+  topicId: string;
+  title: string;
+  pageType: string;
+  conceptKey?: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  curationStatus: string;
+  blockCount: number;
+  repairSignalCount: number;
+  sourceLimitedSignalCount: number;
+  manualNotePreserved: boolean;
+  hasTutorTrace: boolean;
+  nextAction: string;
+  warnings: string[];
+}
+
+export interface SourceWikiProCitationDto {
+  citationCheckId: string;
+  citationId: string;
+  sourceId?: string;
+  sourceTitle: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  citationStatus: string;
+  confidence?: number;
+  userSafeWarning: string;
+}
+
+export interface SourceWikiProConceptLinkDto {
+  sourceId?: string;
+  wikiPageId?: string;
+  conceptKey: string;
+  conceptTitle: string;
+  sourceTitle: string;
+  linkType: string;
+  confidence: string;
+  confidenceScore?: number;
+  basis: string;
+  sourceReadiness: string;
+  evidenceStatus: string;
+  isSuggestion: boolean;
+  isSourceBacked: boolean;
+  isLimited: boolean;
+  warnings: string[];
+}
+
+export interface SourceWikiProActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface SourceWikiProWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaNotebookStudioProDto {
+  topicId?: string;
+  sessionId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  examCode?: string;
+  variantCode?: string;
+  readinessStatus: string;
+  packReadiness: string;
+  recommendedPacks: NotebookStudioPackDto[];
+  activePack?: NotebookStudioPackDto;
+  artifactQueue: NotebookStudioArtifactDto[];
+  exportPreviews: NotebookStudioExportPreviewDto[];
+  sourceEvidenceLinks: NotebookStudioEvidenceLinkDto[];
+  wikiEvidenceLinks: NotebookStudioEvidenceLinkDto[];
+  conceptLinks: NotebookStudioEvidenceLinkDto[];
+  examOutcomeLinks: NotebookStudioEvidenceLinkDto[];
+  studyRoomTraceLinks: NotebookStudioEvidenceLinkDto[];
+  tutorHandoffs: NotebookStudioPackActionDto[];
+  reviewHandoffs: NotebookStudioPackActionDto[];
+  sourceWikiHandoffs: NotebookStudioPackActionDto[];
+  examWarRoomHandoffs: NotebookStudioPackActionDto[];
+  studyRoomHandoffs: NotebookStudioPackActionDto[];
+  missionControlWarnings: NotebookStudioPackWarningDto[];
+  warnings: NotebookStudioPackWarningDto[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface NotebookStudioPackDto {
+  packId?: string;
+  packType: string;
+  status: string;
+  title: string;
+  summary: string;
+  priority: string;
+  topicId?: string;
+  sessionId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  conceptKeys: string[];
+  warningCodes: string[];
+  reasonCodes: string[];
+  actions: NotebookStudioPackActionDto[];
+}
+
+export interface NotebookStudioArtifactDto {
+  artifactId?: string;
+  packId?: string;
+  artifactType: string;
+  status: string;
+  origin: string;
+  renderFormat: string;
+  title: string;
+  sourceBasis: string;
+  previewOnly: boolean;
+  reasonCodes: string[];
+  warnings: string[];
+}
+
+export interface NotebookStudioPackActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  sessionId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  packId?: string;
+  artifactId?: string;
+  conceptKey?: string;
+  examOutcomeKey?: string;
+  reasonCodes: string[];
+}
+
+export interface NotebookStudioPackWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  source: string;
+  reasonCodes: string[];
+}
+
+export interface NotebookStudioExportPreviewDto {
+  previewType: string;
+  readinessStatus: string;
+  packId?: string;
+  artifactId?: string;
+  artifactCount: number;
+  sourceWarning: string;
+  accessibilityWarning: string;
+  exportLimitations: string[];
+  reasonCodes: string[];
+}
+
+export interface NotebookStudioEvidenceLinkDto {
+  linkType: string;
+  status: string;
+  label: string;
+  topicId?: string;
+  sourceId?: string;
+  wikiPageId?: string;
+  packId?: string;
+  artifactId?: string;
+  conceptKey?: string;
+  examOutcomeKey?: string;
+  sourceBasis: string;
+  reasonCodes: string[];
+}
+
+export interface OrkaCodeLearningIdeDto {
+  topicId?: string;
+  sessionId?: string;
+  readinessStatus: string;
+  mode: string;
+  activeLanguage: string;
+  activeTopic?: string;
+  activeSkill?: string;
+  runtimeReadiness: CodeLearningRuntimeReadinessDto;
+  session: CodeLearningSessionDto;
+  activeExercise: CodeLearningExerciseDto;
+  lastAttemptSummary: CodeLearningAttemptDto;
+  repeatedErrorSummary: CodeLearningErrorSummaryDto;
+  checkpointStatus: string;
+  repairStatus: string;
+  recommendedActions: CodeLearningActionDto[];
+  tutorHandoffs: CodeLearningHandoffDto[];
+  quizHandoffs: CodeLearningHandoffDto[];
+  reviewHandoffs: CodeLearningHandoffDto[];
+  wikiHandoffs: CodeLearningHandoffDto[];
+  notebookHandoffs: CodeLearningHandoffDto[];
+  missionControlWarnings: CodeLearningWarningDto[];
+  runtimeWarnings: CodeLearningWarningDto[];
+  reasonCodes: string[];
+  userSafeSummary: string;
+  generatedAt: string;
+}
+
+export interface CodeLearningRuntimeReadinessDto {
+  status: string;
+  toolId: string;
+  decision: string;
+  riskLevel: string;
+  timeoutMs: number;
+  supportedLanguages: string[];
+  warnings: string[];
+  reasonCodes: string[];
+}
+
+export interface CodeLearningSessionDto {
+  sessionStatus: string;
+  signalCount: number;
+  successCount: number;
+  compileErrorCount: number;
+  runtimeErrorCount: number;
+  timeoutCount: number;
+  testFailureCount: number;
+  blankAttemptCount: number;
+  lastSignalAt?: string;
+}
+
+export interface CodeLearningExerciseDto {
+  exerciseId?: string;
+  exerciseStatus: string;
+  exerciseType: string;
+  sourceBasis: string;
+  conceptKey?: string;
+  preSubmitKeyVisible: boolean;
+  reasonCodes: string[];
+}
+
+export interface CodeLearningAttemptDto {
+  status: string;
+  phase: string;
+  success: boolean;
+  language: string;
+  safeErrorCategory: string;
+  safeTutorSummary: string;
+  durationMs: number;
+  outputTruncated: boolean;
+  createdAt?: string;
+  reasonCodes: string[];
+}
+
+export interface CodeLearningErrorSummaryDto {
+  dominantErrorType: string;
+  repetitionCount: number;
+  repairSuggestion: string;
+  reasonCodes: string[];
+}
+
+export interface CodeLearningActionDto {
+  actionType: string;
+  label: string;
+  reason: string;
+  priority: string;
+  entryPoint: string;
+  targetRoute: string;
+  topicId?: string;
+  sessionId?: string;
+  language?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface CodeLearningHandoffDto {
+  handoffType: string;
+  label: string;
+  targetRoute: string;
+  priority: string;
+  topicId?: string;
+  sessionId?: string;
+  language?: string;
+  conceptKey?: string;
+  reasonCodes: string[];
+}
+
+export interface CodeLearningWarningDto {
+  warningCode: string;
+  severity: string;
+  label: string;
+  targetRoute: string;
+  reasonCodes: string[];
+}
+

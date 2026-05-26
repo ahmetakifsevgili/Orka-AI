@@ -247,7 +247,7 @@ public sealed class RichQuestionModelTests
     public async Task AssetSourceMetadata_IsPreservedWithoutOfficialClaim()
     {
         using var factory = new ApiSmokeFactory();
-        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "rich-source-metadata");
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "rich-source-metadata", isAdmin: true);
         var source = await RegisterSourceAsync(user);
 
         var asset = await CreateAssetAsync(user, new CreateQuestionAssetDto

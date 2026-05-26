@@ -17,4 +17,5 @@ public sealed record ChatTurnPostProcessRequest(
 public interface IChatTurnPostProcessor
 {
     ValueTask ScheduleAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default);
+    Task ProcessSynchronouslyAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default);
 }

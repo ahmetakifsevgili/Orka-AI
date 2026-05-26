@@ -98,23 +98,104 @@ public sealed class KnowledgeTracingService : IKnowledgeTracingService
             learned = Math.Min(learned, current);
         }
 
+        var oldConfidence = state.Confidence;
         state.Label = label;
         state.ConceptGraphSnapshotId ??= assessmentItem?.ConceptGraphSnapshotId;
         state.EvidenceCount += 1;
         if (attempt.IsCorrect) state.CorrectCount += 1;
         else state.IncorrectCount += 1;
         state.MasteryProbability = Clamp(Math.Round(learned, 4), 0.02m, 0.98m);
-        state.Confidence = ComputeConfidence(state.EvidenceCount, state.CorrectCount, state.IncorrectCount, attempt.ConfidenceSelfRating);
+        
+        if (attempt.WasSkipped)
+        {
+            state.Confidence = oldConfidence;
+        }
+        else
+        {
+            state.Confidence = ComputeConfidence(state.EvidenceCount, state.CorrectCount, state.IncorrectCount, attempt.ConfidenceSelfRating);
+        }
+
         state.RemediationNeed = ComputeRemediation(state.MasteryProbability, state.Confidence, state.EvidenceCount, state.IncorrectCount);
         state.PracticeReadiness = ComputeReadiness(state.MasteryProbability, state.Confidence, state.EvidenceCount);
         state.LastEvidenceAt = attempt.CreatedAt;
         state.UpdatedAt = DateTime.UtcNow;
 
         await UpsertConceptMasteryAsync(state, ct);
-        await _db.SaveChangesAsync(ct);
 
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
+        {
+            _logger.LogWarning("[KnowledgeTracing] Eşzamanlı benzersiz indeks çarpışması yakalandı. İyileştirme döngüsü başlatılıyor. Hata={Message}", ex.Message);
+            
+            // Detach duplicate entities to clear EF Core tracking pollution
+            var stateEntry = _db.Entry(state);
+            if (stateEntry != null) stateEntry.State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+
+            var trackedMastery = _db.ChangeTracker.Entries<Orka.Core.Entities.ConceptMastery>()
+                .FirstOrDefault(e => e.Entity.UserId == attempt.UserId &&
+                                     e.Entity.TopicId == attempt.TopicId &&
+                                     e.Entity.ConceptKey == conceptKey);
+            if (trackedMastery != null)
+            {
+                trackedMastery.State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+            }
+            
+            // Re-fetch existing state from the database
+            var existingState = await _db.KnowledgeTracingStates
+                .FirstOrDefaultAsync(s =>
+                    s.UserId == attempt.UserId &&
+                    s.TopicId == attempt.TopicId &&
+                    s.ConceptKey == conceptKey,
+                    ct);
+                    
+            if (existingState != null)
+            {
+                // Re-apply calculation on top of reloaded state
+                var currentVal = ApplyDecay(existingState.MasteryProbability, existingState.Decay, existingState.LastEvidenceAt, attempt.CreatedAt);
+                var postVal = attempt.IsCorrect
+                    ? SafeDivide(currentVal * (1m - slip), currentVal * (1m - slip) + (1m - currentVal) * guess)
+                    : SafeDivide(currentVal * slip, currentVal * slip + (1m - currentVal) * (1m - guess));
+                var learnedVal = postVal + (1m - postVal) * existingState.LearnRate;
+                if (attempt.WasSkipped)
+                {
+                    learnedVal = Math.Min(learnedVal, currentVal);
+                }
+                
+                var oldConfidenceVal = existingState.Confidence;
+                existingState.Label = label;
+                existingState.EvidenceCount += 1;
+                if (attempt.IsCorrect) existingState.CorrectCount += 1;
+                else existingState.IncorrectCount += 1;
+                existingState.MasteryProbability = Clamp(Math.Round(learnedVal, 4), 0.02m, 0.98m);
+                
+                if (attempt.WasSkipped)
+                {
+                    existingState.Confidence = oldConfidenceVal;
+                }
+                else
+                {
+                    existingState.Confidence = ComputeConfidence(existingState.EvidenceCount, existingState.CorrectCount, existingState.IncorrectCount, attempt.ConfidenceSelfRating);
+                }
+
+                existingState.RemediationNeed = ComputeRemediation(existingState.MasteryProbability, existingState.Confidence, existingState.EvidenceCount, existingState.IncorrectCount);
+                existingState.PracticeReadiness = ComputeReadiness(existingState.MasteryProbability, existingState.Confidence, existingState.EvidenceCount);
+                existingState.LastEvidenceAt = attempt.CreatedAt;
+                existingState.UpdatedAt = DateTime.UtcNow;
+                
+                state = existingState;
+                await UpsertConceptMasteryAsync(state, ct);
+                await _db.SaveChangesAsync(ct);
+            }
+            else
+            {
+                throw;
+            }
+        }
+ 
         var dto = ToDto(state);
-        await CacheLearnerStateAsync(state.UserId, state.TopicId, ct);
         return dto;
     }
 
@@ -167,7 +248,6 @@ public sealed class KnowledgeTracingService : IKnowledgeTracingService
         }
 
         await _db.SaveChangesAsync(ct);
-        await CacheLearnerStateAsync(profile.UserId, profile.TopicId, ct);
         return updated;
     }
 
@@ -221,31 +301,17 @@ public sealed class KnowledgeTracingService : IKnowledgeTracingService
         mastery.UpdatedAt = DateTime.UtcNow;
     }
 
-    private async Task CacheLearnerStateAsync(Guid userId, Guid? topicId, CancellationToken ct)
-    {
-        if (_redis == null) return;
-        try
-        {
-            var states = await GetRecentStatesAsync(userId, topicId, 20, ct);
-            var key = $"orka:v2:learner-state:{userId:N}:{(topicId.HasValue ? topicId.Value.ToString("N") : "global")}";
-            await _redis.SetJsonAsync(key, JsonSerializer.Serialize(states, JsonOptions), TimeSpan.FromHours(6));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug("[KnowledgeTracing] Redis learner state write skipped. UserRef={UserRef} TopicRef={TopicRef} ErrorType={ErrorType}",
-                LogPrivacyGuard.SafeId(userId, "usr"),
-                LogPrivacyGuard.SafeId(topicId, "topic"),
-                LogPrivacyGuard.SafeExceptionType(ex));
-        }
-    }
-
     private static decimal ApplyDecay(decimal masteryProbability, decimal decay, DateTime? lastEvidenceAt, DateTime now)
     {
         if (!lastEvidenceAt.HasValue) return masteryProbability;
-        var days = Math.Max(0, (now - lastEvidenceAt.Value).TotalDays);
+        var days = (double)Math.Max(0, (now - lastEvidenceAt.Value).TotalDays);
         if (days <= 0) return masteryProbability;
-        var factor = 1m - Math.Min(0.40m, decay * (decimal)days);
-        return Clamp(masteryProbability * factor, 0.02m, 0.98m);
+
+        // Standard exponential forgetting model: P(t) = P(0) * e^(-lambda * t)
+        double lambda = (double)decay;
+        decimal decayFactor = (decimal)Math.Exp(-lambda * days);
+
+        return Clamp(masteryProbability * decayFactor, 0.02m, 0.98m);
     }
 
     private static decimal CalibrateGuess(AssessmentItemStat? itemStat)

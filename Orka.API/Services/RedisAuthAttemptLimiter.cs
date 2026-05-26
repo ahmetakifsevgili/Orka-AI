@@ -32,9 +32,6 @@ public sealed class RedisAuthAttemptStore : IRedisAuthAttemptStore
         TimeSpan window,
         CancellationToken cancellationToken = default)
     {
-        if (!_redis.IsConnected)
-            throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis is not connected.");
-
         var db = _redis.GetDatabase();
         var ttlMs = Math.Max(1, (long)window.TotalMilliseconds);
         var value = await db.ScriptEvaluateAsync(

@@ -16,6 +16,17 @@ public sealed class DashboardTodayDto
     public DashboardEntryPointDto RecommendedEntryPoint { get; set; } = new();
     public LearningMemoryLiteDto? LearningMemory { get; set; }
     public AdaptiveStudyPlanDto? AdaptiveStudyPlan { get; set; }
+    public LongTermLearningProfileDto? LongTermLearningProfile { get; set; }
+    public ExamLearningProfileDto? ExamLearningProfile { get; set; }
+    public OrkaExamWarRoomDto? ExamWarRoom { get; set; }
+    public SourceWikiIntelligenceProfileDto? SourceWikiIntelligenceProfile { get; set; }
+    public OrkaSourceWikiProDto? SourceWikiPro { get; set; }
+    public OrkaLearningStateDto? OrkaLearningState { get; set; }
+    public OrkaMissionControlDto? MissionControl { get; set; }
+    public OrkaStudyCoachDto? StudyCoach { get; set; }
+    public OrkaStudyRoomDto? StudyRoom { get; set; }
+    public OrkaNotebookStudioProDto? NotebookStudioPro { get; set; }
+    public OrkaCodeLearningIdeDto? CodeLearningIde { get; set; }
     public bool HasRealLearningData { get; set; }
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }

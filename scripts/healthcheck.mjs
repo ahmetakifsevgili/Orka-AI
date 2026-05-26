@@ -303,11 +303,21 @@ async function writeReports(startedAt, durationMs) {
   // Grade
   const grade = pctReq >= 95 ? "A" : pctReq >= 85 ? "B" : pctReq >= 70 ? "C" : pctReq >= 50 ? "D" : "F";
 
+  let gitCommit = "unknown";
+  let gitBranch = "unknown";
+  try {
+    const { execSync } = await import("node:child_process");
+    gitCommit = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
+    gitBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
+  } catch (e) {}
+
   const json = {
     startedAt: new Date(startedAt).toISOString(),
     durationMs,
     baseUrl: BASE_URL,
     quick: QUICK,
+    gitCommit,
+    gitBranch,
     score: { ...SCORE, percentRequired: pctReq, percentBonus: pctBonus, grade },
     results: RESULTS,
   };
@@ -325,6 +335,8 @@ async function writeReports(startedAt, durationMs) {
 **Süre:** ${(durationMs / 1000).toFixed(1)} sn
 **Base URL:** ${BASE_URL}
 **Mod:** ${QUICK ? "Hızlı (LLM çağrısı yok)" : "Tam"}
+**Git Branch:** \`${gitBranch}\`
+**Git Commit:** \`${gitCommit}\`
 
 ## Puan
 
@@ -356,7 +368,17 @@ async function main() {
   const startedAt = Date.now();
 
   log(`${C.bold}Orka AI Sağlık Denetimi${C.reset}`);
+
+  let gitCommit = "unknown";
+  let gitBranch = "unknown";
+  try {
+    const { execSync } = await import("node:child_process");
+    gitCommit = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
+    gitBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
+  } catch (e) {}
+
   log(`${C.dim}Base URL: ${BASE_URL}  |  Mod: ${QUICK ? "Hızlı" : "Tam"}${C.reset}`);
+  log(`${C.dim}Git Branch: ${gitBranch}  |  Git Commit: ${gitCommit.substring(0, 7)}${C.reset}`);
 
   await testInfra();
   const session = await testAuth();

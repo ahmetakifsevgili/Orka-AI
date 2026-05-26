@@ -21,6 +21,9 @@ public sealed class ResourceOwnershipGuard
     public Task<bool> SourceBelongsToUserAsync(Guid userId, Guid sourceId, CancellationToken ct = default) =>
         _db.LearningSources.AsNoTracking().AnyAsync(s => s.Id == sourceId && s.UserId == userId && !s.IsDeleted, ct);
 
+    public Task<bool> AdaptiveSessionBelongsToUserAsync(Guid userId, Guid adaptiveSessionId, CancellationToken ct = default) =>
+        _db.AdaptiveAssessmentSessions.AsNoTracking().AnyAsync(s => s.Id == adaptiveSessionId && s.UserId == userId, ct);
+
     public async Task<bool> OptionalTopicBelongsToUserAsync(Guid userId, Guid? topicId, CancellationToken ct = default) =>
         !topicId.HasValue || await TopicBelongsToUserAsync(userId, topicId.Value, ct);
 

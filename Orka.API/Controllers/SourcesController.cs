@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.Exceptions;
@@ -12,6 +13,7 @@ namespace Orka.API.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/sources")]
+[EnableRateLimiting("UploadLimiter")]
 public class SourcesController : ControllerBase
 {
     private const int MaxQuestionLength = 4_000;
@@ -24,6 +26,8 @@ public class SourcesController : ControllerBase
     private readonly ISourceQuestionService _sourceQuestions;
     private readonly ISourceCompareService _sourceCompare;
     private readonly ISourceQuestionThreadService _sourceQuestionThreads;
+    private readonly ISourceWikiIntelligenceService _sourceWikiIntelligence;
+    private readonly IOrkaSourceWikiProService _sourceWikiPro;
     private readonly ResourceOwnershipGuard _ownership;
     private readonly UploadContentSafetyGuard _contentSafety;
 
@@ -34,6 +38,8 @@ public class SourcesController : ControllerBase
         ISourceQuestionService sourceQuestions,
         ISourceCompareService sourceCompare,
         ISourceQuestionThreadService sourceQuestionThreads,
+        ISourceWikiIntelligenceService sourceWikiIntelligence,
+        IOrkaSourceWikiProService sourceWikiPro,
         ResourceOwnershipGuard ownership,
         UploadContentSafetyGuard contentSafety)
     {
@@ -43,6 +49,8 @@ public class SourcesController : ControllerBase
         _sourceQuestions = sourceQuestions;
         _sourceCompare = sourceCompare;
         _sourceQuestionThreads = sourceQuestionThreads;
+        _sourceWikiIntelligence = sourceWikiIntelligence;
+        _sourceWikiPro = sourceWikiPro;
         _ownership = ownership;
         _contentSafety = contentSafety;
     }
@@ -343,6 +351,58 @@ public class SourcesController : ControllerBase
 
         var result = await _sourceQuestionThreads.GetStudySummaryAsync(userId, topicId, sourceId, wikiPageId, HttpContext.RequestAborted);
         return result.StudyStatus == "not_found" ? NotFound(new { message = "Source study summary bulunamadi." }) : Ok(result);
+    }
+
+    [HttpGet("wiki-intelligence")]
+    public async Task<IActionResult> GetSourceWikiIntelligence([FromQuery] Guid? topicId, [FromQuery] Guid? sourceId, [FromQuery] Guid? wikiPageId)
+    {
+        var userId = GetUserId();
+        if (topicId.HasValue &&
+            !await _ownership.TopicBelongsToUserAsync(userId, topicId.Value, HttpContext.RequestAborted))
+        {
+            return NotFound(new { message = "Konu bulunamadi." });
+        }
+
+        if (sourceId.HasValue &&
+            !await _ownership.SourceBelongsToUserAsync(userId, sourceId.Value, HttpContext.RequestAborted))
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
+
+        var result = await _sourceWikiIntelligence.BuildProfileAsync(userId, topicId, sourceId, wikiPageId, HttpContext.RequestAborted);
+        return result == null ? NotFound(new { message = "Source/Wiki intelligence profili bulunamadi." }) : Ok(result);
+    }
+
+    [HttpGet("wiki-pro")]
+    public async Task<IActionResult> GetSourceWikiPro(
+        [FromQuery] Guid? topicId,
+        [FromQuery] Guid? sourceId,
+        [FromQuery] Guid? wikiPageId,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null)
+    {
+        var userId = GetUserId();
+        if (topicId.HasValue &&
+            !await _ownership.TopicBelongsToUserAsync(userId, topicId.Value, HttpContext.RequestAborted))
+        {
+            return NotFound(new { message = "Konu bulunamadi." });
+        }
+
+        if (sourceId.HasValue &&
+            !await _ownership.SourceBelongsToUserAsync(userId, sourceId.Value, HttpContext.RequestAborted))
+        {
+            return NotFound(new { message = "Kaynak bulunamadi." });
+        }
+
+        var result = await _sourceWikiPro.BuildProAsync(
+            userId,
+            topicId,
+            sourceId,
+            wikiPageId,
+            string.IsNullOrWhiteSpace(examCode) ? "KPSS" : examCode,
+            variantCode,
+            HttpContext.RequestAborted);
+        return result == null ? NotFound(new { message = "Source/Wiki Pro profili bulunamadi." }) : Ok(result);
     }
 
     [HttpGet("question-threads")]

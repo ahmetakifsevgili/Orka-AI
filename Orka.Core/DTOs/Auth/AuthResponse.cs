@@ -13,11 +13,6 @@ public class AuthResponse
     [JsonPropertyName("access_token")]
     public string AccessToken => Token;
 
-    [JsonPropertyName("refreshToken")]
-    public string RefreshToken { get; set; } = string.Empty;
-
-    [JsonPropertyName("refresh_token")]
-    public string RefreshTokenSnake => RefreshToken;
 
     [JsonPropertyName("userId")]
     public string? UserId { get; set; }

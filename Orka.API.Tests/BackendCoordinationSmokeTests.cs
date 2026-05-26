@@ -78,6 +78,9 @@ public sealed class BackendCoordinationSmokeTests
     {
         public ValueTask ScheduleAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default) =>
             ValueTask.CompletedTask;
+
+        public Task ProcessSynchronouslyAsync(ChatTurnPostProcessRequest request, CancellationToken ct = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class NoopBackgroundTaskQueue : IBackgroundTaskQueue

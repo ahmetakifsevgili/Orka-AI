@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -18,6 +19,7 @@ using Orka.Infrastructure.Utilities;
 namespace Orka.API.Controllers;
 
 [Authorize]
+[EnableRateLimiting("ChatLimiter")]
 [ApiController]
 [Route("api/chat")]
 public class ChatController : ControllerBase
@@ -189,12 +191,30 @@ public class ChatController : ControllerBase
                 request.IsPlanMode,
                 request.FocusTopicId,
                 request.FocusTopicPath,
-                request.FocusSourceRef))
+                request.FocusSourceRef,
+                HttpContext.RequestAborted))
             {
-                var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
-                await Response.WriteAsync($"data: {safeChunk}\n\n");
+                if (chunk.StartsWith("{\"type\":\"") || chunk.StartsWith("{\"type\": \""))
+                {
+                    string typeStr = "metadata";
+                    var match = System.Text.RegularExpressions.Regex.Match(chunk, "\"type\"\\s*:\\s*\"([^\"]+)\"");
+                    if (match.Success)
+                    {
+                        typeStr = match.Groups[1].Value;
+                    }
+                    var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
+                    await Response.WriteAsync($"event: {typeStr}\ndata: {safeChunk}\n\n");
+                }
+                else
+                {
+                    var safeChunk = chunk.Replace("\n", "[NEWLINE]").Replace("\r", "");
+                    await Response.WriteAsync($"event: token\ndata: {safeChunk}\n\n");
+                }
                 await Response.Body.FlushAsync();
             }
+            
+            await Response.WriteAsync("event: done\ndata: [DONE]\n\n");
+            await Response.Body.FlushAsync();
         }
         catch (Exception ex)
         {

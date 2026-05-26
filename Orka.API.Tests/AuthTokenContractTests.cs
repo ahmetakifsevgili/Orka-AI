@@ -25,7 +25,10 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
     public AuthTokenContractTests(ApiSmokeFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        _client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            HandleCookies = false
+        });
     }
 
     [Fact]
@@ -45,8 +48,8 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("token").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("jwt").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("access_token").GetString()));
-        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refreshToken").GetString()));
-        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refresh_token").GetString()));
+        Assert.False(body.RootElement.TryGetProperty("refreshToken", out _));
+        Assert.False(body.RootElement.TryGetProperty("refresh_token", out _));
         Assert.Equal(credentials.Email, body.RootElement.GetProperty("user").GetProperty("email").GetString());
     }
 
@@ -109,13 +112,14 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         using var body = await ParseJsonAsync(response);
 
         var newAccessToken = body.RootElement.GetProperty("token").GetString();
-        var newRefreshToken = body.RootElement.GetProperty("refreshToken").GetString();
+        var rotatedCookie = ReadRefreshCookie(response);
+        var newRefreshToken = rotatedCookie.Value;
 
         Assert.False(string.IsNullOrWhiteSpace(newAccessToken));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("jwt").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("access_token").GetString()));
-        Assert.False(string.IsNullOrWhiteSpace(newRefreshToken));
-        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refresh_token").GetString()));
+        Assert.False(body.RootElement.TryGetProperty("refreshToken", out _));
+        Assert.False(body.RootElement.TryGetProperty("refresh_token", out _));
         Assert.NotEqual(login.RefreshToken, newRefreshToken);
     }
 
@@ -145,7 +149,7 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         using var body = await ParseJsonAsync(response);
 
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("token").GetString()));
-        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("refreshToken").GetString()));
+        Assert.False(body.RootElement.TryGetProperty("refreshToken", out _));
         Assert.NotEqual(loginCookie.Value, rotatedCookie.Value);
     }
 
@@ -170,10 +174,12 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
         var credentials = await RegisterUserAsync();
         var login = await LoginAsync(credentials);
 
-        var logout = await _client.PostAsJsonAsync("/api/auth/logout", new
+        using var logoutRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout")
         {
-            refreshToken = login.RefreshToken
-        });
+            Content = JsonContent.Create(new { })
+        };
+        logoutRequest.Headers.Add("Cookie", $"{RefreshTokenCookie.DefaultName}={login.RefreshToken}");
+        var logout = await _client.SendAsync(logoutRequest);
         logout.EnsureSuccessStatusCode();
 
         var refreshAfterLogout = await PostRefreshAsync(login.RefreshToken);
@@ -345,27 +351,33 @@ public sealed class AuthTokenContractTests : IClassFixture<ApiSmokeFactory>
 
     private Task<HttpResponseMessage> PostRefreshAsync(string refreshToken, int? raceDelayMs = null)
     {
-        if (raceDelayMs is null)
-            return _client.PostAsJsonAsync("/api/auth/refresh", new { refreshToken });
-
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh");
+        if (raceDelayMs is not null)
         {
-            Content = JsonContent.Create(new { refreshToken })
-        };
-        request.Headers.Add("X-Orka-Test-Refresh-Race-Delay-Ms", raceDelayMs.Value.ToString());
-        request.Headers.Add("X-Orka-Test-Refresh-Race", "1");
+            request.Headers.Add("X-Orka-Test-Refresh-Race-Delay-Ms", raceDelayMs.Value.ToString());
+            request.Headers.Add("X-Orka-Test-Refresh-Race", "1");
+        }
+        request.Headers.Add("Cookie", $"{RefreshTokenCookie.DefaultName}={refreshToken}");
         return _client.SendAsync(request);
     }
 
     private async Task<AuthTokens> ReadTokensAsync(HttpResponseMessage response)
     {
         using var body = await ParseJsonAsync(response);
+        var token = body.RootElement.GetProperty("token").GetString()
+            ?? throw new InvalidOperationException("Auth response did not include token.");
 
-        return new AuthTokens(
-            body.RootElement.GetProperty("token").GetString()
-                ?? throw new InvalidOperationException("Auth response did not include token."),
-            body.RootElement.GetProperty("refreshToken").GetString()
-                ?? throw new InvalidOperationException("Auth response did not include refreshToken."));
+        var cookieValue = "";
+        try
+        {
+            cookieValue = ReadRefreshCookie(response).Value;
+        }
+        catch
+        {
+            // Ignore if cookie is not present
+        }
+
+        return new AuthTokens(token, cookieValue);
     }
 
     private async Task<List<RefreshToken>> GetRefreshTokensForUserAsync(string email)

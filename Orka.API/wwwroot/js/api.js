@@ -3,14 +3,11 @@
 const API_BASE = '/api';
 
 function getToken() { return localStorage.getItem('orka_token'); }
-function getRefreshToken() { return localStorage.getItem('orka_refresh'); }
-function setTokens(token, refresh) {
+function setTokens(token) {
     localStorage.setItem('orka_token', token);
-    localStorage.setItem('orka_refresh', refresh);
 }
 function clearTokens() {
     localStorage.removeItem('orka_token');
-    localStorage.removeItem('orka_refresh');
     localStorage.removeItem('orka_user');
     localStorage.removeItem('orka_active_topic_id');
     localStorage.removeItem('orka_active_view');
@@ -31,7 +28,7 @@ async function apiFetch(path, options = {}) {
 
     let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-    if (res.status === 401 && getRefreshToken()) {
+    if (res.status === 401) {
         const refreshed = await tryRefresh();
         if (refreshed) {
             headers.Authorization = `Bearer ${getToken()}`;
@@ -54,15 +51,14 @@ async function apiFetch(path, options = {}) {
 
 async function tryRefresh() {
     try {
-        const refresh = getRefreshToken();
         const res = await fetch(`${API_BASE}/auth/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken: refresh })
+            body: '{}'
         });
         if (!res.ok) return false;
         const data = await res.json();
-        setTokens(data.token, data.refreshToken);
+        setTokens(data.token);
         return true;
     } catch { return false; }
 }
@@ -70,18 +66,18 @@ async function tryRefresh() {
 const Auth = {
     async register(email, password) {
         const data = await apiFetch('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) });
-        setTokens(data.token, data.refreshToken);
+        setTokens(data.token);
         setUser(data.user);
         return data;
     },
     async login(email, password) {
         const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-        setTokens(data.token, data.refreshToken);
+        setTokens(data.token);
         setUser(data.user);
         return data;
     },
     async logout() {
-        try { await apiFetch('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken: getRefreshToken() }) }); } catch {}
+        try { await apiFetch('/auth/logout', { method: 'POST', body: '{}' }); } catch {}
         clearTokens();
         window.location.href = '/login.html';
     },

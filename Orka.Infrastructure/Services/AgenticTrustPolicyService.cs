@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AnyAscii;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
@@ -250,13 +251,15 @@ public sealed class AgenticTrustPolicyService : IAgenticTrustPolicyService
         var text = content ?? string.Empty;
         if (string.IsNullOrWhiteSpace(text)) return issues;
 
-        if (InstructionInjectionPattern.IsMatch(text))
+        var asciiText = text.Transliterate();
+
+        if (InstructionInjectionPattern.IsMatch(asciiText))
         {
             issues.Add(Issue("prompt_injection", blockOnInjection ? "blocker" : "warning", surface,
                 "Instruction-like content was detected and treated as untrusted.", "Use it only as user/source content, never as Orka policy."));
         }
 
-        if (OfficialOrGuaranteePattern.IsMatch(text))
+        if (OfficialOrGuaranteePattern.IsMatch(asciiText))
         {
             issues.Add(Issue("unsafe_official_claim", "blocker", surface,
                 "Unsupported official or guarantee claim was detected.", "Remove the claim unless verified metadata explicitly supports it."));

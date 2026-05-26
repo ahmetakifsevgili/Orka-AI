@@ -104,7 +104,7 @@ public sealed class ToolActivationTutorConsumptionTests
         Assert.Equal("42", body.Stdout);
         Assert.Equal(LearningSignalTypes.IdeRunCompleted, signals.LastSignalType);
         Assert.True(signals.LastIsPositive);
-        Assert.Contains("42", redis.LastPayload!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("stdout_redacted", redis.LastPayload!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -201,8 +201,8 @@ public sealed class ToolActivationTutorConsumptionTests
         public Task SetGlobalPolicyAsync(string policyText) => Task.CompletedTask;
         public Task<string> GetGlobalPolicyAsync() => Task.FromResult(string.Empty);
         public Task SetWikiReadyAsync(Guid topicId) => Task.CompletedTask;
-        public Task SaveGoldExampleAsync(Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
-        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>([]);
+        public Task SaveGoldExampleAsync(Guid userId, Guid topicId, string userMessage, string agentResponse, int score) => Task.CompletedTask;
+        public Task<IEnumerable<GoldExample>> GetGoldExamplesAsync(Guid userId, Guid topicId, int count = 2) => Task.FromResult<IEnumerable<GoldExample>>([]);
         public Task RecordAgentMetricAsync(string agentRole, long latencyMs, bool isSuccess, string? provider = null) => Task.CompletedTask;
         public Task<IEnumerable<AgentMetricSummary>> GetSystemMetricsAsync() => Task.FromResult<IEnumerable<AgentMetricSummary>>([]);
         public Task<IEnumerable<EvaluatorLogEntry>> GetRecentEvaluatorLogsAsync(int count = 20) => Task.FromResult<IEnumerable<EvaluatorLogEntry>>([]);

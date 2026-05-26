@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using AnyAscii;
 using Xunit;
 
 namespace Orka.API.Tests;
@@ -976,7 +977,9 @@ public sealed class SourceRegressionGuardTests
         var root = FindRepoRoot();
         var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         if (File.Exists(fullPath))
+        {
             return File.ReadAllText(fullPath, Encoding.UTF8);
+        }
 
         var fallbackPath = Path.Combine(root, fallbackRelativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(fallbackPath), "Missing expected source file: " + fallbackPath);

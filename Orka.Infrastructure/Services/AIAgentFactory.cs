@@ -100,6 +100,10 @@ public class AIAgentFactory : IAIAgentFactory
         for (var i = 0; i < attempts.Count; i++)
         {
             var attempt = attempts[i];
+            if (string.Equals(attempt.Provider, "Gemini", StringComparison.OrdinalIgnoreCase))
+            {
+                attempt = attempt with { Model = ResolveGeminiModel(systemPrompt) };
+            }
             var sw = Stopwatch.StartNew();
             AiUsageBudgetDecision? budget = null;
 
@@ -158,6 +162,10 @@ public class AIAgentFactory : IAIAgentFactory
         for (var i = 0; i < attempts.Count; i++)
         {
             var attempt = attempts[i];
+            if (string.Equals(attempt.Provider, "Gemini", StringComparison.OrdinalIgnoreCase))
+            {
+                attempt = attempt with { Model = ResolveGeminiModel(systemPrompt) };
+            }
             var sw = Stopwatch.StartNew();
             AiUsageBudgetDecision? budget = null;
             IAsyncEnumerator<string>? enumerator = null;
@@ -216,6 +224,29 @@ public class AIAgentFactory : IAIAgentFactory
     {
         var history = string.Join("\n", messages.Select(m => $"{m.Role}: {m.Content}"));
         return await CompleteChatAsync(role, systemPrompt, $"[Sohbet Gecmisi]\n{history}", ct);
+    }
+
+    private string ResolveGeminiModel(string systemPrompt)
+    {
+        var lower = systemPrompt.ToLowerInvariant();
+        if (lower.Contains("sınav")       ||
+            lower.Contains("quiz")        ||
+            lower.Contains("doğru")       ||
+            lower.Contains("yanlış")      ||
+            lower.Contains("değerlendir") ||
+            lower.Contains("pekiştirme"))
+        {
+            return _configuration["AI:Gemini:ModelQuiz"] ?? "gemini-2.5-flash";
+        }
+        if (lower.Contains("müfredat")    ||
+            lower.Contains("alt başlık")  ||
+            lower.Contains("planlayıcı")  ||
+            lower.Contains("deepplan")    ||
+            lower.Contains("eğitim planı"))
+        {
+            return _configuration["AI:Gemini:ModelDeepPlan"] ?? "gemini-2.5-flash";
+        }
+        return _configuration["AI:Gemini:ModelTutor"] ?? "gemini-2.5-flash";
     }
 
     private IEnumerable<ProviderAttempt> BuildAttempts(AgentRole role, bool stream)
@@ -289,7 +320,7 @@ public class AIAgentFactory : IAIAgentFactory
         {
             "githubmodels" => _github.ChatAsync(systemPrompt, userMessage, attempt.Model, ct),
             "groq" => _groq.GenerateResponseAsync(systemPrompt, userMessage, ct),
-            "gemini" => _gemini.GenerateSmartAsync(systemPrompt, userMessage, ct),
+            "gemini" => _gemini.GenerateWithModelAsync(attempt.Model, systemPrompt, userMessage, ct),
             "openrouter" => _openRouter.ChatCompletionAsync(systemPrompt, userMessage, attempt.Model, ct),
             "cerebras" => _cerebras.GenerateResponseAsync(systemPrompt, userMessage, ct),
             "mistral" => _mistral.GenerateResponseAsync(systemPrompt, userMessage, ct),
@@ -302,7 +333,7 @@ public class AIAgentFactory : IAIAgentFactory
         {
             "githubmodels" => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct),
             "groq" => _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, ct),
-            "gemini" => _gemini.StreamSmartAsync(systemPrompt, userMessage, ct),
+            "gemini" => _gemini.StreamWithModelAsync(attempt.Model, systemPrompt, userMessage, ct),
             "openrouter" => _openRouter.GenerateResponseStreamAsync(systemPrompt, userMessage, ct),
             "cerebras" => _cerebras.GenerateResponseStreamAsync(systemPrompt, userMessage, ct),
             "mistral" => _mistral.GenerateResponseStreamAsync(systemPrompt, userMessage, ct),

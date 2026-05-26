@@ -1,10 +1,14 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Orka.Infrastructure.Data;
 
 #nullable disable
 
 namespace Orka.Infrastructure.Migrations
 {
+    [DbContext(typeof(OrkaDbContext))]
+    [Migration("20260515113000_AddLearningNotebookStudio")]
     /// <inheritdoc />
     public partial class AddLearningNotebookStudio : Migration
     {

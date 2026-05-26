@@ -1,10 +1,13 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
@@ -32,17 +35,20 @@ public class EvaluatorAgent : IEvaluatorAgent
 
     private readonly IRedisMemoryService _redisService;
     private readonly IEducatorCoreService _educatorCore;
+    private readonly OrkaDbContext _db;
 
     public EvaluatorAgent(
         IAIAgentFactory factory,
         ILogger<EvaluatorAgent> logger,
         IRedisMemoryService redisService,
-        IEducatorCoreService educatorCore)
+        IEducatorCoreService educatorCore,
+        OrkaDbContext db)
     {
         _factory = factory;
         _logger = logger;
         _redisService = redisService;
         _educatorCore = educatorCore;
+        _db = db;
     }
 
     public async Task<(int score, string feedback)> EvaluateInteractionAsync(
@@ -51,7 +57,8 @@ public class EvaluatorAgent : IEvaluatorAgent
         string agentResponse,
         string agentRole,
         Guid? topicId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid userId = default)
     {
         var youtubeContext = "";
         if (topicId.HasValue && agentRole == "TutorAgent")
@@ -124,7 +131,16 @@ public class EvaluatorAgent : IEvaluatorAgent
             // Not: Hallucination riski varsa altın örneğe kaydetmeyiz (yanlış bilgi pekiştirmeyelim).
             if (detail.Overall >= 9 && !detail.HallucinationRisk && topicId.HasValue && agentRole == "TutorAgent")
             {
-                await _redisService.SaveGoldExampleAsync(topicId.Value, userMessage, agentResponse, detail.Overall);
+                var targetUserId = userId != Guid.Empty ? userId : Guid.Empty;
+                if (targetUserId == Guid.Empty && sessionId != Guid.Empty)
+                {
+                    targetUserId = await _db.Sessions
+                        .AsNoTracking()
+                        .Where(s => s.Id == sessionId)
+                        .Select(s => s.UserId)
+                        .FirstOrDefaultAsync(ct);
+                }
+                await _redisService.SaveGoldExampleAsync(targetUserId, topicId.Value, userMessage, agentResponse, detail.Overall);
                 _logger.LogInformation(
                     "[EvaluatorAgent] Altin ornek kaydedildi. TopicRef={TopicRef} Puan={Score}",
                     LogPrivacyGuard.SafeId(topicId.Value, "topic"), detail.Overall);

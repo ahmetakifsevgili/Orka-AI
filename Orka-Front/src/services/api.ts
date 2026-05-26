@@ -4,7 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import toast from "react-hot-toast";
-import type { ActiveLessonSnapshotDto, ActiveLessonSnapshotRequestDto, AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AdvanceQuestionReviewStageDto, AgenticTrustCheckRequestDto, AgenticTrustCheckResultDto, AgenticTrustRuntimeSummaryDto, AssessmentBlueprintDto, AssessmentBlueprintRequestDto, AssessmentCalibrationRun, AssessmentQualityEvaluationDto, AssessmentQualityEvaluationRequestDto, AssignQuestionReviewerDto, CentralExamBlueprintCoverageDto, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamQualityOverviewDto, CentralExamStudyHomeDto, CitationReviewResultDto, ContentLicenseReviewDto, CreateCurriculumNodeDto, CreateCurriculumOutcomeMappingDto, CreateCurriculumVersionDto, CreateQuestionAssetDto, CreateQuestionContentBlockDto, CreateQuestionDto, CreateQuestionOptionContentBlockDto, CreateQuestionStimulusDto, CreateWikiBlockRequestDto, CurriculumNodeDto, CurriculumOutcomeMappingDto, CurriculumOutcomeSourceDto, CurriculumVersionDto, DeprecateCurriculumVersionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, KorteksConsumerContexts, KorteksEvidenceSummary, KorteksResearchSynthesis, KorteksResearchWorkflow, KorteksSynthesisIssue, LearningArtifactDto, LearningArtifactListDto, LearningArtifactRefreshRequestDto, LearningArtifactRequestDto, LearningArtifactSafetyDto, LearningMemoryLiteDto, LearningNotebookArtifactRequestDto, LearningNotebookPackDto, LearningNotebookPackListDto, LearningNotebookPackRequestDto, LearningQualityReport, LearningRuntimeCorrelationDto, LearningRuntimeFlowSummaryDto, LearningRuntimeHealthDto, LearningRuntimePrivacyCheckDto, LearningRuntimePrivacyCheckRequestDto, LearningRuntimeTraceDto, LearningRuntimeTracesResponseDto, LearningSignalConfidenceDto, MarkSourceStaleRequestDto, MisconceptionSignalDto, MultiSourceCompareRequestDto, MultiSourceCompareResultDto, NotebookExportRequestDto, NotebookExportResultDto, NotebookSlideExportPreviewDto, PlanQualityEvaluationDto, PlanQualityEvaluationRequestDto, PlanReadinessDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, PublishQuestionContentDto, QuestionAssetDto, QuestionBankFilterDto, QuestionContentVersionDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPackageDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionImportTextAdapterRequestDto, QuestionItemAnalyticsDto, QuestionItemDto, QuestionPublishReadinessDto, QuestionQualityReviewSignalDto, QuestionReviewWorkflowDto, QuestionStimulusDto, QuestionStimulusLinkDto, RecalculateExamAnalyticsResultDto, RecalculateQuestionAnalyticsResultDto, RegisterSourceRegistryItemDto, RejectQuestionReviewDto, RemediationSeedDto, RetireQuestionDto, ReviewSourceLicenseDto, SourceCitationSetValidationDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceEvidenceBundleDto, SourceEvidenceBundleRequestDto, SourceLifecycleSummaryDto, SourceNotebookDto, SourceQuestionFollowUpRequestDto, SourceQuestionRequestDto, SourceQuestionResponseDto, SourceQuestionReviewStateDto, SourceQuestionThreadDto, SourceQuestionThreadListDto, SourceQuestionThreadRequestDto, SourceQualityReportDto, SourceStudySummaryDto, SourceRegistryItemDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudentContextSnapshotDto, StudentContextSnapshotRequestDto, StudyIntentPreview, SubmitQuestionReviewDto, SupersedeCurriculumVersionDto, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, ToolGovernanceSummary, ToolRuntimeDecision, ToolRuntimeRequest, ToolRuntimeTrace, ToolRuntimeTracesResponse, TutorNextLearningActionDto, TutorResponsePolicyDto, TutorResponsePolicyRequestDto, TutorResponseQualityEvaluationDto, TutorResponseQualityEvaluationRequestDto, TutorTraceTimeline, UpdateQuestionDto, ValidateSourceCitationSetRequestDto, VerifySourceRegistryItemDto, WikiBlockDto, WikiCopilotContextDto, WikiGraphDto, WikiGraphSyncRequestDto, WikiGraphSyncResultDto, WikiKnowledgeNotebookDto } from "@/lib/types";
+import type { ActiveLessonSnapshotDto, ActiveLessonSnapshotRequestDto, AdaptiveAssessmentNextItem, AdaptiveAssessmentSession, AdaptiveStudyPlanDto, AdaptiveStudyPlanRequestDto, AdvanceQuestionReviewStageDto, AgenticTrustCheckRequestDto, AgenticTrustCheckResultDto, AgenticTrustRuntimeSummaryDto, AssessmentBlueprintDto, AssessmentBlueprintRequestDto, AssessmentCalibrationRun, AssessmentQualityEvaluationDto, AssessmentQualityEvaluationRequestDto, AssignQuestionReviewerDto, CentralExamBlueprintCoverageDto, CentralExamCountdownDto, CentralExamDenemeBlueprintDto, CentralExamDenemeResultDto, CentralExamDenemeSessionDto, CentralExamDenemeStartRequestDto, CentralExamDenemeSubmitRequestDto, CentralExamDto, CentralExamPracticeEntryDto, CentralExamQualityOverviewDto, CentralExamStudyHomeDto, CitationReviewResultDto, ContentLicenseReviewDto, CreateCurriculumNodeDto, CreateCurriculumOutcomeMappingDto, CreateCurriculumVersionDto, CreateQuestionAssetDto, CreateQuestionContentBlockDto, CreateQuestionDto, CreateQuestionOptionContentBlockDto, CreateQuestionStimulusDto, CreateWikiBlockRequestDto, CurriculumNodeDto, CurriculumOutcomeMappingDto, CurriculumOutcomeSourceDto, CurriculumVersionDto, DeprecateCurriculumVersionDto, EvidenceQualityDto, ExamDefinitionDto, ExamTreeImportDto, KorteksConsumerContexts, KorteksEvidenceSummary, KorteksResearchSynthesis, KorteksResearchWorkflow, KorteksSynthesisIssue, LearningArtifactDto, LearningArtifactListDto, LearningArtifactRefreshRequestDto, LearningArtifactRequestDto, LearningArtifactSafetyDto, LearningMemoryLiteDto, LearningNotebookArtifactRequestDto, LearningNotebookPackDto, LearningNotebookPackListDto, LearningNotebookPackRequestDto, LearningQualityReport, LearningRuntimeCorrelationDto, LearningRuntimeFlowSummaryDto, LearningRuntimeHealthDto, LearningRuntimePrivacyCheckDto, LearningRuntimePrivacyCheckRequestDto, LearningRuntimeTraceDto, LearningRuntimeTracesResponseDto, LearningSignalConfidenceDto, MarkSourceStaleRequestDto, MisconceptionSignalDto, MultiSourceCompareRequestDto, MultiSourceCompareResultDto, NotebookExportRequestDto, NotebookExportResultDto, NotebookSlideExportPreviewDto, PlanQualityEvaluationDto, PlanQualityEvaluationRequestDto, PlanReadinessDto, PracticeResultDto, PracticeSessionDto, PracticeStartRequestDto, PracticeSubmitRequestDto, ProductionReadiness, PublishQuestionContentDto, QuestionAssetDto, QuestionBankFilterDto, QuestionContentVersionDto, QuestionDraftApprovalDto, QuestionDraftApprovalResultDto, QuestionDraftGenerationRequestDto, QuestionDraftPreviewDto, QuestionImportApprovalDto, QuestionImportPackageDto, QuestionImportPreviewDto, QuestionImportRequestDto, QuestionImportResultDto, QuestionImportTextAdapterRequestDto, QuestionItemAnalyticsDto, QuestionItemDto, QuestionPublishReadinessDto, QuestionQualityReviewSignalDto, QuestionReviewWorkflowDto, QuestionStimulusDto, QuestionStimulusLinkDto, RecalculateExamAnalyticsResultDto, RecalculateQuestionAnalyticsResultDto, RegisterSourceRegistryItemDto, RejectQuestionReviewDto, RemediationSeedDto, RetireQuestionDto, ReviewSourceLicenseDto, SourceCitationSetValidationDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceEvidenceBundleDto, SourceEvidenceBundleRequestDto, SourceLifecycleSummaryDto, SourceNotebookDto, SourceQuestionFollowUpRequestDto, SourceQuestionRequestDto, SourceQuestionResponseDto, SourceQuestionReviewStateDto, SourceQuestionThreadDto, SourceQuestionThreadListDto, SourceQuestionThreadRequestDto, SourceQualityReportDto, SourceStudySummaryDto, SourceRegistryItemDto, StandardsExportRun, StandardsSummary, StandardsValidationRun, StudentContextSnapshotDto, StudentContextSnapshotRequestDto, StudyIntentPreview, SubmitQuestionReviewDto, SupersedeCurriculumVersionDto, TeachingArtifact, ToolCapabilitiesResponse, ToolCapability, ToolGovernanceSummary, ToolRuntimeDecision, ToolRuntimeRequest, ToolRuntimeTrace, ToolRuntimeTracesResponse, TutorNextLearningActionDto, TutorResponsePolicyDto, TutorResponsePolicyRequestDto, TutorResponseQualityEvaluationDto, TutorResponseQualityEvaluationRequestDto, TutorTraceTimeline, UpdateQuestionDto, ValidateSourceCitationSetRequestDto, VerifySourceRegistryItemDto, WikiBlockDto, WikiCopilotContextDto, WikiGraphDto, WikiGraphSyncRequestDto, WikiGraphSyncResultDto, WikiKnowledgeNotebookDto, OrkaLearningContractQuery, OrkaMissionControlDto, OrkaStudyCoachDto, OrkaLearningStateDto, OrkaNotebookStudioProDto, OrkaStudyRoomDto, OrkaStudyRoomStartRequestDto, OrkaStudyRoomCheckpointRequestDto, OrkaExamWarRoomDto, OrkaCodeLearningIdeDto, OrkaSourceWikiProDto, LongTermLearningProfileDto, ExamLearningProfileDto, SourceWikiIntelligenceProfileDto } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,7 +56,6 @@ export interface RegisterRequest {
 // ---------------------------------------------------------------------------
 
 const TOKEN_KEY = "orka_token";
-const REFRESH_KEY = "orka_refresh";
 const USER_KEY = "orka_user";
 export const API_ORIGIN =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -68,20 +67,16 @@ export const buildApiUrl = (path: string) => {
 
 export const storage = {
   getToken: () => localStorage.getItem(TOKEN_KEY),
-  getRefresh: () => localStorage.getItem(REFRESH_KEY),
   getUser: (): AuthUser | null => {
     const raw = localStorage.getItem(USER_KEY);
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   },
   save: (data: AuthResponse) => {
     localStorage.setItem(TOKEN_KEY, data.token);
-    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
-    else localStorage.removeItem(REFRESH_KEY);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   },
   clear: () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
     // Clear Orka session view state so another user never sees the previous user's context.
     localStorage.removeItem("orka_active_topic_id");
@@ -148,18 +143,14 @@ const refreshAccessToken = async () => {
     });
   }
 
-  const refresh = storage.getRefresh();
-
   isRefreshing = true;
   try {
     const { data } = await axios.post<AuthTokens>(
       buildApiUrl("/api/auth/refresh"),
-      refresh ? { refreshToken: refresh } : {},
+      {},
       { withCredentials: true }
     );
     localStorage.setItem(TOKEN_KEY, data.token);
-    if (data.refreshToken) localStorage.setItem(REFRESH_KEY, data.refreshToken);
-    else localStorage.removeItem(REFRESH_KEY);
     api.defaults.headers.common.Authorization = `Bearer ${data.token}`;
     flushQueue(null, data.token);
     return data.token;
@@ -202,7 +193,7 @@ api.interceptors.response.use(
     };
     const isAuthRoute = isAuthUrl(original?.url);
 
-    if (error.response?.status === 401 && !isAuthRoute && !original._retry) {
+    if (original && error.response?.status === 401 && !isAuthRoute && !original._retry) {
       original._retry = true;
       try {
         const token = await refreshAccessToken();
@@ -244,10 +235,10 @@ export const AuthAPI = {
     api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) =>
     api.post<AuthResponse>("/auth/register", data),
-  logout: (refreshToken?: string) =>
-    api.post("/auth/logout", refreshToken ? { refreshToken } : {}),
-  refresh: (refreshToken?: string) =>
-    api.post<AuthTokens>("/auth/refresh", refreshToken ? { refreshToken } : {}),
+  logout: () =>
+    api.post("/auth/logout", {}),
+  refresh: () =>
+    api.post<AuthTokens>("/auth/refresh", {}),
 };
 
 export const UserAPI = {
@@ -386,6 +377,17 @@ export interface DashboardTodayDto {
   };
   learningMemory?: LearningMemoryLiteDto | null;
   adaptiveStudyPlan?: AdaptiveStudyPlanDto | null;
+  longTermLearningProfile?: LongTermLearningProfileDto | null;
+  examLearningProfile?: ExamLearningProfileDto | null;
+  examWarRoom?: OrkaExamWarRoomDto | null;
+  sourceWikiIntelligenceProfile?: SourceWikiIntelligenceProfileDto | null;
+  sourceWikiPro?: OrkaSourceWikiProDto | null;
+  orkaLearningState?: OrkaLearningStateDto | null;
+  missionControl?: OrkaMissionControlDto | null;
+  studyCoach?: OrkaStudyCoachDto | null;
+  studyRoom?: OrkaStudyRoomDto | null;
+  notebookStudioPro?: OrkaNotebookStudioProDto | null;
+  codeLearningIde?: OrkaCodeLearningIdeDto | null;
   hasRealLearningData: boolean;
   generatedAt: string;
 }
@@ -613,6 +615,8 @@ export const SourcesAPI = {
     api.patch(`/sources/${sourceId}`, data).then((r) => r.data),
   delete: (sourceId: string) =>
     api.delete(`/sources/${sourceId}`).then((r) => r.data),
+  getWikiPro: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaSourceWikiProDto>("/sources/wiki-pro", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
 };
 
 export const AudioOverviewAPI = {
@@ -625,7 +629,20 @@ export const AudioOverviewAPI = {
       errorMessage?: string;
       createdAt: string;
     }>("/audio/overview", data).then((r) => r.data),
+  get: (jobId: string) =>
+    api.get<{
+      id: string;
+      status: string;
+      script: string;
+      speakers: string[];
+      errorMessage?: string;
+      createdAt: string;
+    }>(`/audio/overview/${jobId}`).then((r) => r.data),
   streamUrl: (jobId: string) => buildApiUrl(`/api/audio/overview/${jobId}/stream`),
+  fetchBlob: async (jobId: string): Promise<string> => {
+    const resp = await api.get(`/audio/overview/${jobId}/stream`, { responseType: "blob" });
+    return URL.createObjectURL(resp.data as Blob);
+  },
 };
 
 export const LearningAPI = {
@@ -666,6 +683,12 @@ export const LearningAPI = {
     api.get<LearningQualityReport>(`/learning-quality/topic/${topicId}`).then((r) => r.data),
   runRagEvaluation: (topicId: string) =>
     api.post(`/learning-quality/topic/${topicId}/rag-evaluation/run`).then((r) => r.data),
+  getMissionControl: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaMissionControlDto>("/learning/mission-control", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getStudyCoach: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaStudyCoachDto>("/learning/study-coach", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getOrkaState: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaLearningStateDto>("/learning/orka-state", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
 };
 
 export const LearningSnapshotsAPI = {
@@ -790,6 +813,8 @@ export const NotebookStudioAPI = {
     api.get<NotebookSlideExportPreviewDto>(`/notebook-studio/packs/${packId}/export/preview`, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
   exportPack: (packId: string, data: NotebookExportRequestDto = { format: "markdown" }) =>
     api.post<NotebookExportResultDto>(`/notebook-studio/packs/${packId}/export`, data, { suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  getPro: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaNotebookStudioProDto>("/notebook-studio/pro", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
 };
 
 export const AssessmentAPI = {
@@ -840,6 +865,12 @@ export const ClassroomAPI = {
       responseType: "blob",
       suppressErrorToast: true,
     } as OrkaAxiosConfig),
+  getStudyRoom: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaStudyRoomDto>("/classroom/study-room", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
+  startStudyRoom: (request: OrkaStudyRoomStartRequestDto) =>
+    api.post<OrkaStudyRoomDto>("/classroom/study-room/start", request).then((r) => r.data),
+  submitStudyRoomCheckpoint: (request: OrkaStudyRoomCheckpointRequestDto) =>
+    api.post<OrkaStudyRoomDto>("/classroom/study-room/checkpoint", request).then((r) => r.data),
 };
 
 /**
@@ -1321,6 +1352,8 @@ export const CentralExamsAPI = {
     api.post<CentralExamDenemeResultDto>("/central-exams/kpss/denemeler/submit", data).then((r) => r.data),
   getDenemeAttempt: (id: string) =>
     api.get<CentralExamDenemeResultDto>(`/central-exams/deneme-attempts/${id}`).then((r) => r.data),
+  getWarRoom: (examCode: string, params: OrkaLearningContractQuery) =>
+    api.get<OrkaExamWarRoomDto>(`/central-exams/${encodeURIComponent(examCode)}/war-room`, { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
 };
 
 export const QuestionQualityAPI = {
@@ -1371,6 +1404,8 @@ export const CodeAPI = {
         topicId: data.topicId,
       }
     ).then((r) => r.data),
+  getLearningIde: (params: OrkaLearningContractQuery) =>
+    api.get<OrkaCodeLearningIdeDto>("/code/learning-ide", { params, suppressErrorToast: true } as OrkaAxiosConfig).then((r) => r.data),
 };
 
 export const FlashcardsAPI = {
