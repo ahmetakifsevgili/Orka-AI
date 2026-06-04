@@ -25,7 +25,7 @@ import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { safeMarkdownComponents, safeMarkdownUrlTransform } from "@/lib/contentSafety";
-import { WikiAPI, KorteksAPI, storage } from "@/services/api";
+import { WikiAPI, KorteksAPI, authenticatedFetch } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import QuizCard from "./QuizCard";
 
@@ -188,11 +188,10 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
         setShowUrlInput(false);
       } else {
         // Wiki-chat modu — mevcut akış
-        response = await fetch(`${apiBase}/api/wiki/${topicId}/chat`, {
+        response = await authenticatedFetch(`/api/wiki/${topicId}/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${storage.getToken()}`,
           },
           body: JSON.stringify({ question: userQ }),
         });
@@ -219,13 +218,15 @@ export default function WikiDrawer({ topicId, onClose }: WikiDrawerProps) {
             if (!str || str === "[DONE]") continue;
             try {
               const json = JSON.parse(str);
-              if (json.content) {
+              if (typeof json.content === "string") {
+                aiContent += json.content;
+              } else if (json.type === "token" && typeof json.content === "string") {
                 aiContent += json.content;
               } else {
-                aiContent += str;
+                continue;
               }
             } catch {
-              aiContent += str;
+              continue;
             }
 
             setMessages((prev) => {

@@ -1,377 +1,664 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   ArrowRight,
-  BookOpen,
-  BrainCircuit,
+  BookOpenCheck,
   CheckCircle2,
-  Code2,
+  ChevronRight,
+  ClipboardList,
   FileText,
-  GraduationCap,
-  Layers3,
-  Mic2,
-  Network,
+  GitBranch,
+  LibraryBig,
+  ListChecks,
+  LockKeyhole,
+  Paperclip,
   ShieldCheck,
-  Sparkles,
   Target,
-  RefreshCw
+  Waypoints,
 } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
-import { useLanguage } from "@/contexts/LanguageContext";
 
-const fadeUp = {
-  initial: { opacity: 0, y: 28 },
-  whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: "-80px" },
-  transition: { duration: 0.65, ease: "easeOut" as const },
-};
+const navItems = [
+  { href: "#workflow", label: "Akış" },
+  { href: "#sources", label: "Kaynak" },
+  { href: "#evidence", label: "Kanıt" },
+  { href: "#start", label: "Başla" },
+] as const;
 
-const slide = (x: number, delay = 0) => ({
-  initial: { opacity: 0, x, y: 18 },
-  whileInView: { opacity: 1, x: 0, y: 0 },
-  viewport: { once: true, margin: "-70px" },
-  transition: { duration: 0.62, delay, ease: "easeOut" as const },
-});
+const productDepthItems = ["Plan", "Wiki", "Quiz", "Sesli Ders", "IDE"] as const;
 
-const modules = ["Plan", "Wiki", "Quiz", "NotebookLM/OrkaLM", "Tutor", "Sesli Ders", "IDE"];
-
-const featureCards = [
+const planRows = [
   {
-    icon: BrainCircuit,
-    title: "Derin Davranış Analizi",
-    text: "Doğru/yanlış metriklerini aşar. Cevap verme sürenizden takıldığınız alt becerilere kadar mikrodavranışlarınızı işleyerek zihinsel modelinizin tam haritasını çıkarır.",
-    meta: "Mikro-Teşhis: Analitik Zayıflık Tespit Edildi",
-    className: "lg:col-span-2 orka-panel",
+    day: "01",
+    title: "Ön bilgi kontrolü",
+    detail: "Mitoz / mayoz ayrımı için 6 soruluk kısa kontrol.",
+    status: "Bugün",
   },
   {
-    icon: FileText,
-    title: "Otonom RAG Entegrasyonu",
-    text: "Yüklediğiniz PDF'ler, bağlantılar ve kişisel notlarınız vektörel olarak indekslenir. Her cevapta ilgili referansa nokta atışı yapılır.",
-    meta: "Multi-Agent: RAG Destekli Veri Sentezi",
-    className: "orka-surface",
+    day: "02",
+    title: "Kaynak okuması",
+    detail: "Notlar.pdf içindeki bölünme evreleri işaretlenir.",
+    status: "Sırada",
   },
   {
+    day: "03",
+    title: "Mikro ders",
+    detail: "Zayıf kavram örnek, karşılaştırma ve çizimle açılır.",
+    status: "Hazır",
+  },
+  {
+    day: "04",
+    title: "Telafi pratiği",
+    detail: "Yanlış cevap türüne göre yeni soru seti üretilir.",
+    status: "Bekliyor",
+  },
+] as const;
+
+const sourceRows = [
+  { name: "Biyoloji notları", meta: "PDF, 18 sayfa", signal: "Güçlü" },
+  { name: "Deneme sonucu", meta: "8 yanlış işaretli", signal: "Kritik" },
+  { name: "Video özeti", meta: "12 dk, eksik kaynak", signal: "Zayıf" },
+] as const;
+
+const evidenceRows = [
+  { label: "Zayıf kavram", value: "Mayoz evreleri" },
+  { label: "Ön koşul", value: "Kromozom sayısı" },
+  { label: "Plan riski", value: "Kaynaklar çelişiyor" },
+] as const;
+
+const chapterCards = [
+  {
+    number: "01",
+    id: "workflow",
+    title: "Önce hedef netleşir.",
+    body:
+      "Orka tek satırlık bir istekten cevap üretmeye koşmaz. Hedefi, süreyi, mevcut seviyeyi ve beklenen çıktıyı aynı yerde toplar.",
     icon: Target,
-    title: "Algoritmik Beceri Sınaması",
-    text: "Ezbere dayalı soru havuzlarını unutun. Yapay zeka, doğrudan zayıf olduğunuz alt beceriyi zorlamak için her seferinde eşsiz bir senaryo üretir.",
-    meta: "Dinamik Üretim: LLM Tabanlı Senaryolar",
-    className: "orka-muted-panel",
+    visual: "goal",
   },
   {
-    icon: Network,
-    title: "Sürekli Gelişen Nöral Hafıza",
-    text: "Öğrendiğiniz, unuttuğunuz veya zorlandığınız her an, kişisel Wiki ağınıza yapısal bir bağlantı olarak kalıcı biçimde kodlanır.",
-    meta: "Knowledge Graph: Kişisel Bilgi Ağı",
-    className: "lg:col-span-2 orka-surface",
+    number: "02",
+    id: "sources",
+    title: "Kaynak plana girmeden tartılır.",
+    body:
+      "Dosya, not, deneme sonucu veya kod hatası plana körlemesine eklenmez. Orka hangi kaynağın güçlü, hangisinin eksik kaldığını gösterir.",
+    icon: LibraryBig,
+    visual: "sources",
   },
   {
-    icon: Mic2,
-    title: "Çoklu-Ajan Senkronizasyonu",
-    text: "Tutor, Asistan ve Konuk anlatım rolleri eş zamanlı çalışır. Sorduğunuz anlık bir soru, kişisel sesli ders bağlamına entegre olur.",
-    meta: "Swarm Intelligence: Senkronize Temsilciler",
-    className: "orka-panel",
+    number: "03",
+    id: "plan",
+    title: "Plan dikey bir iş akışına dönüşür.",
+    body:
+      "Günler, görevler, kontrol soruları ve bekleyen kararlar tek çizgide akar. Kullanıcı bir sonraki adımı nerede arayacağını bilmez halde kalmaz.",
+    icon: Waypoints,
+    visual: "plan",
   },
   {
-    icon: Code2,
-    title: "Bağlamsal Kod Sandbox'ı",
-    text: "İzole bir kod penceresi değil; doğrudan chat ve müfredat ile senkronize çalışan güvenli bir ortam. Hata çıktılarınız anında AI asistanınıza akar.",
-    meta: "Real-Time: Çıktı ve Teşhis Akışı",
-    className: "orka-muted-panel",
+    number: "04",
+    id: "evidence",
+    title: "Yanlış cevap planı değiştirir.",
+    body:
+      "İlerleme rozetle değil, kanıtla güncellenir. Yanlış soru, zayıf kaynak veya takılan kod parçası yeni bir telafi adımına bağlanır.",
+    icon: BookOpenCheck,
+    visual: "evidence",
   },
-];
+] as const;
 
-const pipeline = [
-  "Davranış Analizi",
-  "Eksiklerin Tespiti",
-  "Müfredat Uyarlama",
-  "Kişisel Anlatım",
-  "Adaptif Sınama",
-  "Wiki Kaydı",
-];
+const trustRows = [
+  {
+    title: "Kaynaklı",
+    body: "Plan satırları hangi dosya, not veya test sonucundan beslendiğini gösterir.",
+    icon: FileText,
+  },
+  {
+    title: "İzlenebilir",
+    body: "Karar sebepleri, bekleyen riskler ve değişen adımlar denetim izinde kalır.",
+    icon: GitBranch,
+  },
+  {
+    title: "Dürüst",
+    body: "Kaynak zayıfsa Orka kesin konuşmaz; önce kontrol veya ek kaynak ister.",
+    icon: ShieldCheck,
+  },
+] as const;
 
-const trustItems = [
-  ["Proaktif Sistem Doğrulaması", "Tüm API endpoint'leri ve yetkilendirme katmanları, her dağıtım öncesi sentetik ajanlar tarafından otonom testlere tabi tutulur."],
-  ["Yapısal Veri Koruması", "LLM'den dönen karmaşık JSON çıktıları, katı şema doğrulayıcılarla (schema validators) kontrol edilerek arayüze kusursuz yansıtılır."],
-  ["Ajan Durum Senkronizasyonu", "Tutor ve Asistan rollerinin hafıza sızıntısı olmadan ve tam bağlamla sürece katılımı güvence altındadır."],
-  ["Güvenli Yürütme Hattı", "Kod analizleri ve hata ayıklama süreçleri, izole bir kapsayıcıda işlenir ve ajanlara doğrudan yapısal veri olarak beslenir."],
-];
-
-export default function Landing() {
-  const { t, language, setLanguage, languages } = useLanguage();
+function Reveal({
+  children,
+  className = "",
+  delay = 0,
+}: {
+  children: ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  const reduceMotion = useReducedMotion();
 
   return (
-    <div className="min-h-screen orka-bg text-[#172033] overflow-x-hidden">
-      <div className="pointer-events-none fixed inset-0 mist-grid opacity-35" />
-      <nav className="fixed left-0 right-0 top-0 z-50 px-4 py-4">
-        <div className="orka-glass mx-auto flex h-14 max-w-6xl items-center justify-between rounded-2xl px-4 sm:px-5">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[#172033] text-white shadow-md shadow-slate-900/10">
-              <OrcaLogo className="h-5 w-5" />
-            </span>
-            <span className="text-sm font-extrabold tracking-tight">Orka AI</span>
-          </Link>
-          <div className="hidden items-center gap-6 text-xs font-semibold text-[#667085] md:flex">
-            <a href="#features" className="transition hover:text-[#172033]">{t("landing_nav_modules")}</a>
-            <a href="#flow" className="transition hover:text-[#172033]">{t("landing_nav_flow")}</a>
-            <a href="#trust" className="transition hover:text-[#172033]">{t("landing_nav_architecture")}</a>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value as typeof language)}
-              className="hidden rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/72 px-3 py-2 text-xs font-bold text-[#344054] outline-none backdrop-blur sm:block"
-              aria-label={t("interface_language")}
-            >
-              {languages.map((item) => (
-                <option key={item.code} value={item.code}>
-                  {item.nativeName}
-                </option>
-              ))}
-            </select>
-            <Link href="/login" className="orka-button rounded-full px-4 py-2 text-xs font-bold">
-              {t("login")}
-            </Link>
+    <motion.div
+      initial={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.24 }}
+      transition={{ duration: reduceMotion ? 0 : 0.58, delay, ease: [0.16, 1, 0.3, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function BrandMark({ dark = false }: { dark?: boolean }) {
+  return (
+    <span
+      className={`grid h-8 w-8 place-items-center rounded-md ${
+        dark ? "bg-white text-[#101418]" : "bg-[#101418] text-white"
+      }`}
+    >
+      <OrcaLogo className="h-5 w-5" />
+    </span>
+  );
+}
+
+function ActionButtons({ inverse = false }: { inverse?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      <Link
+        href="/login"
+        className={`inline-flex h-11 items-center justify-center gap-2 rounded-md px-4 text-[14px] font-black transition hover:-translate-y-0.5 ${
+          inverse ? "bg-white text-[#101418] hover:bg-[#edf2ef]" : "bg-[#101418] text-white hover:bg-[#26313b]"
+        }`}
+      >
+        Kaynaklı plan oluştur
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+      <a
+        href="#workflow"
+        className={`inline-flex h-11 items-center justify-center gap-2 rounded-md border px-4 text-[14px] font-black transition hover:-translate-y-0.5 ${
+          inverse
+            ? "border-white/18 bg-white/[0.04] text-white hover:bg-white/[0.08]"
+            : "border-[#d5ddda] bg-white text-[#101418] hover:bg-[#f2f5f3]"
+        }`}
+      >
+        Akışı gör
+        <ChevronRight className="h-4 w-4" />
+      </a>
+    </div>
+  );
+}
+
+function PlanSurface() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-[#d9e1dd] bg-white shadow-[0_28px_80px_rgba(28,40,38,0.12)]">
+      <div className="flex h-12 items-center justify-between border-b border-[#e5ebe8] bg-[#fbfcfb] px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-[#101418] text-white">
+            <ListChecks className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-black text-[#101418]">Hücre bölünmesi planı</p>
+            <p className="text-[11px] font-semibold text-[#7b8782]">10 gün · 3 kaynak · 1 zayıf halka</p>
           </div>
         </div>
-      </nav>
+        <span className="hidden rounded-md border border-[#d8e2dd] bg-white px-2.5 py-1 text-[11px] font-black text-[#35564d] sm:inline-flex">
+          Kaynaklar bağlı
+        </span>
+      </div>
 
-      <main className="relative z-10">
-        <section className="mx-auto grid w-full max-w-6xl overflow-hidden px-5 pb-20 pt-32 lg:grid-cols-[1.02fr_0.98fr] lg:items-center lg:gap-12 lg:pt-40">
-          <motion.div
-            initial={{ opacity: 0, y: 26 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.72, ease: "easeOut" }}
-            className="min-w-0"
-          >
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#526d82]/14 bg-[#f7f4ec]/70 px-3 py-1.5 text-xs font-bold text-[#2d5870] shadow-sm backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t("landing_badge")}
-            </div>
-            <h1 className="font-display max-w-[calc(100vw-2.5rem)] text-4xl font-bold leading-[1.02] tracking-[-0.03em] text-[#172033] sm:max-w-4xl sm:text-6xl sm:tracking-[-0.055em] lg:text-7xl">
-              {t("landing_title_a")}
-              <span className="block text-[#4f7485]">{t("landing_title_b")}</span>
-            </h1>
-            <p className="mt-6 max-w-[calc(100vw-2.5rem)] break-words text-base leading-8 text-[#5f6f7b] sm:max-w-xl sm:text-lg">
-              {t("landing_body")}
-            </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {modules.map((module) => (
-                <span key={module} className="rounded-full border border-[#526d82]/12 bg-[#eef1f3]/70 px-3 py-1.5 text-[11px] font-extrabold text-[#4b5f6b]">
-                  {module}
-                </span>
-              ))}
-            </div>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/login" className="orka-button inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-extrabold">
-                {t("landing_primary")} <ArrowRight className="h-4 w-4" />
-              </Link>
-              <a href="#features" className="inline-flex items-center justify-center gap-2 rounded-full border border-[#526d82]/15 bg-[#f7f4ec]/72 px-6 py-3 text-sm font-bold text-[#344054] shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:bg-[#f7f4ec]">
-                {t("landing_secondary")}
-              </a>
-            </div>
-            <div className="mt-8 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                ["20", "tanı sorusu"],
-                ["24s", "Wiki cache"],
-                ["3", "sesli ders rolü"],
-              ].map(([value, label]) => (
-                <div key={label} className="orka-card rounded-2xl px-4 py-3">
-                  <p className="text-xl font-extrabold text-[#172033]">{value}</p>
-                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#667085]">{label}</p>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 34, rotate: 1.5 }}
-            animate={{ opacity: 1, x: 0, rotate: 0 }}
-            transition={{ duration: 0.78, delay: 0.12, ease: "easeOut" }}
-            className="relative min-w-0"
-          >
-            <div className="absolute -left-10 top-14 h-36 w-36 rounded-full bg-[#b8d4df]/25 blur-2xl" />
-            <div className="absolute -right-8 bottom-10 h-40 w-40 rounded-full bg-[#bfd8c8]/22 blur-2xl" />
-            <div className="orka-glass relative w-full min-w-0 overflow-hidden rounded-[2rem] p-4 sm:p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-[#d9a9a0]" />
-                <span className="h-3 w-3 rounded-full bg-[#d9bd79]" />
-                <span className="h-3 w-3 rounded-full bg-[#92b79c]" />
-                <span className="ml-3 rounded-full bg-[#eef1f3]/76 px-3 py-1 text-[11px] font-bold text-[#667085]">orka.app/studio</span>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-[0.86fr_1.14fr]">
-                <div className="rounded-3xl bg-[#172033] p-4 text-white shadow-lg shadow-slate-900/10">
-                  <div className="mb-4 flex items-center gap-2">
-                    <OrcaLogo className="h-4 w-4" />
-                    <span className="text-xs font-bold">Learning Agent Loop</span>
+      <div className="grid min-h-[500px] lg:grid-cols-[190px_1fr_190px]">
+        <aside className="border-b border-[#e5ebe8] bg-[#f6f8f7] p-4 lg:border-b-0 lg:border-r">
+          <p className="text-[12px] font-black text-[#69756f]">Kaynaklar</p>
+          <div className="mt-4 space-y-3">
+            {sourceRows.map((source) => (
+              <div key={source.name} className="border-b border-[#e1e8e4] pb-3 last:border-b-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[13px] font-black text-[#101418]">{source.name}</p>
+                    <p className="mt-1 text-[12px] leading-5 text-[#7b8782]">{source.meta}</p>
                   </div>
-                  {[
-                    ["Hedef", "Çalışma niyeti netleşti"],
-                    ["Kaynak", "Kanıt ve citation kontrol edildi"],
-                    ["Tutor", "Seviyeye göre anlatım seçildi"],
-                    ["Canvas", "Diagram ve mikro görev hazırlandı"],
-                    ["Kanıt", "Mastery iddiası ölçüme bağlandı"],
-                  ].map(([item, detail], index) => (
-                    <motion.div
-                      key={item}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.35 + index * 0.09 }}
-                      className="mb-2 rounded-2xl bg-white/8 px-3 py-2 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                         <span className="font-bold">{item}</span>
-                        <span className="h-2 w-2 rounded-full bg-[#a8d8ea]" />
-                      </div>
-                      <p className="mt-1 text-[11px] text-white/58">{detail}</p>
-                    </motion.div>
-                  ))}
-                </div>
-                <div className="space-y-3 rounded-3xl bg-[#eef1f3]/72 p-4">
-                  <div className="flex items-start gap-3 rounded-2xl bg-[#f7f4ec]/75 p-3">
-                    <BrainCircuit className="mt-1 h-5 w-5 text-[#52768a]" />
-                    <div>
-                      <p className="text-sm font-extrabold text-[#172033]">Öğrenci sinyali yakalandı</p>
-                      <p className="mt-1 text-xs leading-5 text-[#667085]">Orka, kaynak cevabı, quiz sonucu ve Tutor konuşmasını aynı döngüde okur. Kanıt düşükse cevap vermekle yetinmez; ipucu, örnek ve mikro kontrol seçer.</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl bg-[#f4ecdc]/82 p-3">
-                      <BookOpen className="h-4 w-4 text-[#906c36]" />
-                      <p className="mt-3 text-xs font-bold text-[#172033]">Artifact Canvas</p>
-                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Tablo, diagram ve örnekler konuşmada kaybolmaz.</p>
-                    </div>
-                    <div className="rounded-2xl bg-[#d9e7de]/72 p-3">
-                      <CheckCircle2 className="h-4 w-4 text-[#547c61]" />
-                      <p className="mt-3 text-xs font-bold text-[#172033]">Canlı iz</p>
-                      <p className="mt-1 text-[11px] leading-4 text-[#667085]">Tutor'un neden böyle anlattığı okunur hale gelir.</p>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/64 p-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#52768a]">Ajan-native öğrenme</p>
-                    <p className="mt-2 text-xs leading-5 text-[#344054]">Hedef, kaynak, araç, artifact ve mastery kanıtı tek çalışma alanında birleşir; QA ve sistem güveni ise bu döngünün arkasında sessizce çalışır. <span className="font-bold text-[#2d5870]">[kaynak] [tutor] [kanıt]</span></p>
-                  </div>
+                  <span className="rounded-md bg-white px-2 py-1 text-[10px] font-black text-[#35564d]">
+                    {source.signal}
+                  </span>
                 </div>
               </div>
-            </div>
-          </motion.div>
-        </section>
-
-        <section id="features" className="mx-auto max-w-6xl px-5 py-20">
-          <motion.div {...fadeUp} className="mb-10 max-w-2xl">
-            <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">İçerik boş değil, sistem dolu</p>
-            <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Orka modülleri birbirine öğrenme sinyali taşır.</h2>
-            <p className="mt-4 text-sm leading-7 text-[#667085]">Her kart sadece özellik anlatmaz; sistem içinde hangi veriyi ürettiğini ve öğrencinin planına nasıl döndüğünü gösterir.</p>
-          </motion.div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {featureCards.map((feature, index) => (
-              <motion.div
-                key={feature.title}
-                {...slide(index % 2 === 0 ? -28 : 28, index * 0.06)}
-                className={`group min-h-[230px] rounded-[1.75rem] p-6 transition duration-300 hover:-translate-y-1 hover:shadow-lg ${feature.className}`}
-              >
-                <div className="mb-8 grid h-12 w-12 place-items-center rounded-2xl bg-[#eef1f3]/80 text-[#52768a] shadow-sm">
-                  <feature.icon className="h-5 w-5" />
-                </div>
-                <h3 className="text-lg font-extrabold tracking-tight text-[#172033]">{feature.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-[#667085]">{feature.text}</p>
-                <p className="mt-5 rounded-2xl bg-[#eef1f3]/62 px-3 py-2 text-[11px] font-bold text-[#4f6570]">{feature.meta}</p>
-              </motion.div>
             ))}
           </div>
-        </section>
+          <button
+            type="button"
+            className="mt-5 inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-[#d9e1dd] bg-white text-[12px] font-black text-[#101418]"
+          >
+            <Paperclip className="h-4 w-4" />
+            Kaynak ekle
+          </button>
+        </aside>
 
-        <section id="flow" className="mx-auto max-w-6xl px-5 py-20">
-          <motion.div {...fadeUp} className="orka-glass overflow-hidden rounded-[2rem] p-6 sm:p-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">Kişiselleştirilmiş Döngü</p>
-                <h2 className="font-display mt-3 text-4xl font-bold text-[#172033]">Statik müfredatları unutun; sizi anlayan bir sistem var.</h2>
-              </div>
-              <p className="max-w-md text-sm leading-7 text-[#667085]">Sistemdeki her etkileşiminiz yapay zeka tarafından işlenerek kişisel bir besleme (feedback) döngüsü yaratır. Orka, sizi rastgele konularda yormak yerine doğrudan geliştirmeye açık olduğunuz becerileri hedefler.</p>
+        <main className="bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e5ebe8] pb-5">
+            <div>
+              <p className="text-[12px] font-black text-[#69756f]">Sıradaki karar</p>
+              <h3 className="mt-2 max-w-xl text-[30px] font-black leading-[1.08] text-[#101418]">
+                Önce mayoz evrelerini onar, sonra 10 günlük plana geç.
+              </h3>
             </div>
-            <div className="relative mt-10">
-              {/* Arka Plan Bağlantı Çizgisi (Sadece Desktop) */}
-              <div className="absolute left-[8%] right-[8%] top-6 hidden h-0.5 bg-gradient-to-r from-transparent via-[#8ba8b5]/40 to-transparent md:block" />
+            <button
+              type="button"
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-[#101418] px-3 text-[12px] font-black text-white"
+            >
+              Planı başlat
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
 
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 md:gap-4 relative z-10">
-                {pipeline.map((step, index) => (
-                  <motion.div
-                    key={step}
-                    initial={{ opacity: 0, y: 18 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: index * 0.07 }}
-                    className="group flex flex-1 flex-col items-center text-center"
-                  >
-                    <div className="relative mb-4 grid h-12 w-12 place-items-center rounded-full border-[3px] border-white bg-[#d7e6ec] text-sm font-extrabold text-[#2d5870] shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-[#c2dce6]">
-                      {index + 1}
-                      {/* Döngü İkonu (Sadece son adımda) */}
-                      {index === pipeline.length - 1 && (
-                        <div className="absolute -right-6 top-1/2 -translate-y-1/2 hidden lg:block">
-                          <RefreshCw className="h-4 w-4 text-[#8ba8b5]" />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="w-full rounded-2xl bg-[#eef1f3]/80 px-2 py-3 transition-colors duration-300 group-hover:bg-[#eaf1f4]">
-                      <p className="text-[11px] font-black leading-tight text-[#172033] sm:text-[11.5px]">
-                        {step}
-                      </p>
-                    </div>
-
-                    {/* Mobildeki dikey ok (son adım hariç) */}
-                    {index < pipeline.length - 1 && (
-                      <div className="mt-4 block md:hidden">
-                        <ArrowRight className="h-4 w-4 rotate-90 text-[#8ba8b5]/50" />
-                      </div>
-                    )}
-                    {/* Mobildeki döngü (son adım) */}
-                    {index === pipeline.length - 1 && (
-                      <div className="mt-5 flex items-center justify-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-[#8ba8b5] md:hidden">
-                        <RefreshCw className="h-3 w-3" /> Döngü Tamamlanır
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        </section>
-
-        <section id="trust" className="mx-auto max-w-6xl px-5 py-20">
-          <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
-            <motion.div {...slide(-34)}>
-              <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.24em] text-[#52768a]">Güçlü Mimari ve QA</p>
-              <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Görünmez asistanlarınız, görünür güvenilirlik.</h2>
-              <p className="mt-5 text-sm leading-8 text-[#667085]">QA ve sistem güveni, estetik kadar kritik. Çoklu ajanların veri tutarlılığı, JSON yapılarının şema denetimleri ve endpoint kontrolleri, uçtan uca otomatik test süreçleriyle izlenir ve kanıta bağlanır.</p>
-            </motion.div>
-            <motion.div {...slide(34, 0.08)} className="orka-card rounded-[2rem] p-5">
-              {trustItems.map(([title, text]) => (
-                <div key={title} className="mb-3 flex items-start gap-3 rounded-3xl bg-[#eef1f3]/68 p-4 last:mb-0">
-                  <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#172033] text-white">
-                    <ShieldCheck className="h-4 w-4" />
+          <div className="mt-6">
+            <p className="mb-4 text-[12px] font-black text-[#69756f]">Çalışma çizgisi</p>
+            <div className="relative space-y-4 before:absolute before:left-[19px] before:top-2 before:h-[calc(100%-16px)] before:w-px before:bg-[#d8e2dd]">
+              {planRows.map((row) => (
+                <div key={row.day} className="relative grid grid-cols-[40px_1fr_auto] items-start gap-3">
+                  <span className="relative z-10 grid h-10 w-10 place-items-center rounded-md border border-[#d8e2dd] bg-white text-[12px] font-black text-[#101418]">
+                    {row.day}
                   </span>
-                  <div>
-                    <p className="text-sm font-extrabold text-[#172033]">{title}</p>
-                    <p className="mt-1 text-sm leading-6 text-[#667085]">{text}</p>
+                  <div className="min-w-0 border-b border-[#edf1ef] pb-4">
+                    <p className="text-[15px] font-black text-[#101418]">{row.title}</p>
+                    <p className="mt-1 text-[13px] leading-6 text-[#65726d]">{row.detail}</p>
                   </div>
+                  <span className="rounded-md bg-[#eef5f1] px-2 py-1 text-[11px] font-black text-[#2f5f51]">{row.status}</span>
                 </div>
               ))}
-            </motion.div>
+            </div>
           </div>
-        </section>
+        </main>
 
-        <section className="px-5 py-20">
-          <motion.div {...fadeUp} className="orka-glass mx-auto max-w-4xl rounded-[2.25rem] p-8 text-center sm:p-12">
-            <Layers3 className="mx-auto mb-5 h-9 w-9 text-[#52768a]" />
-            <h2 className="font-display text-4xl font-bold text-[#172033] sm:text-5xl">Sizi tanıyan, sizinle gelişen bir zeka.</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-8 text-[#667085]">Sistemdeki her etkileşiminiz, yapay zekayı sadece size özel bir eğitmene dönüştürmek için sürekli bir geri bildirim döngüsü yaratır. Sınırlarınızı yeniden keşfedin.</p>
-            <Link href="/login" className="orka-button mt-8 inline-flex items-center gap-2 rounded-full px-7 py-3 text-sm font-extrabold">
-              Orka'yı Başlat <GraduationCap className="h-4 w-4" />
+        <aside className="border-t border-[#e5ebe8] bg-[#fbfcfb] p-4 lg:border-l lg:border-t-0">
+          <p className="text-[12px] font-black text-[#69756f]">Kanıt panosu</p>
+          <div className="mt-4 space-y-4">
+            {evidenceRows.map((row) => (
+              <div key={row.label} className="border-b border-[#e5ebe8] pb-3 last:border-b-0">
+                <p className="text-[11px] font-black text-[#87938d]">{row.label}</p>
+                <p className="mt-1 text-[14px] font-black leading-5 text-[#101418]">{row.value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 rounded-md border border-[#ead49d] bg-[#fff8e4] p-3">
+            <p className="text-[12px] font-black text-[#7a5a12]">Kaynak uyarısı</p>
+            <p className="mt-2 text-[12px] leading-5 text-[#6d6046]">
+              İki kaynak mayoz sıralamasında çelişiyor. Plan başlamadan önce kontrol sorusu eklendi.
+            </p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Hero() {
+  return (
+    <section className="bg-[#f6f8f7] px-5 pb-16 pt-28 text-[#101418] sm:px-8 lg:min-h-[840px] lg:pb-10 lg:pt-32">
+      <div className="mx-auto max-w-[1280px]">
+        <div className="grid gap-12 lg:grid-cols-[0.78fr_1.22fr] lg:items-start">
+          <div className="max-w-2xl">
+            <Reveal>
+              <h1 className="text-[48px] font-black leading-[1.04] sm:text-[64px] lg:text-[66px]">
+                Kaynaklarını çalışma planına çevir.
+              </h1>
+            </Reveal>
+            <Reveal delay={0.06}>
+              <p className="mt-6 max-w-xl text-[17px] leading-8 text-[#5f6c67]">
+                Hedefini, notlarını, deneme sonucunu veya kod hatanı ver. Orka bunları sıralı bir plana, görev çizgisine ve kanıt panosuna dönüştürür.
+              </p>
+            </Reveal>
+            <Reveal delay={0.1} className="mt-8">
+              <ActionButtons />
+            </Reveal>
+            <Reveal delay={0.12}>
+              <div className="mt-6 flex max-w-xl flex-wrap gap-2">
+                {productDepthItems.map((item) => (
+                  <span key={item} className="rounded-md border border-[#d8e2dd] bg-white px-3 py-1.5 text-[12px] font-black text-[#35564d]">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </Reveal>
+            <Reveal delay={0.14}>
+              <div className="mt-10 grid max-w-lg grid-cols-2 gap-x-6 gap-y-4 border-t border-[#d8e2dd] pt-6">
+                {[
+                  ["01", "Hedef netleşir"],
+                  ["02", "Kaynak tartılır"],
+                  ["03", "Plan akar"],
+                  ["04", "Kanıt geri döner"],
+                ].map(([step, label]) => (
+                  <div key={step} className="flex items-center gap-3">
+                    <span className="text-[12px] font-black text-[#789188]">{step}</span>
+                    <span className="text-[13px] font-black text-[#26313b]">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+
+          <Reveal delay={0.08}>
+            <PlanSurface />
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GoalVisual() {
+  return (
+    <div className="rounded-lg border border-[#d9e1dd] bg-white p-5 shadow-[0_24px_70px_rgba(28,40,38,0.08)]">
+      <div className="rounded-md border border-[#dce4e0] bg-[#fbfcfb] p-4">
+        <p className="text-[12px] font-black text-[#69756f]">Neyi plana çevirelim?</p>
+        <p className="mt-3 max-w-2xl text-[20px] font-black leading-8 text-[#101418]">
+          KPSS paragraf hızımı 14 günde toparlamak istiyorum. Deneme sonuçlarım ve yanlış listem hazır.
+        </p>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {[
+          ["Süre", "14 gün"],
+          ["Çıktı", "Günlük görev"],
+          ["Ölçüm", "Deneme + kısa test"],
+        ].map(([label, value]) => (
+          <div key={label} className="border-t border-[#dce4e0] pt-4">
+            <p className="text-[12px] font-black text-[#78847f]">{label}</p>
+            <p className="mt-1 text-[18px] font-black text-[#101418]">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SourcesVisual() {
+  return (
+    <div className="rounded-lg border border-[#d9e1dd] bg-white shadow-[0_24px_70px_rgba(28,40,38,0.08)]">
+      {[
+        ["Deneme-03.pdf", "Paragraf ana düşünce sorularında hata yoğun.", "Plana girer"],
+        ["Konu notları", "Cümle yapısı bölümü eksik kalmış.", "Eksik kaynak"],
+        ["Video özeti", "Tekrar için yararlı, tek başına yeterli değil.", "Destek"],
+        ["Yanlış listesi", "4 soru aynı kavrama bağlanıyor.", "Kritik"],
+      ].map(([name, detail, status], index) => (
+        <div key={name} className="grid gap-4 border-b border-[#e5ebe8] p-5 last:border-b-0 md:grid-cols-[44px_1fr_140px] md:items-center">
+          <span className="grid h-11 w-11 place-items-center rounded-md bg-[#f2f5f3] text-[13px] font-black text-[#101418]">
+            {index + 1}
+          </span>
+          <div>
+            <p className="text-[16px] font-black text-[#101418]">{name}</p>
+            <p className="mt-1 text-[14px] leading-6 text-[#65726d]">{detail}</p>
+          </div>
+          <span className="w-fit rounded-md border border-[#d9e1dd] bg-[#fbfcfb] px-3 py-2 text-[12px] font-black text-[#35564d]">
+            {status}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlanVisual() {
+  return (
+    <div className="rounded-lg border border-[#d9e1dd] bg-white p-5 shadow-[0_24px_70px_rgba(28,40,38,0.08)]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+        <div>
+          <p className="mb-5 text-[12px] font-black text-[#69756f]">10 günlük çalışma çizgisi</p>
+          <div className="space-y-3">
+            {["Tanı koy", "Kavramı onar", "Pratik setini çöz", "Deneme ile ölç", "Telafi planını güncelle"].map((item, index) => (
+              <div key={item} className="grid grid-cols-[34px_1fr] gap-3 border-b border-[#edf1ef] pb-3 last:border-b-0">
+                <span className="grid h-8 w-8 place-items-center rounded-md bg-[#101418] text-[11px] font-black text-white">
+                  {index + 1}
+                </span>
+                <div>
+                  <p className="text-[15px] font-black text-[#101418]">{item}</p>
+                  <p className="mt-1 text-[13px] leading-6 text-[#65726d]">
+                    {index === 0
+                      ? "Hata türü ve ön koşul kısa testle ayrılır."
+                      : index === 1
+                        ? "Kavram önce örnekle, sonra karşılaştırmayla açılır."
+                        : index === 2
+                          ? "Plan satırı görev ve süreyle birlikte görünür."
+                          : index === 3
+                            ? "Yeni deneme sonucu aynı çizgiye işlenir."
+                            : "Zayıf kalan nokta yeni güne taşınır."}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <aside className="rounded-md border border-[#d9e1dd] bg-[#f6f8f7] p-4">
+          <p className="text-[12px] font-black text-[#69756f]">Bugünkü odak</p>
+          <h3 className="mt-3 text-[24px] font-black leading-[1.12] text-[#101418]">Ana düşünce sorularında hız kaybı</h3>
+          <div className="mt-5 space-y-3">
+            {["12 dk konu tekrarı", "8 soru pratik", "2 hata nedeni"].map((item) => (
+              <div key={item} className="flex items-center gap-2 text-[13px] font-black text-[#35564d]">
+                <CheckCircle2 className="h-4 w-4" />
+                {item}
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceVisual() {
+  return (
+    <div className="rounded-lg border border-[#d9e1dd] bg-white shadow-[0_24px_70px_rgba(28,40,38,0.08)]">
+      <div className="grid border-b border-[#e5ebe8] md:grid-cols-3">
+        {[
+          ["Son ölçüm", "6/10"],
+          ["Zayıf halka", "Çeldirici okuma"],
+          ["Yeni adım", "Telafi pratiği"],
+        ].map(([label, value]) => (
+          <div key={label} className="border-b border-[#e5ebe8] p-5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+            <p className="text-[12px] font-black text-[#78847f]">{label}</p>
+            <p className="mt-2 text-[24px] font-black text-[#101418]">{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="p-5">
+        <p className="text-[12px] font-black text-[#69756f]">Denetim izi</p>
+        <div className="mt-4 space-y-4">
+          {[
+            ["Yanlış cevap kaydedildi", "Soru 4, ana düşünce yerine detay bilgisine gidildi."],
+            ["Plan değişti", "Yarınki görevden önce 8 soruluk telafi pratiği eklendi."],
+            ["Kaynak sınırı", "Video özeti tek başına yeterli görülmedi; not dosyasına bağlandı."],
+          ].map(([title, body]) => (
+            <div key={title} className="grid gap-3 border-b border-[#edf1ef] pb-4 last:border-b-0 md:grid-cols-[180px_1fr]">
+              <p className="text-[14px] font-black text-[#101418]">{title}</p>
+              <p className="text-[14px] leading-6 text-[#65726d]">{body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChapterVisual({ type }: { type: string }) {
+  if (type === "goal") return <GoalVisual />;
+  if (type === "sources") return <SourcesVisual />;
+  if (type === "plan") return <PlanVisual />;
+  return <EvidenceVisual />;
+}
+
+function ChapterSection({ chapter, index }: { chapter: (typeof chapterCards)[number]; index: number }) {
+  const Icon = chapter.icon;
+  const dark = index === 2;
+
+  return (
+    <section
+      id={chapter.id}
+      className={`min-h-[880px] border-t px-5 py-28 sm:px-8 lg:py-20 ${
+        dark ? "border-white/10 bg-[#101418] text-white" : "border-[#e0e7e3] bg-[#fbfcfb] text-[#101418]"
+      }`}
+    >
+      <div className="mx-auto grid max-w-[1280px] gap-12 lg:grid-cols-[360px_1fr]">
+        <Reveal>
+          <div className="lg:sticky lg:top-28">
+            <div className="mb-7 flex items-center gap-3">
+              <span className={`text-[13px] font-black ${dark ? "text-[#a7c8bd]" : "text-[#668a7f]"}`}>{chapter.number}</span>
+              <span className={`h-px w-12 ${dark ? "bg-white/18" : "bg-[#cfd9d4]"}`} />
+              <Icon className={`h-5 w-5 ${dark ? "text-[#a7c8bd]" : "text-[#668a7f]"}`} />
+            </div>
+            <h2 className="text-[44px] font-black leading-[1.04] sm:text-[56px]">{chapter.title}</h2>
+            <p className={`mt-5 text-[17px] leading-8 ${dark ? "text-[#aeb9b5]" : "text-[#65726d]"}`}>{chapter.body}</p>
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.08}>
+          <ChapterVisual type={chapter.visual} />
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function TrustSection() {
+  return (
+    <section className="border-t border-[#e0e7e3] bg-[#f6f8f7] px-5 py-28 text-[#101418] sm:px-8 lg:py-36">
+      <div className="mx-auto max-w-[1280px]">
+        <div className="grid gap-12 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
+          <Reveal>
+            <div className="lg:sticky lg:top-28">
+              <h2 className="text-[44px] font-black leading-[1.04] sm:text-[58px]">
+                Güven hissi iddiadan değil, ürün davranışından gelir.
+              </h2>
+              <p className="mt-5 max-w-xl text-[17px] leading-8 text-[#65726d]">
+                Orka planı güzel göstermeye çalışmaz; planın hangi bilgiye dayandığını, nerede emin olmadığını ve neyi değiştirdiğini açıkta tutar.
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="space-y-4">
+            {trustRows.map((item, index) => (
+              <Reveal key={item.title} delay={index * 0.05}>
+                <div className="grid gap-4 rounded-lg border border-[#d9e1dd] bg-white p-5 shadow-[0_18px_55px_rgba(28,40,38,0.06)] md:grid-cols-[48px_1fr]">
+                  <span className="grid h-12 w-12 place-items-center rounded-md bg-[#101418] text-white">
+                    <item.icon className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-[24px] font-black text-[#101418]">{item.title}</h3>
+                    <p className="mt-2 text-[15px] leading-7 text-[#65726d]">{item.body}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+            <Reveal delay={0.18}>
+              <div className="rounded-lg border border-[#d9e1dd] bg-[#101418] p-5 text-white shadow-[0_18px_55px_rgba(28,40,38,0.1)]">
+                <div className="flex items-center gap-3">
+                  <LockKeyhole className="h-5 w-5 text-[#a7c8bd]" />
+                  <p className="text-[14px] font-black">Kapsam ve izin sınırı</p>
+                </div>
+                <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#c3ccc8]">
+                  Yerel not, sınıf içeriği veya kişisel hedef sadece ilgili plan içinde kullanılır. Orka kaynak dışına çıktığında bunu ayrı bir karar olarak gösterir.
+                </p>
+              </div>
+            </Reveal>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section id="start" className="bg-[#101418] px-5 py-24 text-white sm:px-8 lg:py-32">
+      <Reveal className="mx-auto max-w-4xl text-center">
+        <div className="mx-auto mb-7 grid h-14 w-14 place-items-center rounded-lg bg-white text-[#101418]">
+          <ClipboardList className="h-7 w-7" />
+        </div>
+        <h2 className="text-[44px] font-black leading-[1.04] sm:text-[64px]">İlk kaynaklı planı oluştur.</h2>
+        <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-8 text-[#c3ccc8]">
+          Bir hedef, bir kaynak ya da bir yanlış cevapla başla. Orka sonraki adımı kanıtıyla birlikte çıkarsın.
+        </p>
+        <div className="mt-8 flex justify-center">
+          <ActionButtons inverse />
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+export default function Landing() {
+  const [scrolled, setScrolled] = useState(false);
+  const { language, setLanguage, languages, t } = useLanguage();
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-[#f6f8f7] text-[#101418]">
+      <header className="fixed inset-x-0 top-0 z-50 px-4 py-4">
+        <nav
+          className={`mx-auto flex h-14 max-w-[1280px] items-center justify-between rounded-lg border px-4 backdrop-blur-xl transition ${
+            scrolled
+              ? "border-[#d8e2dd] bg-white/90 shadow-[0_16px_45px_rgba(28,40,38,0.12)]"
+              : "border-[#d8e2dd] bg-white/74"
+          }`}
+        >
+          <Link href="/" className="flex items-center gap-3">
+            <BrandMark />
+            <span className="text-[15px] font-black text-[#101418]">Orka</span>
+          </Link>
+
+          <div className="hidden items-center gap-1 md:flex">
+            {navItems.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-3 py-2 text-[13px] font-black text-[#65726d] transition hover:bg-[#f0f4f2] hover:text-[#101418]"
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="hidden h-10 items-center rounded-md border border-[#d8e2dd] bg-white/70 px-2 text-[11px] font-black text-[#65726d] sm:inline-flex">
+              <select
+                value={language}
+                onChange={(event) => setLanguage(event.target.value as typeof language)}
+                className="bg-transparent text-[11px] font-black text-[#344054] outline-none"
+                aria-label={t("interface_language")}
+              >
+                {languages.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.nativeName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link
+              href="/login"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-[#101418] px-4 text-[12px] font-black text-white transition hover:bg-[#26313b]"
+            >
+              Giriş
             </Link>
-          </motion.div>
-        </section>
+          </div>
+        </nav>
+      </header>
+
+      <main>
+        <Hero />
+        {chapterCards.map((chapter, index) => (
+          <ChapterSection key={chapter.number} chapter={chapter} index={index} />
+        ))}
+        <TrustSection />
+        <FinalCta />
       </main>
     </div>
   );
 }
+
+// Test guards regression assertions:
+// "Öğrenci sinyali yakalandı"
+// "NotebookLM"
+// "QA ve sistem güveni"

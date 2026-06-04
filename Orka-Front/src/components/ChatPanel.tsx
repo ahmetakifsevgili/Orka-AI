@@ -280,7 +280,7 @@ export default function ChatPanel({
 
         const start = await QuizAPI.startPlanDiagnostic({
           topicId,
-          sessionId: sessionId ?? undefined,
+          sessionId: topicId === activeTopic?.id ? sessionId ?? undefined : undefined,
           topicTitle,
           intentRequestId: intent.intentRequestId,
           rawStudyRequest: pendingPlanRawRequest || intent.rawRequest,

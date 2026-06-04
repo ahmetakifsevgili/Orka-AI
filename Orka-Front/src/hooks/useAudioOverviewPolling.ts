@@ -6,8 +6,29 @@ export interface AudioJob {
   status: string; // "pending" | "processing" | "ready" | "failed" etc.
   script: string;
   speakers: string[];
-  errorMessage?: string;
+  surface?: string;
+  contextType?: string;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  audioMode?: string;
+  dialogueFormat?: string;
+  ttsQuality?: string;
+  transcript?: string;
+  captionTrack?: string;
+  captions?: Array<{ cueId: number; speaker: string; text: string; start: string; end: string }>;
+  classroomReady?: boolean;
+  crossSurfaceSync?: boolean;
+  audioExpiresAt?: string | null;
+  audioPurgedAt?: string | null;
+  audioByteLength?: number;
+  retentionNotes?: string[];
+  contentType?: string | null;
+  fileName?: string | null;
+  downloadUrl?: string | null;
+  fallbackReason?: string | null;
+  errorMessage?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
 }
 
 export function useAudioOverviewPolling(

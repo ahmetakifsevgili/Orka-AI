@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, ApiTopic } from "@/lib/types";
-import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuizAPI, ReviewAPI } from "@/services/api";
+import type { AdaptiveAssessmentNextItem, ApiTopic, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto } from "@/lib/types";
+import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuestionPracticeAPI, QuizAPI, ReviewAPI } from "@/services/api";
 import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import QuizCard from "./QuizCard";
 import { NextActionCard, WorkspaceHeader, WorkspaceMetric } from "./AgenticWorkspace";
@@ -24,6 +24,11 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
   const [adaptiveSessionId, setAdaptiveSessionId] = useState<string | null>(null);
   const [adaptiveNext, setAdaptiveNext] = useState<AdaptiveAssessmentNextItem | null>(null);
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+  const [questionPracticeSession, setQuestionPracticeSession] = useState<QuestionPracticeSessionDto | null>(null);
+  const [questionPracticeAnswers, setQuestionPracticeAnswers] = useState<Record<string, string>>({});
+  const [questionPracticeResult, setQuestionPracticeResult] = useState<QuestionPracticeSubmitResponseDto | null>(null);
+  const [questionPracticeLoading, setQuestionPracticeLoading] = useState(false);
+  const [questionPracticeSubmitting, setQuestionPracticeSubmitting] = useState(false);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [bookmarkNote, setBookmarkNote] = useState("");
@@ -119,6 +124,65 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
     }
   };
 
+  const startQuestionBankPractice = async () => {
+    if (!topicId) {
+      toast.error("Pratik icin once bir konu sec.");
+      return;
+    }
+    setQuestionPracticeLoading(true);
+    setQuestionPracticeResult(null);
+    setQuestionPracticeAnswers({});
+    try {
+      const session = await QuestionPracticeAPI.start({
+        topicId,
+        sessionId,
+        mode: "weak_concept_drill",
+        count: 8,
+      });
+      setQuestionPracticeSession(session);
+      if (session.status === "empty") {
+        toast("Bu konu icin practice-ready soru henuz yok.");
+      }
+    } catch {
+      toast.error("Soru bankasi pratigi baslatilamadi.");
+    } finally {
+      setQuestionPracticeLoading(false);
+    }
+  };
+
+  const selectQuestionPracticeAnswer = (questionItemId: string, optionKey: string) => {
+    if (questionPracticeResult) return;
+    setQuestionPracticeAnswers((prev) => ({ ...prev, [questionItemId]: optionKey }));
+  };
+
+  const submitQuestionBankPractice = async () => {
+    if (!questionPracticeSession || questionPracticeSession.questions.length === 0) return;
+    setQuestionPracticeSubmitting(true);
+    try {
+      const result = await QuestionPracticeAPI.submit({
+        practiceSetId: questionPracticeSession.practiceSetId,
+        topicId,
+        sessionId,
+        mode: questionPracticeSession.mode,
+        answers: questionPracticeSession.questions.map((question) => {
+          const selected = questionPracticeAnswers[question.questionItemId];
+          return {
+            questionItemId: question.questionItemId,
+            selectedOptionKey: selected ?? null,
+            wasSkipped: !selected,
+          };
+        }),
+      });
+      setQuestionPracticeResult(result);
+      toast.success("Pratik kaniti kaydedildi.");
+      await refresh();
+    } catch {
+      toast.error("Pratik sonucu kaydedilemedi.");
+    } finally {
+      setQuestionPracticeSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-transparent">
       <div className="flex-shrink-0 border-b border-[#526d82]/10 px-6 py-5">
@@ -157,8 +221,8 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                   ? "Zamanı gelen tekrarlar unutmayı azaltır ve Tutor'un sonraki anlatımını daha iyi ayarlar."
                   : "Henüz bekleyen tekrar yok; önemli bir notu flashcard veya bookmark olarak kaydetmek hafızayı besler."
             }
-            primaryLabel={isPractice ? "Adaptif pratiği başlat" : reviews.length > 0 ? "Tekrarları göster" : "Flashcard ekle"}
-            onPrimary={isPractice ? () => void startAdaptivePractice() : () => undefined}
+            primaryLabel={isPractice ? "Soru bankasi pratigini baslat" : reviews.length > 0 ? "Tekrarları göster" : "Flashcard ekle"}
+            onPrimary={isPractice ? () => void startQuestionBankPractice() : () => undefined}
             secondary={
               <button
                 onClick={isPractice ? onOpenIDE : onOpenChat}
@@ -180,22 +244,100 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
             <div>
               <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#47725d]">
                 <Sparkles className="h-3.5 w-3.5" />
-                Adaptif pratik
+                Soru bankasi pratigi
               </p>
-              <h2 className="mt-1 text-lg font-black text-[#172033]">Sıradaki soru zayıf/kararsız kavrama göre seçilir.</h2>
+              <h2 className="mt-1 text-lg font-black text-[#172033]">Soru bankasi plan ve diagnostic kavramlarindan secilir.</h2>
               <p className="mt-2 text-sm leading-6 text-[#667085]">
-                Bu akış klasik quiz değildir; her cevap item istatistiğini, knowledge tracing durumunu ve kavram mastery kanıtını günceller.
+                Her cevap QuizAttempt hattina kaydolur; tutor, mastery ve tekrar sinyali ayni kanit uzerinden beslenir.
               </p>
             </div>
             <button
-              onClick={startAdaptivePractice}
-              disabled={adaptiveLoading || !topicId}
+              onClick={startQuestionBankPractice}
+              disabled={questionPracticeLoading || !topicId}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] disabled:opacity-40"
             >
-              {adaptiveLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Adaptif pratiği başlat
+              {questionPracticeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Soru bankasi pratigini baslat
             </button>
           </div>
+          {questionPracticeSession?.status === "empty" && (
+            <p className="mt-4 rounded-xl border border-[#8fb7a2]/35 bg-white/65 px-4 py-3 text-xs font-bold text-[#47725d]">
+              {questionPracticeSession.emptyState || "Bu konu icin hazir soru yok."}
+            </p>
+          )}
+          {questionPracticeSession?.questions.length ? (
+            <div className="mt-5 space-y-3">
+              <div className="flex flex-col gap-2 rounded-xl border border-[#8fb7a2]/24 bg-white/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-[#47725d]">Live question bank</p>
+                  <p className="mt-1 text-sm font-bold text-[#172033]">
+                    {questionPracticeSession.totalQuestions} soru hazir · {questionPracticeSession.mode}
+                  </p>
+                </div>
+                {questionPracticeResult ? (
+                  <p className="rounded-lg bg-[#d9e7de]/80 px-3 py-2 text-xs font-black text-[#47725d]">
+                    {questionPracticeResult.correctCount}/{questionPracticeResult.totalQuestions} dogru · {questionPracticeResult.blankCount} bos
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => void submitQuestionBankPractice()}
+                    disabled={questionPracticeSubmitting}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-4 py-2 text-xs font-black text-white disabled:opacity-40"
+                  >
+                    {questionPracticeSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Cevaplari kaydet
+                  </button>
+                )}
+              </div>
+              {questionPracticeSession.questions.map((question, index) => {
+                const selected = questionPracticeAnswers[question.questionItemId];
+                const result = questionPracticeResult?.results.find((item) => item.questionItemId === question.questionItemId);
+                return (
+                  <div key={question.questionItemId} className="rounded-xl border border-[#526d82]/12 bg-white/76 p-4">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#667085]">
+                      <span>Soru {index + 1}</span>
+                      {question.conceptKey && <span className="rounded-full bg-[#dcecf3]/70 px-2 py-1 text-[#2d5870]">{question.conceptKey}</span>}
+                      <span className="rounded-full bg-[#eef1f3]/80 px-2 py-1">{question.difficulty}</span>
+                      <span className="rounded-full bg-[#eef1f3]/80 px-2 py-1">{question.visualReadinessStatus}</span>
+                    </div>
+                    <p className="mt-3 text-sm font-bold leading-6 text-[#172033]">{question.stem}</p>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {question.options.map((option) => {
+                        const active = selected === option.optionKey;
+                        return (
+                          <button
+                            key={option.optionKey}
+                            onClick={() => selectQuestionPracticeAnswer(question.questionItemId, option.optionKey)}
+                            disabled={Boolean(questionPracticeResult)}
+                            className={`min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
+                              active
+                                ? "border-[#47725d]/45 bg-[#d9e7de]/82 text-[#172033]"
+                                : "border-[#526d82]/12 bg-[#f7f9fa]/75 text-[#344054] hover:bg-white"
+                            } disabled:cursor-default`}
+                          >
+                            <span className="mr-2 font-black">{option.optionKey}</span>
+                            {option.text}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {result && (
+                      <div className={`mt-3 rounded-xl px-3 py-2 text-xs font-bold ${
+                        result.isBlank
+                          ? "bg-[#fff8ee] text-[#8a641f]"
+                          : result.isCorrect
+                            ? "bg-[#d9e7de] text-[#47725d]"
+                            : "bg-[#fee4e2] text-[#9b2c2c]"
+                      }`}>
+                        {result.isBlank ? "Bos kaydedildi" : result.isCorrect ? "Dogru" : "Yanlis"}
+                        {result.learningImpact?.nextTutorMove ? ` · Tutor: ${result.learningImpact.nextTutorMove}` : ""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {adaptiveNext?.decision && adaptiveSessionId && (
             <div className="mt-4">
               <p className="mb-2 rounded-xl bg-white/58 px-3 py-2 text-xs font-bold text-[#47725d]">

@@ -1277,6 +1277,7 @@ export interface WikiGraphPageDto {
   id: string;
   topicId: string;
   parentWikiPageId?: string | null;
+  planStepId?: string | null;
   pageKey: string;
   pageType: string;
   conceptKey?: string | null;
@@ -1286,10 +1287,33 @@ export interface WikiGraphPageDto {
   sourceReadiness: string;
   evidenceStatus: string;
   safeSummary?: string | null;
+  contentReadiness: string;
+  hasLearningContent: boolean;
+  visibleBlockCount: number;
+  requiredBlockTypesPresent: boolean;
   orderIndex: number;
   blockCount: number;
   curation?: WikiCurationSummaryDto | null;
+  learningSystemBinding?: WikiLearningSystemBindingDto | null;
   updatedAt: string;
+}
+
+export interface WikiLearningSystemBindingDto {
+  readiness: string;
+  planStepId?: string | null;
+  conceptKey?: string | null;
+  parentConceptKey?: string | null;
+  hasConceptBinding: boolean;
+  hasPlanBinding: boolean;
+  hasDiagnosticBinding: boolean;
+  hasTutorBinding: boolean;
+  hasAssessmentOrQuestionBankBinding: boolean;
+  hasSourceEvidenceBinding: boolean;
+  diagnosticSignalCount: number;
+  tutorSignalCount: number;
+  assessmentSignalCount: number;
+  sourceEvidenceSignalCount: number;
+  reasonCodes: string[];
 }
 
 export interface WikiCurationSummaryDto {
@@ -1525,6 +1549,7 @@ export interface LearningArtifactDto {
   sourceBasis: string;
   citationIds: string[];
   toolTraceIds: string[];
+  phaseScope: string[];
   accessibility: LearningArtifactAccessibilityDto;
   safety: LearningArtifactSafetyDto;
   createdAt: string;
@@ -1598,6 +1623,7 @@ export interface LearningNotebookPackDto {
   completedConceptKeys: string[];
   weakConceptKeys: string[];
   misconceptionKeys: string[];
+  phaseScope: string[];
   artifactIds: string[];
   artifacts: LearningArtifactDto[];
   nextActions: NotebookStudioNextActionDto[];
@@ -1650,6 +1676,13 @@ export interface NotebookSlideExportItemDto {
 export interface NotebookSlideExportPreviewDto {
   packId: string;
   slideDeckArtifactId?: string | null;
+  surface: string;
+  contextType: string;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  exportScope: string;
+  sourceUploadAllowed: boolean;
+  crossSurfaceSync: boolean;
   deckTitle: string;
   slideCount: number;
   sourceBasis: string;
@@ -1657,6 +1690,10 @@ export interface NotebookSlideExportPreviewDto {
   exportReadiness: string;
   slides: NotebookSlideExportItemDto[];
   warnings: string[];
+  templateKeys: string[];
+  searchFilterKeys: string[];
+  internalConnectionKeys: string[];
+  phaseScope: string[];
   accessibilitySummary: string;
   generatedAt: string;
 }
@@ -1679,6 +1716,13 @@ export interface NotebookExportAccessibilityDto {
 export interface NotebookExportResultDto {
   packId: string;
   slideDeckArtifactId?: string | null;
+  surface: string;
+  contextType: string;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  exportScope: string;
+  sourceUploadAllowed: boolean;
+  crossSurfaceSync: boolean;
   format: string;
   status: string;
   exportReadiness: string;
@@ -1693,6 +1737,10 @@ export interface NotebookExportResultDto {
   preview: NotebookSlideExportPreviewDto;
   safety: NotebookExportSafetyDto;
   accessibility: NotebookExportAccessibilityDto;
+  templateKeys: string[];
+  searchFilterKeys: string[];
+  internalConnectionKeys: string[];
+  phaseScope: string[];
   warnings: string[];
   createdAt: string;
 }
@@ -1737,6 +1785,11 @@ export interface LearningWorkspaceState {
 export interface ChatResponseMetadata {
   citations?: CitationDto[];
   usedTools?: UsedToolDto[];
+  surface?: string | null;
+  contextType?: string | null;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  audioMode?: string | null;
   groundingMode?: string;
   fallbackReason?: string | null;
   sourceConfidence?: number | null;
@@ -3031,6 +3084,12 @@ export interface QuestionAssetDto {
   altText?: string | null;
   caption?: string | null;
   longDescription?: string | null;
+  generationProvider?: string | null;
+  generationModel?: string | null;
+  renderStrategy?: string | null;
+  generationPromptHash?: string | null;
+  validationReportJson?: string | null;
+  visualReadinessStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -3050,6 +3109,12 @@ export interface CreateQuestionAssetDto {
   altText?: string | null;
   caption?: string | null;
   longDescription?: string | null;
+  generationProvider?: string | null;
+  generationModel?: string | null;
+  renderStrategy?: string | null;
+  generationPromptHash?: string | null;
+  validationReportJson?: string | null;
+  visualReadinessStatus?: string | null;
 }
 
 export interface QuestionContentBlockDto {
@@ -3135,6 +3200,9 @@ export interface QuestionOptionDto {
   optionKey: string;
   text: string;
   isCorrect: boolean;
+  rationale?: string | null;
+  misconceptionKey?: string | null;
+  diagnosticSignalJson?: string | null;
   sortOrder: number;
   contentBlocks?: QuestionOptionContentBlockDto[];
 }
@@ -3163,12 +3231,26 @@ export interface QuestionOutcomeLinkDto {
 export interface QuestionItemDto {
   id: string;
   ownershipState: "system" | "user" | string;
+  questionBankSource?: string;
   examDefinitionId: string;
   examVariantId?: string | null;
   examSectionId?: string | null;
   examSubjectId?: string | null;
   examTopicId?: string | null;
   examOutcomeId?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string;
   questionType: "multiple_choice" | "paragraph" | "math_problem" | "grammar" | "vocabulary" | "reading_comprehension" | string;
   stem: string;
   difficulty: "easy" | "medium" | "hard" | string;
@@ -3190,6 +3272,113 @@ export interface QuestionItemDto {
   validation: QuestionValidationResultDto;
 }
 
+export interface QuestionPracticeStartRequestDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  planRequestId?: string | null;
+  quizRunId?: string | null;
+  learningConceptIds?: string[];
+  assessmentItemIds?: string[];
+  conceptKeys?: string[];
+  questionBankSource?: string | null;
+  mode?: string;
+  count?: number;
+}
+
+export interface QuestionPracticeQuestionDto {
+  questionItemId: string;
+  assessmentItemId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  topicId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  questionBankSource: string;
+  questionType: string;
+  stem: string;
+  difficulty: string;
+  cognitiveSkill: string;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  visualReadinessStatus: string;
+  options: QuestionOptionDto[];
+  contentBlocks: QuestionContentBlockDto[];
+  stimuli: QuestionStimulusDto[];
+}
+
+export interface QuestionPracticeSessionDto {
+  practiceSetId: string;
+  status: string;
+  emptyState: string;
+  topicId?: string | null;
+  sessionId?: string | null;
+  mode: string;
+  conceptKeys: string[];
+  totalQuestions: number;
+  questions: QuestionPracticeQuestionDto[];
+}
+
+export interface WikiPageQuestionSetDto {
+  pageId: string;
+  topicId: string;
+  conceptKey?: string | null;
+  practiceSetId: string;
+  status: string;
+  emptyState: string;
+  mode: string;
+  totalQuestions: number;
+  questions: QuestionPracticeQuestionDto[];
+}
+
+export interface WikiPagePracticeStartRequestDto {
+  sessionId?: string | null;
+  questionBankSource?: string | null;
+  mode?: string;
+  count?: number;
+}
+
+export interface QuestionPracticeAnswerDto {
+  questionItemId: string;
+  selectedOptionKey?: string | null;
+  responseTimeMs?: number | null;
+  wasSkipped?: boolean;
+  confidenceSelfRating?: number | null;
+}
+
+export interface QuestionPracticeSubmitRequestDto {
+  practiceSetId?: string | null;
+  topicId?: string | null;
+  sessionId?: string | null;
+  mode?: string;
+  answers: QuestionPracticeAnswerDto[];
+}
+
+export interface QuestionPracticeResultDto {
+  questionItemId: string;
+  assessmentItemId?: string | null;
+  conceptKey?: string | null;
+  selectedOptionKey: string;
+  isBlank: boolean;
+  isCorrect: boolean;
+  explanation: string;
+  learningImpact?: QuizResultLearningImpactDto | null;
+}
+
+export interface QuestionPracticeSubmitResponseDto {
+  practiceSetId: string;
+  status: string;
+  totalQuestions: number;
+  answeredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  blankCount: number;
+  results: QuestionPracticeResultDto[];
+  learningImpacts: QuizResultLearningImpactDto[];
+}
+
 export interface CreateQuestionDto {
   examDefinitionId: string;
   examVariantId?: string | null;
@@ -3197,6 +3386,20 @@ export interface CreateQuestionDto {
   examSubjectId?: string | null;
   examTopicId?: string | null;
   examOutcomeId?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
   questionType?: string;
   stem: string;
   difficulty?: string;
@@ -3220,6 +3423,20 @@ export interface UpdateQuestionDto {
   examSubjectId?: string | null;
   examTopicId?: string | null;
   examOutcomeId?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
   questionType?: string;
   stem?: string;
   difficulty?: string;
@@ -3245,6 +3462,14 @@ export interface QuestionBankFilterDto {
   examSubjectId?: string;
   examTopicId?: string;
   examOutcomeId?: string;
+  learningTopicId?: string;
+  conceptGraphSnapshotId?: string;
+  learningConceptId?: string;
+  assessmentItemId?: string;
+  quizRunId?: string;
+  planRequestId?: string;
+  conceptKey?: string;
+  includeDiagnosticItems?: boolean;
   qualityStatus?: string;
   questionType?: string;
   difficulty?: string;
@@ -3256,6 +3481,9 @@ export interface QuestionImportOptionDto {
   text: string;
   isCorrect: boolean;
   sortOrder?: number;
+  rationale?: string | null;
+  misconceptionKey?: string | null;
+  diagnosticSignalJson?: string | null;
 }
 
 export interface QuestionImportSourceDto {
@@ -3279,6 +3507,20 @@ export interface QuestionImportItemDto {
   subjectCode?: string | null;
   topicCode?: string | null;
   outcomeCode?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
   questionType?: string;
   stem: string;
   options: QuestionImportOptionDto[];
@@ -3365,6 +3607,20 @@ export interface QuestionImportPackageDto {
   subjectCode?: string | null;
   topicCode?: string | null;
   outcomeCode?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
   assets: QuestionImportAssetDto[];
   stimuli: QuestionImportStimulusDto[];
   questions: QuestionImportRichQuestionDto[];
@@ -3415,6 +3671,20 @@ export interface QuestionImportRichQuestionDto {
   subjectCode?: string | null;
   topicCode?: string | null;
   outcomeCode?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
   questionType?: string;
   stem?: string;
   difficulty?: string;
@@ -3448,6 +3718,9 @@ export interface QuestionImportRichOptionDto {
   text?: string;
   isCorrect: boolean;
   sortOrder?: number;
+  rationale?: string | null;
+  misconceptionKey?: string | null;
+  diagnosticSignalJson?: string | null;
   contentBlocks: QuestionImportContentBlockDto[];
 }
 
@@ -3469,6 +3742,20 @@ export interface QuestionImportTextAdapterRequestDto {
   subjectCode?: string | null;
   topicCode?: string | null;
   outcomeCode?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
 }
 
 export interface QuestionDraftGenerationContextDto {
@@ -3484,6 +3771,20 @@ export interface QuestionDraftGenerationContextDto {
   subjectCode?: string | null;
   topicCode?: string | null;
   outcomeCode?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
 }
 
 export interface QuestionDraftGenerationSourceDto {
@@ -3509,6 +3810,9 @@ export interface QuestionDraftOptionDto {
   text: string;
   isCorrect: boolean;
   sortOrder: number;
+  rationale?: string | null;
+  misconceptionKey?: string | null;
+  diagnosticSignalJson?: string | null;
 }
 
 export interface QuestionDraftCandidateDto {
@@ -3524,6 +3828,20 @@ export interface QuestionDraftCandidateDto {
   licenseStatus: string;
   sourceTitle?: string | null;
   sourceUrl?: string | null;
+  learningTopicId?: string | null;
+  conceptGraphSnapshotId?: string | null;
+  learningConceptId?: string | null;
+  assessmentItemId?: string | null;
+  quizRunId?: string | null;
+  planRequestId?: string | null;
+  conceptKey?: string | null;
+  conceptLabel?: string | null;
+  misconceptionTarget?: string | null;
+  evidenceExpected?: string | null;
+  scoringRuleJson?: string | null;
+  calibrationStatus?: string | null;
+  visualReadinessStatus?: string | null;
+  questionBankSource?: string | null;
 }
 
 export interface QuestionDraftGenerationIssueDto {

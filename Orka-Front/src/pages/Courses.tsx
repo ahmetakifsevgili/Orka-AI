@@ -31,7 +31,7 @@ import {
 import { TopicsAPI } from "@/services/api";
 import type { ApiTopic } from "@/lib/types";
 import OrcaLogo from "@/components/OrcaLogo";
-import WikiDrawer from "@/components/WikiDrawer";
+import WikiMainPanel from "@/components/WikiMainPanel";
 
 const PHASE_LABELS: Record<number, string> = {
   0: "Keşif",
@@ -104,8 +104,8 @@ export default function Courses() {
      return (
         <div className="min-h-screen bg-zinc-950 relative">
           {wikiTopicId && (
-            <div className="fixed inset-y-0 right-0 z-50 flex shadow-2xl border-l border-zinc-800">
-               <WikiDrawer topicId={wikiTopicId} onClose={() => setWikiTopicId(null)} />
+            <div className="fixed inset-0 z-50 bg-zinc-950">
+               <WikiMainPanel topicId={wikiTopicId} onClose={() => setWikiTopicId(null)} />
             </div>
           )}
           

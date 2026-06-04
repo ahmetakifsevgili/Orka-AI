@@ -1034,6 +1034,14 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
 
   // Track previous isStreaming to detect the streaming→done transition
   const prevStreamingRef = useRef(message.isStreaming);
+  const citationSourceId = message.metadata?.citations?.find((citation) => citation.sourceId)?.sourceId ?? null;
+  const classroomSourceId = message.metadata?.sourceId ?? citationSourceId ?? undefined;
+  const classroomSurfaceSignal = (message.metadata?.surface ?? message.metadata?.contextType ?? "").toLowerCase();
+  const classroomSurface = classroomSourceId || classroomSurfaceSignal.includes("source") || classroomSurfaceSignal.includes("orkalm")
+    ? "orkalm"
+    : "wiki";
+  const classroomWikiPageId = classroomSurface === "wiki" ? message.metadata?.wikiPageId ?? undefined : undefined;
+  const classroomAudioMode = message.metadata?.audioMode ?? "brief";
 
   // Sync displayed content with message content — no typewriter animation for performance
   useEffect(() => {
@@ -1254,6 +1262,10 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
           text={displayedContent}
           topicId={topicId}
           sessionId={sessionId}
+          surface={classroomSurface}
+          wikiPageId={classroomWikiPageId}
+          sourceId={classroomSurface === "orkalm" ? classroomSourceId : undefined}
+          audioMode={classroomAudioMode}
           onClose={() => setAudioOpen(false)}
         />
       )}

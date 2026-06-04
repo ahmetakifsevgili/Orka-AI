@@ -49,7 +49,7 @@ function ToggleRow({ label, description, checked, onChange }: {
   onChange: (val: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[#dcecf3]/70/30 transition-colors duration-150">
+    <div className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[#dcecf3]/30 transition-colors duration-150">
       <div>
         <p className="text-sm text-[#344054]">{label}</p>
         {description && <p className="text-[11px] text-[#667085] mt-0.5">{description}</p>}
@@ -80,7 +80,7 @@ function OptionRow<T extends string>({ label, value, options, onChange }: {
   onChange: (val: T) => void;
 }) {
   return (
-    <div className="px-4 py-3 rounded-xl hover:bg-[#dcecf3]/70/30 transition-colors duration-150">
+    <div className="px-4 py-3 rounded-xl hover:bg-[#dcecf3]/30 transition-colors duration-150">
       <p className="text-sm text-[#344054] mb-2.5">{label}</p>
       <div className="flex gap-2 flex-wrap">
         {options.map((opt) => (
@@ -90,7 +90,7 @@ function OptionRow<T extends string>({ label, value, options, onChange }: {
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all duration-200 border ${
               value === opt.key
                 ? "bg-[#172033] text-white border-transparent shadow-sm"
-                : "bg-[#dcecf3]/62 text-[#667085] border-[#526d82]/18/50 hover:text-[#172033] hover:border-zinc-600"
+                : "bg-[#dcecf3]/62 text-[#667085] border-[#526d82]/18 hover:text-[#172033] hover:border-zinc-600"
             }`}
           >
             {value === opt.key && <Check className="w-3 h-3" />}
@@ -240,7 +240,7 @@ export default function SettingsPanel() {
           {/* ── PROFILE ── */}
           <SettingsSection title={t("profile") || "Profil"} icon={<User className="w-4 h-4" />}>
             {/* Avatar + Info Row */}
-            <div className="px-4 py-4 rounded-xl bg-[#dcecf3]/70/30 border border-[#526d82]/14">
+            <div className="px-4 py-4 rounded-xl bg-[#dcecf3]/30 border border-[#526d82]/14">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-14 h-14 rounded-full bg-[#dcecf3]/70 border border-[#526d82]/18 flex items-center justify-center">
                   <span className="text-lg font-semibold text-[#344054]">

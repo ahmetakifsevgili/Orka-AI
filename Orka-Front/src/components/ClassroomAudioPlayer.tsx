@@ -19,6 +19,11 @@ interface ClassroomAudioPlayerProps {
   topicId?: string;
   sessionId?: string;
   audioOverviewJobId?: string;
+  surface?: "wiki" | "orkalm" | string;
+  wikiPageId?: string | null;
+  sourceId?: string | null;
+  audioMode?: "brief" | "deep_dive" | "critique" | "debate" | string;
+  captionTrack?: string;
   onClose: () => void;
 }
 
@@ -205,6 +210,11 @@ export default function ClassroomAudioPlayer({
   topicId,
   sessionId,
   audioOverviewJobId,
+  surface = "wiki",
+  wikiPageId,
+  sourceId,
+  audioMode = "brief",
+  captionTrack,
   onClose,
 }: ClassroomAudioPlayerProps) {
   const { t } = useLanguage();
@@ -236,6 +246,10 @@ export default function ClassroomAudioPlayer({
   const linesRef = useRef<DialogueLine[]>([]);
   const backendAudioRef = useRef<HTMLAudioElement | null>(null);
   const backendAudioUrlRef = useRef<string | null>(null);
+  const captionCueCount = useMemo(
+    () => (captionTrack?.match(/-->/g) ?? []).length,
+    [captionTrack]
+  );
 
   useEffect(() => {
     linesRef.current = lines;
@@ -272,7 +286,7 @@ export default function ClassroomAudioPlayer({
 
     try {
       const response = await ClassroomAPI.getInteractionAudio(interactionId);
-      const audioUrl = URL.createObjectURL(response.data);
+      const audioUrl = URL.createObjectURL(response);
       const audio = new Audio(audioUrl);
 
       stopBackendAudio();
@@ -374,6 +388,10 @@ export default function ClassroomAudioPlayer({
           sessionId,
           audioOverviewJobId,
           transcript: text,
+          surface,
+          wikiPageId,
+          sourceId,
+          audioMode,
         });
         id = started.id;
         setClassroomId(id);
@@ -422,7 +440,7 @@ export default function ClassroomAudioPlayer({
           <Volume2 className="w-4 h-4 text-[#47725d]" />
           <span className="text-sm font-semibold text-[#172033]">{t("audio_lesson")}</span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-[#47725d] uppercase tracking-wider">
-            {t("audio_mode_badge")}
+            {audioMode}
           </span>
         </div>
         <button
@@ -435,6 +453,16 @@ export default function ClassroomAudioPlayer({
         >
           <X className="w-4 h-4" />
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-[#526d82]/10 bg-white/50 px-4 py-2 text-[10px] font-bold text-[#667085]">
+        <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">{surface}</span>
+        <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">
+          {surface === "orkalm" ? "source_notebook" : "wiki_page"}
+        </span>
+        <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">
+          {captionCueCount > 0 ? `${captionCueCount} caption cues` : "caption fallback"}
+        </span>
       </div>
 
       <div className="px-4 py-3 max-h-48 overflow-y-auto space-y-2 sidebar-scrollbar bg-white/45">
@@ -513,6 +541,7 @@ export default function ClassroomAudioPlayer({
               {t("confused")}
             </button>
             <input
+              data-testid="audio-study-room-question"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
@@ -522,6 +551,7 @@ export default function ClassroomAudioPlayer({
               className="flex-1 rounded-xl bg-white/72 border border-[#526d82]/15 px-3 py-2 text-xs text-[#172033] placeholder:text-[#98a2b3] outline-none focus:border-[#9ec7d9]"
             />
             <button
+              data-testid="audio-study-room-ask"
               onClick={handleAsk}
               disabled={!question.trim() || isAsking}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-[#47725d] text-xs transition disabled:opacity-50"

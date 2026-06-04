@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -48,7 +48,8 @@ import type {
   SourceWikiProActionDto,
   SourceWikiProWarningDto,
 } from "@/lib/types";
-import InteractiveIDE from "./InteractiveIDE";
+
+const InteractiveIDE = lazy(() => import("./InteractiveIDE"));
 
 type ProductView =
   | "home"
@@ -379,14 +380,9 @@ function ModuleCardGrid({ cards, onViewChange }: { cards: OrkaMissionModuleCardD
               <div className="rounded-lg border border-[#526d82]/12 bg-[#eef4f5]/80 p-2">
                 <Icon className="h-4 w-4 text-[#344054]" />
               </div>
-              <StatusPill label={card.status} />
             </div>
             <h3 className="mt-3 text-sm font-black text-[#172033]">{card.label || labelize(card.moduleKey)}</h3>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">{card.userSafeSummary || "Connected to the Learning OS."}</p>
-            <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-bold text-[#667085]">
-              <span>{card.actionCount} actions</span>
-              <span>{card.warningCount} warnings</span>
-            </div>
           </button>
         );
       })}
@@ -459,20 +455,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
 
   const mission = state.mission ?? state.today?.missionControl ?? null;
   const coach = state.coach ?? state.today?.studyCoach ?? null;
-  const learningState = state.learningState ?? state.today?.orkaLearningState ?? null;
   const primary = mission?.primaryMission;
-  const signal = learningState?.signalSummary;
-  const warnings = [
-    ...(mission?.urgentWarnings ?? []),
-    ...(coach?.warnings ?? []),
-    ...(learningState?.conflictWarnings ?? []).map((item: OrkaLearningStateConflictDto) => ({
-      warningCode: item.conflictCode,
-      severity: item.severity,
-      label: item.userSafeSummary,
-      targetRoute: "home",
-      reasonCodes: item.reasonCodes,
-    })),
-  ];
 
   return (
     <PanelScaffold
@@ -480,12 +463,6 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
       eyebrow="Orka Learning OS"
       icon={Sparkles}
       summary={mission?.userSafeSummary ?? "Open Orka and see the safest next learning move before choosing a module."}
-      aside={
-        <div className="flex flex-wrap gap-2">
-          <StatusPill label={mission?.evidenceConfidence ?? (state.error ? "blocked" : "thin_evidence")} />
-          <StatusPill label={coach?.rhythmStatus ?? "thin_evidence"} />
-        </div>
-      }
     >
       {state.loading && <LoadingBlock />}
       {!state.loading && state.error && (
@@ -495,59 +472,21 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
         <>
           <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
             <div className="rounded-lg border border-[#526d82]/12 bg-white/82 p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill label={primary?.priority ?? "normal"} tone="priority" />
-                <StatusPill label={mission?.primaryEntryPoint ?? primary?.entryPoint ?? "ask_tutor"} />
-              </div>
               <h2 className="mt-4 text-3xl font-black tracking-normal text-[#172033]">{primary?.label ?? state.today?.dailyFocusTitle ?? "Start with a short diagnostic"}</h2>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-[#52606d]">{primary?.reason ?? state.today?.dailyFocusReason ?? EMPTY_STATE}</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {primary && <ActionButton action={primary} onViewChange={onViewChange} compact />}
                 {(mission?.studyRoomSuggestion ?? null) && <ActionButton action={mission!.studyRoomSuggestion!} onViewChange={onViewChange} compact />}
               </div>
-              <div className="mt-4">
-                <ReasonChips items={[...(mission?.reasonCodes ?? []), ...(primary?.reasonCodes ?? [])]} />
-              </div>
             </div>
 
             <div className="rounded-lg border border-[#526d82]/12 bg-white/82 p-5">
               <h3 className="text-sm font-black text-[#172033]">Study rhythm</h3>
               <p className="mt-2 text-sm leading-6 text-[#52606d]">{coach?.todayPlan ?? "Use a light start until Orka has enough evidence."}</p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <StatusPill label={coach?.recommendedPace ?? "light"} />
-                <StatusPill label={coach?.focusPlan?.durationBand ?? "short"} />
-                <StatusPill label={coach?.focusPlan?.focusMode ?? "quick_start"} />
-                <StatusPill label={coach?.comebackPlan?.comebackStatus ?? "thin_evidence"} />
-              </div>
             </div>
           </section>
-
-          <MetricGrid
-            items={[
-              { label: "Review load", value: mission?.reviewLoad ?? coach?.workload?.reviewLoad ?? "none", detail: signal ? `${signal.dueReviewCount} due` : undefined },
-              { label: "Repair load", value: mission?.repairLoad ?? coach?.workload?.repairLoad ?? "none", detail: signal ? `${signal.wrongAttemptCount} wrong signals` : undefined },
-              { label: "Exam load", value: mission?.examLoad ?? coach?.workload?.examLoad ?? "none" },
-              { label: "Source/Wiki", value: mission?.sourceWikiLoad ?? coach?.workload?.sourceWikiLoad ?? "none", detail: signal ? `${signal.readySourceCount}/${signal.sourceCount} sources ready` : undefined },
-            ]}
-          />
-
-          <WarningList warnings={warnings} title="Urgent warnings" />
-
-          <ActionList actions={mission?.secondaryActions ?? []} onViewChange={onViewChange} title="Secondary actions" />
 
           <ModuleCardGrid cards={mission?.moduleCards ?? []} onViewChange={onViewChange} />
-
-          {mission && <SectionList mission={mission} onViewChange={onViewChange} />}
-
-          <section className="rounded-lg border border-[#526d82]/12 bg-white/78 p-4">
-            <h3 className="text-sm font-black text-[#172033]">Progress snapshot</h3>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <StatusPill label={signal?.hasRealLearningData ? "real evidence" : "thin_evidence"} />
-              <StatusPill label={`${signal?.quizAttemptCount ?? 0} quiz attempts`} />
-              <StatusPill label={`${signal?.learningSignalCount ?? 0} learning signals`} />
-              <StatusPill label={`${topics.length} topics`} />
-            </div>
-          </section>
         </>
       )}
     </PanelScaffold>
@@ -928,14 +867,16 @@ export function CodeLearningIdePanel({
         </>
       )}
       <section className="min-h-[560px] overflow-hidden rounded-lg border border-[#526d82]/12 bg-white">
-        <InteractiveIDE
-          topicTitle={activeTopic?.title}
-          topicId={activeTopic?.id}
-          sessionId={sessionId ?? undefined}
-          quizQuestion={quizQuestion ?? undefined}
-          onSendToChat={onSendToTutor}
-          onClose={onCloseQuiz}
-        />
+        <Suspense fallback={<LoadingBlock label="Loading code editor" />}>
+          <InteractiveIDE
+            topicTitle={activeTopic?.title}
+            topicId={activeTopic?.id}
+            sessionId={sessionId ?? undefined}
+            quizQuestion={quizQuestion ?? undefined}
+            onSendToChat={onSendToTutor}
+            onClose={onCloseQuiz}
+          />
+        </Suspense>
       </section>
       {pendingMessage && (
         <button type="button" onClick={onPendingMessageConsumed} className="hidden">

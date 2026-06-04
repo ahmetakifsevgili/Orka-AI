@@ -189,7 +189,7 @@ function statusPill(status: AgentStat["status"]) {
     online: "bg-emerald-400/15 text-[#47725d] border-emerald-400/20",
     degraded: "bg-amber-400/15 text-amber-300 border-amber-400/20",
     critical: "bg-red-400/15 text-red-300 border-red-400/20",
-    idle: "bg-[#dcecf3]/70/70 text-[#667085] border-[#526d82]/18/50",
+    idle: "bg-[#dcecf3]/70 text-[#667085] border-[#526d82]/18",
   } satisfies Record<AgentStat["status"], string>;
 
   return <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${map[status]}`}>{status}</span>;

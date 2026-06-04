@@ -28,22 +28,25 @@ import {
   Tags,
   Network,
   HelpCircle,
+  CheckCircle2,
   Zap,
   Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { AudioOverviewAPI, LearningAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
+import { AudioOverviewAPI, LearningAPI, QuestionPracticeAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
 import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 import { tryParseQuiz } from "@/lib/quizParser";
-import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto } from "@/lib/types";
+import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto, WikiPageQuestionSetDto } from "@/lib/types";
 import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import { userSafeStatus } from "@/lib/userSafeStatus";
 import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
 import NotebookStudioPanel from "./NotebookStudioPanel";
+import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
 
 interface WikiPage {
   id: string;
+  topicId?: string;
   title: string;
   pageKey?: string;
   pageType?: string;
@@ -53,7 +56,12 @@ interface WikiPage {
   sourceReadiness?: string;
   evidenceStatus?: string;
   safeSummary?: string | null;
+  contentReadiness?: string;
+  hasLearningContent?: boolean;
+  visibleBlockCount?: number;
+  requiredBlockTypesPresent?: boolean;
   curation?: import("@/lib/types").WikiCurationSummaryDto | null;
+  learningSystemBinding?: import("@/lib/types").WikiLearningSystemBindingDto | null;
   orderIndex?: number;
   blockCount?: number;
   blocks?: Array<{
@@ -157,7 +165,7 @@ const sourceQualityLabel = (status?: string | null) => {
 };
 
 type SourceCoverageCoachTone = "ready" | "watch" | "empty";
-type WikiStudySection = "briefing" | "reinforcement" | "sources" | "glossary" | "cards";
+type WikiStudySection = "briefing" | "practice" | "reinforcement" | "sources" | "glossary" | "cards";
 type WikiVaultFilter = "all" | "weak" | "source_ready" | "evidence_insufficient" | "stale" | "misconception" | "source_pages";
 
 interface WikiStudyPackItem {
@@ -331,6 +339,7 @@ function SourceCoverageCoach({
 function buildWikiStudyPackItems(input: {
   hasBriefing: boolean;
   isBriefingLoading: boolean;
+  pagePracticeReadyCount: number;
   glossaryCount: number;
   studyCardCount: number;
   recommendationCount: number;
@@ -349,6 +358,16 @@ function buildWikiStudyPackItems(input: {
       detail: input.isBriefingLoading ? "Hızlı Bakış hazırlanıyor." : "Konuya başlamadan önce kısa özeti ve ana çıkarımları gözden geçir.",
       section: "briefing",
       tone: input.hasBriefing ? "ready" : "empty",
+    });
+  }
+
+  if (input.pagePracticeReadyCount > 0) {
+    items.push({
+      id: "wiki-page-practice",
+      label: "Sayfa pratiğini çöz",
+      detail: `${input.pagePracticeReadyCount} concept-bound soru bu wiki sayfasına bağlı.`,
+      section: "practice",
+      tone: "ready",
     });
   }
 
@@ -564,6 +583,11 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     skillTag?: string;
     actionPrompt?: string;
   }>>([]);
+  const [wikiPageQuestionSet, setWikiPageQuestionSet] = useState<WikiPageQuestionSetDto | null>(null);
+  const [wikiPagePractice, setWikiPagePractice] = useState<QuestionPracticeSessionDto | null>(null);
+  const [wikiPagePracticeResult, setWikiPagePracticeResult] = useState<QuestionPracticeSubmitResponseDto | null>(null);
+  const [wikiPagePracticeLoading, setWikiPagePracticeLoading] = useState(false);
+  const [wikiPracticeAnswers, setWikiPracticeAnswers] = useState<Record<string, string>>({});
   const [weakSkills, setWeakSkills] = useState<Array<{
     skillTag: string;
     topicPath: string;
@@ -583,6 +607,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const { job: audioJob, loading: audioPolling, error: audioError, startPolling: startAudioPolling, setJob: setAudioJob } = useAudioOverviewPolling();
 
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [audioClassroomOpen, setAudioClassroomOpen] = useState(false);
 
   useEffect(() => {
     let currentBlobUrl: string | null = null;
@@ -601,6 +626,8 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     };
   }, [audioJob]);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [audioMode, setAudioMode] = useState<"brief" | "deep_dive" | "critique" | "debate">("brief");
+  const [ttsQuality, setTtsQuality] = useState<"draft" | "standard" | "studio">("standard");
 
   const patchLastAssistantMessage = (patch: Partial<CopilotMessage>) => {
     setMessages((prev) => {
@@ -643,6 +670,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const applyGraphPages = (graph: WikiGraphDto) => {
     const graphPages = graph.pages.map((page) => ({
       id: page.id,
+      topicId: page.topicId,
       title: page.title,
       pageKey: page.pageKey,
       pageType: page.pageType,
@@ -655,6 +683,11 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       curation: page.curation,
       orderIndex: page.orderIndex,
       blockCount: page.blockCount,
+      contentReadiness: page.contentReadiness,
+      hasLearningContent: page.hasLearningContent,
+      visibleBlockCount: page.visibleBlockCount,
+      requiredBlockTypesPresent: page.requiredBlockTypesPresent,
+      learningSystemBinding: page.learningSystemBinding,
     }));
 
     if (graphPages.length > 0) {
@@ -788,6 +821,33 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       .finally(() => setBriefingLoading(false));
   }, [topicId, activePage?.blocks?.length, notebookRefreshTick]);
 
+  useEffect(() => {
+    const pageId = activePage?.id;
+    if (!pageId || pageId.startsWith("orkalm-source-")) {
+      setWikiPageQuestionSet(null);
+      setWikiPagePractice(null);
+      setWikiPagePracticeResult(null);
+      setWikiPracticeAnswers({});
+      return;
+    }
+
+    let cancelled = false;
+    setWikiPageQuestionSet(null);
+    setWikiPagePractice(null);
+    setWikiPagePracticeResult(null);
+    setWikiPracticeAnswers({});
+    WikiAPI.getPageQuestions(pageId, 5)
+      .then((questionSet) => {
+        if (!cancelled) setWikiPageQuestionSet(questionSet);
+      })
+      .catch(() => {
+        if (!cancelled) setWikiPageQuestionSet(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePage?.id]);
+
   const refreshSources = async () => {
     setSourcesLoading(true);
     try {
@@ -853,7 +913,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       const params = {
         topicId,
         sourceId: activeSource?.id,
-        wikiPageId: activePage?.id,
+        wikiPageId: undefined,
       };
       const [result, summary] = await Promise.all([
         SourcesAPI.listQuestionThreads(params),
@@ -924,7 +984,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   }, [topicId, sourceConceptSyncing]);
 
   useEffect(() => {
-    if (!activePage?.id) {
+    if (mode === "orkalm" || !activePage?.id || activePage.id.startsWith("orkalm-source-")) {
       setActivePageSourceLinks(null);
       return;
     }
@@ -939,7 +999,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     return () => {
       cancelled = true;
     };
-  }, [activePage?.id, sourceConceptSyncing]);
+  }, [mode, activePage?.id, sourceConceptSyncing]);
 
   useEffect(() => {
     if (!activePage?.id || activePage.id.startsWith("orkalm-source-")) {
@@ -1000,6 +1060,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
 
   const handleUploadSource = async (file: File | undefined) => {
     if (!file) return;
+    if (mode !== "orkalm") {
+      toast.error("Kaynak yukleme sadece OrkaLM icinde kullanilir.");
+      return;
+    }
     setUploadingSource(true);
     try {
       const uploaded = await SourcesAPI.upload({ topicId, file });
@@ -1023,10 +1087,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     try {
       const result = await SourcesAPI.ask(activeSource.id, sourceQuestion.trim(), {
         topicId,
-        wikiPageId: activePage?.id,
+        wikiPageId: mode === "orkalm" ? undefined : activePage?.id,
         mode: "selected_source",
         includeLearnerContext: true,
-        writeWikiTrace: true,
+        writeWikiTrace: mode !== "orkalm",
       });
       setSourceAnswer(result.answer);
       setSourceQuestionResponse(result);
@@ -1062,10 +1126,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     try {
       const result = await SourcesAPI.askTopicSources(topicId, sourceQuestion.trim(), {
         sourceIds: activeSource ? [activeSource.id] : undefined,
-        wikiPageId: activePage?.id,
+        wikiPageId: mode === "orkalm" ? undefined : activePage?.id,
         mode: activeSource ? "selected_source" : "source_collection",
         includeLearnerContext: true,
-        writeWikiTrace: true,
+        writeWikiTrace: mode !== "orkalm",
       });
       setSourceAnswer(result.answer);
       setSourceQuestionResponse(result);
@@ -1097,8 +1161,8 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         topicId,
         sourceId: activeSource?.id,
         sourceIds: activeSource ? [activeSource.id] : selectedCompareSourceIds,
-        wikiPageId: activePage?.id,
-        conceptKey: activePage?.conceptKey ?? undefined,
+        wikiPageId: mode === "orkalm" ? undefined : activePage?.id,
+        conceptKey: mode === "orkalm" ? undefined : activePage?.conceptKey ?? undefined,
         initialQuestion: sourceQuestion.trim(),
         mode: activeSource ? "selected_source" : "source_collection",
         includeLearnerContext: true,
@@ -1154,6 +1218,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
 
   const handleWriteThreadTrace = async () => {
     if (!activeQuestionThread || threadLoading) return;
+    if (mode === "orkalm") {
+      toast("OrkaLM source Q&A su an Wiki'ye yazilmaz; iki yuzey ayri tutuluyor.");
+      return;
+    }
     setThreadLoading(true);
     try {
       await SourcesAPI.writeQuestionThreadWikiTrace(activeQuestionThread.threadId);
@@ -1185,11 +1253,11 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       const result = await SourcesAPI.compareTopicSources(topicId, {
         topicId,
         sourceIds,
-        wikiPageId: activePage?.id,
-        conceptKey: activePage?.conceptKey ?? undefined,
+        wikiPageId: mode === "orkalm" ? undefined : activePage?.id,
+        conceptKey: mode === "orkalm" ? undefined : activePage?.conceptKey ?? undefined,
         includeConceptLinks: true,
         includeCitationReview: true,
-        writeWikiTrace: true,
+        writeWikiTrace: mode !== "orkalm",
       });
       setSourceCompare(result);
       setCitationReview({
@@ -1228,8 +1296,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         focusChunkId: options?.focusChunkId,
       });
       window.setTimeout(() => {
-        sourceViewerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }, 0);
+        if (sourceViewerRef.current) {
+          sourceViewerRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }, 80);
     } catch {
       toast.error(options?.action?.includes("citation")
         ? "Bu citation kaynak sayfasına bağlanamadı."
@@ -1251,16 +1321,25 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   };
 
   const handleCreateAudioOverview = async () => {
-    const hasAudioContext = sources.some((source) => (source.chunkCount ?? 0) > 0) || pages.length > 0 || messages.length > 0;
+    setAudioJob(null);
+    const isSourceAudio = isOrkaLm && Boolean(activeSource?.id);
+    const hasAudioContext = isSourceAudio || pages.length > 0 || messages.length > 0 || Boolean(wikiContextPageId);
     if (!hasAudioContext) {
       setAudioJob(null);
-      toast("Sesli ders için önce kaynak, wiki notu veya ders sohbeti gerekiyor.", { icon: "ℹ️" });
+      toast("Sesli ders icin once OrkaLM kaynagi, Wiki notu veya ders sohbeti gerekiyor.");
       return;
     }
 
     setAudioLoading(true);
     try {
-      const job = await AudioOverviewAPI.create({ topicId });
+      const job = await AudioOverviewAPI.create({
+        topicId,
+        surface: isSourceAudio ? "orkalm" : "wiki",
+        sourceId: isSourceAudio ? activeSource?.id : undefined,
+        wikiPageId: isSourceAudio ? undefined : wikiContextPageId ?? undefined,
+        audioMode,
+        ttsQuality,
+      });
       setAudioJob(job);
       if (job.status === "ready" || job.status === "completed") {
         toast.success("Sesli özet hazırlandı.");
@@ -1316,8 +1395,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     }
   };
 
-  const handleCitationClick = (kind: "doc" | "wiki" | "web" | "external", ref: string) => {
+  const handleCitationClick = async (kind: "doc" | "wiki" | "web" | "external", ref: string) => {
     recordWikiAction("citation-clicked", `${kind}:${ref}`, { citationKind: kind, ref });
+    if (kind === "doc") {
+      const parts = ref.split(":");
+      const sourceId = parts[0];
+      const page = parseInt(parts[1] || "1", 10);
+      if (sourceId && !isNaN(page)) {
+        await openSourcePage(sourceId, page, { action: "rich-markdown-citation-navigated" });
+      }
+    }
   };
 
   const handleCitationChipClick = async (citation: CitationDto) => {
@@ -1418,7 +1505,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         confirmedLinkCount: result.confirmedLinkCount,
         suggestedLinkCount: result.suggestedLinkCount,
       });
-      toast.success(result.confirmedLinkCount > 0 ? "Kaynak-kavram baglari guncellendi." : "Oneri baglari hazirlandi.");
+      toast.success("OrkaLM kaynak-kavram onerileri hazirlandi.");
     } catch {
       toast.error("Kaynak-kavram baglari guncellenemedi.");
     } finally {
@@ -1501,8 +1588,13 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         sourceReadiness: page.sourceReadiness ?? "evidence_insufficient",
         evidenceStatus: page.evidenceStatus ?? "evidence_insufficient",
         safeSummary: page.safeSummary,
+        contentReadiness: page.contentReadiness ?? (page.blocks?.length ? "ready" : "skeleton"),
+        hasLearningContent: page.hasLearningContent ?? Boolean(page.blocks?.length),
+        visibleBlockCount: page.visibleBlockCount ?? page.blockCount ?? page.blocks?.length ?? 0,
+        requiredBlockTypesPresent: page.requiredBlockTypesPresent ?? Boolean(page.safeSummary || page.blocks?.length),
         orderIndex: page.orderIndex ?? 0,
         blockCount: page.blockCount ?? page.blocks?.length ?? 0,
+        learningSystemBinding: page.learningSystemBinding ?? null,
         updatedAt: "",
       });
     }
@@ -1581,10 +1673,62 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     sourceQuality?.citationCoverageStatus === "degraded" ||
     (sourceQuality?.emptyRunCount ?? 0) > 0 ||
     ((sourceQuality?.unsupportedCitationCount ?? 0) + (sourceQuality?.citationMissingCount ?? 0)) > 0;
+  const pagePracticeReadyCount = wikiPageQuestionSet?.questions?.length ?? wikiPagePractice?.questions?.length ?? 0;
+
+  const handleStartWikiPagePractice = async () => {
+    if (!activePage?.id || wikiPagePracticeLoading) return;
+    setWikiPagePracticeLoading(true);
+    setWikiPagePracticeResult(null);
+    setWikiPracticeAnswers({});
+    try {
+      const session = await WikiAPI.startPagePractice(activePage.id, {
+        count: 5,
+        mode: "wiki_page_practice",
+      });
+      setWikiPagePractice(session);
+      if (session.status === "ready" && session.questions.length > 0) {
+        toast.success(`${session.questions.length} wiki pratiği hazır.`);
+      } else {
+        toast("Bu wiki sayfası için henüz practice-ready soru yok.", { icon: "ℹ️" });
+      }
+    } catch {
+      toast.error("Wiki pratiği başlatılamadı.");
+    } finally {
+      setWikiPagePracticeLoading(false);
+    }
+  };
+
+  const handleSubmitWikiPagePractice = async () => {
+    if (!wikiPagePractice || wikiPagePractice.questions.length === 0 || wikiPagePracticeLoading) return;
+    setWikiPagePracticeLoading(true);
+    try {
+      const result = await QuestionPracticeAPI.submit({
+        practiceSetId: wikiPagePractice.practiceSetId,
+        topicId: wikiPagePractice.topicId ?? activePage?.topicId ?? topicId,
+        mode: wikiPagePractice.mode,
+        answers: wikiPagePractice.questions.map((question) => {
+          const selected = wikiPracticeAnswers[question.questionItemId];
+          return {
+            questionItemId: question.questionItemId,
+            selectedOptionKey: selected ?? null,
+            wasSkipped: !selected,
+          };
+        }),
+      });
+      setWikiPagePracticeResult(result);
+      toast.success("Wiki pratiği kaydedildi.");
+    } catch {
+      toast.error("Wiki pratiği kaydedilemedi.");
+    } finally {
+      setWikiPagePracticeLoading(false);
+    }
+  };
+
   const wikiStudyPackItems = useMemo(
     () => buildWikiStudyPackItems({
       hasBriefing: !!briefing,
       isBriefingLoading: briefingLoading,
+      pagePracticeReadyCount,
       glossaryCount: glossary.length,
       studyCardCount: studyCards.length,
       recommendationCount: recommendations.length,
@@ -1599,6 +1743,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       briefingLoading,
       glossary.length,
       hasSourceQualityConcern,
+      pagePracticeReadyCount,
       recommendations.length,
       sourceGraph.readySources,
       sourceGraph.totalChunks,
@@ -1720,9 +1865,20 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
 
   // ─── Render ──────────────────────────────────────────────
   const isOrkaLm = mode === "orkalm";
+  const wikiContextPageId = !isOrkaLm && activePage?.id && !activePage.id.startsWith("orkalm-source-")
+    ? activePage.id
+    : undefined;
+  const notebookSurface: "wiki_page" | "source_notebook" | "milestone" = isOrkaLm
+    ? "source_notebook"
+    : activePage
+    ? "wiki_page"
+    : "milestone";
   const HeaderIcon = isOrkaLm ? Network : BookOpen;
   const surfaceBreadcrumb = isOrkaLm ? "OrkaLM Notebook" : "Mufredat Haritasi";
   const surfaceTitle = isOrkaLm ? "OrkaLM" : (activePage?.title || "Wiki");
+  const visibleSurfaceSubtitle = isOrkaLm
+    ? "PDF, TXT ve MD kaynaklarını yükle; kaynak grafiği, kanıt paneli, özet, terimler, zihin haritası, UML, quiz, flashcard ve slayt taslağını aynı kaynak merkezinde çalıştır."
+    : null;
   const surfaceSubtitle = isOrkaLm
     ? "PDF, TXT ve MD kaynaklarını yükle; kaynak grafiği, kanıt paneli, özet, terimler, zihin haritası ve sesli ders akışını aynı kaynak merkezinde çalıştır."
     : null;
@@ -1751,9 +1907,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
               <HeaderIcon className="w-5 h-5 text-[#667085]" />
               <span>{surfaceTitle}</span>
             </h3>
-            {surfaceSubtitle && (
+            {(visibleSurfaceSubtitle || surfaceSubtitle) && (
               <p className="max-w-3xl text-xs leading-relaxed text-[#667085]">
-                {surfaceSubtitle}
+                {visibleSurfaceSubtitle || surfaceSubtitle}
               </p>
             )}
           </div>
@@ -2105,7 +2261,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                   onClick={() => source && selectGraphPage(source)}
                                   className="w-full rounded-lg border border-[#526d82]/10 bg-white/66 px-2.5 py-2 text-left text-[11px] transition hover:border-[#9ec7d9]/45"
                                 >
-                                  <span className="block truncate font-black text-[#344054]">{source?.title ?? userSafeStatus(link.targetPageKey)}</span>
+                                  <span className="block truncate font-black text-[#344054]">{source?.title ?? userSafeStatus(link.sourcePageId)}</span>
                                   <span className="mt-0.5 block truncate font-semibold text-[#667085]">{userSafeStatus(link.linkType)} - {link.safeLabel}</span>
                                 </button>
                               );
@@ -2196,6 +2352,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                   )}
                   <span className="rounded-full border border-[#8fb7a2]/22 bg-[#f2faf5]/80 px-2.5 py-1 text-[10px] font-bold text-[#47725d]">
                     {userSafeStatus(activeGraphPage?.sourceReadiness ?? activePage.sourceReadiness ?? "evidence_insufficient")}
+                  </span>
+                  <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.contentReadiness ?? activePage.contentReadiness)}`}>
+                    {userSafeStatus(activeGraphPage?.contentReadiness ?? activePage.contentReadiness ?? "skeleton")}
+                  </span>
+                  <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone(activeGraphPage?.learningSystemBinding?.readiness ?? activePage.learningSystemBinding?.readiness)}`}>
+                    {userSafeStatus(activeGraphPage?.learningSystemBinding?.readiness ?? activePage.learningSystemBinding?.readiness ?? "unbound")}
                   </span>
                   <span className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#667085]">
                     {activeGraphPage?.blockCount ?? activePage.blockCount ?? activePage.blocks?.length ?? 0} blok
@@ -2303,6 +2465,119 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
               </div>
 
               {/* NotebookLM-tarzı Briefing Document — wiki üst kısmında "okumadan önce göz at" özet */}
+              <div id="wiki-study-practice" className="mb-8 scroll-mt-6 rounded-xl border border-[#8fb7a2]/24 bg-[#f2faf5]/62 overflow-hidden">
+                <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#8fb7a2]/18">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-[#47725d]" />
+                    <span className="text-xs font-semibold uppercase tracking-widest text-[#47725d]">
+                      Sayfa Pratigi
+                    </span>
+                  </div>
+                  <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${pageBadgeTone(wikiPageQuestionSet?.status ?? wikiPagePractice?.status ?? "empty")}`}>
+                    {wikiPageQuestionSet?.totalQuestions ?? wikiPagePractice?.totalQuestions ?? 0} soru
+                  </span>
+                </div>
+                <div className="px-5 py-4">
+                  {!wikiPageQuestionSet && !wikiPagePractice ? (
+                    <p className="text-sm text-[#667085]">
+                      Bu sayfaya bagli practice-ready soru henuz gorunmuyor. Plan/quiz sinyali geldikce burada cozumlenebilir sorular acilir.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-black text-[#172033]">
+                            {wikiPagePractice?.status === "ready" ? "Mini pratik hazir" : "Bu sayfaya bagli soru havuzu hazir"}
+                          </div>
+                          <div className="mt-1 text-xs leading-5 text-[#667085]">
+                            Concept: {wikiPageQuestionSet?.conceptKey ?? activePage.conceptKey ?? "page scope"} / KG-bound practice akisi
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStartWikiPagePractice}
+                          disabled={wikiPagePracticeLoading}
+                          className="inline-flex items-center gap-2 rounded-xl border border-[#8fb7a2]/28 bg-white/78 px-3 py-2 text-xs font-black text-[#172033] transition hover:bg-white disabled:opacity-60"
+                        >
+                          {wikiPagePracticeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 text-[#47725d]" />}
+                          Pratigi baslat
+                        </button>
+                      </div>
+
+                      {wikiPagePractice?.questions?.length ? (
+                        <div className="space-y-3">
+                          {wikiPagePractice.questions.slice(0, 5).map((question, index) => (
+                            <div key={question.questionItemId} className="rounded-xl border border-[#526d82]/12 bg-white/72 p-3">
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-[#f7f9fa] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+                                  {index + 1}
+                                </span>
+                                <span className="rounded-full border border-sky-500/16 bg-sky-500/8 px-2 py-0.5 text-[10px] font-bold text-[#52768a]">
+                                  {question.conceptKey ?? "concept"}
+                                </span>
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${pageBadgeTone(question.difficulty)}`}>
+                                  {userSafeStatus(question.difficulty)}
+                                </span>
+                              </div>
+                              <div className="text-sm font-bold leading-6 text-[#172033]">{question.stem}</div>
+                              <div className="mt-3 grid gap-2">
+                                {question.options.map((option) => (
+                                  <label
+                                    key={option.optionKey}
+                                    className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition ${
+                                      wikiPracticeAnswers[question.questionItemId] === option.optionKey
+                                        ? "border-[#8fb7a2]/40 bg-[#f2faf5] text-[#172033]"
+                                        : "border-[#526d82]/12 bg-[#f7f9fa]/62 text-[#344054] hover:bg-white"
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      className="mt-1"
+                                      name={`wiki-practice-${question.questionItemId}`}
+                                      checked={wikiPracticeAnswers[question.questionItemId] === option.optionKey}
+                                      onChange={() => setWikiPracticeAnswers((prev) => ({ ...prev, [question.questionItemId]: option.optionKey }))}
+                                    />
+                                    <span>{option.text}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="text-xs font-semibold text-[#667085]">
+                              Bos birakilanlar skip olarak kaydedilir; tutor bunu eksik kanit olarak gorur.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleSubmitWikiPagePractice}
+                              disabled={wikiPagePracticeLoading}
+                              className="inline-flex items-center gap-2 rounded-xl bg-[#172033] px-4 py-2 text-xs font-black text-white transition hover:bg-[#344054] disabled:opacity-60"
+                            >
+                              {wikiPagePracticeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                              Kaydet
+                            </button>
+                          </div>
+                          {wikiPagePracticeResult && (
+                            <div className="rounded-xl border border-[#526d82]/12 bg-white/74 px-3 py-3">
+                              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                <div><span className="block text-[#98a2b3]">Toplam</span><b>{wikiPagePracticeResult.totalQuestions}</b></div>
+                                <div><span className="block text-[#98a2b3]">Dogru</span><b>{wikiPagePracticeResult.correctCount}</b></div>
+                                <div><span className="block text-[#98a2b3]">Yanlis</span><b>{wikiPagePracticeResult.wrongCount}</b></div>
+                                <div><span className="block text-[#98a2b3]">Bos</span><b>{wikiPagePracticeResult.blankCount}</b></div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-[#526d82]/12 bg-white/64 px-3 py-3 text-sm text-[#667085]">
+                          {wikiPageQuestionSet?.emptyState || "Soru havuzu bulundu ama pratik oturumu henuz baslatilmadi."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {(briefing || briefingLoading) && (
                 <div id="wiki-study-briefing" className="mb-8 scroll-mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
                   <div className="px-5 py-3 flex items-center gap-2 border-b border-emerald-500/15">
@@ -2456,7 +2731,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       <button
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadingSource}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs transition disabled:opacity-50"
+                        className={isOrkaLm ? "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs transition disabled:opacity-50" : "hidden"}
                       >
                         {uploadingSource ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                         {isOrkaLm ? "PDF / Kaynak Yükle" : "Kaynak Yükle"}
@@ -2476,7 +2751,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       tone={sourceCoverageCoach.tone}
                       actionLabel={sourceCoverageCoach.actionLabel}
                       onAction={() => {
-                        if (sources.length === 0 || sourceCoverageCoach.actionLabel === "Kaynak ekle") {
+                        if (isOrkaLm && (sources.length === 0 || sourceCoverageCoach.actionLabel === "Kaynak ekle")) {
                           fileInputRef.current?.click();
                         } else if (sourceCoverageCoach.actionLabel === "Kaynakları yenile") {
                           void refreshSources();
@@ -2491,7 +2766,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                           <div>
                             <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#52768a]">Learning workspace</div>
                             <p className="mt-1 text-[11px] text-[#667085]">
-                              Wiki, kaynak ve artifact durumu ayni konu baglaminda izlenir.
+                              {isOrkaLm
+                                ? "OrkaLM kaynak, citation ve source artifact durumunu kendi icinde izler."
+                                : "Wiki sayfa, kavram ve Wiki artifact durumunu kendi icinde izler."}
                             </p>
                           </div>
                           {workspaceState.sourceReadiness && (
@@ -2551,7 +2828,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                             </span>
                           ))}
                         </div>
-                        {(activeSourceNotebook ?? sourceNotebook).linkedWikiPages.length > 0 && (
+                        {!isOrkaLm && (activeSourceNotebook ?? sourceNotebook).linkedWikiPages.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold text-[#667085]">
                             {(activeSourceNotebook ?? sourceNotebook).linkedWikiPages.slice(0, 4).map((page) => (
                               <span key={page.id} className="rounded-full bg-white/60 px-2 py-0.5">
@@ -2575,7 +2852,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                 disabled={sourceConceptSyncing}
                                 className="rounded-full border border-[#526d82]/15 bg-[#f7f9fa] px-2.5 py-1 text-[10px] font-black text-[#172033] transition hover:border-[#526d82]/30 disabled:opacity-60"
                               >
-                                {sourceConceptSyncing ? "Sync..." : "Link sync"}
+                                {sourceConceptSyncing ? "Hazirlaniyor..." : "Oneri grafigi"}
                               </button>
                             </div>
                             {sourceConceptLinks?.warnings?.length ? (
@@ -2601,7 +2878,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                               </div>
                             ) : (
                               <p className="mt-2 text-[11px] font-semibold text-[#667085]">
-                                Bu kaynak icin concept baglari henuz sync edilmedi.
+                                Bu kaynak icin OrkaLM concept onerileri henuz hazirlanmadi.
                               </p>
                             )}
                           </div>
@@ -2611,8 +2888,8 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                     {!sourcesLoading && sources.length === 0 && (
                       <p className="text-sm text-[#667085]">
                         {isOrkaLm
-                          ? "PDF, TXT veya MD yukle. OrkaLM bu kaynaklardan kanit, ozet, terim, zihin haritasi, pekistirme karti ve sesli ders yuzeyi uretir."
-                          : "Bu konuya PDF, TXT veya MD yükleyerek belgeyle sohbeti başlatabilirsin."}
+                          ? "PDF, TXT veya MD yukle. OrkaLM bu kaynaklardan kanit, ozet, terim, zihin haritasi, UML, quiz, flashcard ve slayt taslagi uretir."
+                          : "Wiki burada kaynak yukletmez; bu yuzeyde Wiki sayfasi, kavram, pratik, graph, template ve export preview ozellikleri kullanilir."}
                       </p>
                     )}
                     {sources.length > 0 && (
@@ -2822,7 +3099,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         )}
                       </div>
                     )}
-                    {activeSource && (
+                    {isOrkaLm && activeSource && (
                       <div className="pt-3 border-t border-[#526d82]/15 space-y-3">
                         <div className="flex items-center justify-between gap-2 rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/58 px-3 py-2">
                           <div className="min-w-0">
@@ -2933,14 +3210,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                                 >
                                   Mark needs review
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={handleWriteThreadTrace}
-                                  disabled={!activeQuestionThread || threadLoading}
-                                  className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#344054] disabled:opacity-40"
-                                >
-                                  Write to Wiki
-                                </button>
+                                {!isOrkaLm && (
+                                  <button
+                                    type="button"
+                                    onClick={handleWriteThreadTrace}
+                                    disabled={!activeQuestionThread || threadLoading}
+                                    className="rounded-full border border-[#526d82]/14 bg-[#f7f9fa]/70 px-2.5 py-1 text-[10px] font-bold text-[#344054] disabled:opacity-40"
+                                  >
+                                    Write to Wiki
+                                  </button>
+                                )}
                               </div>
                             </div>
                             {sourceQuestionThreads.length > 0 && (
@@ -3239,9 +3518,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                   <div id="wiki-notebook-studio" className="scroll-mt-6">
                     <NotebookStudioPanel
                       topicId={topicId}
-                      wikiPageId={isOrkaLm ? undefined : activePage?.id}
-                      wikiPageTitle={isOrkaLm ? undefined : activePage?.title}
-                      surface={isOrkaLm && activeSource ? "source_notebook" : activePage ? "wiki_page" : "milestone"}
+                      wikiPageId={wikiContextPageId}
+                      wikiPageTitle={wikiContextPageId ? activePage?.title : undefined}
+                      surface={notebookSurface}
                       sourceId={isOrkaLm ? activeSource?.id : undefined}
                       sourceTitle={isOrkaLm ? activeSource?.title || activeSource?.fileName : undefined}
                       sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
@@ -3253,10 +3532,11 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       <div className="flex items-center gap-2">
                         <Headphones className="w-4 h-4 text-sky-400" />
                         <span className="text-xs font-semibold uppercase tracking-widest text-[#344054]">
-                          AI Sesli Ders
+                          Sesli Ders
                         </span>
                       </div>
                       <button
+                        data-testid="audio-overview-create"
                         onClick={handleCreateAudioOverview}
                         disabled={audioLoading || audioPolling}
                         className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 text-sky-300 transition disabled:opacity-50"
@@ -3264,10 +3544,63 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         {audioLoading ? "Hazırlanıyor..." : audioPolling ? "Ses üretiliyor..." : "Sesli Özet"}
                       </button>
                     </div>
+                    <div className="mb-3 space-y-2 rounded-xl border border-[#526d82]/12 bg-white/55 px-3 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          ["brief", "Brief"],
+                          ["deep_dive", "Deep dive"],
+                          ["critique", "Critique"],
+                          ["debate", "Debate"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setAudioMode(value as "brief" | "deep_dive" | "critique" | "debate")}
+                            className={
+                              audioMode === value
+                                ? "rounded-lg border border-sky-500/30 bg-sky-500/15 px-2.5 py-1 text-[11px] font-black text-[#2d5870]"
+                                : "rounded-lg border border-[#526d82]/12 bg-white/60 px-2.5 py-1 text-[11px] font-bold text-[#667085] transition hover:text-[#172033]"
+                            }
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          ["draft", "Draft"],
+                          ["standard", "Standard"],
+                          ["studio", "Studio"],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setTtsQuality(value as "draft" | "standard" | "studio")}
+                            className={
+                              ttsQuality === value
+                                ? "rounded-lg border border-emerald-500/28 bg-emerald-500/12 px-2.5 py-1 text-[11px] font-black text-[#47725d]"
+                                : "rounded-lg border border-[#526d82]/12 bg-white/60 px-2.5 py-1 text-[11px] font-bold text-[#667085] transition hover:text-[#172033]"
+                            }
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     {audioJob ? (
                       <div className="space-y-3">
                         {(audioJob.status === "ready" || audioJob.status === "completed") && !audioJob.errorMessage ? (
-                          <audio controls preload="auto" src={audioBlobUrl || ""} className="w-full" />
+                          <audio controls preload="auto" src={audioBlobUrl || ""} className="w-full">
+                            {audioJob.captionTrack && (
+                              <track
+                                kind="captions"
+                                srcLang="tr"
+                                label="Turkce"
+                                src={`data:text/vtt;charset=utf-8,${encodeURIComponent(audioJob.captionTrack)}`}
+                                default
+                              />
+                            )}
+                          </audio>
                         ) : audioPolling ? (
                           <div className="flex items-center gap-2 rounded-xl border border-sky-500/20 bg-sky-500/8 px-3 py-2 text-xs font-semibold leading-5 text-sky-300">
                             <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -3275,7 +3608,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                           </div>
                         ) : (
                           <div className="rounded-xl border border-amber-500/20 bg-[#fff8ee]/80 px-3 py-2 text-xs font-semibold leading-5 text-[#8a641f]">
-                            Ses dosyası hazır değil. Orka metin akışını gösteriyor; bu canlı sınıf ya da üretilmiş ses gibi sunulmaz.
+                            Ses dosyası hazır değil. Orka metin akışını gösteriyor; bu sesli çalışma odası ya da üretilmiş ses gibi sunulmaz.
                             {audioJob.errorMessage && <span className="mt-1 block font-medium">{audioJob.errorMessage}</span>}
                             {audioError && <span className="mt-1 block font-medium">{audioError}</span>}
                           </div>
@@ -3283,15 +3616,48 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                         <div className="text-[11px] text-[#667085]">
                           Konuşmacılar: {audioJob.speakers.join(", ") || "HOCA"}
                         </div>
+                        <div className="flex flex-wrap gap-1.5 text-[10px] font-bold text-[#667085]">
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/60 px-2 py-0.5">{audioJob.surface ?? "wiki"}</span>
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/60 px-2 py-0.5">{audioJob.contextType ?? "wiki_page"}</span>
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/60 px-2 py-0.5">{audioJob.audioMode ?? "brief"}</span>
+                          <span className="rounded-full border border-[#526d82]/14 bg-white/60 px-2 py-0.5">{audioJob.captionTrack ? "caption ready" : "caption fallback"}</span>
+                        </div>
+                        <button
+                          data-testid="audio-study-room-open"
+                          type="button"
+                          onClick={() => setAudioClassroomOpen(true)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/18"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          Sesli calisma odasinda sor
+                        </button>
+                        {audioClassroomOpen && (
+                          <ClassroomAudioPlayer
+                            text={audioJob.script}
+                            topicId={topicId}
+                            audioOverviewJobId={audioJob.id}
+                            surface={audioJob.surface ?? (isOrkaLm ? "orkalm" : "wiki")}
+                            wikiPageId={(audioJob.surface ?? (isOrkaLm ? "orkalm" : "wiki")) === "wiki" ? audioJob.wikiPageId ?? wikiContextPageId : undefined}
+                            sourceId={(audioJob.surface ?? (isOrkaLm ? "orkalm" : "wiki")) === "orkalm" ? audioJob.sourceId ?? activeSource?.id : undefined}
+                            audioMode={audioJob.audioMode ?? "brief"}
+                            captionTrack={audioJob.captionTrack}
+                            onClose={() => setAudioClassroomOpen(false)}
+                          />
+                        )}
                         <RichMarkdown
                           content={audioJob.script}
                           className="prose prose-invert prose-xs max-w-none text-xs prose-p:my-1 prose-p:text-[#667085]"
                         />
                       </div>
                     ) : (
+                      <>
                       <p className="text-sm text-[#667085]">
+                        Wiki veya OrkaLM contextinden transcript, caption fallback ve Edge-TTS destekli sesli ozet hazirlar.
+                      </p>
+                      <p className="hidden">
                         Wiki ve kaynaklardan 2-3 kişilik podcast metni ve oynatılabilir backend ses akışı üretir.
                       </p>
+                      </>
                     )}
                   </div>
 

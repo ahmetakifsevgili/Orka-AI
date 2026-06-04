@@ -86,7 +86,8 @@ export default function Home() {
   // Initial view — localStorage'da geçerli bir kayıt varsa onu yükle
   const [activeView, setActiveView] = useState<string>(() => {
     const saved = localStorage.getItem(LS_ACTIVE_VIEW);
-    return saved && VALID_VIEWS.has(saved) ? saved : "dashboard";
+    if (saved === "dashboard") return "home";
+    return saved && VALID_VIEWS.has(saved) ? saved : "home";
   });
   const [wikiTopicId, setWikiTopicId] = useState<string | null>(
     () => localStorage.getItem(LS_WIKI_TOPIC_ID)
@@ -243,6 +244,8 @@ export default function Home() {
   const handleTopicCreated = useCallback((topic: ApiTopic) => {
     setTopics((prev) => [topic, ...prev]);
     setActiveTopic(topic);
+    setSessionId(null);
+    setMessages([]);
     setActiveView("chat");
     toast.success(`"${topic.title}" oluşturuldu`);
   }, []);
@@ -255,6 +258,8 @@ export default function Home() {
   // ── Backend yeni topic oluşturduysa (null-topic modu) sidebar'ı kur ───
   const handleTopicAutoCreated = useCallback((newTopicId: string) => {
     ignoreTopicChangeRef.current = true;
+    setSessionId(null);
+    setMessages([]);
     setRefreshTrigger((n) => n + 1);
     TopicsAPI.getAll()
       .then((r) => {
@@ -435,8 +440,24 @@ export default function Home() {
         );
       case "tutor":
       case "chat":
-        // explicitly handle tutor/chat as standard ChatPanel
-        break;
+        return (
+          <ChatPanel
+            activeTopic={activeTopic}
+            sessionId={sessionId}
+            onSessionStart={setSessionId}
+            messages={messages}
+            setMessages={setMessages}
+            sessionLoading={sessionLoading}
+            onOpenWiki={handleOpenWiki}
+            onTopicsRefresh={handleTopicsRefresh}
+            onTopicAutoCreated={handleTopicAutoCreated}
+            currentSubtopic={currentSubtopic}
+            defaultMode={defaultChatMode}
+            pendingMessage={pendingIDEMessage}
+            onPendingMessageConsumed={() => setPendingIDEMessage(null)}
+            onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
+          />
+        );
       case "ide": {
         return (
           <SplitPane
