@@ -262,6 +262,44 @@ public sealed class DataLifecycleTests
         Assert.False(await db.Topics.AnyAsync(t => ids.DeletedTopicIds.Contains(t.Id)));
     }
 
+    [Fact]
+    public async Task ExportData_IncludesHighRiskPiiFamiliesAndRetentionPolicy()
+    {
+        using var factory = new ApiSmokeFactory();
+        var userA = await RegisterAuthenticatedClientAsync(factory);
+        var userB = await RegisterAuthenticatedClientAsync(factory);
+        await SeedLifecycleGraphAsync(factory, userA.UserId, userB.UserId);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            await SeedLifecycleGraphCoreAsync(db, userA.UserId, userB.UserId);
+        }
+
+        var response = await userA.Client.GetAsync("/api/user/export");
+
+        response.EnsureSuccessStatusCode();
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = doc.RootElement;
+        Assert.True(root.TryGetProperty("messages", out var messages));
+        Assert.True(root.TryGetProperty("sourceChunks", out var sourceChunks));
+        Assert.True(root.TryGetProperty("wikiBlocks", out var wikiBlocks));
+        Assert.True(root.TryGetProperty("learningSignals", out var learningSignals));
+        Assert.True(root.TryGetProperty("tutorMemory", out var tutorMemory));
+        Assert.True(root.TryGetProperty("tutorWorkingMemory", out var tutorWorkingMemory));
+        Assert.True(root.TryGetProperty("providerEvidence", out var providerEvidence));
+        Assert.True(root.TryGetProperty("retentionPolicy", out var retentionPolicy));
+
+        Assert.Equal(JsonValueKind.Array, messages.ValueKind);
+        Assert.Equal(JsonValueKind.Array, sourceChunks.ValueKind);
+        Assert.Equal(JsonValueKind.Array, wikiBlocks.ValueKind);
+        Assert.Equal(JsonValueKind.Array, learningSignals.ValueKind);
+        Assert.Equal(JsonValueKind.Array, tutorMemory.ValueKind);
+        Assert.Equal(JsonValueKind.Array, tutorWorkingMemory.ValueKind);
+        Assert.Equal(JsonValueKind.Array, providerEvidence.ValueKind);
+        Assert.Equal("raw_vectors_not_exported_deleted_with_source_chunks", retentionPolicy.GetProperty("embeddings").GetString());
+        Assert.Equal("time_limited_retention_policy", retentionPolicy.GetProperty("audioBytes").GetString());
+    }
+
     private static async Task<TestUser> RegisterAuthenticatedClientAsync(ApiSmokeFactory factory)
     {
         var client = factory.CreateClient();
@@ -704,6 +742,9 @@ public sealed class DataLifecycleTests
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 
     private sealed class FailingPurgeRedisMemoryService : LifecycleRedisMemoryService, IRedisMemoryService

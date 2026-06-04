@@ -117,24 +117,56 @@ public sealed class TutorPedagogyRubricService : ITutorPedagogyRubricService
     {
         var score = 0.55m;
         if (turn.MasteryProbability.HasValue || turn.Confidence.HasValue) score += 0.12m;
+        if (turn.RemediationNeed is "high" or "medium" && ContainsAny(answer,
+            "diagnostic", "mistake", "stuck", "confusion", "you mixed", "your weak",
+            "telafi", "yanilgi", "yanlış", "karistir")) score += 0.14m;
+        if (turn.RecentMistakes.Count > 0 && ContainsAny(answer,
+            "integration by parts", "u-substitution", "definite integral", "fundamental theorem",
+            "diagnostic signals", "recent mistakes", "zayif", "eksik")) score += 0.10m;
         if (!string.IsNullOrWhiteSpace(turn.AffectiveState) && turn.AffectiveState != "neutral") score += 0.12m;
-        if (turn.CognitiveLoad is "high" or "low") score += ContainsAny(answer, "kısa", "adım", "yavaş", "parça") ? 0.12m : -0.10m;
-        if (turn.StyleMode == "visual" && ContainsAny(answer, "diyagram", "şema", "görsel", "graf")) score += 0.09m;
+        if (turn.CognitiveLoad is "high" or "low") score += ContainsAny(answer, "short", "step", "slow", "piece", "kisa", "adim", "yavas", "parca") ? 0.12m : -0.10m;
+        if (turn.StyleMode == "visual" && ContainsAny(answer, "diagram", "schema", "visual", "graph", "diyagram", "sema", "gorsel", "graf")) score += 0.09m;
         return Math.Clamp(score, 0m, 1m);
     }
 
     private static decimal MisconceptionRepairScore(TutorTurnStateDto turn, string answer)
     {
         if (turn.RecentMistakes.Count == 0 && turn.RemediationNeed is not "high" and not "medium") return 0.85m;
-        return ContainsAny(answer, "yanlış", "karıştır", "düzelt", "hata", "karşı örnek", "örnek") ? 0.82m : 0.45m;
+        var namesGap = !string.IsNullOrWhiteSpace(turn.ActiveConceptKey) &&
+            answer.Contains(turn.ActiveConceptKey.Replace('-', ' '), StringComparison.OrdinalIgnoreCase);
+        var hasRepairLanguage = ContainsAny(answer,
+            "mistake", "confusion", "misconception", "repair", "fix", "instead", "not", "counterexample", "worked example",
+            "yanlis", "karistir", "duzelt", "hata", "ornek");
+        return namesGap && hasRepairLanguage ? 0.88m : hasRepairLanguage ? 0.72m : 0.45m;
     }
-
     private static decimal MicroCheckScore(TutorActionPlanDto plan, TutorReflectionUpdateDto? reflection, string answer)
     {
         var needsCheck = plan.TeachingMode is "remediate" or "guided_practice" or "diagnose";
         if (!needsCheck) return 0.85m;
-        if (reflection?.MicroCheckAsked == true) return 0.90m;
+        var hasConceptualCheck = HasConceptualMicroCheck(plan, answer);
+        if (reflection?.MicroCheckAsked == true && hasConceptualCheck) return 0.90m;
+        if (!hasConceptualCheck) return 0.40m;
         return answer.Contains('?') || ContainsAny(answer, "kontrol", "özetler misin", "dener misin") ? 0.80m : 0.40m;
+    }
+
+    private static bool HasConceptualMicroCheck(TutorActionPlanDto plan, string answer)
+    {
+        if (!answer.Contains('?')) return false;
+
+        var normalized = Normalize(answer);
+        var asksLearnerToAct = ContainsAny(normalized,
+            "kendi cumlen", "kendi cümlen", "ornekle", "örnekle", "dener misin", "deneyelim",
+            "mikro kontrol", "kontrol sorusu", "tek adim", "tek adım", "hangi adim", "hangi adım",
+            "ne olur", "neden", "aciklar misin", "açıklar mısın", "explain back", "try one");
+        var genericOnly = ContainsAny(normalized, "anladin mi", "anladın mı", "tamam mi", "tamam mı") &&
+                          !asksLearnerToAct;
+        if (genericOnly) return false;
+
+        var concept = Normalize(plan.ActiveConceptKey);
+        var conceptReferenced = string.IsNullOrWhiteSpace(concept) ||
+            normalized.Contains(concept.Replace('-', ' '), StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains(concept, StringComparison.OrdinalIgnoreCase);
+        return asksLearnerToAct && conceptReferenced;
     }
 
     private static decimal GroundingScore(TutorTurnStateDto turn, TutorReflectionUpdateDto? reflection, string answer)
@@ -184,7 +216,7 @@ public sealed class TutorPedagogyRubricService : ITutorPedagogyRubricService
 public sealed class TutorPedagogyQualityGate : ITutorPedagogyQualityGate
 {
     public bool RequiresRepair(TutorPedagogyEvaluationRunDto evaluation)
-        => evaluation.HasCriticalViolation || evaluation.OverallScore < 0.60m;
+        => evaluation.HasCriticalViolation || evaluation.OverallScore < 0.80m || evaluation.RubricScores.Any(s => s.Score < 0.60m);
 
     public string BuildRepairPrompt(
         TutorPedagogyEvaluationRunDto evaluation,
@@ -375,7 +407,7 @@ public sealed class TutorPedagogyEvaluationService : ITutorPedagogyEvaluationSer
         }
 
         var criticalCount = scores.Count(s => s.IsCritical);
-        var warningCount = scores.Count(s => !s.IsCritical && s.Score < 0.80m);
+        var warningCount = scores.Count(s => !s.IsCritical && s.Score < 0.60m);
         var average = scores.Count == 0 ? 0m : Math.Round(scores.Average(s => s.Score), 4);
         var status = criticalCount > 0 || average < 0.60m
             ? "degraded"

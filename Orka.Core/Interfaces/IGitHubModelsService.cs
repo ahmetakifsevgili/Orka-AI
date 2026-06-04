@@ -12,12 +12,14 @@ public interface IGitHubModelsService
         string systemPrompt,
         string userMessage,
         string model,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        int? maxOutputTokens = null);
 
     /// <summary>Streaming chat — token token IAsyncEnumerable olarak akar.</summary>
     IAsyncEnumerable<string> ChatStreamAsync(
         string systemPrompt,
         string userMessage,
         string model,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        int? maxOutputTokens = null);
 }

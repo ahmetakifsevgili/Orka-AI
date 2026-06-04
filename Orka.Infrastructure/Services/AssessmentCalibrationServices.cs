@@ -24,6 +24,11 @@ public sealed class AssessmentCalibrationService : IAssessmentCalibrationService
 
     public async Task<AssessmentCalibrationRunDto> RunAsync(Guid userId, Guid? topicId, CancellationToken ct = default)
     {
+        if (topicId.HasValue && !await _db.Topics.AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct))
+        {
+            throw new InvalidOperationException("Assessment calibration topic was not found for the user.");
+        }
+
         var latestSnapshot = await _db.ConceptGraphSnapshots
             .AsNoTracking()
             .Where(s => s.UserId == userId && (!topicId.HasValue || s.TopicId == topicId.Value))
@@ -121,6 +126,11 @@ public sealed class AssessmentCalibrationService : IAssessmentCalibrationService
 
     public async Task<AssessmentCalibrationRunDto?> GetLatestAsync(Guid userId, Guid? topicId, CancellationToken ct = default)
     {
+        if (topicId.HasValue && !await _db.Topics.AnyAsync(t => t.Id == topicId.Value && t.UserId == userId, ct))
+        {
+            return null;
+        }
+
         var run = await _db.AssessmentCalibrationRuns
             .AsNoTracking()
             .Where(r => r.UserId == userId && r.TopicId == topicId)

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.API.Controllers;
 
@@ -182,6 +184,166 @@ public class TopicsController : ControllerBase
         var result = await _sessionService.GetLatestSessionAsync(id, userId);
         if (result == null) return NotFound(new { message = "Oturum bulunamadı." });
         return Ok(result);
+    }
+
+    [HttpGet("{id}/curriculum")]
+    public async Task<IActionResult> GetCurriculum(Guid id)
+    {
+        var userId = GetUserId();
+        var parent = await _topicService.GetTopicByIdAsync(id, userId);
+        if (parent == null) return NotFound(new { message = "Ana konu bulunamadi." });
+
+        var modules = await _db.Topics
+            .Where(t => t.ParentTopicId == id && t.UserId == userId && t.PlanIntent == "Module" && !t.IsArchived)
+            .OrderBy(t => t.Order)
+            .ThenBy(t => t.CreatedAt)
+            .ToListAsync();
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var lessons = await _db.Topics
+            .Where(t => t.ParentTopicId.HasValue && moduleIds.Contains(t.ParentTopicId.Value) && t.UserId == userId && !t.IsArchived)
+            .OrderBy(t => t.ParentTopicId)
+            .ThenBy(t => t.Order)
+            .ThenBy(t => t.CreatedAt)
+            .ToListAsync();
+
+        var chapters = modules.Select(module =>
+        {
+            var moduleLessons = lessons
+                .Where(lesson => lesson.ParentTopicId == module.Id)
+                .OrderBy(lesson => lesson.Order)
+                .Select(lesson =>
+                {
+                    var metadata = ParseLessonContractMetadata(lesson.MetadataJson);
+                    return new
+                    {
+                        id = lesson.Id,
+                        title = PublicTextNormalizer.RepairMojibake(lesson.Title),
+                        order = lesson.Order,
+                        planIntent = ResolvePlanIntent(lesson.PlanIntent, lesson.Category),
+                        category = lesson.Category,
+                        phaseMetadata = lesson.PhaseMetadata,
+                        conceptKey = metadata.ConceptKey,
+                        skillTag = metadata.SkillTag,
+                        learningObjective = metadata.LearningObjective,
+                        sequenceReason = metadata.SequenceReason,
+                        prerequisiteConceptKeys = metadata.PrerequisiteConceptKeys,
+                        quizHook = metadata.QuizHook,
+                        tutorHook = metadata.TutorHook,
+                        successCriteria = metadata.SuccessCriteria,
+                        progressPercentage = lesson.ProgressPercentage,
+                        successScore = lesson.SuccessScore,
+                        isMastered = lesson.IsMastered
+                    };
+                })
+                .ToList();
+
+            return new
+            {
+                id = module.Id,
+                title = PublicTextNormalizer.RepairMojibake(module.Title),
+                order = module.Order,
+                planIntent = ResolvePlanIntent(module.PlanIntent, module.Category),
+                totalSections = module.TotalSections,
+                lessonCount = moduleLessons.Count,
+                lessons = moduleLessons
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            rootTopicId = id,
+            rootTitle = parent.Title,
+            chapterCount = chapters.Count,
+            lessonCount = lessons.Count,
+            isMaterialized = chapters.Count >= 6 && lessons.Count >= 24 && chapters.All(c => c.lessonCount > 0),
+            chapters = chapters,
+            modules = chapters
+        });
+    }
+
+    private static LessonContractMetadata ParseLessonContractMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return LessonContractMetadata.Empty;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            return new LessonContractMetadata(
+                Repair(ReadString(root, "conceptKey")),
+                Repair(ReadString(root, "skillTag")),
+                Repair(ReadString(root, "learningObjective")),
+                Repair(ReadString(root, "sequenceReason")),
+                ReadStringArray(root, "prerequisiteConceptKeys"),
+                CloneObject(root, "quizHook"),
+                CloneObject(root, "tutorHook"),
+                ReadStringArray(root, "successCriteria"));
+        }
+        catch (JsonException)
+        {
+            return LessonContractMetadata.Empty;
+        }
+    }
+
+    private static string? ReadString(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty(propertyName, out var value) &&
+            value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        return null;
+    }
+
+    private static string[] ReadStringArray(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => Repair(item.GetString()))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+    }
+
+    private static object? CloneObject(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<object>(value.GetRawText());
+    }
+
+    private static string? Repair(string? value) => string.IsNullOrWhiteSpace(value)
+        ? value
+        : PublicTextNormalizer.RepairMojibake(value);
+
+    private sealed record LessonContractMetadata(
+        string? ConceptKey,
+        string? SkillTag,
+        string? LearningObjective,
+        string? SequenceReason,
+        string[] PrerequisiteConceptKeys,
+        object? QuizHook,
+        object? TutorHook,
+        string[] SuccessCriteria)
+    {
+        public static LessonContractMetadata Empty { get; } = new(null, null, null, null, [], null, null, []);
     }
 
     /// <summary>

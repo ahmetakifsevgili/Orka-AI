@@ -55,7 +55,7 @@ public abstract class OpenAICompatibleService
     protected async Task<string> CallChatWithMessagesAsync(
         object messages, int maxTokens = 2048, double temperature = 0.7, CancellationToken ct = default)
     {
-        var requestBody = new { model = Model, messages,  temperature };
+        var requestBody = new { model = Model, messages, temperature, max_completion_tokens = maxTokens };
         var jsonBody    = JsonSerializer.Serialize(requestBody, JsonOptions);
         var providerTag = GetType().Name.Replace("Service", "").ToUpperInvariant();
 
@@ -107,7 +107,7 @@ public abstract class OpenAICompatibleService
             new { role = "user", content = string.IsNullOrWhiteSpace(userMessage) ? "Merhaba." : userMessage }
         };
 
-        var requestBody = new { model = Model, messages,  temperature, stream = true };
+        var requestBody = new { model = Model, messages, temperature, max_completion_tokens = maxTokens, stream = true };
         var jsonBody = JsonSerializer.Serialize(requestBody, JsonOptions);
         var providerTag = GetType().Name.Replace("Service", "").ToUpperInvariant();
 

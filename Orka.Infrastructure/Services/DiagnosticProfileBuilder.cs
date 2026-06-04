@@ -96,9 +96,17 @@ public sealed class DiagnosticProfileBuilder : IDiagnosticProfileBuilder
         sb.AppendLine("[DIAGNOSTIC PROFILE - CONCEPT MASTERY]");
         sb.AppendLine($"DiagnosticProfileId: {profile.Id}");
         sb.AppendLine($"Answered: {profile.AnsweredCount}");
+        sb.AppendLine($"EvidenceBearingAnswers: {profile.EvidenceBearingAnswerCount}");
+        sb.AppendLine($"BlankOrSkipped: {profile.BlankCount}");
         sb.AppendLine($"Correct: {profile.CorrectCount}");
         sb.AppendLine($"AccuracyPercent: {profile.AccuracyPercent}");
         sb.AppendLine($"MeasuredLevel: {profile.MeasuredLevel}");
+        sb.AppendLine($"CoverageStatus: {profile.CoverageStatus}");
+        sb.AppendLine($"ConfidenceBand: {profile.ConfidenceBand}");
+        if (profile.BlankConcepts.Count > 0)
+        {
+            sb.AppendLine($"BlankConcepts: {string.Join(", ", profile.BlankConcepts.Take(12))}");
+        }
         sb.AppendLine("ConceptMastery:");
         foreach (var mastery in profile.ConceptMasteries.OrderBy(m => m.MasteryScore).ThenByDescending(m => m.Attempts).Take(16))
         {
@@ -111,18 +119,28 @@ public sealed class DiagnosticProfileBuilder : IDiagnosticProfileBuilder
     private static DiagnosticProfileDto BuildProfile(PlanDiagnosticStateDto state, IReadOnlyList<QuizAttempt> attempts)
     {
         var answered = attempts.Count;
-        var correct = attempts.Count(a => a.IsCorrect);
-        var accuracy = answered == 0 ? 0 : (int)Math.Round(correct * 100.0 / answered);
+        var blankAttempts = attempts
+            .Where(IsBlankOrSkipped)
+            .ToList();
+        var evidenceAttempts = attempts
+            .Where(a => !IsBlankOrSkipped(a))
+            .ToList();
+        var correct = evidenceAttempts.Count(a => a.IsCorrect);
+        var evidenceBearing = evidenceAttempts.Count;
+        var accuracy = evidenceBearing == 0 ? 0 : (int)Math.Round(correct * 100.0 / evidenceBearing);
         var groups = attempts
             .GroupBy(ConceptKeyOf, StringComparer.OrdinalIgnoreCase)
             .Where(g => !string.IsNullOrWhiteSpace(g.Key))
             .Select(g =>
             {
-                var total = g.Count();
-                var ok = g.Count(a => a.IsCorrect);
+                var total = g.Count(a => !IsBlankOrSkipped(a));
+                var blank = g.Count(IsBlankOrSkipped);
+                var ok = g.Count(a => !IsBlankOrSkipped(a) && a.IsCorrect);
                 var score = total == 0 ? 0 : Math.Round(ok * 100m / total, 2);
-                var confidence = Math.Min(0.95m, 0.30m + total * 0.16m + (total >= 3 ? 0.15m : 0m));
-                var wrong = g.Where(a => !a.IsCorrect).ToList();
+                var confidence = total == 0
+                    ? 0.15m
+                    : Math.Min(0.95m, 0.25m + total * 0.16m + (total >= 3 ? 0.15m : 0m));
+                var wrong = g.Where(a => !IsBlankOrSkipped(a) && !a.IsCorrect).ToList();
                 var misconceptions = wrong
                     .Select(MisconceptionOf)
                     .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -135,8 +153,8 @@ public sealed class DiagnosticProfileBuilder : IDiagnosticProfileBuilder
                     Label = FirstNonBlank(g.Select(LabelOf).ToArray()) ?? g.Key,
                     MasteryScore = score,
                     Confidence = Math.Round(confidence, 2),
-                    RemediationNeed = score >= 80 ? "none" : score >= 50 ? "medium" : "high",
-                    PracticeReadiness = score >= 80 ? "independent" : score >= 50 ? "guided" : "remedial",
+                    RemediationNeed = total == 0 && blank > 0 ? "medium" : score >= 80 ? "none" : score >= 50 ? "medium" : "high",
+                    PracticeReadiness = total == 0 && blank > 0 ? "prerequisite_check" : score >= 80 ? "independent" : score >= 50 ? "guided" : "remedial",
                     MisconceptionEvidence = misconceptions,
                     Attempts = total,
                     Correct = ok
@@ -155,18 +173,45 @@ public sealed class DiagnosticProfileBuilder : IDiagnosticProfileBuilder
             PlanRequestId = state.PlanRequestId,
             ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
             AnsweredCount = answered,
+            BlankCount = blankAttempts.Count,
+            EvidenceBearingAnswerCount = evidenceBearing,
             CorrectCount = correct,
             AccuracyPercent = accuracy,
-            MeasuredLevel = accuracy switch
+            MeasuredLevel = evidenceBearing == 0
+                ? "insufficient_evidence_start_from_zero"
+                : accuracy switch
             {
                 >= 85 => "advanced",
                 >= 65 => "intermediate",
                 >= 40 => "developing",
                 _ => "beginner"
             },
+            CoverageStatus = evidenceBearing == 0
+                ? "insufficient_evidence"
+                : blankAttempts.Count > answered / 2
+                    ? "low_confidence_due_to_blanks"
+                    : groups.Count >= 8 ? "broad" : "partial",
+            ConfidenceBand = evidenceBearing >= 12 && blankAttempts.Count <= answered / 3 ? "medium" : "low",
+            WeakConcepts = groups.Where(m => m.MasteryScore < 55m || m.RemediationNeed == "high").Select(m => m.ConceptKey).Take(12).ToList(),
+            PrerequisiteGaps = groups.Where(m => m.PracticeReadiness == "prerequisite_check").Select(m => m.ConceptKey).Take(12).ToList(),
+            MisconceptionSignals = groups.SelectMany(m => m.MisconceptionEvidence).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList(),
+            BlankConcepts = blankAttempts.Select(ConceptKeyOf).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList(),
             ConceptMasteries = groups,
             GeneratedAt = DateTimeOffset.UtcNow
         };
+    }
+
+    private static bool IsBlankOrSkipped(QuizAttempt attempt)
+    {
+        if (attempt.WasSkipped)
+        {
+            return true;
+        }
+
+        var answer = attempt.UserAnswer?.Trim();
+        return string.IsNullOrWhiteSpace(answer) ||
+               answer.Equals("skip", StringComparison.OrdinalIgnoreCase) ||
+               answer.Equals("__blank__", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ConceptKeyOf(QuizAttempt attempt) =>

@@ -103,6 +103,38 @@ public sealed class StudyIntentAnalyzerTests
     }
 
     [Fact]
+    public async Task StudyIntentAnalyzer_EnglishRawRequestOverridesTurkishModelLeakage()
+    {
+        var analyzer = new StudyIntentAnalyzer(
+            new JsonAgentFactory("""
+                {
+                  "mainTopic": "Turev",
+                  "focusArea": "Calculus",
+                  "studyGoal": "Turev kalkulusunu temelden uygulamalara kadar ustalasmak.",
+                  "researchIntent": "mastering derivative calculus from foundations to applications learning path",
+                  "confirmationText": "Talebinizi anladim.",
+                  "language": "tr",
+                  "clarifyingNotes": []
+                }
+                """),
+            NullLogger<StudyIntentAnalyzer>.Instance);
+
+        var result = await analyzer.AnalyzeAsync(
+            Guid.NewGuid(),
+            new AnalyzeStudyIntentRequest
+            {
+                RawRequest = "I want to master derivative calculus from foundations to applications. Diagnose my weak subtopics first."
+            });
+
+        Assert.Equal("en", result.Language);
+        Assert.Equal("derivatives", result.MainTopic);
+        Assert.Equal("Calculus", result.FocusArea);
+        Assert.Equal("learning and foundational application", result.StudyGoal);
+        Assert.StartsWith("I understood", result.ConfirmationText);
+        Assert.DoesNotContain("Taleb", result.ConfirmationText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task StudyIntentAnalyzer_RefinesGenericModelIntentWithRawDomain()
     {
         var analyzer = new StudyIntentAnalyzer(

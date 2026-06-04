@@ -588,6 +588,35 @@ public sealed class RetentionCleanupService : IRetentionCleanupService
         return await GetAudioRetentionSummaryAsync(ct);
     }
 
+    public async Task PurgeExpiredTelemetryAndTracesAsync(CancellationToken ct = default)
+    {
+        var telemetryLimit = DateTime.UtcNow.AddDays(-Math.Clamp(_configuration.GetValue("Retention:TelemetryDays", 30), 1, 365));
+        var traceLimit = DateTime.UtcNow.AddDays(-Math.Clamp(_configuration.GetValue("Retention:ToolTraceDays", 30), 1, 365));
+
+        var expiredTelemetry = await _db.ToolTelemetryEvents
+            .Where(t => t.OccurredAt <= telemetryLimit)
+            .Take(500)
+            .ToListAsync(ct);
+        if (expiredTelemetry.Count > 0)
+        {
+            _db.ToolTelemetryEvents.RemoveRange(expiredTelemetry);
+        }
+
+        var expiredTraces = await _db.ToolRuntimeTraces
+            .Where(t => t.CreatedAt <= traceLimit)
+            .Take(500)
+            .ToListAsync(ct);
+        if (expiredTraces.Count > 0)
+        {
+            _db.ToolRuntimeTraces.RemoveRange(expiredTraces);
+        }
+
+        if (expiredTelemetry.Count > 0 || expiredTraces.Count > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+    }
+
     private int RetentionDays() => Math.Clamp(_configuration.GetValue("Retention:AudioBytesDays", 7), 1, 365);
 
     private static async Task<AudioRetentionAggregate> BuildAudioRetentionAggregateAsync(

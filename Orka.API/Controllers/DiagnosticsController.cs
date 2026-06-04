@@ -47,6 +47,11 @@ public class DiagnosticsController : ControllerBase
         {
             environment = _environment.EnvironmentName,
             apiBaseUrl = $"{Request.Scheme}://{Request.Host}",
+            redisConnection = new
+            {
+                endpoint = SanitizeRedisEndpoint(_configuration.GetConnectionString("Redis")),
+                source = "ConnectionStrings:Redis"
+            },
             swagger = new
             {
                 ui = "/swagger",
@@ -69,6 +74,25 @@ public class DiagnosticsController : ControllerBase
             },
             providers = BuildProviderDiagnostics()
         });
+    }
+
+    private static string SanitizeRedisEndpoint(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return "not_configured";
+
+        var endpoint = connectionString
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(part =>
+                !part.Contains('=', StringComparison.Ordinal) &&
+                !part.Contains("password", StringComparison.OrdinalIgnoreCase));
+
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return "configured_hidden";
+
+        return endpoint.Contains('@', StringComparison.Ordinal)
+            ? endpoint[(endpoint.LastIndexOf('@') + 1)..]
+            : endpoint;
     }
 
     private async Task<object> CheckDatabaseAsync()

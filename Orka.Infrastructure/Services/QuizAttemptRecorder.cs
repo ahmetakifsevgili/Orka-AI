@@ -17,6 +17,7 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
     private readonly IXpEventService _xpEvents;
     private readonly IMistakeClassifierService _mistakeClassifier;
     private readonly ILearningEventNormalizer _learningEvents;
+    private readonly IRedisMemoryService? _redis;
     private readonly IAssessmentQualityService? _assessmentQuality;
     private readonly IKnowledgeTracingService? _knowledgeTracing;
     private readonly IActiveLessonSnapshotService? _learningSnapshots;
@@ -35,7 +36,8 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         IKnowledgeTracingService? knowledgeTracing = null,
         IActiveLessonSnapshotService? learningSnapshots = null,
         IWikiService? wikiService = null,
-        IWikiLearningTraceWriter? wikiTraceWriter = null)
+        IWikiLearningTraceWriter? wikiTraceWriter = null,
+        IRedisMemoryService? redis = null)
     {
         _db = db;
         _learningSignals = learningSignals;
@@ -49,6 +51,7 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         _learningSnapshots = learningSnapshots;
         _wikiService = wikiService;
         _wikiTraceWriter = wikiTraceWriter;
+        _redis = redis;
     }
 
     public async Task<QuizAttemptRecordResult> RecordAsync(
@@ -58,6 +61,9 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
     {
         var now = DateTime.UtcNow;
         var verification = await ResolveAttemptVerificationAsync(userId, request, ct);
+        var clientSourceEvidenceBundleId = request.SourceEvidenceBundleId;
+        var verifiedSourceEvidenceBundleId = await ResolveVerifiedSourceEvidenceBundleIdAsync(userId, request, now, ct);
+        request.SourceEvidenceBundleId = verifiedSourceEvidenceBundleId;
         var isVerified = verification.IsVerified;
         var isCorrect = isVerified && verification.IsCorrect;
         var safeExplanation = verification.SafeExplanation;
@@ -66,12 +72,20 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             request.SkillTag,
             request.LearningObjective,
             request.TopicPath);
-        var sourceRefsJson = MergeMetadata(request.SourceRefsJson, request, reviewIdentity, verification);
-        var alreadyAwarded = isCorrect && !string.IsNullOrWhiteSpace(request.QuestionHash)
+        var questionHash = BuildQuestionHash(request);
+        var sourceRefsJson = MergeMetadata(
+            request.SourceRefsJson,
+            request,
+            reviewIdentity,
+            verification,
+            clientSourceEvidenceBundleId.HasValue
+                ? verifiedSourceEvidenceBundleId.HasValue ? "server_verified" : "client_rejected"
+                : null);
+        var alreadyAwarded = isCorrect && !string.IsNullOrWhiteSpace(questionHash)
             ? await _db.QuizAttempts.AnyAsync(a =>
                 a.UserId == userId &&
                 a.TopicId == request.TopicId &&
-                a.QuestionHash == request.QuestionHash &&
+                a.QuestionHash == questionHash &&
                 a.IsCorrect,
                 ct)
             : false;
@@ -84,6 +98,14 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         }
 
         var validQuizRunId = quizRun?.Id;
+        var assessmentItemId = verification.AssessmentItemId ?? request.AssessmentItemId;
+
+        var existingAttempt = await FindExistingAttemptAsync(userId, validQuizRunId, assessmentItemId, request.TopicId, questionHash, ct);
+        if (existingAttempt != null)
+        {
+            var replayImpact = BuildLearningImpact(request, existingAttempt, null, null, verification);
+            return new QuizAttemptRecordResult(existingAttempt, null, null, null, LearningImpact: replayImpact);
+        }
 
         var attempt = new QuizAttempt
         {
@@ -98,11 +120,11 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             IsCorrect = isCorrect,
             Explanation = safeExplanation ?? string.Empty,
             SkillTag = reviewIdentity,
-            AssessmentItemId = verification.AssessmentItemId ?? request.AssessmentItemId,
+            AssessmentItemId = assessmentItemId,
             TopicPath = Clean(request.TopicPath) ?? Clean(request.LearningObjective) ?? reviewIdentity,
             Difficulty = Clean(request.Difficulty),
             CognitiveType = Clean(request.QuestionType) ?? Clean(request.CognitiveType),
-            QuestionHash = Clean(request.QuestionHash),
+            QuestionHash = questionHash,
             SourceRefsJson = sourceRefsJson,
             ResponseTimeMs = request.ResponseTimeMs.HasValue ? Math.Max(0, request.ResponseTimeMs.Value) : null,
             WasSkipped = request.WasSkipped == true || string.Equals(request.SelectedOptionId, "skip", StringComparison.OrdinalIgnoreCase),
@@ -119,7 +141,39 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             await UpdateQuizRunAsync(quizRun, userId, validQuizRunId.Value, isCorrect, now, ct);
         }
 
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsLikelyDuplicateAttempt(ex))
+        {
+            _db.Entry(attempt).State = EntityState.Detached;
+            if (quizRun != null)
+            {
+                _db.Entry(quizRun).State = EntityState.Detached;
+            }
+
+            var replayAttempt = await FindExistingAttemptAsync(userId, validQuizRunId, assessmentItemId, request.TopicId, questionHash, ct);
+            if (replayAttempt != null)
+            {
+                var replayImpact = BuildLearningImpact(request, replayAttempt, null, null, verification);
+                return new QuizAttemptRecordResult(replayAttempt, null, null, null, LearningImpact: replayImpact);
+            }
+
+            throw;
+        }
+
+        if (_redis != null && !string.IsNullOrWhiteSpace(attempt.QuestionHash) && attempt.TopicId.HasValue)
+        {
+            try
+            {
+                await _redis.RememberQuestionHashesAsync(userId, attempt.TopicId.Value, new[] { attempt.QuestionHash });
+            }
+            catch (Exception)
+            {
+                // fail-safe
+            }
+        }
 
         var itemStat = isVerified && _assessmentQuality != null ? await _assessmentQuality.UpdateItemStatsAsync(attempt, ct) : null;
         var tracingState = isVerified && _knowledgeTracing != null ? await _knowledgeTracing.UpdateFromAttemptAsync(attempt, ct) : null;
@@ -221,6 +275,70 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             learningImpact);
     }
 
+    private async Task<QuizAttempt?> FindExistingAttemptAsync(
+        Guid userId,
+        Guid? quizRunId,
+        Guid? assessmentItemId,
+        Guid? topicId,
+        string? questionHash,
+        CancellationToken ct)
+    {
+        if (quizRunId.HasValue && assessmentItemId.HasValue)
+        {
+            var byRunAndItem = await _db.QuizAttempts
+                .AsNoTracking()
+                .OrderBy(a => a.CreatedAt)
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == userId &&
+                    a.QuizRunId == quizRunId.Value &&
+                    a.AssessmentItemId == assessmentItemId.Value,
+                    ct);
+            if (byRunAndItem != null)
+            {
+                return byRunAndItem;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(questionHash) && topicId.HasValue)
+        {
+            return await _db.QuizAttempts
+                .AsNoTracking()
+                .OrderBy(a => a.CreatedAt)
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == userId &&
+                    a.TopicId == topicId.Value &&
+                    a.QuestionHash == questionHash,
+                    ct);
+        }
+
+        return null;
+    }
+
+    private static string? BuildQuestionHash(RecordQuizAttemptRequest request)
+    {
+        var questionHash = Clean(request.QuestionHash);
+        if (!string.IsNullOrWhiteSpace(questionHash) || string.IsNullOrWhiteSpace(request.Question))
+        {
+            return questionHash;
+        }
+
+        return RedisMemoryService.ComputeQuestionHash(
+            request.Question,
+            request.SkillTag,
+            request.TopicPath,
+            request.ConceptTag ?? request.ConceptKey ?? request.LearningObjective,
+            request.Difficulty);
+    }
+
+    private static bool IsLikelyDuplicateAttempt(DbUpdateException ex)
+    {
+        var message = ex.InnerException?.Message ?? ex.Message;
+        return message.Contains("IX_QuizAttempts_UserId_QuizRunId_AssessmentItemId", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("IX_QuizAttempts_UserId_TopicId_QuestionHash", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unique", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<AttemptVerification> ResolveAttemptVerificationAsync(
         Guid userId,
         RecordQuizAttemptRequest request,
@@ -234,7 +352,24 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
                 .FirstOrDefaultAsync(i => i.Id == request.AssessmentItemId.Value && i.UserId == userId, ct);
         }
 
-        if (item == null && request.QuizRunId.HasValue)
+        var serverAuthoredDiagnostic = request.QuizRunId.HasValue &&
+            await IsServerAuthoredDiagnosticRunAsync(userId, request.QuizRunId.Value, ct);
+        if (serverAuthoredDiagnostic &&
+            (item == null ||
+             item.QuizRunId != request.QuizRunId ||
+             item.TopicId != request.TopicId))
+        {
+            return AttemptVerification.Unverified("assessment_item_scope_mismatch", request.IsCorrect, request.AssessmentItemId);
+        }
+
+        if (item == null &&
+            !request.AssessmentItemId.HasValue &&
+            serverAuthoredDiagnostic)
+        {
+            return AttemptVerification.Unverified("assessment_item_required_for_diagnostic", request.IsCorrect);
+        }
+
+        if (item == null && request.QuizRunId.HasValue && !serverAuthoredDiagnostic)
         {
             var candidates = await _db.AssessmentItems
                 .AsNoTracking()
@@ -250,18 +385,6 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
         if (item == null)
         {
-            if (request.IsCorrect.HasValue)
-            {
-                return new AttemptVerification(
-                    true,
-                    request.IsCorrect.Value,
-                    "server_legacy_evaluation",
-                    "usable",
-                    Clean(request.Explanation),
-                    null,
-                    request.IsCorrect);
-            }
-
             return AttemptVerification.Unverified("missing_server_answer_key", request.IsCorrect);
         }
 
@@ -277,6 +400,20 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         }
 
         return AttemptVerification.Unverified("unresolvable_server_answer_key", request.IsCorrect, item.Id);
+    }
+
+    private async Task<bool> IsServerAuthoredDiagnosticRunAsync(Guid userId, Guid quizRunId, CancellationToken ct)
+    {
+        var quizRun = await _db.QuizRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(q => q.Id == quizRunId && q.UserId == userId, ct);
+        if (quizRun == null)
+        {
+            return false;
+        }
+
+        return quizRun.QuizType.Equals("baseline", StringComparison.OrdinalIgnoreCase) ||
+               (quizRun.MetadataJson?.Contains("planRequestId", StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
     private async Task RefreshSnapshotsAfterAttemptAsync(Guid userId, RecordQuizAttemptRequest request, CancellationToken ct)
@@ -729,7 +866,8 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         string? sourceRefsJson,
         RecordQuizAttemptRequest request,
         string reviewIdentity,
-        AttemptVerification verification)
+        AttemptVerification verification,
+        string? sourceEvidenceBundleStatus)
     {
         var metadata = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -752,8 +890,13 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             ["mistakeCategory"] = Clean(request.MistakeCategory),
             ["assessmentMode"] = NormalizeAssessmentMode(request.AssessmentMode, request.QuestionType, request.CognitiveSkill),
             ["sourceEvidenceBundleId"] = request.SourceEvidenceBundleId?.ToString("D"),
+            ["sourceEvidenceBundleStatus"] = sourceEvidenceBundleStatus,
             ["wikiNotebookSectionKey"] = Clean(request.WikiNotebookSectionKey),
-            ["sourceReadiness"] = ExtractSourceReadiness(request.SourceRefsJson)
+            ["sourceReadiness"] = sourceEvidenceBundleStatus == "server_verified"
+                ? "source_grounded"
+                : sourceEvidenceBundleStatus == "client_rejected"
+                    ? "evidence_insufficient"
+                    : ExtractClientSafeSourceReadiness(request.SourceRefsJson)
         };
 
         if (!string.IsNullOrWhiteSpace(sourceRefsJson))
@@ -761,14 +904,9 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             try
             {
                 using var doc = JsonDocument.Parse(sourceRefsJson);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var property in doc.RootElement.EnumerateObject())
-                    {
-                        if (!metadata.ContainsKey(property.Name))
-                            metadata[property.Name] = property.Value.ToString();
-                    }
-                }
+                metadata["sourceRefsParseStatus"] = doc.RootElement.ValueKind == JsonValueKind.Object
+                    ? "client_metadata_allowlisted"
+                    : "client_metadata_ignored";
             }
             catch (JsonException)
             {
@@ -781,6 +919,54 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
         return compact.Count == 0 ? null : JsonSerializer.Serialize(compact);
+    }
+
+    private async Task<Guid?> ResolveVerifiedSourceEvidenceBundleIdAsync(
+        Guid userId,
+        RecordQuizAttemptRequest request,
+        DateTime now,
+        CancellationToken ct)
+    {
+        if (!request.SourceEvidenceBundleId.HasValue)
+        {
+            return null;
+        }
+
+        var bundle = await _db.SourceEvidenceBundles
+            .AsNoTracking()
+            .Where(b => b.Id == request.SourceEvidenceBundleId.Value &&
+                        b.UserId == userId &&
+                        !b.IsDeleted)
+            .FirstOrDefaultAsync(ct);
+
+        if (bundle is null || (bundle.ExpiresAt.HasValue && bundle.ExpiresAt.Value <= now))
+        {
+            return null;
+        }
+
+        if (request.TopicId.HasValue && bundle.TopicId != request.TopicId.Value)
+        {
+            return null;
+        }
+
+        if (request.SessionId.HasValue &&
+            bundle.SessionId.HasValue &&
+            bundle.SessionId.Value != request.SessionId.Value)
+        {
+            return null;
+        }
+
+        return IsUsableSourceEvidenceBundle(bundle) ? bundle.Id : null;
+    }
+
+    private static bool IsUsableSourceEvidenceBundle(SourceEvidenceBundle bundle)
+    {
+        var status = (Clean(bundle.EvidenceStatus) ?? string.Empty).ToLowerInvariant();
+        var readyStatus = status is "source_grounded";
+        return readyStatus &&
+               bundle.DeletedEvidenceCount == 0 &&
+               bundle.StaleEvidenceCount == 0 &&
+               (bundle.ReadySourceCount > 0 || bundle.ChunkCount > 0 || bundle.CitationCoverage > 0);
     }
 
     private static string? MergeLearningStateMetadata(
@@ -894,7 +1080,7 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         decimal? masteryDelta = tracingState == null ? null :
             attempt.IsCorrect ? Math.Round(0.06m * tracingState.Confidence, 4) : Math.Round(-0.04m * Math.Max(0.30m, tracingState.Confidence), 4);
 
-        var sourceReadiness = ExtractSourceReadiness(request.SourceRefsJson) ?? "unknown";
+        var sourceReadiness = ExtractSourceReadiness(attempt.SourceRefsJson) ?? "unknown";
         var evidenceBasis = BuildImpactEvidenceBasis(request, tracingState, misconception, verification);
         var impact = new QuizResultLearningImpactDto
         {
@@ -1285,6 +1471,18 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         {
             return null;
         }
+    }
+
+    private static string? ExtractClientSafeSourceReadiness(string? sourceRefsJson)
+    {
+        var readiness = ExtractSourceReadiness(sourceRefsJson);
+        return readiness?.Trim().ToLowerInvariant() switch
+        {
+            "source_limited" or "limited" => "source_limited",
+            "no_sources" or "none" => "no_sources",
+            "unknown" => "unknown",
+            _ => null
+        };
     }
 
     private static string? FirstNonEmpty(params string?[] values) =>

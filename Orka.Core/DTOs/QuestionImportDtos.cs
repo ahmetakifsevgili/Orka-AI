@@ -20,6 +20,20 @@ public sealed class QuestionImportItemDto
     public string? SubjectCode { get; set; }
     public string? TopicCode { get; set; }
     public string? OutcomeCode { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
     public string QuestionType { get; set; } = "multiple_choice";
     public string Stem { get; set; } = string.Empty;
     public List<QuestionImportOptionDto> Options { get; set; } = [];
@@ -40,6 +54,9 @@ public sealed class QuestionImportOptionDto
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
     public int SortOrder { get; set; }
+    public string? Rationale { get; set; }
+    public string? MisconceptionKey { get; set; }
+    public string? DiagnosticSignalJson { get; set; }
 }
 
 public sealed class QuestionImportSourceDto
@@ -124,6 +141,20 @@ public sealed class QuestionImportPackageDto
     public string? SubjectCode { get; set; }
     public string? TopicCode { get; set; }
     public string? OutcomeCode { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
     public List<QuestionImportAssetDto> Assets { get; set; } = [];
     public List<QuestionImportStimulusDto> Stimuli { get; set; } = [];
     public List<QuestionImportRichQuestionDto> Questions { get; set; } = [];
@@ -177,6 +208,20 @@ public sealed class QuestionImportRichQuestionDto
     public string? SubjectCode { get; set; }
     public string? TopicCode { get; set; }
     public string? OutcomeCode { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
     public string QuestionType { get; set; } = "multiple_choice";
     public string Stem { get; set; } = string.Empty;
     public string Difficulty { get; set; } = "medium";
@@ -212,6 +257,9 @@ public sealed class QuestionImportRichOptionDto
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
     public int SortOrder { get; set; }
+    public string? Rationale { get; set; }
+    public string? MisconceptionKey { get; set; }
+    public string? DiagnosticSignalJson { get; set; }
     public List<QuestionImportContentBlockDto> ContentBlocks { get; set; } = [];
 }
 
@@ -234,4 +282,18 @@ public sealed class QuestionImportTextAdapterRequestDto
     public string? SubjectCode { get; set; }
     public string? TopicCode { get; set; }
     public string? OutcomeCode { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
 }

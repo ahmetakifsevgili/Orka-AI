@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Orka.Core.DTOs;
+using Orka.Core.Entities;
 using Orka.Core.Interfaces;
+using Orka.API.Services;
 using Orka.Infrastructure.Data;
 
 namespace Orka.API.Controllers;
@@ -223,9 +226,23 @@ public sealed class TutorController : ControllerBase
             .Where(s => runIds.Contains(s.EvaluationRunId) && s.UserId == userId)
             .OrderBy(s => s.RubricKey)
             .ToListAsync(ct);
+        var turnState = trace.TutorTurnStateId.HasValue
+            ? await _db.TutorTurnStates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == trace.TutorTurnStateId && s.UserId == userId, ct)
+            : null;
+        var actionPlanPatch = await _db.TutorMemoryPatches
+            .AsNoTracking()
+            .Where(p => p.UserId == userId &&
+                        p.PatchType == "tutor_action_plan" &&
+                        p.PatchJson.Contains(traceId.ToString()))
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        var professionalContract = BuildProfessionalContract(trace, turnState, actionPlanPatch, tools, reflections);
 
         return Ok(new
         {
+            professionalContract,
             trace = new
             {
                 trace.Id,
@@ -457,6 +474,209 @@ public sealed class TutorController : ControllerBase
 
         return Ok(signal);
     }
+
+    private static object BuildProfessionalContract(
+        TutorActionTrace trace,
+        TutorTurnState? turnState,
+        TutorMemoryPatch? actionPlanPatch,
+        IReadOnlyList<TutorToolCall> tools,
+        IReadOnlyList<TutorReflectionUpdate> reflections)
+    {
+        using var stateDoc = TutorPublicTraceProjection.TryParseTurnState(turnState);
+        using var patchDoc = TryParseJson(actionPlanPatch?.PatchJson);
+        var state = stateDoc?.RootElement;
+        var patchRoot = patchDoc?.RootElement;
+        var patch = TryGetElement(patchRoot, new[] { "patch" }, out var patchPayload)
+            ? patchPayload
+            : patchRoot;
+
+        var selectedAction = JsonString(patch, "toolDecision", "SelectedAction")
+            ?? JsonString(patch, "toolDecision", "selectedAction")
+            ?? (tools.Count > 0 ? "governed_tool_trace" : "no_tool");
+        var lessonDeliveryMode = JsonString(patch, "lessonDelivery", "DeliveryMode")
+            ?? JsonString(patch, "lessonDelivery", "deliveryMode")
+            ?? "unknown";
+        var remediationRepairType = JsonString(patch, "remediationLesson", "RepairType")
+            ?? JsonString(patch, "remediationLesson", "repairType")
+            ?? JsonString(state, "RemediationLesson", "RepairType")
+            ?? JsonString(state, "remediationLesson", "repairType")
+            ?? "none";
+        var remediationTriggerType = JsonString(patch, "remediationLesson", "Trigger", "TriggerType")
+            ?? JsonString(patch, "remediationLesson", "trigger", "triggerType")
+            ?? JsonString(state, "RemediationLesson", "Trigger", "TriggerType")
+            ?? JsonString(state, "remediationLesson", "trigger", "triggerType")
+            ?? "none";
+        var learningLoopStatus = JsonString(state, "LearningLoopStatus")
+            ?? JsonString(state, "learningLoopStatus")
+            ?? JsonString(patch, "LearningLoopStatus")
+            ?? JsonString(patch, "learningLoopStatus")
+            ?? "unknown";
+        var currentPlanStepId = JsonString(state, "CurrentPlanStepId")
+            ?? JsonString(state, "currentPlanStepId")
+            ?? JsonString(patch, "CurrentPlanStepId")
+            ?? JsonString(patch, "currentPlanStepId");
+        var currentPlanStepTitle = JsonString(state, "CurrentPlanStepTitle")
+            ?? JsonString(state, "currentPlanStepTitle")
+            ?? JsonString(patch, "CurrentPlanStepTitle")
+            ?? JsonString(patch, "currentPlanStepTitle");
+        var currentPlanTutorMove = JsonString(state, "CurrentPlanTutorMove")
+            ?? JsonString(state, "currentPlanTutorMove")
+            ?? JsonString(patch, "CurrentPlanTutorMove")
+            ?? JsonString(patch, "currentPlanTutorMove");
+        var currentPlanQuizHook = JsonString(state, "CurrentPlanQuizHook")
+            ?? JsonString(state, "currentPlanQuizHook")
+            ?? JsonString(patch, "CurrentPlanQuizHook")
+            ?? JsonString(patch, "currentPlanQuizHook");
+        var latestAssessmentMode = JsonString(state, "LatestAssessmentMode")
+            ?? JsonString(state, "latestAssessmentMode");
+        var learnerSignalsUsed = JsonArrayCount(patch, "toolDecision", "LearnerSignalsUsed")
+            + JsonArrayCount(patch, "toolDecision", "learnerSignalsUsed");
+        var reasonCodeCount = JsonArrayCount(patch, "toolDecision", "ReasonCodes")
+            + JsonArrayCount(patch, "toolDecision", "reasonCodes");
+        var allowedToolCount = JsonArrayCount(patch, "toolDecision", "AllowedTools")
+            + JsonArrayCount(patch, "toolDecision", "allowedTools");
+        var blockedToolCount = JsonArrayCount(patch, "toolDecision", "BlockedTools")
+            + JsonArrayCount(patch, "toolDecision", "blockedTools");
+        var warningCount = JsonArrayCount(patch, "toolDecision", "SafetyWarnings")
+            + JsonArrayCount(patch, "toolDecision", "safetyWarnings");
+        var weakConceptKeys = JsonStringArray(state, "WeakConceptHints")
+            .Concat(JsonStringArray(state, "weakConceptHints"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToArray();
+        var toolStatuses = tools
+            .Select(t => new
+            {
+                t.ToolId,
+                t.Status,
+                t.Success,
+                t.RiskLevel,
+                HasFallback = !string.IsNullOrWhiteSpace(t.FallbackReason) || !string.IsNullOrWhiteSpace(t.ErrorCode),
+                t.SourceCount
+            })
+            .ToArray();
+        var degradedFallbackApplied = tools.Any(t =>
+            !string.IsNullOrWhiteSpace(t.FallbackReason) ||
+            !string.IsNullOrWhiteSpace(t.ErrorCode) ||
+            t.Status.Equals("degraded", StringComparison.OrdinalIgnoreCase) ||
+            t.Status.Equals("blocked", StringComparison.OrdinalIgnoreCase));
+
+        return new
+        {
+            schemaVersion = "orka.tutor-professional-contract.v1",
+            activeConceptKey = FirstNonEmpty(trace.ActiveConceptKey, JsonString(state, "ActiveConceptKey"), JsonString(state, "activeConceptKey")),
+            usedPlanStepId = currentPlanStepId,
+            usedPlanStepTitle = currentPlanStepTitle,
+            usedPlanTutorMove = currentPlanTutorMove,
+            usedDiagnosticSignal = FirstNonEmpty(currentPlanQuizHook, latestAssessmentMode, JsonString(state, "AdaptiveDiagnostic", "Intent"), JsonString(state, "adaptiveDiagnostic", "intent")),
+            usedWeakConceptKeys = weakConceptKeys,
+            usedRepairSignal = learningLoopStatus == "remediation_ready" || remediationRepairType != "none",
+            behaviorShiftReason = FirstNonEmpty(
+                learningLoopStatus,
+                JsonString(state, "MasteryBasis"),
+                JsonString(state, "masteryBasis"),
+                JsonString(state, "RemediationNeed"),
+                JsonString(state, "remediationNeed")),
+            teachingMode = trace.TeachingMode,
+            directAnswerPolicy = trace.DirectAnswerPolicy,
+            groundingPolicy = trace.GroundingPolicy,
+            lessonDeliveryMode,
+            learnerLevel = JsonString(patch, "lessonDelivery", "LearnerLevel") ?? JsonString(patch, "lessonDelivery", "learnerLevel") ?? "unknown",
+            remediationRepairType,
+            remediationTriggerType,
+            nextCheckPromptPresent = !string.IsNullOrWhiteSpace(trace.NextCheckPrompt),
+            microCheckObserved = reflections.Any(r => r.MicroCheckAsked),
+            selectedToolAction = selectedAction,
+            toolDecisionSummary = new
+            {
+                selectedAction,
+                allowedToolCount,
+                blockedToolCount,
+                reasonCodeCount,
+                learnerSignalsUsedCount = learnerSignalsUsed,
+                evidenceStatus = JsonString(patch, "toolDecision", "EvidenceStatus") ?? JsonString(patch, "toolDecision", "evidenceStatus") ?? "unknown",
+                sourceReadiness = JsonString(patch, "toolDecision", "SourceReadiness") ?? JsonString(patch, "toolDecision", "sourceReadiness") ?? "unknown",
+                safetyWarningCount = warningCount
+            },
+            toolStatuses,
+            degradedFallbackApplied,
+            serverOwnedContext = true,
+            rawPayloadExposed = false
+        };
+    }
+
+    private static JsonDocument? TryParseJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? JsonString(JsonElement? root, params string[] path)
+    {
+        if (!TryGetElement(root, path, out var value)) return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
+    private static int JsonArrayCount(JsonElement? root, params string[] path)
+    {
+        if (!TryGetElement(root, path, out var value) || value.ValueKind != JsonValueKind.Array) return 0;
+        return value.GetArrayLength();
+    }
+
+    private static IEnumerable<string> JsonStringArray(JsonElement? root, params string[] path)
+    {
+        if (!TryGetElement(root, path, out var value) || value.ValueKind != JsonValueKind.Array) yield break;
+        foreach (var item in value.EnumerateArray())
+        {
+            var text = item.ValueKind == JsonValueKind.String ? item.GetString() : item.GetRawText();
+            if (!string.IsNullOrWhiteSpace(text)) yield return text!;
+        }
+    }
+
+    private static bool TryGetElement(JsonElement? root, IReadOnlyList<string> path, out JsonElement value)
+    {
+        value = default;
+        if (root is not { } current) return false;
+        foreach (var segment in path)
+        {
+            if (current.ValueKind != JsonValueKind.Object) return false;
+            if (!TryGetPropertyCaseInsensitive(current, segment, out current)) return false;
+        }
+        value = current;
+        return true;
+    }
+
+    private static bool TryGetPropertyCaseInsensitive(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.TryGetProperty(name, out value)) return true;
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }
 
 public sealed class TutorStyleSignalRequest

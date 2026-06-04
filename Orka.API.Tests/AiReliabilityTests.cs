@@ -65,7 +65,127 @@ public sealed class AiReliabilityTests
         Assert.Equal(1, providers.GitHubCalls);
         Assert.Equal(1, providers.GroqCalls);
         Assert.Equal(0, providers.MistralCalls);
-        Assert.Contains(telemetry.Events, e => e.Provider == "Groq" && e.Success && e.FallbackUsed);
+        Assert.Contains(telemetry.Events, e => e.Provider == "OpenRouter" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
+    public async Task CompleteChat_QuizProviderInfraFailure_FallsBackToGitHubModels()
+    {
+        var providers = new FakeProviders();
+        providers.GeminiHandler = () => throw new AiProviderCallException(
+            "Gemini",
+            "gemini-3.1-pro-preview",
+            "Quiz",
+            AiProviderFailureKind.Timeout,
+            "timeout",
+            isRetryable: true,
+            isFallbackable: true);
+        providers.GitHubHandler = () => Task.FromResult("""[{"assessmentItemId":"00000000-0000-0000-0000-000000000001"}]""");
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Quiz:Provider"] = "Gemini",
+                ["AI:AgentRouting:Quiz:Model"] = "gemini-3.1-pro-preview",
+                ["AI:GitHubModels:Agents:Quiz:Model"] = "openai/gpt-4o",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz");
+
+        Assert.Contains("assessmentItemId", result);
+        Assert.Equal(1, providers.GeminiCalls);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Contains(telemetry.Events, e => e.Provider == "GitHubModels" && e.Model == "openai/gpt-4o" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
+    public async Task CompleteChat_DeepPlanProviderInfraFailure_FallsBackToGitHubModels()
+    {
+        var providers = new FakeProviders();
+        providers.GeminiHandler = () => throw new AiProviderCallException(
+            "Gemini",
+            "gemini-3.1-pro-preview",
+            "DeepPlan",
+            AiProviderFailureKind.TransientNetwork,
+            "tls failure",
+            isRetryable: true,
+            isFallbackable: true);
+        providers.GitHubHandler = () => Task.FromResult("""{"topics":[{"title":"Professional scope","lessons":[{"title":"Measurable concept step"}]}]}""");
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:DeepPlan:Provider"] = "Gemini",
+                ["AI:AgentRouting:DeepPlan:Model"] = "gemini-3.1-pro-preview",
+                ["AI:Cost:RoleBudgets:DeepPlan:MaxOutputTokens"] = "16384"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.DeepPlan, "deep plan contract", "build curriculum");
+
+        Assert.Contains("Professional scope", result);
+        Assert.Equal(1, providers.GeminiCalls);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Equal("openai/gpt-4o", providers.LastGitHubModel);
+        Assert.Contains(telemetry.Events, e =>
+            e.Provider == "Gemini" &&
+            e.Role == nameof(AgentRole.DeepPlan) &&
+            e.FailureKind == AiProviderFailureKind.TransientNetwork &&
+            e.CircuitState == "closed");
+        Assert.Contains(telemetry.Events, e => e.Provider == "GitHubModels" && e.Model == "openai/gpt-4o" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
+    public async Task CompleteChat_QuizProviderFailures_DoNotUseInMemoryFallback()
+    {
+        var providers = new FakeProviders();
+        providers.GeminiHandler = () => throw ServerError("Gemini", "Quiz");
+        providers.GitHubHandler = () => throw ServerError("GitHubModels", "Quiz");
+
+        var factory = CreateFactory(
+            providers,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Quiz:Provider"] = "Gemini",
+                ["AI:AgentRouting:Quiz:Model"] = "gemini-3.1-pro-preview",
+                ["AI:GitHubModels:Agents:Quiz:Model"] = "openai/gpt-4o",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
+            });
+
+        var exception = await Assert.ThrowsAsync<AiProviderCallException>(() =>
+            factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz"));
+
+        Assert.Equal(AiProviderFailureKind.ServerError, exception.FailureKind);
+        Assert.Equal(1, providers.GeminiCalls);
+        Assert.Equal(1, providers.GitHubCalls);
+    }
+
+    [Fact]
+    public void CircuitBreaker_ThresholdAndRoleKey_IsolatesFailures()
+    {
+        var breaker = new AiProviderCircuitBreaker();
+        var quizKey = "Gemini:gemini-3.1-pro-preview:Quiz";
+        var tutorKey = "Gemini:gemini-3.1-pro-preview:Tutor";
+
+        breaker.RecordFailure(quizKey, TimeSpan.FromMinutes(1), failureThreshold: 2);
+
+        Assert.False(breaker.IsOpen(quizKey));
+        Assert.False(breaker.IsOpen(tutorKey));
+
+        breaker.RecordFailure(quizKey, TimeSpan.FromMinutes(1), failureThreshold: 2);
+
+        Assert.True(breaker.IsOpen(quizKey));
+        Assert.False(breaker.IsOpen(tutorKey));
+
+        breaker.RecordSuccess(quizKey);
+
+        Assert.False(breaker.IsOpen(quizKey));
     }
 
     [Fact]
@@ -228,8 +348,8 @@ public sealed class AiReliabilityTests
         AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
-    private static AiProviderCallException ServerError(string provider) =>
-        new(provider, "model", "Tutor", AiProviderFailureKind.ServerError, "server error", HttpStatusCode.InternalServerError, isRetryable: true, isFallbackable: true);
+    private static AiProviderCallException ServerError(string provider, string role = "Tutor") =>
+        new(provider, "model", role, AiProviderFailureKind.ServerError, "server error", HttpStatusCode.InternalServerError, isRetryable: true, isFallbackable: true);
 
     private static IConfiguration ProviderConfig(params string?[] values)
     {
@@ -296,14 +416,17 @@ public sealed class AiReliabilityTests
         IAiUsageBudgetService? budget = null,
         IAiProviderTelemetryService? telemetry = null,
         IRuntimeTelemetryService? runtime = null,
-        IAiRequestContextAccessor? context = null)
+        IAiRequestContextAccessor? context = null,
+        IReadOnlyDictionary<string, string?>? overrides = null)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
+        var values = new Dictionary<string, string?>
             {
                 ["AI:AgentRouting:Tutor:Provider"] = "GitHubModels",
                 ["AI:AgentRouting:Tutor:Model"] = "primary-model",
+                ["AI:AgentRouting:Quiz:Provider"] = "Gemini",
+                ["AI:AgentRouting:Quiz:Model"] = "gemini-3.1-pro-preview",
                 ["AI:GitHubModels:Token"] = "test-github-token",
+                ["AI:GitHubModels:Agents:Quiz:Model"] = "openai/gpt-4o",
                 ["AI:Groq:ApiKey"] = "test-groq-key",
                 ["AI:Mistral:ApiKey"] = "test-mistral-key",
                 ["AI:Gemini:ApiKey"] = "test-gemini-key",
@@ -313,9 +436,26 @@ public sealed class AiReliabilityTests
                 ["AI:Reliability:MaxAttemptsPerRequest"] = "2",
                 ["AI:Reliability:FallbackEnabled"] = "true",
                 ["AI:Reliability:ProviderCooldownSeconds"] = "60",
-                ["AI:Cost:RoleBudgets:Tutor:MaxOutputTokens"] = "256"
-            })
+                ["AI:Reliability:StrictRoleCircuitFailureThreshold"] = "2",
+                ["AI:Cost:RoleBudgets:Tutor:MaxOutputTokens"] = "256",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
+            };
+        if (overrides != null)
+        {
+            foreach (var pair in overrides)
+            {
+                values[pair.Key] = pair.Value;
+            }
+        }
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
             .Build();
+
+        var activeRuntime = runtime ?? new RecordingRuntimeTelemetry();
+        var activeRedis = new NullRedisMemoryService();
+        var serviceProvider = new TestServiceProvider(activeRedis, activeRuntime);
+        var syncQueue = new SyncBackgroundTaskQueue(serviceProvider);
 
         return new AIAgentFactory(
             providers,
@@ -325,9 +465,9 @@ public sealed class AiReliabilityTests
             providers,
             providers,
             providers,
-            new NullRedisMemoryService(),
-            new NoopBackgroundTaskQueue(),
-            runtime ?? new RecordingRuntimeTelemetry(),
+            activeRedis,
+            syncQueue,
+            activeRuntime,
             telemetry ?? new RecordingAiTelemetry(),
             budget ?? new StaticBudget(Allowed: true),
             new AiProviderCircuitBreaker(),
@@ -336,44 +476,98 @@ public sealed class AiReliabilityTests
             NullLogger<AIAgentFactory>.Instance);
     }
 
+    private sealed class TestServiceProvider : IServiceProvider
+    {
+        private readonly IRedisMemoryService _redis;
+        private readonly IRuntimeTelemetryService _runtime;
+
+        public TestServiceProvider(IRedisMemoryService redis, IRuntimeTelemetryService runtime)
+        {
+            _redis = redis;
+            _runtime = runtime;
+        }
+
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IRedisMemoryService))
+                return _redis;
+            if (serviceType == typeof(IRuntimeTelemetryService))
+                return _runtime;
+            return null;
+        }
+    }
+
+    private sealed class SyncBackgroundTaskQueue : IBackgroundTaskQueue
+    {
+        private readonly IServiceProvider _serviceProvider;
+
+        public SyncBackgroundTaskQueue(IServiceProvider serviceProvider)
+        {
+            _serviceProvider = serviceProvider;
+        }
+
+        public async ValueTask QueueAsync(BackgroundTaskItem item, CancellationToken ct = default)
+        {
+            if (item.ScopedWork != null)
+            {
+                await item.ScopedWork(_serviceProvider, ct);
+            }
+            else if (item.Work != null)
+            {
+                await item.Work(ct);
+            }
+        }
+    }
+
+
     private sealed class FakeProviders : IGitHubModelsService, IGroqService, IGeminiService, IOpenRouterService, ICerebrasService, IMistralService, ISambaNovaService
     {
         public int GitHubCalls;
         public int GroqCalls;
+        public int GeminiCalls;
         public int MistralCalls;
+        public string? LastGitHubModel;
+        public int? LastGitHubMaxOutputTokens;
         public Func<Task<string>> GitHubHandler { get; set; } = () => Task.FromResult("github-ok");
         public Func<Task<string>> GroqHandler { get; set; } = () => Task.FromResult("groq-ok");
+        public Func<Task<string>> GeminiHandler { get; set; } = () => Task.FromResult("gemini-ok");
         public Func<Task<string>> MistralHandler { get; set; } = () => Task.FromResult("mistral-ok");
 
-        public Task<string> ChatAsync(string systemPrompt, string userMessage, string model, CancellationToken ct = default)
+        public Task<string> ChatAsync(string systemPrompt, string userMessage, string model, CancellationToken ct = default, int? maxOutputTokens = null)
         {
             GitHubCalls++;
+            LastGitHubModel = model;
+            LastGitHubMaxOutputTokens = maxOutputTokens;
             return GitHubHandler();
         }
 
-        public async IAsyncEnumerable<string> ChatStreamAsync(string systemPrompt, string userMessage, string model, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<string> ChatStreamAsync(string systemPrompt, string userMessage, string model, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
         {
-            yield return await ChatAsync(systemPrompt, userMessage, model, ct);
+            yield return await ChatAsync(systemPrompt, userMessage, model, ct, maxOutputTokens);
         }
 
-        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
+        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
         {
             GroqCalls++;
             return GroqHandler();
         }
 
-        public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
         {
-            yield return await GenerateResponseAsync(systemPrompt, userMessage, ct);
+            yield return await GenerateResponseAsync(systemPrompt, userMessage, ct, maxOutputTokens);
         }
 
-        public Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
-        public Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
+        public Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateWithModelAsync("gemini-test", systemPrompt, userMessage, ct);
+        public Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        {
+            GeminiCalls++;
+            return GeminiHandler();
+        }
         public IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
-        public IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
-        public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
-        public Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, userMessage, ct);
-        public IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct);
+        public IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens);
+        public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default, int? maxOutputTokens = null) => GenerateResponseAsync(systemPrompt, userMessage, ct, maxOutputTokens);
+        public Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default, int? maxOutputTokens = null) => GenerateResponseAsync(systemPrompt, userMessage, ct, maxOutputTokens);
+        public IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default, int? maxOutputTokens = null) => GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens);
         public Task<string> GetResponseAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default) => GenerateResponseAsync(systemPrompt, string.Empty, ct);
         public IAsyncEnumerable<string> GetResponseStreamAsync(IEnumerable<Message> context, string systemPrompt, CancellationToken ct = default) => GenerateResponseStreamAsync(systemPrompt, string.Empty, ct);
         public Task<string> SummarizeSessionAsync(IEnumerable<Message> messages) => GenerateResponseAsync(string.Empty, string.Empty);
@@ -501,6 +695,9 @@ public sealed class AiReliabilityTests
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 }
 

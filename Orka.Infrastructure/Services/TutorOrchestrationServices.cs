@@ -445,28 +445,38 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             .Take(6)
             .ToListAsync(ct);
 
+        var graphConcepts = new List<(string StableKey, string Label)>();
         string? firstGraphConceptKey = null;
         string? activeGraphConceptLabel = null;
         if (graph != null)
         {
-            firstGraphConceptKey = await _db.LearningConcepts
+            var graphConceptRows = await _db.LearningConcepts
                 .AsNoTracking()
                 .Where(c => c.ConceptGraphSnapshotId == graph.Id)
                 .OrderBy(c => c.Order)
-                .Select(c => c.StableKey)
-                .FirstOrDefaultAsync(ct);
+                .Select(c => new { c.StableKey, c.Label })
+                .ToListAsync(ct);
+            graphConcepts = graphConceptRows
+                .Select(c => (c.StableKey, c.Label))
+                .ToList();
+            firstGraphConceptKey = graphConcepts.FirstOrDefault().StableKey;
         }
 
-        var activeKeyCandidate = FirstNonEmpty(
+        var mentionedConceptKey = ResolveMentionedConceptKey(userMessage, graphConcepts, ktStates, masteries);
+
+        var evidenceBackedConceptCandidate = FirstNonEmpty(
+            mentionedConceptKey,
             policyContext.ActiveConceptKey,
+            ktStates.FirstOrDefault()?.ConceptKey,
+            masteries.FirstOrDefault()?.ConceptKey);
+        var learningLoopSignal = await LoadLearningLoopSignalAsync(userId, topicId, evidenceBackedConceptCandidate, ct);
+        var activeKey = FirstNonEmpty(
+            mentionedConceptKey,
+            policyContext.ActiveConceptKey,
+            learningLoopSignal?.ConceptKey,
             ktStates.FirstOrDefault()?.ConceptKey,
             masteries.FirstOrDefault()?.ConceptKey,
             firstGraphConceptKey);
-        var learningLoopSignal = await LoadLearningLoopSignalAsync(userId, topicId, activeKeyCandidate, ct);
-        var activeKey = FirstNonEmpty(
-            policyContext.ActiveConceptKey,
-            activeKeyCandidate,
-            learningLoopSignal?.ConceptKey);
 
         if (graph != null && !string.IsNullOrWhiteSpace(activeKey))
         {
@@ -497,7 +507,6 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
         var latestPlanQuality = topicId.HasValue && _planSequencing != null
             ? await _planSequencing.GetLatestPlanQualitySnapshotAsync(userId, topicId.Value, sessionId, ct)
             : null;
-        var currentPlanStep = latestPlanQuality?.PlanContract.Steps.FirstOrDefault();
         var masteryProbability = activeKt?.MasteryProbability ?? (activeMastery?.MasteryScore / 100m);
         var confidence = activeKt?.Confidence ?? activeMastery?.Confidence;
         var learnerState = ApplyLearningLoopState(
@@ -511,6 +520,12 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(8)
             .ToList();
+        var currentPlanStep = SelectCurrentPlanStep(
+            latestPlanQuality,
+            activeKey,
+            userMessage,
+            learningLoopSignal,
+            recentMistakes);
 
         var state = new TutorTurnStateDto
         {
@@ -672,6 +687,132 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             currentPlanStep varsa onu pedagojik rota olarak kullan; plan adimi yanit metnini kilitlemez ama kavram, quiz hook ve Tutor move icin oncelikli baglamdir.
             learningLoopStatus remediation_ready ise bu turu profesyonel telafi turu olarak ele al: once yanilgi ihtimalini nazikce sinirla, sonra remediationSeed aksiyonuna gore kisa ve adim adim duzeltme yap.
             """;
+    }
+
+    private static PlanStepContractDto? SelectCurrentPlanStep(
+        PlanQualityEvaluationDto? latestPlanQuality,
+        string? activeConceptKey,
+        string userMessage,
+        LearningLoopSignalProjection? learningLoopSignal,
+        IReadOnlyList<string> recentMistakes)
+    {
+        var steps = latestPlanQuality?.PlanContract.Steps ?? Array.Empty<PlanStepContractDto>();
+        if (steps.Count == 0)
+        {
+            return null;
+        }
+
+        var activeKey = NormalizeKey(activeConceptKey);
+        var remediationKey = NormalizeKey(FirstNonEmpty(
+            learningLoopSignal?.ConceptKey,
+            learningLoopSignal?.RemediationSeed?.ConceptKey,
+            learningLoopSignal?.Misconception?.ConceptKey));
+        var messageTerms = ExtractTutorMatchTerms(userMessage);
+        var weakTerms = recentMistakes
+            .Concat(learningLoopSignal?.Hints ?? Array.Empty<string>())
+            .Concat(new[]
+            {
+                learningLoopSignal?.Label,
+                learningLoopSignal?.RemediationSeed?.Label,
+                learningLoopSignal?.RemediationSeed?.UserSafeMisconceptionLabel,
+                learningLoopSignal?.Misconception?.UserSafeLabel,
+                learningLoopSignal?.Misconception?.SafeHint
+            }.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v!))
+            .SelectMany(ExtractTutorMatchTerms)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(24)
+            .ToArray();
+
+        return steps
+            .Select((step, index) => new
+            {
+                Step = step,
+                Index = index,
+                Score = ScorePlanStepForTutor(step, activeKey, remediationKey, messageTerms, weakTerms)
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Index)
+            .First().Step;
+    }
+
+    private static int ScorePlanStepForTutor(
+        PlanStepContractDto step,
+        string activeKey,
+        string remediationKey,
+        IReadOnlyList<string> messageTerms,
+        IReadOnlyList<string> weakTerms)
+    {
+        var score = 0;
+        var stepConcept = NormalizeKey(step.ConceptKey);
+        var quizConcept = NormalizeKey(step.QuizHook?.ConceptKey);
+        var tutorConcept = NormalizeKey(step.TutorHook?.ActiveConceptKey);
+        var searchable = TutorSignalHeuristics.Normalize(string.Join(" ", new[]
+        {
+            step.Title,
+            step.Objective,
+            step.ConceptLabel,
+            step.SequenceReason,
+            step.TutorHook?.TargetMisconception,
+            string.Join(" ", step.TargetMisconceptions ?? Array.Empty<string>()),
+            string.Join(" ", step.SuccessCriteria ?? Array.Empty<string>())
+        }.Where(s => !string.IsNullOrWhiteSpace(s))));
+
+        if (!string.IsNullOrWhiteSpace(activeKey))
+        {
+            if (ConceptKeysRelate(stepConcept, activeKey)) score += 120;
+            if (ConceptKeysRelate(quizConcept, activeKey)) score += 80;
+            if (ConceptKeysRelate(tutorConcept, activeKey)) score += 80;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remediationKey))
+        {
+            if (ConceptKeysRelate(stepConcept, remediationKey)) score += 140;
+            if (ConceptKeysRelate(quizConcept, remediationKey)) score += 90;
+            if (ConceptKeysRelate(tutorConcept, remediationKey)) score += 90;
+        }
+
+        score += messageTerms.Count(term => searchable.Contains(term, StringComparison.OrdinalIgnoreCase)) * 12;
+        score += weakTerms.Count(term => searchable.Contains(term, StringComparison.OrdinalIgnoreCase)) * 18;
+
+        if (step.RemediationNeed is "medium" or "high") score += 20;
+        if (step.TutorHook?.TutorMove?.Contains("repair", StringComparison.OrdinalIgnoreCase) == true) score += 16;
+        if (step.TargetMisconceptions?.Count > 0) score += 10;
+        return score;
+    }
+
+    private static bool ConceptKeysRelate(string? candidate, string? expected)
+    {
+        var left = NormalizeKey(candidate);
+        var right = NormalizeKey(expected);
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        if (left == right || left.Contains(right, StringComparison.OrdinalIgnoreCase) || right.Contains(left, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var leftTerms = left.Split(new[] { '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries).Where(t => t.Length >= 4).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rightTerms = right.Split(new[] { '-', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries).Where(t => t.Length >= 4).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return leftTerms.Count > 0 && rightTerms.Count > 0 && leftTerms.Overlaps(rightTerms);
+    }
+
+    private static IReadOnlyList<string> ExtractTutorMatchTerms(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return TutorSignalHeuristics.Normalize(value)
+            .Split(new[] { ' ', '-', '_', '/', ':', ';', ',', '.', '(', ')', '[', ']' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(term => term.Length >= 4)
+            .Where(term => !TutorSignalHeuristics.ContainsAny(term, "anlamadim", "anlamadım", "explain", "repair", "ornek", "örnek", "kavram", "konu", "ders"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .ToArray();
     }
 
     private static RemediationLessonDto? BuildTurnStateRemediationLesson(TutorTurnStateDto state)
@@ -908,6 +1049,71 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
     private static string NormalizeKey(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
 
+    private static string ResolveMentionedConceptKey(
+        string userMessage,
+        IReadOnlyList<(string StableKey, string Label)> graphConcepts,
+        IReadOnlyList<KnowledgeTracingState> ktStates,
+        IReadOnlyList<ConceptMastery> masteries)
+    {
+        var normalizedMessage = TutorSignalHeuristics.Normalize(userMessage);
+        if (string.IsNullOrWhiteSpace(normalizedMessage))
+        {
+            return string.Empty;
+        }
+
+        foreach (var concept in graphConcepts)
+        {
+            if (ConceptMentionMatches(normalizedMessage, concept.StableKey) ||
+                ConceptMentionMatches(normalizedMessage, concept.Label))
+            {
+                return concept.StableKey;
+            }
+        }
+
+        foreach (var state in ktStates)
+        {
+            if (ConceptMentionMatches(normalizedMessage, state.ConceptKey) ||
+                ConceptMentionMatches(normalizedMessage, state.Label))
+            {
+                return state.ConceptKey;
+            }
+        }
+
+        foreach (var mastery in masteries)
+        {
+            if (ConceptMentionMatches(normalizedMessage, mastery.ConceptKey) ||
+                ConceptMentionMatches(normalizedMessage, mastery.Label))
+            {
+                return mastery.ConceptKey;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static bool ConceptMentionMatches(string normalizedMessage, string? concept)
+    {
+        var normalizedConcept = TutorSignalHeuristics.Normalize(concept ?? string.Empty);
+        if (normalizedConcept.Length < 4)
+        {
+            return false;
+        }
+
+        if (normalizedMessage.Contains(normalizedConcept, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var conceptTerms = normalizedConcept
+            .Split(new[] { ' ', '-' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(term => term.Length >= 4)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return conceptTerms.Length >= 2 &&
+               conceptTerms.Count(term => normalizedMessage.Contains(term, StringComparison.OrdinalIgnoreCase)) >= 2;
+    }
+
     private sealed class LearningLoopSignalPayload
     {
         public MisconceptionSignalDto? MisconceptionSignal { get; set; }
@@ -939,21 +1145,30 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
     private readonly OrkaDbContext _db;
     private readonly ITutorWorkingMemoryService _workingMemory;
     private readonly ITeachingEvidenceRouter _evidenceRouter;
+    private readonly IGeminiTutorToolAdvisoryService? _geminiToolAdvisory;
 
     public TutorActionPlanner(
         OrkaDbContext db,
         ITutorWorkingMemoryService workingMemory,
-        ITeachingEvidenceRouter? evidenceRouter = null)
+        ITeachingEvidenceRouter? evidenceRouter = null,
+        IGeminiTutorToolAdvisoryService? geminiToolAdvisory = null)
     {
         _db = db;
         _workingMemory = workingMemory;
         _evidenceRouter = evidenceRouter ?? new TeachingEvidenceRouter();
+        _geminiToolAdvisory = geminiToolAdvisory;
     }
 
     public async Task<TutorActionPlanDto> PlanAsync(TutorTurnStateDto turnState, CancellationToken ct = default)
     {
         var normalized = TutorSignalHeuristics.Normalize(turnState.UserMessage);
-        var lowMastery = !turnState.MasteryProbability.HasValue || turnState.MasteryProbability < 0.55m || turnState.Confidence < 0.45m;
+        var lowMastery =
+            turnState.MasteryProbability < 0.55m ||
+            turnState.Confidence < 0.45m ||
+            turnState.RemediationNeed is "high" or "medium" ||
+            turnState.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase) ||
+            turnState.RemediationSeed != null ||
+            turnState.MisconceptionSignal != null;
         var codeIntent = TutorSignalHeuristics.ContainsAny(normalized, "kod", "java", "sql", "algorithm", "algoritma", "hata", "runtime", "syntax");
         var wantsVisual = turnState.StyleMode == "visual" || TutorSignalHeuristics.ContainsAny(normalized, "görsel", "ciz", "çiz", "graf", "diagram", "şema", "harita");
         var sourceIntent = TutorSignalHeuristics.ContainsAny(normalized, "kaynak", "wiki", "doküman", "dokuman", "notebook", "belgeye göre", "kaynağa göre");
@@ -978,10 +1193,31 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             .Select(g => g.First())
             .Take(8)
             .ToList();
+        var advisory = ShouldRunGeminiToolAdvisory(turnState, toolPlans, normalized, sourceIntent, reviewIntent, codeIntent, wantsVisual)
+            ? await ReviewToolPlanWithGeminiAsync(turnState, toolPlans, ct)
+            : new GeminiTutorToolAdvisoryResult
+            {
+                Enabled = false,
+                SafeMessage = "skipped_not_tool_worthy"
+            };
+        if (advisory.AcceptedSuggestions.Count > 0)
+        {
+            toolPlans = toolPlans
+                .Concat(advisory.AcceptedSuggestions.Select(ToTutorToolPlan))
+                .GroupBy(p => p.ToolId, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(8)
+                .ToList();
+        }
         var artifactPlans = BuildArtifactPlans(turnState, normalized, teachingMode, codeIntent, wantsVisual)
             .Concat(BuildEvidenceArtifactPlans(toolPlans))
             .GroupBy(a => a.ArtifactType, StringComparer.OrdinalIgnoreCase)
             .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+            .Select(g => g.First())
+            .Take(8)
+            .ToList();
+        toolPlans = EnsureArtifactToolPlans(toolPlans, artifactPlans)
+            .GroupBy(p => p.ToolId, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .Take(8)
             .ToList();
@@ -1060,7 +1296,7 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             LessonDelivery = lessonDelivery,
             RemediationLesson = remediationLesson,
             NextCheckPrompt = nextCheck,
-            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans, responsePolicy, toolDecision, lessonDelivery, remediationLesson)
+            PromptBlock = BuildPromptBlock(trace, toolPlans, artifactPlans, responsePolicy, toolDecision, lessonDelivery, remediationLesson, advisory)
         };
 
         await _workingMemory.ApplyPatchAsync(turnState.UserId, turnState.TopicId, turnState.SessionId, "tutor_action_plan", new
@@ -1081,6 +1317,21 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             plan.PersonalizationMode,
             plan.MasteryBasis,
             plan.WeakConceptHints,
+            planQualitySnapshotId = turnState.PlanQualitySnapshotId,
+            currentPlanStepId = turnState.CurrentPlanStepId,
+            currentPlanStepTitle = turnState.CurrentPlanStepTitle,
+            currentPlanTutorMove = turnState.CurrentPlanTutorMove,
+            currentPlanQuizHook = turnState.CurrentPlanQuizHook,
+            planSourceReadiness = turnState.PlanSourceReadiness,
+            geminiToolAdvisory = new
+            {
+                advisory.Enabled,
+                advisory.Model,
+                accepted = advisory.AcceptedSuggestions.Select(s => s.ToolId),
+                rejected = advisory.RejectedSuggestions.Select(s => new { s.ToolId, s.ReasonCode }),
+                advisory.ErrorCode,
+                advisory.SafeMessage
+            },
             toolDecision = plan.ToolDecision,
             lessonDelivery = plan.LessonDelivery,
             remediationLesson = plan.RemediationLesson,
@@ -1098,6 +1349,8 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
                 ["teachingMode"] = plan.TeachingMode,
                 ["activeConceptKey"] = plan.ActiveConceptKey,
                 ["toolCount"] = toolPlans.Count.ToString(),
+                ["geminiAdvisoryAcceptedCount"] = advisory.AcceptedSuggestions.Count.ToString(),
+                ["geminiAdvisoryRejectedCount"] = advisory.RejectedSuggestions.Count.ToString(),
                 ["artifactCount"] = artifactPlans.Count.ToString(),
                 ["tutorTeachingMove"] = plan.TutorTeachingMove ?? "unknown",
                 ["tutorGroundingPolicy"] = plan.TutorGroundingPolicy ?? "unknown",
@@ -1109,6 +1362,104 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
 
         return plan;
     }
+
+    private async Task<GeminiTutorToolAdvisoryResult> ReviewToolPlanWithGeminiAsync(
+        TutorTurnStateDto turnState,
+        IReadOnlyList<TutorToolPlanDto> toolPlans,
+        CancellationToken ct)
+    {
+        if (_geminiToolAdvisory == null)
+            return new GeminiTutorToolAdvisoryResult { Enabled = false, SafeMessage = "Gemini advisory service is unavailable." };
+
+        return await _geminiToolAdvisory.ReviewTutorToolPlanAsync(new GeminiTutorToolAdvisoryRequest
+        {
+            UserId = turnState.UserId,
+            TopicId = turnState.TopicId,
+            SessionId = turnState.SessionId,
+            TutorTurnStateId = turnState.Id,
+            UserMessage = turnState.UserMessage ?? string.Empty,
+            LearnerState = turnState.LearnerState,
+            ActiveConceptKey = turnState.ActiveConceptKey,
+            GroundingPolicy = turnState.EvidencePolicy ?? turnState.GroundingStatus,
+            SourceReadiness = FirstNonEmptyLocal(turnState.SourceReadiness, turnState.PlanSourceReadiness, turnState.GroundingStatus, turnState.EvidenceQuality?.Status) ?? "unknown",
+            RemediationNeed = turnState.RemediationNeed ?? "unknown",
+            CurrentToolPlans = toolPlans.Select(p => new GeminiTutorToolPlanSnapshot
+            {
+                ToolId = p.ToolId,
+                Reason = p.Reason,
+                Required = p.Required,
+                RiskLevel = p.RiskLevel
+            }).ToArray()
+        }, ct);
+    }
+
+    private static bool ShouldRunGeminiToolAdvisory(
+        TutorTurnStateDto turnState,
+        IReadOnlyList<TutorToolPlanDto> toolPlans,
+        string normalized,
+        bool sourceIntent,
+        bool reviewIntent,
+        bool codeIntent,
+        bool wantsVisual)
+    {
+        if (sourceIntent || reviewIntent || codeIntent || wantsVisual)
+            return true;
+
+        if (TutorSignalHeuristics.ContainsAny(
+                normalized,
+                "kaynak",
+                "wiki",
+                "dokuman",
+                "belge",
+                "haber",
+                "guncel",
+                "weather",
+                "hava durumu",
+                "bitcoin",
+                "kripto",
+                "coin",
+                "hesapla",
+                "integral",
+                "turev",
+                "denklem",
+                "workflow",
+                "mimari",
+                "graph",
+                "graf",
+                "diagram",
+                "gorsel"))
+        {
+            return true;
+        }
+
+        return toolPlans.Any(plan =>
+            plan.Required ||
+            string.Equals(plan.RiskLevel, "medium", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(plan.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
+            ToolIdIs(plan, "source_search") && turnState.HasNotebookContext ||
+            ToolIdIs(plan, "visual_generation") ||
+            ToolIdIs(plan, "mermaid_graph") ||
+            ToolIdIs(plan, "wolfram_alpha") ||
+            ToolIdIs(plan, "news") ||
+            ToolIdIs(plan, "crypto"));
+    }
+
+    private static bool ToolIdIs(TutorToolPlanDto plan, string toolId) =>
+        string.Equals(plan.ToolId, toolId, StringComparison.OrdinalIgnoreCase);
+
+    private static TutorToolPlanDto ToTutorToolPlan(GeminiTutorToolSuggestion suggestion) =>
+        new(
+            suggestion.ToolId,
+            string.IsNullOrWhiteSpace(suggestion.Reason)
+                ? "Gemini advisory suggested this governed tool."
+                : $"Gemini advisory: {suggestion.Reason}",
+            suggestion.Required,
+            NormalizeAdvisoryRisk(suggestion.RiskLevel));
+
+    private static string NormalizeAdvisoryRisk(string? risk) =>
+        string.Equals(risk, "high", StringComparison.OrdinalIgnoreCase) ? "high" :
+        string.Equals(risk, "medium", StringComparison.OrdinalIgnoreCase) ? "medium" :
+        "low";
 
     private static TutorLessonDeliveryDto BuildLessonDelivery(
         TutorTurnStateDto state,
@@ -1310,6 +1661,18 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             return "developing";
         if (state.MasteryProbability.HasValue || state.Confidence.HasValue)
             return "beginner";
+        if (state.RemediationSeed != null ||
+            state.MisconceptionSignal != null ||
+            state.RemediationNeed is "high" or "medium" ||
+            state.LearningLoopStatus == "remediation_ready" ||
+            state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase))
+            return "beginner";
+        if (!string.IsNullOrWhiteSpace(state.LatestAssessmentMode) &&
+            !string.Equals(state.LatestAssessmentMode, "unknown", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(state.LatestAssessmentMode, "none", StringComparison.OrdinalIgnoreCase))
+            return "beginner";
+        if (state.PracticeReadiness == "guided")
+            return "beginner";
         return "unknown";
     }
 
@@ -1480,6 +1843,9 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
                        state.RemediationNeed is "high" or "medium" ||
                        state.RemediationSeed != null ||
                        state.LearningLoopStatus.Contains("remediation", StringComparison.OrdinalIgnoreCase);
+        var visualArtifactIntent = artifactPlans.Any(a =>
+            string.Equals(a.ArtifactType, "mermaid_graph", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a.ArtifactType, "image_prompt", StringComparison.OrdinalIgnoreCase));
         var hasSourceEvidence = HasReadySourceEvidence(state);
         var hasActiveLearningContext = state.TopicId.HasValue ||
                                        !string.IsNullOrWhiteSpace(state.ActiveConceptKey) ||
@@ -1544,10 +1910,15 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             selectedAction = "use_korteks_research";
             reasonCodes.Add("research_context_available");
         }
-        else if (artifactIntent || (artifactPlans.Count > 0 && teachingMode is "visualize" or "code_lab"))
+        else if (visualArtifactIntent || (artifactPlans.Count > 0 && teachingMode is "visualize" or "code_lab"))
         {
-            selectedAction = artifactIntent ? "create_notebook_pack" : "create_artifact";
-            reasonCodes.Add("artifact_requested_or_helpful");
+            selectedAction = "create_artifact";
+            reasonCodes.Add("visual_artifact_requested_or_helpful");
+        }
+        else if (artifactIntent)
+        {
+            selectedAction = "create_notebook_pack";
+            reasonCodes.Add("notebook_pack_requested");
         }
         else if (state.HasWikiContext && allowedTools.Contains("wiki_search", StringComparer.OrdinalIgnoreCase))
         {
@@ -1709,6 +2080,26 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
             .ToList();
     }
 
+    private static IEnumerable<TutorToolPlanDto> EnsureArtifactToolPlans(
+        IEnumerable<TutorToolPlanDto> toolPlans,
+        IReadOnlyList<TeachingArtifactPlanDto> artifactPlans)
+    {
+        var list = toolPlans.ToList();
+        if (artifactPlans.Any(a => string.Equals(a.ArtifactType, "mermaid_graph", StringComparison.OrdinalIgnoreCase)) &&
+            list.All(t => !string.Equals(t.ToolId, "mermaid_graph", StringComparison.OrdinalIgnoreCase)))
+        {
+            list.Add(new TutorToolPlanDto("mermaid_graph", "Planned Mermaid teaching artifact requires the governed diagram tool.", false, "low"));
+        }
+
+        if (artifactPlans.Any(a => string.Equals(a.ArtifactType, "image_prompt", StringComparison.OrdinalIgnoreCase)) &&
+            list.All(t => !string.Equals(t.ToolId, "visual_generation", StringComparison.OrdinalIgnoreCase)))
+        {
+            list.Add(new TutorToolPlanDto("visual_generation", "Planned visual teaching artifact requires the governed visual tool.", false, "medium"));
+        }
+
+        return list;
+    }
+
     private static IEnumerable<TeachingArtifactPlanDto> BuildEvidenceArtifactPlans(IEnumerable<TutorToolPlanDto> toolPlans)
     {
         foreach (var tool in toolPlans)
@@ -1746,7 +2137,8 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         TutorResponsePolicyDecision responsePolicy,
         TutorToolDecisionDto toolDecision,
         TutorLessonDeliveryDto lessonDelivery,
-        RemediationLessonDto? remediationLesson) => $"""
+        RemediationLessonDto? remediationLesson,
+        GeminiTutorToolAdvisoryResult advisory) => $"""
 
         [TUTOR ACTION PLAN v3]
         - tutorActionTraceId: {trace.Id}
@@ -1772,6 +2164,7 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         - directAnswerPolicy: {trace.DirectAnswerPolicy}
         - groundingPolicy: {trace.GroundingPolicy}
         - plannedTools: {(toolPlans.Count == 0 ? "none" : string.Join(", ", toolPlans.Select(t => $"{t.ToolId}:{t.RiskLevel}")))}
+        - geminiToolAdvisory: {(advisory.Enabled ? $"model={advisory.Model}; accepted={FormatAdvisoryTools(advisory.AcceptedSuggestions)}; rejected={FormatAdvisoryRejections(advisory.RejectedSuggestions)}; error={advisory.ErrorCode ?? "none"}" : "disabled")}
         - plannedArtifacts: {(artifacts.Count == 0 ? "none" : string.Join(", ", artifacts.Select(a => a.ArtifactType)))}
         - nextCheck: {trace.NextCheckPrompt}
 
@@ -1784,6 +2177,12 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         [REMEDIATION LESSON RUBRIC]
         remediationRepairType none degilse kisa mikro ders, cozumlu ornek, guided practice ve cevap anahtarsiz checkpoint sirasi uygula. Bos/atlanmis cevapta yanilgi tani koyma; eksik onkosul veya guven telafisi olarak ele al.
         """;
+
+    private static string FormatAdvisoryTools(IReadOnlyList<GeminiTutorToolSuggestion> suggestions) =>
+        suggestions.Count == 0 ? "none" : string.Join(", ", suggestions.Select(s => $"{s.ToolId}:{s.RiskLevel}"));
+
+    private static string FormatAdvisoryRejections(IReadOnlyList<GeminiTutorToolRejection> rejections) =>
+        rejections.Count == 0 ? "none" : string.Join(", ", rejections.Select(r => $"{r.ToolId}:{r.ReasonCode}"));
 }
 
 public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
@@ -1836,7 +2235,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         CancellationToken ct = default)
     {
         var results = new List<TutorToolCallDto>();
-        foreach (var plan in actionPlan.ToolPlans)
+        foreach (var plan in actionPlan.ToolPlans.Where(p => ShouldExecutePlannedTool(p, actionPlan.ToolDecision)))
         {
             var startedAt = DateTime.UtcNow;
             if (turnState.SessionId.HasValue)
@@ -2012,6 +2411,46 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
 
         return results;
     }
+
+    private static bool ShouldExecutePlannedTool(TutorToolPlanDto plan, TutorToolDecisionDto? decision)
+    {
+        if (string.IsNullOrWhiteSpace(plan.ToolId) ||
+            string.Equals(plan.ToolId, "write_wiki_trace", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (decision == null)
+        {
+            return plan.Required;
+        }
+
+        if (decision.BlockedTools.Contains(plan.ToolId, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (plan.Required)
+        {
+            return true;
+        }
+
+        return decision.SelectedAction switch
+        {
+            "ask_source" => ToolIs(plan, "source_search") || ToolIs(plan, "wiki_search") || ToolIs(plan, "research_context") || ToolIs(plan, "knowledge_entity"),
+            "read_wiki_context" => ToolIs(plan, "wiki_search"),
+            "use_ide_context" => ToolIs(plan, "ide_last_result"),
+            "use_korteks_research" => ToolIs(plan, "research_context") || ToolIs(plan, "source_search"),
+            "create_artifact" => ToolIs(plan, "visual_generation") || ToolIs(plan, "mermaid_graph"),
+            "create_notebook_pack" => ToolIs(plan, "source_search") || ToolIs(plan, "wiki_search") || ToolIs(plan, "review_query"),
+            "generate_quiz" => ToolIs(plan, "review_query") || ToolIs(plan, "flashcard_query"),
+            "start_remediation" => ToolIs(plan, "wiki_search") || ToolIs(plan, "review_query") || ToolIs(plan, "flashcard_query"),
+            _ => false
+        };
+    }
+
+    private static bool ToolIs(TutorToolPlanDto plan, string toolId) =>
+        string.Equals(plan.ToolId, toolId, StringComparison.OrdinalIgnoreCase);
 
     private static string BuildRuntimeInputSummary(TutorToolPlanDto plan, TutorTurnStateDto state)
     {
@@ -2720,6 +3159,7 @@ public sealed class TutorReflectionService : ITutorReflectionService
         var sourceClaimWithoutSource = turnState.SourceEvidenceCount == 0 &&
             TutorSignalHeuristics.ContainsAny(normalized, "kaynağa göre", "kaynaklara göre", "dokümana göre", "wikiye göre", "belgeye göre");
         var microCheckAsked = assistantAnswer.Contains('?') || normalized.Contains("özetler misin", StringComparison.OrdinalIgnoreCase);
+        microCheckAsked = HasProfessionalMicroCheck(actionPlan, turnState, assistantAnswer);
         var artifactRendered = artifacts.Count > 0 ||
             assistantAnswer.Contains("```mermaid", StringComparison.OrdinalIgnoreCase) ||
             assistantAnswer.Contains("|---", StringComparison.OrdinalIgnoreCase) ||
@@ -2842,6 +3282,33 @@ public sealed class TutorReflectionService : ITutorReflectionService
             CreatedAt = entity.CreatedAt
         };
     }
+
+    private static bool HasProfessionalMicroCheck(TutorActionPlanDto actionPlan, TutorTurnStateDto turnState, string answer)
+    {
+        if (!answer.Contains('?')) return false;
+
+        var normalized = TutorSignalHeuristics.Normalize(answer);
+        var asksLearnerToAct = TutorSignalHeuristics.ContainsAny(normalized,
+            "kendi cumlen", "kendi cümlen", "ornekle", "örnekle", "dener misin", "deneyelim",
+            "mikro kontrol", "kontrol sorusu", "tek adim", "tek adım", "hangi adim", "hangi adım",
+            "ne olur", "neden", "aciklar misin", "açıklar mısın", "explain back", "try one");
+        var genericOnly = TutorSignalHeuristics.ContainsAny(normalized, "anladin mi", "anladın mı", "tamam mi", "tamam mı") &&
+                          !asksLearnerToAct;
+        if (genericOnly) return false;
+
+        var concept = TutorSignalHeuristics.Normalize(FirstNonEmptyForReflection(
+            actionPlan.ActiveConceptKey,
+            turnState.ActiveConceptKey,
+            turnState.CurrentPlanStepTitle,
+            turnState.ActiveConceptLabel) ?? string.Empty);
+        var conceptReferenced = string.IsNullOrWhiteSpace(concept) ||
+            normalized.Contains(concept.Replace('-', ' '), StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains(concept, StringComparison.OrdinalIgnoreCase);
+        return asksLearnerToAct && conceptReferenced;
+    }
+
+    private static string? FirstNonEmptyForReflection(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }
 
 internal static class TutorSignalHeuristics

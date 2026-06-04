@@ -3717,6 +3717,67 @@ public class OrkaDbContext : DbContext
             .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.LearningTopic)
+            .WithMany()
+            .HasForeignKey(q => q.LearningTopicId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.ConceptGraphSnapshot)
+            .WithMany()
+            .HasForeignKey(q => q.ConceptGraphSnapshotId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.LearningConcept)
+            .WithMany()
+            .HasForeignKey(q => q.LearningConceptId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.AssessmentItem)
+            .WithMany()
+            .HasForeignKey(q => q.AssessmentItemId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasOne(q => q.QuizRun)
+            .WithMany()
+            .HasForeignKey(q => q.QuizRunId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.QuestionBankSource)
+            .HasMaxLength(128)
+            .HasDefaultValue("curated_question_item");
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.ConceptKey)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.ConceptLabel)
+            .HasMaxLength(512);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.MisconceptionTarget)
+            .HasMaxLength(450);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.CalibrationStatus)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<QuestionItem>()
+            .Property(q => q.VisualReadinessStatus)
+            .HasMaxLength(64)
+            .HasDefaultValue("not_required");
+
+        modelBuilder.Entity<QuestionItem>()
             .Property(q => q.QuestionType)
             .HasMaxLength(64);
 
@@ -3757,6 +3818,15 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionItem>()
             .HasIndex(q => new { q.QuestionType, q.Difficulty, q.QualityStatus, q.IsDeleted });
 
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.OwnerUserId, q.LearningTopicId, q.ConceptKey, q.QualityStatus, q.IsDeleted });
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.AssessmentItemId, q.IsDeleted });
+
+        modelBuilder.Entity<QuestionItem>()
+            .HasIndex(q => new { q.PlanRequestId, q.QuizRunId, q.QuestionBankSource });
+
         modelBuilder.Entity<QuestionOption>()
             .HasOne(o => o.QuestionItem)
             .WithMany(q => q.Options)
@@ -3766,6 +3836,10 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionOption>()
             .Property(o => o.OptionKey)
             .HasMaxLength(32);
+
+        modelBuilder.Entity<QuestionOption>()
+            .Property(o => o.MisconceptionKey)
+            .HasMaxLength(450);
 
         modelBuilder.Entity<QuestionOption>()
             .HasIndex(o => new { o.QuestionItemId, o.OptionKey });
@@ -3887,6 +3961,27 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionAsset>()
             .Property(a => a.LongDescription)
             .HasMaxLength(2048);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.GenerationProvider)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.GenerationModel)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.RenderStrategy)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.GenerationPromptHash)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<QuestionAsset>()
+            .Property(a => a.VisualReadinessStatus)
+            .HasMaxLength(64)
+            .HasDefaultValue("needs_validation");
 
         modelBuilder.Entity<QuestionAsset>()
             .HasIndex(a => new { a.OwnerUserId, a.Sha256Hash, a.IsDeleted });
@@ -4994,11 +5089,16 @@ public class OrkaDbContext : DbContext
         // Prevents accidental queries returning deleted rows.
         // Use .IgnoreQueryFilters() in queries that explicitly need deleted records.
         modelBuilder.Entity<LearningSource>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<SourceRetrievalItem>().HasQueryFilter(e => !e.Source.IsDeleted);
         modelBuilder.Entity<SourceChunk>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<WikiPage>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Source>().HasQueryFilter(e => !e.WikiPage.IsDeleted);
         modelBuilder.Entity<WikiBlock>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<WikiLink>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuestionItem>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<QuestionOption>().HasQueryFilter(e => !e.QuestionItem.IsDeleted);
+        modelBuilder.Entity<QuestionTag>().HasQueryFilter(e => !e.QuestionItem.IsDeleted);
+        modelBuilder.Entity<QuestionStimulusLink>().HasQueryFilter(e => !e.QuestionItem.IsDeleted);
         modelBuilder.Entity<QuestionAsset>().HasQueryFilter(e => !e.IsDeleted);
 
         modelBuilder.Entity<QuestionContentVersion>().HasQueryFilter(e => !e.IsDeleted);
@@ -5029,9 +5129,11 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<ExamTimeRule>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ExamContentPack>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CentralExamPracticeAttempt>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamPracticeAnswer>().HasQueryFilter(e => !e.PracticeAttempt.IsDeleted);
         modelBuilder.Entity<CentralExamDenemeBlueprint>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CentralExamDenemeBlueprintSection>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<CentralExamDenemeAttempt>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<CentralExamDenemeAnswer>().HasQueryFilter(e => !e.DenemeAttempt.IsDeleted);
         modelBuilder.Entity<LearningArtifact>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<LearningNotebookPack>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<LearningPlanQualitySnapshot>().HasQueryFilter(e => !e.IsDeleted);

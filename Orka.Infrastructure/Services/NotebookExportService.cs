@@ -110,6 +110,13 @@ public sealed class NotebookExportService : INotebookExportService
         {
             PackId = pack.Id,
             SlideDeckArtifactId = slideArtifact?.Id,
+            Surface = preview.Surface,
+            ContextType = preview.ContextType,
+            WikiPageId = preview.WikiPageId,
+            SourceId = preview.SourceId,
+            ExportScope = preview.ExportScope,
+            SourceUploadAllowed = preview.SourceUploadAllowed,
+            CrossSurfaceSync = false,
             Format = format,
             Status = status,
             ExportReadiness = exportReadiness,
@@ -124,6 +131,10 @@ public sealed class NotebookExportService : INotebookExportService
             Preview = preview,
             Safety = safety,
             Accessibility = BuildAccessibility(preview),
+            TemplateKeys = preview.TemplateKeys,
+            SearchFilterKeys = preview.SearchFilterKeys,
+            InternalConnectionKeys = preview.InternalConnectionKeys,
+            PhaseScope = NotebookStudioPhaseScope.All,
             Warnings = warnings.Concat(safety.Warnings).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToArray(),
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -156,6 +167,7 @@ public sealed class NotebookExportService : INotebookExportService
     {
         var slides = slideArtifact == null ? Array.Empty<NotebookSlideExportItemDto>() : ParseSlides(slideArtifact.ContentJson);
         var warnings = ParseStrings(pack.WarningsJson).ToList();
+        var surfaceContext = ResolveSurfaceContext(pack);
         if (slideArtifact == null)
             warnings.Add("Slide deck outline artifact is missing; export can only return a manifest-style fallback.");
         if (pack.EvidenceStatus is "evidence_insufficient" or "degraded" or "stale")
@@ -165,6 +177,13 @@ public sealed class NotebookExportService : INotebookExportService
         {
             PackId = pack.Id,
             SlideDeckArtifactId = slideArtifact?.Id,
+            Surface = surfaceContext.Surface,
+            ContextType = surfaceContext.ContextType,
+            WikiPageId = surfaceContext.WikiPageId,
+            SourceId = surfaceContext.SourceId,
+            ExportScope = surfaceContext.ExportScope,
+            SourceUploadAllowed = surfaceContext.Surface == "orkalm",
+            CrossSurfaceSync = false,
             DeckTitle = Clip(slideArtifact?.Title ?? pack.Title, 180),
             SlideCount = slides.Count,
             SourceBasis = slideArtifact?.SourceBasis ?? SourceBasisFor(pack.EvidenceStatus),
@@ -172,6 +191,10 @@ public sealed class NotebookExportService : INotebookExportService
             ExportReadiness = slides.Count == 0 ? "manifest_ready" : "preview_ready",
             Slides = slides,
             Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToArray(),
+            TemplateKeys = TemplateKeysFor(surfaceContext.Surface),
+            SearchFilterKeys = SearchFilterKeysFor(surfaceContext.Surface),
+            InternalConnectionKeys = InternalConnectionKeysFor(surfaceContext.Surface),
+            PhaseScope = NotebookStudioPhaseScope.All,
             AccessibilitySummary = slides.Count == 0
                 ? "Text fallback is available, but slide-level accessibility metadata is missing until a slide outline exists."
                 : "Slide preview includes titles, bullets, speaker notes, checkpoint questions, and text fallback.",
@@ -228,6 +251,14 @@ public sealed class NotebookExportService : INotebookExportService
         builder.AppendLine($"# {preview.DeckTitle}");
         builder.AppendLine();
         builder.AppendLine("Export type: deterministic study deck package");
+        builder.AppendLine($"Surface: {preview.Surface}");
+        builder.AppendLine($"Context type: {preview.ContextType}");
+        builder.AppendLine($"Export scope: {preview.ExportScope}");
+        if (preview.Surface == "wiki" && preview.WikiPageId.HasValue)
+            builder.AppendLine($"Wiki page id: {preview.WikiPageId}");
+        if (preview.Surface == "orkalm" && preview.SourceId.HasValue)
+            builder.AppendLine($"Source id: {preview.SourceId}");
+        builder.AppendLine("Cross-surface sync: disabled");
         builder.AppendLine($"Slide count: {preview.SlideCount}");
         builder.AppendLine($"Source basis: {preview.SourceBasis}");
         builder.AppendLine($"Source readiness: {preview.SourceReadiness}");
@@ -271,6 +302,14 @@ public sealed class NotebookExportService : INotebookExportService
         builder.AppendLine("</title></head><body>");
         builder.Append("<h1>").Append(WebUtility.HtmlEncode(preview.DeckTitle)).AppendLine("</h1>");
         builder.Append("<p><strong>Export type:</strong> deterministic study deck package</p>");
+        builder.Append("<p><strong>Surface:</strong> ").Append(WebUtility.HtmlEncode(preview.Surface)).AppendLine("</p>");
+        builder.Append("<p><strong>Context type:</strong> ").Append(WebUtility.HtmlEncode(preview.ContextType)).AppendLine("</p>");
+        builder.Append("<p><strong>Export scope:</strong> ").Append(WebUtility.HtmlEncode(preview.ExportScope)).AppendLine("</p>");
+        if (preview.Surface == "wiki" && preview.WikiPageId.HasValue)
+            builder.Append("<p><strong>Wiki page id:</strong> ").Append(WebUtility.HtmlEncode(preview.WikiPageId.Value.ToString())).AppendLine("</p>");
+        if (preview.Surface == "orkalm" && preview.SourceId.HasValue)
+            builder.Append("<p><strong>Source id:</strong> ").Append(WebUtility.HtmlEncode(preview.SourceId.Value.ToString())).AppendLine("</p>");
+        builder.Append("<p><strong>Cross-surface sync:</strong> disabled</p>");
         builder.Append("<p><strong>Slide count:</strong> ").Append(preview.SlideCount).AppendLine("</p>");
         builder.Append("<p><strong>Source basis:</strong> ").Append(WebUtility.HtmlEncode(preview.SourceBasis)).AppendLine("</p>");
         builder.Append("<p><strong>Source readiness:</strong> ").Append(WebUtility.HtmlEncode(preview.SourceReadiness)).AppendLine("</p>");
@@ -307,6 +346,14 @@ public sealed class NotebookExportService : INotebookExportService
         builder.AppendLine("# Slide export manifest");
         builder.AppendLine();
         builder.AppendLine($"Deck: {preview.DeckTitle}");
+        builder.AppendLine($"Surface: {preview.Surface}");
+        builder.AppendLine($"Context type: {preview.ContextType}");
+        builder.AppendLine($"Export scope: {preview.ExportScope}");
+        if (preview.Surface == "wiki" && preview.WikiPageId.HasValue)
+            builder.AppendLine($"Wiki page id: {preview.WikiPageId}");
+        if (preview.Surface == "orkalm" && preview.SourceId.HasValue)
+            builder.AppendLine($"Source id: {preview.SourceId}");
+        builder.AppendLine("Cross-surface sync: disabled");
         builder.AppendLine($"Slide count: {preview.SlideCount}");
         builder.AppendLine($"Source basis: {preview.SourceBasis}");
         builder.AppendLine($"Source readiness: {preview.SourceReadiness}");
@@ -413,6 +460,61 @@ public sealed class NotebookExportService : INotebookExportService
             _ => "evidence_insufficient"
         };
 
+    private static ExportSurfaceContext ResolveSurfaceContext(LearningNotebookPack pack)
+    {
+        Guid? sourceId = null;
+        string? sourceSurface = null;
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(pack.SafeMetadataJson) ? "{}" : pack.SafeMetadataJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("sourceId", out var sourceElement) &&
+                sourceElement.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(sourceElement.GetString(), out var parsedSourceId))
+            {
+                sourceId = parsedSourceId;
+            }
+            if (root.TryGetProperty("sourceSurface", out var surfaceElement) &&
+                surfaceElement.ValueKind == JsonValueKind.String)
+            {
+                sourceSurface = surfaceElement.GetString();
+            }
+        }
+        catch
+        {
+            sourceId = null;
+            sourceSurface = null;
+        }
+
+        var surface = IsSourceSurface(sourceSurface) || pack.PackType is "source_digest" or "source_notebook" or "source_review"
+            ? "orkalm"
+            : "wiki";
+        return surface == "orkalm"
+            ? new ExportSurfaceContext("orkalm", "source_notebook", null, sourceId, "orkalm_source_export_scope")
+            : new ExportSurfaceContext("wiki", "wiki_page", pack.WikiPageId, null, "wiki_lesson_export_scope");
+    }
+
+    private static bool IsSourceSurface(string? value)
+    {
+        var key = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+        return key is "source" or "source_notebook" or "source_collection" or "orkalm" or "orkalm_source";
+    }
+
+    private static IReadOnlyList<string> TemplateKeysFor(string surface) =>
+        surface == "orkalm"
+            ? ["source_briefing", "source_study_guide", "source_glossary", "source_timeline", "source_quiz", "source_flashcards", "source_slides", "source_diagram", "source_export"]
+            : ["wiki_briefing", "wiki_study_guide", "wiki_glossary", "wiki_timeline", "wiki_quiz", "wiki_flashcards", "wiki_slides", "wiki_diagram", "wiki_export"];
+
+    private static IReadOnlyList<string> SearchFilterKeysFor(string surface) =>
+        surface == "orkalm"
+            ? ["surface:orkalm", "context_type:source_notebook", "source_id", "citation_status", "source_tag", "cross_surface_sync:false"]
+            : ["surface:wiki", "context_type:wiki_page", "wiki_page_id", "concept_key", "wiki_tag", "cross_surface_sync:false"];
+
+    private static IReadOnlyList<string> InternalConnectionKeysFor(string surface) =>
+        surface == "orkalm"
+            ? ["source_notebook", "citation", "source_qa", "source_practice", "cross_surface_sync:disabled"]
+            : ["wiki_page", "plan_step", "tutor_trace", "question_bank_trace", "wiki_learning_trace", "cross_surface_sync:disabled"];
+
     private static int GetInt(JsonElement element, string property, int fallback) =>
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
             ? number
@@ -470,4 +572,11 @@ public sealed class NotebookExportService : INotebookExportService
         LearningNotebookPack Pack,
         LearningArtifact? SlideArtifact,
         LearningArtifact? ManifestArtifact);
+
+    private readonly record struct ExportSurfaceContext(
+        string Surface,
+        string ContextType,
+        Guid? WikiPageId,
+        Guid? SourceId,
+        string ExportScope);
 }

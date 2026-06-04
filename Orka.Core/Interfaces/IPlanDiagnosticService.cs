@@ -10,6 +10,21 @@ public interface IPlanDiagnosticService
         StartPlanDiagnosticRequest request,
         CancellationToken ct = default);
 
+    Task<StartPlanDiagnosticResponse> StartQueuedAsync(
+        Guid userId,
+        StartPlanDiagnosticRequest request,
+        CancellationToken ct = default);
+
+    Task<StartPlanDiagnosticResponse> GetStartStatusAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default);
+
+    Task RunQueuedStartAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default);
+
     Task<PlanDiagnosticAnswerResponse> RecordAnswerAsync(
         Guid userId,
         Guid planRequestId,

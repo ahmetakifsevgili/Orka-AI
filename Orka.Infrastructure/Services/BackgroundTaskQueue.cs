@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -11,19 +12,40 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
     private readonly Channel<BackgroundTaskItem> _queue;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IAiRequestContextAccessor _aiRequestContext;
     private readonly ILogger<BackgroundTaskQueue> _logger;
+    private readonly int _maxConcurrency;
+
+    public BackgroundTaskQueue(
+        IServiceScopeFactory scopeFactory,
+        IAiRequestContextAccessor aiRequestContext,
+        ILogger<BackgroundTaskQueue> logger)
+        : this(scopeFactory, aiRequestContext, logger, maxConcurrency: 4)
+    {
+    }
 
     public BackgroundTaskQueue(
         IAiRequestContextAccessor aiRequestContext,
         ILogger<BackgroundTaskQueue> logger)
+        : this(null, aiRequestContext, logger, maxConcurrency: 4)
     {
+    }
+
+    public BackgroundTaskQueue(
+        IServiceScopeFactory? scopeFactory,
+        IAiRequestContextAccessor aiRequestContext,
+        ILogger<BackgroundTaskQueue> logger,
+        int maxConcurrency)
+    {
+        _scopeFactory = scopeFactory;
         _aiRequestContext = aiRequestContext;
         _logger = logger;
+        _maxConcurrency = Math.Clamp(maxConcurrency, 1, 64);
         _queue = Channel.CreateBounded<BackgroundTaskItem>(new BoundedChannelOptions(256)
         {
             FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
+            SingleReader = false,
             SingleWriter = false
         });
     }
@@ -38,9 +60,50 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var item in _queue.Reader.ReadAllAsync(stoppingToken))
+        var semaphore = new SemaphoreSlim(_maxConcurrency);
+        var activeTasks = new System.Collections.Concurrent.ConcurrentDictionary<Task, byte>();
+
+        try
         {
-            await RunItemAsync(item, stoppingToken);
+            await foreach (var item in _queue.Reader.ReadAllAsync(stoppingToken))
+            {
+                await semaphore.WaitAsync(stoppingToken);
+
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await RunItemAsync(item, stoppingToken);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }, stoppingToken);
+
+                activeTasks.TryAdd(task, 0);
+                _ = task.ContinueWith(t => activeTasks.TryRemove(t, out _), CancellationToken.None);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Expected shutdown
+        }
+        finally
+        {
+            var remaining = activeTasks.Keys.ToArray();
+            if (remaining.Length > 0)
+            {
+                try
+                {
+                    await Task.WhenAll(remaining).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+                catch
+                {
+                    // Ignore shutdown exceptions
+                }
+            }
+            semaphore.Dispose();
         }
     }
 
@@ -67,7 +130,20 @@ public sealed class BackgroundTaskQueue : BackgroundService, IBackgroundTaskQueu
                     Source: item.JobType,
                     IsBackground: true));
 
-                await item.Work(timeout.Token);
+                if (item.ScopedWork != null)
+                {
+                    if (_scopeFactory == null)
+                    {
+                        throw new InvalidOperationException("Background scoped work requires an IServiceScopeFactory.");
+                    }
+
+                    using var scope = _scopeFactory.CreateScope();
+                    await item.ScopedWork(scope.ServiceProvider, timeout.Token);
+                }
+                else
+                {
+                    await item.Work(timeout.Token);
+                }
 
                 _logger.LogInformation(
                     "[BackgroundQueue] Job succeeded. Type={JobType} Attempt={Attempt}/{Attempts} UserRef={UserRef} CorrelationRef={CorrelationRef}",

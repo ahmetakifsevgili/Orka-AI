@@ -435,4 +435,27 @@ public record AudioOverviewJobDto(
     string? FileName = null,
     string? DownloadUrl = null,
     string? FallbackReason = null,
-    DateTime? UpdatedAt = null);
+    DateTime? UpdatedAt = null,
+    string Surface = "wiki",
+    string ContextType = "wiki_page",
+    Guid? WikiPageId = null,
+    Guid? SourceId = null,
+    string AudioMode = "brief",
+    string DialogueFormat = "hoca_asistan_konuk",
+    string TtsQuality = "standard",
+    string Transcript = "",
+    string CaptionTrack = "",
+    IReadOnlyList<AudioCaptionCueDto>? Captions = null,
+    bool ClassroomReady = true,
+    bool CrossSurfaceSync = false,
+    DateTime? AudioExpiresAt = null,
+    DateTime? AudioPurgedAt = null,
+    long AudioByteLength = 0,
+    IReadOnlyList<string>? RetentionNotes = null);
+
+public record AudioCaptionCueDto(
+    int CueId,
+    string Speaker,
+    string Text,
+    string Start,
+    string End);

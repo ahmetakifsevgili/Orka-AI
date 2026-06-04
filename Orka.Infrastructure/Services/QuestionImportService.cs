@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -582,7 +583,7 @@ public sealed partial class QuestionImportService : IQuestionImportService
                 Title = title,
                 StimulusType = type,
                 ContentText = contentText,
-                ContentJson = SafeOptional(stimulus.ContentJson),
+                ContentJson = SafeContentJson(stimulus.ContentJson),
                 SourceRegistryItemId = stimulus.SourceRegistryItemId,
                 CurriculumNodeId = stimulus.CurriculumNodeId,
                 LicenseStatus = NormalizeBounded(stimulus.LicenseStatus, AllowedLicenseStatuses, "unknown"),
@@ -614,7 +615,21 @@ public sealed partial class QuestionImportService : IQuestionImportService
             SectionCode = question.SectionCode,
             SubjectCode = question.SubjectCode,
             TopicCode = question.TopicCode,
-            OutcomeCode = question.OutcomeCode
+            OutcomeCode = question.OutcomeCode,
+            LearningTopicId = question.LearningTopicId,
+            ConceptGraphSnapshotId = question.ConceptGraphSnapshotId,
+            LearningConceptId = question.LearningConceptId,
+            AssessmentItemId = question.AssessmentItemId,
+            QuizRunId = question.QuizRunId,
+            PlanRequestId = question.PlanRequestId,
+            ConceptKey = question.ConceptKey,
+            ConceptLabel = question.ConceptLabel,
+            MisconceptionTarget = question.MisconceptionTarget,
+            EvidenceExpected = question.EvidenceExpected,
+            ScoringRuleJson = question.ScoringRuleJson,
+            CalibrationStatus = question.CalibrationStatus,
+            VisualReadinessStatus = question.VisualReadinessStatus,
+            QuestionBankSource = question.QuestionBankSource
         };
         var links = await ResolveExamLinksAsync(userId, item, issues, ct);
         if (links is null)
@@ -688,6 +703,20 @@ public sealed partial class QuestionImportService : IQuestionImportService
             ExamSubjectId = links.ExamSubjectId,
             ExamTopicId = links.ExamTopicId,
             ExamOutcomeId = links.ExamOutcomeId,
+            LearningTopicId = question.LearningTopicId,
+            ConceptGraphSnapshotId = question.ConceptGraphSnapshotId,
+            LearningConceptId = question.LearningConceptId,
+            AssessmentItemId = question.AssessmentItemId,
+            QuizRunId = question.QuizRunId,
+            PlanRequestId = question.PlanRequestId,
+            ConceptKey = SafeOptional(question.ConceptKey),
+            ConceptLabel = SafeOptional(question.ConceptLabel),
+            MisconceptionTarget = SafeOptional(question.MisconceptionTarget),
+            EvidenceExpected = SafeOptional(question.EvidenceExpected),
+            ScoringRuleJson = SafeAssessmentMetadataJson(question.ScoringRuleJson),
+            CalibrationStatus = SafeOptional(question.CalibrationStatus),
+            VisualReadinessStatus = SafeOptional(question.VisualReadinessStatus),
+            QuestionBankSource = SafeOptional(question.QuestionBankSource),
             QuestionType = questionType,
             Stem = stem,
             Difficulty = NormalizeBounded(question.Difficulty, AllowedDifficulties, "medium"),
@@ -732,7 +761,10 @@ public sealed partial class QuestionImportService : IQuestionImportService
                     OptionKey = key,
                     Text = string.IsNullOrWhiteSpace(text) ? $"Rich option {key}" : text,
                     IsCorrect = option.IsCorrect,
-                    SortOrder = option.SortOrder == 0 ? index : option.SortOrder
+                    SortOrder = option.SortOrder == 0 ? index : option.SortOrder,
+                    Rationale = SafeOptional(option.Rationale),
+                    MisconceptionKey = SafeOptional(option.MisconceptionKey),
+                    DiagnosticSignalJson = SafeAssessmentMetadataJson(option.DiagnosticSignalJson)
                 };
             })
             .OrderBy(o => o.SortOrder)
@@ -869,7 +901,7 @@ public sealed partial class QuestionImportService : IQuestionImportService
                 Title = title,
                 StimulusType = NormalizeBounded(stimulus.StimulusType, AllowedStimulusTypes, "passage"),
                 ContentText = SafeOptional(stimulus.ContentText),
-                ContentJson = SafeOptional(stimulus.ContentJson),
+                ContentJson = SafeContentJson(stimulus.ContentJson),
                 SourceRegistryItemId = stimulus.SourceRegistryItemId,
                 CurriculumNodeId = stimulus.CurriculumNodeId,
                 LicenseStatus = NormalizeBounded(stimulus.LicenseStatus, AllowedLicenseStatuses, "unknown"),
@@ -896,6 +928,20 @@ public sealed partial class QuestionImportService : IQuestionImportService
         question.SubjectCode ??= package.SubjectCode;
         question.TopicCode ??= package.TopicCode;
         question.OutcomeCode ??= package.OutcomeCode;
+        question.LearningTopicId ??= package.LearningTopicId;
+        question.ConceptGraphSnapshotId ??= package.ConceptGraphSnapshotId;
+        question.LearningConceptId ??= package.LearningConceptId;
+        question.AssessmentItemId ??= package.AssessmentItemId;
+        question.QuizRunId ??= package.QuizRunId;
+        question.PlanRequestId ??= package.PlanRequestId;
+        question.ConceptKey ??= package.ConceptKey;
+        question.ConceptLabel ??= package.ConceptLabel;
+        question.MisconceptionTarget ??= package.MisconceptionTarget;
+        question.EvidenceExpected ??= package.EvidenceExpected;
+        question.ScoringRuleJson ??= package.ScoringRuleJson;
+        question.CalibrationStatus ??= package.CalibrationStatus;
+        question.VisualReadinessStatus ??= package.VisualReadinessStatus;
+        question.QuestionBankSource ??= package.QuestionBankSource;
         question.SourceOrigin ??= package.SourceOrigin;
         question.LicenseStatus ??= package.LicenseStatus;
         question.SourceTitle ??= package.SourceTitle;
@@ -998,7 +1044,7 @@ public sealed partial class QuestionImportService : IQuestionImportService
             {
                 BlockType = NormalizeBounded(b.BlockType, AllowedQuestionBlockTypes, "text"),
                 Text = SafeOptional(b.Text),
-                ContentJson = SafeOptional(b.ContentJson),
+                ContentJson = SafeContentJson(b.ContentJson),
                 AssetId = ResolveExternalAssetId(b.ExternalAssetId, assetIdMap),
                 SortOrder = b.SortOrder,
                 AltText = SafeOptional(b.AltText),
@@ -1013,7 +1059,7 @@ public sealed partial class QuestionImportService : IQuestionImportService
     {
         BlockType = NormalizeBounded(block.BlockType, AllowedOptionBlockTypes, "text"),
         Text = SafeOptional(block.Text),
-        ContentJson = SafeOptional(block.ContentJson),
+        ContentJson = SafeContentJson(block.ContentJson),
         AssetId = ResolveExternalAssetId(block.ExternalAssetId, assetIdMap),
         SortOrder = block.SortOrder,
         AltText = SafeOptional(block.AltText),
@@ -1129,6 +1175,20 @@ public sealed partial class QuestionImportService : IQuestionImportService
             ExamSubjectId = links.ExamSubjectId,
             ExamTopicId = links.ExamTopicId,
             ExamOutcomeId = links.ExamOutcomeId,
+            LearningTopicId = item.LearningTopicId,
+            ConceptGraphSnapshotId = item.ConceptGraphSnapshotId,
+            LearningConceptId = item.LearningConceptId,
+            AssessmentItemId = item.AssessmentItemId,
+            QuizRunId = item.QuizRunId,
+            PlanRequestId = item.PlanRequestId,
+            ConceptKey = SafeOptional(item.ConceptKey),
+            ConceptLabel = SafeOptional(item.ConceptLabel),
+            MisconceptionTarget = SafeOptional(item.MisconceptionTarget),
+            EvidenceExpected = SafeOptional(item.EvidenceExpected),
+            ScoringRuleJson = SafeAssessmentMetadataJson(item.ScoringRuleJson),
+            CalibrationStatus = SafeOptional(item.CalibrationStatus),
+            VisualReadinessStatus = SafeOptional(item.VisualReadinessStatus),
+            QuestionBankSource = SafeOptional(item.QuestionBankSource),
             QuestionType = questionType,
             Stem = stem,
             Difficulty = NormalizeBounded(item.Difficulty, AllowedDifficulties, "medium"),
@@ -1467,6 +1527,20 @@ public sealed partial class QuestionImportService : IQuestionImportService
         SubjectCode = request.SubjectCode,
         TopicCode = request.TopicCode,
         OutcomeCode = request.OutcomeCode,
+        LearningTopicId = request.LearningTopicId,
+        ConceptGraphSnapshotId = request.ConceptGraphSnapshotId,
+        LearningConceptId = request.LearningConceptId,
+        AssessmentItemId = request.AssessmentItemId,
+        QuizRunId = request.QuizRunId,
+        PlanRequestId = request.PlanRequestId,
+        ConceptKey = request.ConceptKey,
+        ConceptLabel = request.ConceptLabel,
+        MisconceptionTarget = request.MisconceptionTarget,
+        EvidenceExpected = request.EvidenceExpected,
+        ScoringRuleJson = request.ScoringRuleJson,
+        CalibrationStatus = request.CalibrationStatus,
+        VisualReadinessStatus = request.VisualReadinessStatus,
+        QuestionBankSource = request.QuestionBankSource,
         QuestionType = "multiple_choice",
         Stem = stem,
         Options = options,
@@ -1485,7 +1559,10 @@ public sealed partial class QuestionImportService : IQuestionImportService
                 OptionKey = NormalizeOptionKey(option.OptionKey, index),
                 Text = Clean(option.Text),
                 IsCorrect = option.IsCorrect,
-                SortOrder = option.SortOrder == 0 ? index : option.SortOrder
+                SortOrder = option.SortOrder == 0 ? index : option.SortOrder,
+                Rationale = SafeOptional(option.Rationale),
+                MisconceptionKey = SafeOptional(option.MisconceptionKey),
+                DiagnosticSignalJson = SafeAssessmentMetadataJson(option.DiagnosticSignalJson)
             })
             .OrderBy(o => o.SortOrder)
             .ThenBy(o => o.OptionKey, StringComparer.OrdinalIgnoreCase)
@@ -1674,6 +1751,12 @@ public sealed partial class QuestionImportService : IQuestionImportService
         var clean = CleanOptional(value);
         return string.IsNullOrWhiteSpace(clean) ? null : clean;
     }
+
+    private static string? SafeContentJson(string? value) =>
+        LearnerSafeContentJson.Sanitize(SafeOptional(value));
+
+    private static string? SafeAssessmentMetadataJson(string? value) =>
+        LearnerSafeContentJson.SanitizeAssessmentMetadata(SafeOptional(value));
 
     private sealed record ResolvedImportLinks(
         Guid ExamDefinitionId,

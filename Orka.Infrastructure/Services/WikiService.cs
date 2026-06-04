@@ -174,7 +174,14 @@ public class WikiService : IWikiService
         };
 
         db.WikiBlocks.Add(block);
-        if (page.Status == "pending") page.Status = "learning";
+        if (string.IsNullOrWhiteSpace(page.SafeSummary))
+        {
+            page.SafeSummary = CleanText(content, 1200);
+        }
+        if (page.Status is "pending" or "learning")
+        {
+            page.Status = "ready";
+        }
         page.UpdatedAt = now;
         await db.SaveChangesAsync();
 
@@ -270,6 +277,7 @@ public class WikiService : IWikiService
                 Title = wikiTitle,
                 PageKey = BuildTopicPageKey(wikiTopicId),
                 PageType = wikiTopicId == topicId ? "topic_root" : "lesson",
+                SafeSummary = CleanText(aiContent, 1200),
                 SourceReadiness = "evidence_insufficient",
                 EvidenceStatus = "evidence_insufficient",
                 MetadataJson = "{}",
@@ -349,6 +357,7 @@ public class WikiService : IWikiService
         db.WikiBlocks.Add(block);
         page.Status = "ready";
         page.Content = EnsureMarkdownIntegrity(summary);
+        page.SafeSummary = CleanText(summary, 1200);
         page.UpdatedAt = DateTime.UtcNow;
 
         // QuizBlock: Her 3. wiki güncellemesinde pekiştirme soruları üret (her mesajda değil)
@@ -1178,25 +1187,40 @@ Ders İçeriği:
         return true;
     }
 
-    private static WikiGraphPageDto ToPageDto(WikiPage page) => new()
+    private static WikiGraphPageDto ToPageDto(WikiPage page)
     {
-        Id = page.Id,
-        TopicId = page.TopicId,
-        ParentWikiPageId = page.ParentWikiPageId,
-        PageKey = string.IsNullOrWhiteSpace(page.PageKey) ? page.Id.ToString("N") : page.PageKey,
-        PageType = string.IsNullOrWhiteSpace(page.PageType) ? "concept" : page.PageType,
-        ConceptKey = page.ConceptKey,
-        ParentConceptKey = page.ParentConceptKey,
-        Title = page.Title,
-        Status = page.Status,
-        SourceReadiness = page.SourceReadiness,
-        EvidenceStatus = page.EvidenceStatus,
-        SafeSummary = page.SafeSummary,
-        OrderIndex = page.OrderIndex,
-        BlockCount = page.Blocks?.Count(b => !b.IsDeleted) ?? 0,
-        Curation = WikiAutoCurationService.BuildSummary(page, page.Blocks?.Where(b => !b.IsDeleted).ToArray()),
-        UpdatedAt = page.UpdatedAt
-    };
+        var visibleBlocks = page.Blocks?.Where(b => !b.IsDeleted).ToArray() ?? [];
+        var requiredBlockTypesPresent = HasRequiredWikiBlockType(visibleBlocks);
+        var hasLearningContent = !string.IsNullOrWhiteSpace(page.SafeSummary) && visibleBlocks.Length > 0;
+        return new WikiGraphPageDto
+        {
+            Id = page.Id,
+            TopicId = page.TopicId,
+            ParentWikiPageId = page.ParentWikiPageId,
+            PlanStepId = page.PlanStepId,
+            PageKey = string.IsNullOrWhiteSpace(page.PageKey) ? page.Id.ToString("N") : page.PageKey,
+            PageType = string.IsNullOrWhiteSpace(page.PageType) ? "concept" : page.PageType,
+            ConceptKey = page.ConceptKey,
+            ParentConceptKey = page.ParentConceptKey,
+            Title = page.Title,
+            Status = page.Status,
+            SourceReadiness = page.SourceReadiness,
+            EvidenceStatus = page.EvidenceStatus,
+            SafeSummary = page.SafeSummary,
+            ContentReadiness = hasLearningContent && requiredBlockTypesPresent ? "ready" : visibleBlocks.Length == 0 ? "skeleton" : "degraded",
+            HasLearningContent = hasLearningContent,
+            VisibleBlockCount = visibleBlocks.Length,
+            RequiredBlockTypesPresent = requiredBlockTypesPresent,
+            OrderIndex = page.OrderIndex,
+            BlockCount = visibleBlocks.Length,
+            Curation = WikiAutoCurationService.BuildSummary(page, visibleBlocks),
+            LearningSystemBinding = WikiLearningSystemBindingFactory.From(page, visibleBlocks),
+            UpdatedAt = page.UpdatedAt
+        };
+    }
+
+    private static bool HasRequiredWikiBlockType(IReadOnlyCollection<WikiBlock> blocks) =>
+        blocks.Any(b => b.BlockType is WikiBlockType.Summary or WikiBlockType.Concept or WikiBlockType.SourceExcerptSummary or WikiBlockType.TutorExplanation or WikiBlockType.RepairNote or WikiBlockType.MisconceptionNote);
 
     private static WikiGraphLinkDto ToLinkDto(WikiLink link) => new()
     {

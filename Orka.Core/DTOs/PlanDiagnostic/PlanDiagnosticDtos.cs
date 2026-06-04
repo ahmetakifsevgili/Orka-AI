@@ -105,6 +105,10 @@ public sealed class StartPlanDiagnosticResponse
     public string ApprovedFocusArea { get; set; } = string.Empty;
     public string ApprovedStudyGoal { get; set; } = string.Empty;
     public string ApprovedResearchIntent { get; set; } = string.Empty;
+    public bool IsAsync { get; set; }
+    public bool IsReady { get; set; }
+    public string? Message { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 public sealed class AnalyzeStudyIntentRequest
@@ -127,6 +131,14 @@ public sealed class StudyIntentPreviewResponse
     public string Language { get; set; } = "tr";
     public List<string> ClarifyingNotes { get; set; } = [];
     public bool RequiresUserConfirmation { get; set; } = true;
+    public string IntentKind { get; set; } = "learning_path";
+    public string GoalType { get; set; } = "learn_and_practice";
+    public string? TargetExamCode { get; set; }
+    public string SourceMode { get; set; } = "source_aware_if_available";
+    public string TimeHorizon { get; set; } = "unspecified";
+    public List<string> LearnerConstraints { get; set; } = [];
+    public List<string> RequiredClarifications { get; set; } = [];
+    public decimal Confidence { get; set; } = 0.70m;
 }
 
 public sealed class FinalizePlanDiagnosticRequest

@@ -488,7 +488,31 @@ public sealed class ContentOperationsService : IContentOperationsService
             {
                 blocking.Add(Issue("multiple_choice_option_text_or_content_required", "shape", "Each option needs text or renderable option content."));
             }
+
+            var incorrectOptions = options.Where(o => !o.IsCorrect).ToList();
+            var missingDistractorRationale = incorrectOptions.Count(o => string.IsNullOrWhiteSpace(o.Rationale));
+            var missingDiagnosticSignal = incorrectOptions.Count(o =>
+                string.IsNullOrWhiteSpace(o.MisconceptionKey) &&
+                string.IsNullOrWhiteSpace(o.DiagnosticSignalJson));
+            if (IsProfessionalPracticeQuestion(question))
+            {
+                if (missingDistractorRationale > 0)
+                {
+                    blocking.Add(Issue("distractor_rationale_required", "pedagogy", "Professional diagnostic questions need a rationale for every distractor."));
+                }
+
+                if (missingDiagnosticSignal > 0)
+                {
+                    blocking.Add(Issue("distractor_diagnostic_signal_required", "pedagogy", "Professional diagnostic distractors need a misconception key or diagnostic signal."));
+                }
+            }
+            else if (missingDistractorRationale > 0 || missingDiagnosticSignal > 0)
+            {
+                warnings.Add(Issue("distractor_diagnostic_metadata_missing", "pedagogy", "Distractor rationales or diagnostic signals are missing, so this item is not yet professional diagnostic-ready.", severity: "warning"));
+            }
         }
+
+        AddProfessionalBindingIssues(question, blocking, warnings);
 
         if (!SafePublishLicenseStatuses.Contains(question.LicenseStatus))
         {
@@ -554,6 +578,43 @@ public sealed class ContentOperationsService : IContentOperationsService
             WarningIssues = warnings
         };
     }
+
+    private static void AddProfessionalBindingIssues(
+        QuestionItem question,
+        List<QuestionPublishIssueDto> blocking,
+        List<QuestionPublishIssueDto> warnings)
+    {
+        var professional = IsProfessionalPracticeQuestion(question);
+        var target = professional ? blocking : warnings;
+        var severity = professional ? "blocking" : "warning";
+        var messageSuffix = professional
+            ? "Professional diagnostic/practice questions cannot be published without this binding."
+            : "This item can remain curated content, but it is not eligible for KG-bound professional practice until this is added.";
+
+        AddIfMissing(question.AssessmentItemId.HasValue, "assessment_item_binding_required", "assessment", "Assessment item binding is missing. " + messageSuffix);
+        AddIfMissing(question.ConceptGraphSnapshotId.HasValue, "concept_graph_binding_required", "knowledge_graph", "Concept graph snapshot binding is missing. " + messageSuffix);
+        AddIfMissing(question.LearningConceptId.HasValue, "learning_concept_binding_required", "knowledge_graph", "Learning concept binding is missing. " + messageSuffix);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.ConceptKey), "concept_key_required", "knowledge_graph", "Concept key is missing. " + messageSuffix);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.EvidenceExpected), "evidence_expected_required", "assessment", "Evidence expectation is missing. " + messageSuffix);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.ScoringRuleJson), "scoring_rule_required", "assessment", "Server-side scoring rule metadata is missing. " + messageSuffix);
+
+        var visualReady = question.VisualReadinessStatus is "not_required" or "ready" or "validated";
+        AddIfMissing(visualReady, "visual_readiness_required", "accessibility", "Visual readiness must be not_required, ready, or validated. " + messageSuffix);
+
+        void AddIfMissing(bool ok, string code, string area, string message)
+        {
+            if (ok)
+            {
+                return;
+            }
+
+            target.Add(Issue(code, area, message, severity));
+        }
+    }
+
+    private static bool IsProfessionalPracticeQuestion(QuestionItem question) =>
+        string.Equals(question.QuestionBankSource, "diagnostic_assessment_item", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(question.QualityStatus, "diagnostic_ready", StringComparison.OrdinalIgnoreCase);
 
     private async Task SaveReadinessSnapshotAsync(Guid userId, QuestionPublishReadinessDto readiness, CancellationToken ct)
     {

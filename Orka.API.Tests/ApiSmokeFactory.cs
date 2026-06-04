@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Orka.API.Services;
 using Orka.Core.DTOs;
@@ -232,6 +233,24 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IAuthAttemptLimiter>(sp => sp.GetRequiredService<AuthAttemptRateLimiter>());
 
+            services.Configure<HealthCheckServiceOptions>(options =>
+            {
+                var redisRegistrations = options.Registrations
+                    .Where(registration => string.Equals(registration.Name, "redis", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var registration in redisRegistrations)
+                {
+                    options.Registrations.Remove(registration);
+                }
+
+                options.Registrations.Add(new HealthCheckRegistration(
+                    "redis",
+                    _ => new SmokeRedisHealthCheck(),
+                    HealthStatus.Unhealthy,
+                    new[] { "ready" }));
+            });
+
             _configureServices?.Invoke(services);
 
             using var provider = services.BuildServiceProvider();
@@ -244,6 +263,14 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
     private static bool IsProtectedEnvironment(string environmentName) =>
         string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(environmentName, "Staging", StringComparison.OrdinalIgnoreCase);
+
+    private sealed class SmokeRedisHealthCheck : IHealthCheck
+    {
+        public Task<HealthCheckResult> CheckHealthAsync(
+            HealthCheckContext context,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(HealthCheckResult.Healthy("Smoke Redis health is provided by ApiSmokeFactory."));
+    }
 
     private sealed class SmokeAgentFactory : IAIAgentFactory
     {
@@ -338,13 +365,14 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
             _chaos = chaos;
         }
 
-        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default) =>
+        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null) =>
             GetResponseAsync([], systemPrompt, ct);
 
         public async IAsyncEnumerable<string> GenerateResponseStreamAsync(
             string systemPrompt,
             string userMessage,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default,
+            int? maxOutputTokens = null)
         {
             yield return await GetResponseAsync([], systemPrompt, ct);
         }
@@ -419,6 +447,9 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
     private sealed class SmokeEdgeTtsService : IEdgeTtsService
     {
         public Task<byte[]> SynthesizeDialogueAsync(string script, CancellationToken ct = default) =>
+            Task.FromResult(Array.Empty<byte>());
+
+        public Task<byte[]> SynthesizeDialogueAsync(string script, string? ttsQuality, CancellationToken ct = default) =>
             Task.FromResult(Array.Empty<byte>());
     }
 
@@ -539,5 +570,8 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 }

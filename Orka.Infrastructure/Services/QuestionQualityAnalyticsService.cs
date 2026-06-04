@@ -50,7 +50,22 @@ public sealed class QuestionQualityAnalyticsService : IQuestionQualityAnalyticsS
             .Select(a => new AnswerFact(a.SelectedOptionKey, a.CorrectOptionKey, a.IsCorrect, a.IsBlank))
             .ToListAsync(ct);
 
-        var facts = practiceAnswers.Concat(denemeAnswers).ToList();
+        var linkedAssessmentIds = new List<Guid> { question.Id };
+        if (question.AssessmentItemId.HasValue && question.AssessmentItemId.Value != question.Id)
+        {
+            linkedAssessmentIds.Add(question.AssessmentItemId.Value);
+        }
+
+        var questionIdText = question.Id.ToString("D");
+        var quizAttemptAnswers = await _db.QuizAttempts
+            .AsNoTracking()
+            .Where(a => a.UserId == userId &&
+                        ((a.AssessmentItemId.HasValue && linkedAssessmentIds.Contains(a.AssessmentItemId.Value)) ||
+                         a.QuestionId == questionIdText))
+            .Select(a => new AnswerFact(a.UserAnswer, null, a.IsCorrect, a.WasSkipped))
+            .ToListAsync(ct);
+
+        var facts = practiceAnswers.Concat(denemeAnswers).Concat(quizAttemptAnswers).ToList();
         var now = DateTime.UtcNow;
         var attemptCount = facts.Count;
         var answered = facts.Count(a => !a.IsBlank);
@@ -544,8 +559,22 @@ public sealed class QuestionQualityAnalyticsService : IQuestionQualityAnalyticsS
     private static string? NormalizeCodeOrNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
 
-    private static string NormalizeOptionKey(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
+    private static string NormalizeOptionKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        var separator = trimmed.IndexOfAny([')', '.', ':', '-', ' ']);
+        if (separator > 0 && separator <= 3)
+        {
+            trimmed = trimmed[..separator];
+        }
+
+        return trimmed.Trim().ToUpperInvariant();
+    }
 
     private sealed record AnswerFact(string? SelectedOptionKey, string? CorrectOptionKey, bool IsCorrect, bool IsBlank);
 }

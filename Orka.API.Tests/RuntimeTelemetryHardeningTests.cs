@@ -170,6 +170,54 @@ public sealed class RuntimeTelemetryHardeningTests
         }
     }
 
+    [Fact]
+    public async Task BackgroundQueue_RespectsConfiguredMaxConcurrency()
+    {
+        var accessor = new AsyncLocalAiRequestContextAccessor();
+        var queue = new BackgroundTaskQueue(null, accessor, NullLogger<BackgroundTaskQueue>.Instance, maxConcurrency: 2);
+        var running = 0;
+        var maxObserved = 0;
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var remaining = 6;
+
+        await queue.StartAsync(CancellationToken.None);
+        try
+        {
+            for (var i = 0; i < 6; i++)
+            {
+                await queue.QueueAsync(new BackgroundTaskItem(
+                    "concurrency-test",
+                    null,
+                    null,
+                    async _ =>
+                    {
+                        var current = Interlocked.Increment(ref running);
+                        var snapshot = maxObserved;
+                        while (current > snapshot)
+                        {
+                            Interlocked.CompareExchange(ref maxObserved, current, snapshot);
+                            snapshot = maxObserved;
+                        }
+
+                        await Task.Delay(75);
+                        Interlocked.Decrement(ref running);
+                        if (Interlocked.Decrement(ref remaining) == 0)
+                        {
+                            completed.SetResult();
+                        }
+                    }));
+            }
+
+            var finished = await Task.WhenAny(completed.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.Same(completed.Task, finished);
+            Assert.Equal(2, maxObserved);
+        }
+        finally
+        {
+            await queue.StopAsync(CancellationToken.None);
+        }
+    }
+
     private static OrkaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrkaDbContext>()

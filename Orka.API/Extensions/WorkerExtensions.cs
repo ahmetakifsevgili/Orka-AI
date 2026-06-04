@@ -14,9 +14,18 @@ namespace Orka.API.Extensions
     {
         public static IServiceCollection AddWorkers(this IServiceCollection services, IConfiguration configuration)
         {
-            services.AddSingleton<BackgroundTaskQueue>();
+            services.AddSingleton(sp => new BackgroundTaskQueue(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                sp.GetRequiredService<IAiRequestContextAccessor>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BackgroundTaskQueue>>(),
+                configuration.GetValue<int>("Workers:BackgroundQueue:MaxConcurrency", 4)));
             services.AddSingleton<IBackgroundTaskQueue>(sp => sp.GetRequiredService<BackgroundTaskQueue>());
-            services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
+
+            if (configuration["Testing:DisableBackgroundWorkers"] != "true" &&
+                configuration["Testing:DisableBackgroundQueueHostedService"] != "true")
+            {
+                services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskQueue>());
+            }
             
             if (configuration["Testing:DisableBackgroundWorkers"] != "true")
             {

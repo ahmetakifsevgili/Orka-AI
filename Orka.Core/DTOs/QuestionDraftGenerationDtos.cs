@@ -24,6 +24,20 @@ public sealed class QuestionDraftGenerationContextDto
     public string? SubjectCode { get; set; }
     public string? TopicCode { get; set; }
     public string? OutcomeCode { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
 }
 
 public sealed class QuestionDraftGenerationSourceDto
@@ -50,6 +64,20 @@ public sealed class QuestionDraftCandidateDto
     public string LicenseStatus { get; set; } = "unknown";
     public string? SourceTitle { get; set; }
     public string? SourceUrl { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
 }
 
 public sealed class QuestionDraftOptionDto
@@ -58,6 +86,9 @@ public sealed class QuestionDraftOptionDto
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
     public int SortOrder { get; set; }
+    public string? Rationale { get; set; }
+    public string? MisconceptionKey { get; set; }
+    public string? DiagnosticSignalJson { get; set; }
 }
 
 public sealed class QuestionDraftPreviewDto

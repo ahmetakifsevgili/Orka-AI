@@ -28,18 +28,18 @@ public class OpenRouterService : IOpenRouterService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct, maxOutputTokens: maxOutputTokens);
 
-    public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default)
-        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model, apiKey: null, ct: ct);
+    public Task<string> ChatCompletionAsync(string systemPrompt, string userMessage, string? model = null, CancellationToken ct = default, int? maxOutputTokens = null)
+        => ChatCompletionWithKeyAsync(systemPrompt, userMessage, model, apiKey: null, ct: ct, maxOutputTokens: maxOutputTokens);
 
     /// <summary>
     /// Belirli bir model ve API key ile OpenRouter çağrısı yapar.
     /// apiKey null ise varsayılan (appsettings) key kullanılır.
     /// model null ise varsayılan model kullanılır.
     /// </summary>
-    public async Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default)
+    public async Task<string> ChatCompletionWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, CancellationToken ct = default, int? maxOutputTokens = null)
     {
         var targetModel = model ?? _defaultModel;
         var targetKey = apiKey ?? _apiKey;
@@ -53,8 +53,8 @@ public class OpenRouterService : IOpenRouterService
                 new { role = "system", content = string.IsNullOrWhiteSpace(systemPrompt) ? "Sen yardımcı bir asistansın." : systemPrompt },
                 new { role = "user", content = string.IsNullOrWhiteSpace(userMessage) ? "Merhaba." : userMessage }
             },
-            
-            temperature = 0.7
+            temperature = 0.7,
+            max_completion_tokens = maxOutputTokens ?? 2048
         };
 
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
@@ -98,10 +98,10 @@ public class OpenRouterService : IOpenRouterService
         }
     }
 
-    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => GenerateResponseStreamWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct);
+    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => GenerateResponseStreamWithKeyAsync(systemPrompt, userMessage, model: null, apiKey: null, ct: ct, maxOutputTokens: maxOutputTokens);
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamWithKeyAsync(string systemPrompt, string userMessage, string? model = null, string? apiKey = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
     {
         var targetModel = model ?? _defaultModel;
         var targetKey = apiKey ?? _apiKey;
@@ -112,7 +112,7 @@ public class OpenRouterService : IOpenRouterService
             new { role = "user", content = userMessage }
         };
 
-        var requestBody = new { model = targetModel, messages, temperature = 0.7,  stream = true };
+        var requestBody = new { model = targetModel, messages, temperature = 0.7, max_completion_tokens = maxOutputTokens ?? 2048, stream = true };
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, RequestUrl);

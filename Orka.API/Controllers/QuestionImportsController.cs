@@ -1,12 +1,14 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
 
 [Authorize]
+[EnableRateLimiting("QuestionImportLimiter")]
 [ApiController]
 [Route("api/question-imports")]
 public sealed class QuestionImportsController : ControllerBase

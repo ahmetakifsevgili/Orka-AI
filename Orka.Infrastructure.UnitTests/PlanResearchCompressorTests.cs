@@ -1,6 +1,7 @@
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.Enums;
 using Orka.Infrastructure.Services;
+using Orka.Infrastructure.Utilities;
 using Xunit;
 
 namespace Orka.Infrastructure.UnitTests;
@@ -112,6 +113,75 @@ public sealed class PlanResearchCompressorTests
         Assert.True(block.Length <= 900);
         Assert.Contains("GroundingMode", block);
         Assert.Contains("SourceCount", block);
+    }
+
+    [Fact]
+    public void ResearchConceptExtractor_UsesResearchSignalsAcrossDomains()
+    {
+        var context = new CompressedPlanResearchContextDto
+        {
+            Topic = "SQL query optimization",
+            GroundingMode = GroundingMode.SourceGrounded,
+            SourceCount = 2,
+            CurriculumMapHints =
+            [
+                "SELECT projection and filtering -> Join cardinality -> Index selectivity -> Execution plan reading"
+            ],
+            KeyFacts =
+            [
+                "Query plan reading separates slow scans from useful index access.",
+                "Join cardinality changes the cost of nested loop and hash join choices."
+            ],
+            PrerequisiteHints = ["Schema design and constraints before query tuning."],
+            LikelyMisconceptions = ["Adding indexes without measuring plan evidence."],
+            TopSources = [Source("WebSearch", "https://example.com/sql", score: 0.9)]
+        };
+
+        var labels = ResearchConceptExtractor.ExtractConceptLabels(
+            context,
+            "sql",
+            "SQL optimization",
+            "indexes and execution plans",
+            "SQL query optimization learning path",
+            "SQL query optimization");
+
+        Assert.Contains(labels, l => l.Contains("Join cardinality", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(labels, l => l.Contains("Index selectivity", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(labels, l => l.Contains("Execution plan", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(labels, l => l.Contains("Integral", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(labels, l => l.Contains("learning path", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResearchConceptExtractor_DoesNotNeedTopicHardcodesForCalculus()
+    {
+        var context = new CompressedPlanResearchContextDto
+        {
+            Topic = "Integral calculus",
+            GroundingMode = GroundingMode.SourceGrounded,
+            SourceCount = 2,
+            CurriculumMapHints =
+            [
+                "Accumulation and signed area -> Antiderivatives and indefinite integrals -> Definite integrals and interval notation -> Fundamental theorem of calculus -> U-substitution"
+            ],
+            KeyFacts =
+            [
+                "Area between curves and applied accumulation problems are measurable later topics."
+            ],
+            LikelyMisconceptions = ["Confusing signed area with total geometric area."]
+        };
+
+        var labels = ResearchConceptExtractor.ExtractConceptLabels(
+            context,
+            "math",
+            "Integral calculus",
+            "fundamentals to applications",
+            "Integral calculus learning path",
+            "Integral calculus");
+
+        Assert.Contains(labels, l => l.Contains("signed area", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(labels, l => l.Contains("Antiderivatives", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(labels, l => l.Contains("practiceorder", StringComparison.OrdinalIgnoreCase));
     }
 
     private static KorteksResearchResultDto ResearchResult(

@@ -83,6 +83,7 @@ public sealed class AiProviderTelemetryService : IAiProviderTelemetryService
 public sealed class AiProviderCircuitBreaker : IAiProviderCircuitBreaker
 {
     private readonly ConcurrentDictionary<string, DateTime> _openUntil = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, int> _failureStreaks = new(StringComparer.OrdinalIgnoreCase);
 
     public bool IsOpen(string provider) =>
         _openUntil.TryGetValue(provider, out var until) && until > DateTime.UtcNow;
@@ -98,11 +99,17 @@ public sealed class AiProviderCircuitBreaker : IAiProviderCircuitBreaker
     public void RecordSuccess(string provider)
     {
         _openUntil.TryRemove(provider, out _);
+        _failureStreaks.TryRemove(provider, out _);
     }
 
-    public void RecordFailure(string provider, TimeSpan cooldown)
+    public void RecordFailure(string provider, TimeSpan cooldown, int failureThreshold = 1)
     {
         if (cooldown <= TimeSpan.Zero)
+            return;
+
+        var threshold = Math.Max(1, failureThreshold);
+        var streak = _failureStreaks.AddOrUpdate(provider, 1, (_, current) => current + 1);
+        if (streak < threshold)
             return;
 
         _openUntil[provider] = DateTime.UtcNow.Add(cooldown);

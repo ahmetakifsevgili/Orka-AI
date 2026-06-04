@@ -202,4 +202,9 @@ public interface IRedisMemoryService
     /// TutorAgent her mesajda API çağırmak yerine buradan okur (kota tasarrufu).
     /// </summary>
     Task<string?> GetYouTubeContextAsync(Guid topicId);
+
+    // ── Distributed Lock ───────────────────────────────────────────────────
+    Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry);
+    Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry);
+    Task ReleaseLockAsync(string key, string value);
 }

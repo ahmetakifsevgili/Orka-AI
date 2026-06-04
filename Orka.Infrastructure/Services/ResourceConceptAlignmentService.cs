@@ -10,6 +10,7 @@ namespace Orka.Infrastructure.Services;
 
 public sealed class ResourceConceptAlignmentService : IResourceConceptAlignmentService
 {
+    private const bool UseSemanticEmbeddingInRequestPath = false;
     private readonly OrkaDbContext _db;
     private readonly IEmbeddingService? _embedding;
     private readonly ILogger<ResourceConceptAlignmentService> _logger;
@@ -98,7 +99,7 @@ public sealed class ResourceConceptAlignmentService : IResourceConceptAlignmentS
     private async Task<decimal> AlignmentScoreAsync(string sourceTitle, string sourceUri, string? provider, LearningConceptDto concept, CancellationToken ct)
     {
         var lexical = AlignmentScore(sourceTitle, sourceUri, concept);
-        if (_embedding == null) return lexical;
+        if (_embedding == null || !UseSemanticEmbeddingInRequestPath) return lexical;
 
         try
         {

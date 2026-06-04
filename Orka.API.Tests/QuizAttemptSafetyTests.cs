@@ -89,6 +89,61 @@ public sealed class QuizAttemptSafetyTests : IClassFixture<ApiSmokeFactory>
     }
 
     [Fact]
+    public async Task QuizAttempt_DropsUntrustedSourceEvidenceBundleBeforePersistence()
+    {
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-source-owner");
+        var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-source-other");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, owner.UserId, "Source Poison Quiz");
+        var (_, assessmentItemId) = await SeedAssessmentItemAsync(owner.UserId, topicId);
+        var maliciousBundleId = Guid.NewGuid();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            db.SourceEvidenceBundles.Add(new SourceEvidenceBundle
+            {
+                Id = maliciousBundleId,
+                UserId = other.UserId,
+                TopicId = topicId,
+                BundleHash = "cross-user",
+                EvidenceStatus = "source_grounded",
+                SourceCount = 1,
+                ReadySourceCount = 1,
+                ChunkCount = 1,
+                CitationCoverage = 1m,
+                EvidenceJson = "{}",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await owner.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId,
+            assessmentItemId,
+            questionId = "q-auth",
+            question = "Server hangi secenegi dogrular?",
+            selectedOptionId = "B) Server dogrular",
+            sourceEvidenceBundleId = maliciousBundleId,
+            sourceRefsJson = """{ "sourceReadiness": "source_grounded", "rawSourceRefs": ["poison"] }""",
+            skillTag = "server-authority",
+            conceptKey = "server-authority",
+            questionHash = $"source-poison-{Guid.NewGuid():N}"
+        });
+
+        response.EnsureSuccessStatusCode();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var attempt = await verifyDb.QuizAttempts.AsNoTracking().SingleAsync(a => a.UserId == owner.UserId && a.AssessmentItemId == assessmentItemId);
+        Assert.Contains("client_rejected", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("evidence_insufficient", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(maliciousBundleId.ToString("D"), attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawSourceRefs", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task QuizAttempt_LegacyNoDurableKeyIgnoresClientCorrectnessAndAvoidsStrongLearningUpdates()
     {
         var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-unverified");
@@ -162,6 +217,65 @@ public sealed class QuizAttemptSafetyTests : IClassFixture<ApiSmokeFactory>
         var attempt = await db.QuizAttempts.AsNoTracking().SingleAsync(a => a.UserId == user.UserId && a.AssessmentItemId == assessmentItemId);
         Assert.Contains("wikiBlockId", attempt.SourceRefsJson ?? string.Empty);
         Assert.DoesNotContain("client-provided", block.Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task QuizAttempt_RejectsClientSuppliedSourceEvidenceBundleWithoutOwnershipAndReadiness()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-source-evidence");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Source Evidence Quiz");
+        var (_, assessmentItemId) = await SeedAssessmentItemAsync(user.UserId, topicId);
+        var foreignBundleId = Guid.NewGuid();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            db.SourceEvidenceBundles.Add(new SourceEvidenceBundle
+            {
+                Id = foreignBundleId,
+                UserId = Guid.NewGuid(),
+                TopicId = topicId,
+                BundleHash = Guid.NewGuid().ToString("N"),
+                EvidenceStatus = "source_grounded",
+                ReadySourceCount = 1,
+                ChunkCount = 1,
+                CitationCoverage = 1m,
+                EvidenceJson = "{}",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", new
+        {
+            topicId,
+            assessmentItemId,
+            sourceEvidenceBundleId = foreignBundleId,
+            sourceRefsJson = "{\"sourceReadiness\":\"source_grounded\",\"rawSourceRefs\":[\"poison\"]}",
+            questionId = "q-auth",
+            question = "Server hangi secenegi dogrular?",
+            selectedOptionId = "B) Server dogrular",
+            skillTag = "server-authority",
+            conceptKey = "server-authority",
+            questionHash = $"source-bundle-{Guid.NewGuid():N}"
+        });
+
+        response.EnsureSuccessStatusCode();
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var evidenceBasis = json.RootElement.GetProperty("learningImpact").GetProperty("evidenceBasis")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        Assert.DoesNotContain("source_evidence_bundle", evidenceBasis);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var attempt = await verifyDb.QuizAttempts.AsNoTracking().SingleAsync(a => a.UserId == user.UserId && a.AssessmentItemId == assessmentItemId);
+        Assert.DoesNotContain(foreignBundleId.ToString("D"), attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("client_rejected", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("evidence_insufficient", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawSourceRefs", attempt.SourceRefsJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

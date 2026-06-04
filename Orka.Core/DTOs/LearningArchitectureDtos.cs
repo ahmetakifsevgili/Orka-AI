@@ -64,6 +64,28 @@ public sealed class ConceptGraphBuildResultDto
     public bool CacheHit { get; set; }
 }
 
+public sealed class ConceptScopePlanDto
+{
+    public string Domain { get; set; } = "general";
+    public string ScopeStatus { get; set; } = "generated";
+    public string TopicAnchor { get; set; } = string.Empty;
+    public List<ConceptScopeSeedDto> Seeds { get; set; } = [];
+    public List<string> Warnings { get; set; } = [];
+}
+
+public sealed class ConceptScopeSeedDto
+{
+    public string Label { get; set; } = string.Empty;
+    public string StableKey { get; set; } = string.Empty;
+    public string Role { get; set; } = "target";
+    public string DifficultyBand { get; set; } = "core";
+    public int Order { get; set; }
+    public List<string> PrerequisiteKeys { get; set; } = [];
+    public List<string> Misconceptions { get; set; } = [];
+    public List<string> SourceEvidenceLabels { get; set; } = [];
+    public string EvidenceBasis { get; set; } = string.Empty;
+}
+
 public sealed class AssessmentGrammarDto
 {
     public Guid? DraftId { get; set; }
@@ -111,8 +133,16 @@ public sealed class DiagnosticProfileDto
     public Guid? ConceptGraphSnapshotId { get; set; }
     public int AnsweredCount { get; set; }
     public int CorrectCount { get; set; }
+    public int BlankCount { get; set; }
+    public int EvidenceBearingAnswerCount { get; set; }
     public int AccuracyPercent { get; set; }
     public string MeasuredLevel { get; set; } = "beginner";
+    public string CoverageStatus { get; set; } = "insufficient_evidence";
+    public string ConfidenceBand { get; set; } = "low";
+    public List<string> WeakConcepts { get; set; } = [];
+    public List<string> PrerequisiteGaps { get; set; } = [];
+    public List<string> MisconceptionSignals { get; set; } = [];
+    public List<string> BlankConcepts { get; set; } = [];
     public List<ConceptMasteryDto> ConceptMasteries { get; set; } = [];
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }

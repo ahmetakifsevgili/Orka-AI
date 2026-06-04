@@ -210,6 +210,95 @@ public sealed class QuestionImportTests
         Assert.DoesNotContain("NotebookLM", raw, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task PreviewPreservesProfessionalKgAndDiagnosticMetadata()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "qimport-kg-metadata");
+        var ids = await ImportExamTreeAsync(user);
+        var assessmentItemId = Guid.NewGuid();
+        var conceptGraphSnapshotId = Guid.NewGuid();
+        var learningConceptId = Guid.NewGuid();
+        var quizRunId = Guid.NewGuid();
+        var planRequestId = Guid.NewGuid();
+
+        var item = ValidItem(ids);
+        item.AssessmentItemId = assessmentItemId;
+        item.ConceptGraphSnapshotId = conceptGraphSnapshotId;
+        item.LearningConceptId = learningConceptId;
+        item.QuizRunId = quizRunId;
+        item.PlanRequestId = planRequestId;
+        item.ConceptKey = "query_plan.cardinality";
+        item.ConceptLabel = "Cardinality estimation";
+        item.MisconceptionTarget = "selectivity_equals_rows";
+        item.EvidenceExpected = "Student distinguishes cardinality from selectivity.";
+        item.ScoringRuleJson = """{"signals":["cardinality_reasoning"]}""";
+        item.CalibrationStatus = "draft";
+        item.VisualReadinessStatus = "not_required";
+        item.QuestionBankSource = "diagnostic_assessment_item";
+        item.Options[1].Rationale = "Confuses selectivity with row count.";
+        item.Options[1].MisconceptionKey = "selectivity_equals_rows";
+        item.Options[1].DiagnosticSignalJson = """{"gap":"cardinality_reasoning"}""";
+
+        var preview = await PreviewAsync(user, new QuestionImportRequestDto { Items = [item] });
+        var normalized = preview.Items.Single().NormalizedQuestion!;
+
+        Assert.Equal(assessmentItemId, normalized.AssessmentItemId);
+        Assert.Equal(conceptGraphSnapshotId, normalized.ConceptGraphSnapshotId);
+        Assert.Equal(learningConceptId, normalized.LearningConceptId);
+        Assert.Equal(quizRunId, normalized.QuizRunId);
+        Assert.Equal(planRequestId, normalized.PlanRequestId);
+        Assert.Equal("query_plan.cardinality", normalized.ConceptKey);
+        Assert.Equal("Cardinality estimation", normalized.ConceptLabel);
+        Assert.Equal("selectivity_equals_rows", normalized.MisconceptionTarget);
+        Assert.Equal("Student distinguishes cardinality from selectivity.", normalized.EvidenceExpected);
+        Assert.Equal("""{"signals":["cardinality_reasoning"]}""", normalized.ScoringRuleJson);
+        Assert.Equal("draft", normalized.CalibrationStatus);
+        Assert.Equal("not_required", normalized.VisualReadinessStatus);
+        Assert.Equal("diagnostic_assessment_item", normalized.QuestionBankSource);
+        var distractor = normalized.Options.Single(o => o.OptionKey == "B");
+        Assert.Equal("Confuses selectivity with row count.", distractor.Rationale);
+        Assert.Equal("selectivity_equals_rows", distractor.MisconceptionKey);
+        Assert.Equal("""{"gap":"cardinality_reasoning"}""", distractor.DiagnosticSignalJson);
+    }
+
+    [Fact]
+    public async Task ApprovalPersistsAssessmentMetadataAndDistractorSignals()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "qimport-persist-assessment-metadata");
+        var ids = await ImportExamTreeAsync(user);
+        var item = ValidItem(ids);
+        item.ConceptKey = "query_plan.cardinality";
+        item.ConceptLabel = "Cardinality estimation";
+        item.MisconceptionTarget = "selectivity_equals_rows";
+        item.EvidenceExpected = "Student distinguishes cardinality from selectivity.";
+        item.ScoringRuleJson = """{"signals":["cardinality_reasoning"]}""";
+        item.CalibrationStatus = "draft";
+        item.VisualReadinessStatus = "not_required";
+        item.Options[1].Rationale = "Confuses selectivity with row count.";
+        item.Options[1].MisconceptionKey = "selectivity_equals_rows";
+        item.Options[1].DiagnosticSignalJson = """{"gap":"cardinality_reasoning"}""";
+
+        var preview = await PreviewAsync(user, new QuestionImportRequestDto { Items = [item] });
+        var approve = await user.Client.PostAsJsonAsync("/api/question-imports/approve", new QuestionImportApprovalDto { ImportPreviewId = preview.Id });
+        approve.EnsureSuccessStatusCode();
+        var result = await approve.Content.ReadFromJsonAsync<QuestionImportResultDto>();
+        var question = await user.Client.GetFromJsonAsync<QuestionItemDto>($"/api/questions/{result!.CreatedQuestionIds.Single()}");
+
+        Assert.Equal("query_plan.cardinality", question!.ConceptKey);
+        Assert.Equal("Cardinality estimation", question.ConceptLabel);
+        Assert.Equal("selectivity_equals_rows", question.MisconceptionTarget);
+        Assert.Equal("Student distinguishes cardinality from selectivity.", question.EvidenceExpected);
+        Assert.Equal("""{"signals":["cardinality_reasoning"]}""", question.ScoringRuleJson);
+        Assert.Equal("draft", question.CalibrationStatus);
+        Assert.Equal("not_required", question.VisualReadinessStatus);
+        var distractor = question.Options.Single(o => o.OptionKey == "B");
+        Assert.Equal("Confuses selectivity with row count.", distractor.Rationale);
+        Assert.Equal("selectivity_equals_rows", distractor.MisconceptionKey);
+        Assert.Equal("""{"gap":"cardinality_reasoning"}""", distractor.DiagnosticSignalJson);
+    }
+
     private static async Task<QuestionImportPreviewDto> PreviewAsync(CoordinationTestUser user, QuestionImportRequestDto request)
     {
         var response = await user.Client.PostAsJsonAsync("/api/question-imports/preview", request);

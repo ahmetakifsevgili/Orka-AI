@@ -3437,127 +3437,6 @@ namespace Orka.Infrastructure.Migrations
                     b.ToTable("LearningArtifacts");
                 });
 
-            modelBuilder.Entity("Orka.Core.Entities.LearningNotebookPack", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ActiveLessonSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("AssessmentQualitySnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ArtifactIdsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("CompletedConceptKeysJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("EvidenceStatus")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("MisconceptionKeysJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("NextActionsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PackStatus")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("PackType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<Guid?>("PlanQualitySnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SafeMetadataJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("SessionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("SourceEvidenceBundleId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SourceReadiness")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<Guid?>("StudentContextSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Summary")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<Guid>("TopicId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("WarningsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("WeakConceptKeysJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("WikiNotebookSnapshotId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("WikiPageId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("WikiPageKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("WikiPageTitle")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "PackType", "PackStatus");
-
-                    b.HasIndex("UserId", "TopicId", "SessionId", "UpdatedAt");
-
-                    b.HasIndex("UserId", "WikiPageId", "UpdatedAt");
-
-                    b.ToTable("LearningNotebookPacks");
-                });
-
             modelBuilder.Entity("Orka.Core.Entities.LearningConcept", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3742,6 +3621,127 @@ namespace Orka.Infrastructure.Migrations
                     b.HasIndex("UserId", "TopicId", "CreatedAt");
 
                     b.ToTable("LearningEventSchemaViolations");
+                });
+
+            modelBuilder.Entity("Orka.Core.Entities.LearningNotebookPack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActiveLessonSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ArtifactIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("AssessmentQualitySnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CompletedConceptKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EvidenceStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MisconceptionKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NextActionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PackStatus")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PackType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("PlanQualitySnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SafeMetadataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("SourceEvidenceBundleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceReadiness")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("StudentContextSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("WarningsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WeakConceptKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("WikiNotebookSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("WikiPageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("WikiPageKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("WikiPageTitle")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "PackType", "PackStatus");
+
+                    b.HasIndex("UserId", "WikiPageId", "UpdatedAt");
+
+                    b.HasIndex("UserId", "TopicId", "SessionId", "UpdatedAt");
+
+                    b.ToTable("LearningNotebookPacks");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.LearningOutcome", b =>
@@ -4497,6 +4497,18 @@ namespace Orka.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("GenerationModel")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("GenerationPromptHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("GenerationProvider")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -4516,6 +4528,10 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<Guid?>("OwnerUserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RenderStrategy")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("Sha256Hash")
                         .IsRequired()
@@ -4544,10 +4560,20 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ValidationReportJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("VerificationStatus")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("VisualReadinessStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("needs_validation");
 
                     b.HasKey("Id");
 
@@ -4812,10 +4838,28 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("AssessmentItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CalibrationStatus")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CognitiveSkill")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid?>("ConceptGraphSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConceptKey")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ConceptLabel")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -4824,6 +4868,9 @@ namespace Orka.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("EvidenceExpected")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("ExamDefinitionId")
                         .HasColumnType("uniqueidentifier");
@@ -4850,12 +4897,25 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("LearningConceptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("LearningTopicId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("LicenseStatus")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("MisconceptionTarget")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PlanRequestId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("QualityStatus")
@@ -4863,10 +4923,23 @@ namespace Orka.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("QuestionBankSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasDefaultValue("curated_question_item");
+
                     b.Property<string>("QuestionType")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("QuizRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ScoringRuleJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("SourceOrigin")
                         .IsRequired()
@@ -4888,7 +4961,16 @@ namespace Orka.Infrastructure.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("VisualReadinessStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasDefaultValue("not_required");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ConceptGraphSnapshotId");
 
                     b.HasIndex("ExamOutcomeId");
 
@@ -4900,9 +4982,21 @@ namespace Orka.Infrastructure.Migrations
 
                     b.HasIndex("ExamVariantId");
 
+                    b.HasIndex("LearningConceptId");
+
+                    b.HasIndex("LearningTopicId");
+
+                    b.HasIndex("QuizRunId");
+
+                    b.HasIndex("AssessmentItemId", "IsDeleted");
+
+                    b.HasIndex("PlanRequestId", "QuizRunId", "QuestionBankSource");
+
                     b.HasIndex("OwnerUserId", "ExamDefinitionId", "QualityStatus", "IsDeleted");
 
                     b.HasIndex("QuestionType", "Difficulty", "QualityStatus", "IsDeleted");
+
+                    b.HasIndex("OwnerUserId", "LearningTopicId", "ConceptKey", "QualityStatus", "IsDeleted");
 
                     b.HasIndex("ExamDefinitionId", "ExamVariantId", "ExamSectionId", "ExamSubjectId", "ExamTopicId", "ExamOutcomeId");
 
@@ -5016,8 +5110,15 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("DiagnosticSignalJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsCorrect")
                         .HasColumnType("bit");
+
+                    b.Property<string>("MisconceptionKey")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("OptionKey")
                         .IsRequired()
@@ -5026,6 +5127,9 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<Guid>("QuestionItemId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Rationale")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
@@ -5571,7 +5675,13 @@ namespace Orka.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "AssessmentItemId");
 
-                    b.HasIndex("UserId", "TopicId", "QuestionHash");
+                    b.HasIndex("UserId", "QuizRunId", "AssessmentItemId")
+                        .IsUnique()
+                        .HasFilter("[QuizRunId] IS NOT NULL AND [AssessmentItemId] IS NOT NULL");
+
+                    b.HasIndex("UserId", "TopicId", "QuestionHash")
+                        .IsUnique()
+                        .HasFilter("[QuestionHash] IS NOT NULL");
 
                     b.HasIndex("UserId", "TopicId", "SkillTag");
 
@@ -8562,16 +8672,15 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Property<string>("BlockType")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("ConceptKey")
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -8626,8 +8735,6 @@ namespace Orka.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("WikiPageId");
 
                     b.HasIndex("WikiPageId", "BlockType", "IsDeleted");
 
@@ -8693,13 +8800,13 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -8744,13 +8851,11 @@ namespace Orka.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SourcePageId", "TargetPageId", "LinkType", "IsDeleted");
-
                     b.HasIndex("TargetPageId");
 
                     b.HasIndex("TopicId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("SourcePageId", "TargetPageId", "LinkType", "IsDeleted");
 
                     b.HasIndex("UserId", "TopicId", "LinkType", "IsDeleted");
 
@@ -8763,12 +8868,12 @@ namespace Orka.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ConceptGraphSnapshotId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ConceptKey")
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
-
-                    b.Property<Guid?>("ConceptGraphSnapshotId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Content")
                         .HasColumnType("nvarchar(max)");
@@ -8842,8 +8947,6 @@ namespace Orka.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TopicId");
-
-                    b.HasIndex("UserId");
 
                     b.HasIndex("UserId", "TopicId", "ConceptKey", "IsDeleted");
 
@@ -10416,6 +10519,16 @@ namespace Orka.Infrastructure.Migrations
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionItem", b =>
                 {
+                    b.HasOne("Orka.Core.Entities.AssessmentItem", "AssessmentItem")
+                        .WithMany()
+                        .HasForeignKey("AssessmentItemId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.ConceptGraphSnapshot", "ConceptGraphSnapshot")
+                        .WithMany()
+                        .HasForeignKey("ConceptGraphSnapshotId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Orka.Core.Entities.ExamDefinition", "ExamDefinition")
                         .WithMany()
                         .HasForeignKey("ExamDefinitionId")
@@ -10447,10 +10560,29 @@ namespace Orka.Infrastructure.Migrations
                         .HasForeignKey("ExamVariantId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("Orka.Core.Entities.LearningConcept", "LearningConcept")
+                        .WithMany()
+                        .HasForeignKey("LearningConceptId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.Topic", "LearningTopic")
+                        .WithMany()
+                        .HasForeignKey("LearningTopicId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Orka.Core.Entities.User", "OwnerUser")
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Orka.Core.Entities.QuizRun", "QuizRun")
+                        .WithMany()
+                        .HasForeignKey("QuizRunId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("AssessmentItem");
+
+                    b.Navigation("ConceptGraphSnapshot");
 
                     b.Navigation("ExamDefinition");
 
@@ -10464,7 +10596,13 @@ namespace Orka.Infrastructure.Migrations
 
                     b.Navigation("ExamVariant");
 
+                    b.Navigation("LearningConcept");
+
+                    b.Navigation("LearningTopic");
+
                     b.Navigation("OwnerUser");
+
+                    b.Navigation("QuizRun");
                 });
 
             modelBuilder.Entity("Orka.Core.Entities.QuestionItemAnalyticsSnapshot", b =>

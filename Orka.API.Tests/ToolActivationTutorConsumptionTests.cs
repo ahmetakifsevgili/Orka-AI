@@ -234,6 +234,9 @@ public sealed class ToolActivationTutorConsumptionTests
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 
     private static string FindRepoRoot()

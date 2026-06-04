@@ -18,6 +18,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
     private readonly IPushDeliveryService _push;
     private readonly IRuntimeTelemetryService _telemetry;
     private readonly IConfiguration _configuration;
+    private readonly IRedisMemoryService _redisMemory;
     private readonly ILogger<DailyChallengeWorkerService> _logger;
 
     public DailyChallengeWorkerService(
@@ -26,6 +27,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
         IPushDeliveryService push,
         IRuntimeTelemetryService telemetry,
         IConfiguration configuration,
+        IRedisMemoryService redisMemory,
         ILogger<DailyChallengeWorkerService> logger)
     {
         _db = db;
@@ -33,6 +35,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
         _push = push;
         _telemetry = telemetry;
         _configuration = configuration;
+        _redisMemory = redisMemory;
         _logger = logger;
     }
 
@@ -45,85 +48,139 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
             return 0;
         }
 
-        var sw = Stopwatch.StartNew();
-        var sent = 0;
+        var lockKey = "orka:lock:daily_challenge_worker";
+        var lockValue = Guid.NewGuid().ToString();
+        var lockExpiry = TimeSpan.FromMinutes(5);
+
+        var acquired = await _redisMemory.AcquireLockAsync(lockKey, lockValue, lockExpiry);
+        if (!acquired)
+        {
+            _logger.LogInformation("[DailyChallengeWorker] Lock already acquired by another instance. Skipping run.");
+            return 0;
+        }
+
+        using var lockRenewal = StartLockRenewal(lockKey, lockValue, lockExpiry, ct);
         try
         {
-            var now = DateTime.UtcNow;
-            var today = now.Date;
-            var batchSize = ReadInt("Workers:DailyChallenge:BatchSize", 25, 1, 100);
-            var duplicateCutoff = now.AddHours(-ReadInt("Workers:DailyChallenge:DuplicateWindowHours", 20, 1, 168));
-
-            var challenges = await _db.DailyChallenges.AsNoTracking()
-                .Where(c => c.Date == today && c.Status == "active")
-                .OrderBy(c => c.CreatedAt)
-                .Take(batchSize)
-                .ToListAsync(ct);
-
-            foreach (var challenge in challenges)
+            var sw = Stopwatch.StartNew();
+            var sent = 0;
+            try
             {
-                ct.ThrowIfCancellationRequested();
+                var now = DateTime.UtcNow;
+                var today = now.Date;
+                var batchSize = ReadInt("Workers:DailyChallenge:BatchSize", 25, 1, 100);
+                var duplicateCutoff = now.AddHours(-ReadInt("Workers:DailyChallenge:DuplicateWindowHours", 20, 1, 168));
 
-                var alreadyNotified = await _db.Notifications.AsNoTracking().AnyAsync(n =>
-                    n.UserId == challenge.UserId &&
-                    n.Type == "daily-challenge" &&
-                    n.RelatedEntityType == "DailyChallenge" &&
-                    n.RelatedEntityId == challenge.Id &&
-                    n.CreatedAt >= duplicateCutoff,
-                    ct);
-
-                if (alreadyNotified) continue;
-
-                var label = challenge.SourceConceptTag ?? challenge.SourceSkillTag ?? "gunluk pratik";
-                var dto = await _notifications.CreateAsync(
-                    challenge.UserId,
-                    new CreateNotificationRequest(
-                        "daily-challenge",
-                        "Günlük pratik hazır",
-                        $"{label} icin bugunku kisa alistirma seni bekliyor.",
-                        "info",
-                        "DailyChallenge",
-                        challenge.Id,
-                        today.AddDays(1)),
-                    ct);
-
-                var subscriptions = await _db.PushSubscriptions.AsNoTracking()
-                    .Where(p => p.UserId == challenge.UserId && p.Status == "active")
-                    .Take(3)
+                var challenges = await _db.DailyChallenges.AsNoTracking()
+                    .Where(c => c.Date == today && c.Status == "active")
+                    .OrderBy(c => c.CreatedAt)
+                    .Take(batchSize)
                     .ToListAsync(ct);
 
-                if (subscriptions.Count == 0)
+                foreach (var challenge in challenges)
                 {
-                    await _push.SendAsync(challenge.UserId, null, ToNotificationEntity(dto, challenge.UserId), ct);
-                }
-                else
-                {
-                    foreach (var subscription in subscriptions)
-                        await _push.SendAsync(challenge.UserId, subscription, ToNotificationEntity(dto, challenge.UserId), ct);
+                    ct.ThrowIfCancellationRequested();
+
+                    var alreadyNotified = await _db.Notifications.AsNoTracking().AnyAsync(n =>
+                        n.UserId == challenge.UserId &&
+                        n.Type == "daily-challenge" &&
+                        n.RelatedEntityType == "DailyChallenge" &&
+                        n.RelatedEntityId == challenge.Id &&
+                        n.CreatedAt >= duplicateCutoff,
+                        ct);
+
+                    if (alreadyNotified) continue;
+
+                    var label = challenge.SourceConceptTag ?? challenge.SourceSkillTag ?? "gunluk pratik";
+                    var dto = await _notifications.CreateAsync(
+                        challenge.UserId,
+                        new CreateNotificationRequest(
+                            "daily-challenge",
+                            "Günlük pratik hazır",
+                            $"{label} icin bugunku kisa alistirma seni bekliyor.",
+                            "info",
+                            "DailyChallenge",
+                            challenge.Id,
+                            today.AddDays(1)),
+                        ct);
+
+                    var subscriptions = await _db.PushSubscriptions.AsNoTracking()
+                        .Where(p => p.UserId == challenge.UserId && p.Status == "active")
+                        .Take(3)
+                        .ToListAsync(ct);
+
+                    if (subscriptions.Count == 0)
+                    {
+                        await _push.SendAsync(challenge.UserId, null, ToNotificationEntity(dto, challenge.UserId), ct);
+                    }
+                    else
+                    {
+                        foreach (var subscription in subscriptions)
+                            await _push.SendAsync(challenge.UserId, subscription, ToNotificationEntity(dto, challenge.UserId), ct);
+                    }
+
+                    sent++;
                 }
 
-                sent++;
+                sw.Stop();
+                await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, ct, sent);
+                return sent;
             }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                await RecordWorkerEventAsync("cancelled", false, "cancelled", sw.ElapsedMilliseconds, CancellationToken.None, sent);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                _logger.LogWarning(
+                    "[DailyChallengeWorker] Batch failed safely. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
+                await RecordWorkerEventAsync("failed", false, "unknown_failure", sw.ElapsedMilliseconds, CancellationToken.None, sent);
+                return sent;
+            }
+        }
+        finally
+        {
+            lockRenewal.Cancel();
+            await _redisMemory.ReleaseLockAsync(lockKey, lockValue);
+        }
+    }
 
-            sw.Stop();
-            await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, ct, sent);
-            return sent;
-        }
-        catch (OperationCanceledException)
+    private CancellationTokenSource StartLockRenewal(string lockKey, string lockValue, TimeSpan lockExpiry, CancellationToken ct)
+    {
+        var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var interval = TimeSpan.FromMilliseconds(Math.Max(1000, lockExpiry.TotalMilliseconds / 3));
+
+        _ = Task.Run(async () =>
         {
-            sw.Stop();
-            await RecordWorkerEventAsync("cancelled", false, "cancelled", sw.ElapsedMilliseconds, CancellationToken.None, sent);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogWarning(
-                "[DailyChallengeWorker] Batch failed safely. ErrorType={ErrorType}",
-                LogPrivacyGuard.SafeExceptionType(ex));
-            await RecordWorkerEventAsync("failed", false, "unknown_failure", sw.ElapsedMilliseconds, CancellationToken.None, sent);
-            return sent;
-        }
+            using var timer = new PeriodicTimer(interval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync(renewalCts.Token))
+                {
+                    var renewed = await _redisMemory.RenewLockAsync(lockKey, lockValue, lockExpiry);
+                    if (!renewed)
+                    {
+                        _logger.LogWarning("[DailyChallengeWorker] Lock renewal failed; another instance may acquire after TTL.");
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (renewalCts.IsCancellationRequested)
+            {
+                // Expected when the worker run completes.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[DailyChallengeWorker] Lock renewal loop failed. ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeExceptionType(ex));
+            }
+        }, CancellationToken.None);
+
+        return renewalCts;
     }
 
     private async Task RecordWorkerEventAsync(

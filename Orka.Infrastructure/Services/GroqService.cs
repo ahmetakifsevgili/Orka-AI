@@ -38,10 +38,10 @@ public class GroqService : IGroqService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => CallGroqApiAsync(userMessage, systemPrompt, ct);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => CallGroqApiAsync(userMessage, systemPrompt, ct, maxOutputTokens);
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
     {
         var messages = new List<object>
         {
@@ -49,7 +49,7 @@ public class GroqService : IGroqService
             new { role = "user", content = userMessage }
         };
 
-        await foreach (var chunk in CallGroqChatStreamApiAsync(messages, ct: ct))
+        await foreach (var chunk in CallGroqChatStreamApiAsync(messages, maxTokens: maxOutputTokens ?? 2048, ct: ct))
         {
             yield return chunk;
         }
@@ -175,14 +175,14 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
         return await CallGroqChatApiAsync(messages, depth == "deep" ? 4096 : 2048);
     }
 
-    private async Task<string> CallGroqApiAsync(string prompt, string systemRole, CancellationToken ct = default)
+    private async Task<string> CallGroqApiAsync(string prompt, string systemRole, CancellationToken ct = default, int? maxOutputTokens = null)
     {
         var messages = new List<object>
         {
             new { role = "system", content = string.IsNullOrWhiteSpace(systemRole) ? "Sen yardımcı bir asistansın." : systemRole },
             new { role = "user", content = prompt }
         };
-        return await CallGroqChatApiAsync(messages, ct: ct);
+        return await CallGroqChatApiAsync(messages, maxTokens: maxOutputTokens ?? 2048, ct: ct);
     }
 
     private async Task<string> CallGroqChatApiAsync(object messages, int maxTokens = 2048, CancellationToken ct = default)
@@ -203,7 +203,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             model = _model,
             messages,
             temperature = 0.7,
-            
+            max_completion_tokens = maxTokens
         };
 
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
@@ -272,7 +272,7 @@ SADECE şu JSON formatında yanıt ver, başka hiçbir şey yazma:
             model = _model,
             messages,
             temperature = 0.7,
-            
+            max_completion_tokens = maxTokens,
             stream = true
         };
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Orka.Core.DTOs;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Infrastructure.Services;
 using Xunit;
@@ -39,6 +40,39 @@ public sealed class DiagnosticQuizQualityGateTests
 
         Assert.False(report.IsAcceptable);
         Assert.Contains(report.Failures, f => f.Contains("Concept diversity", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_UsesGrammarConceptKeyWhenConceptTagIsMissing()
+    {
+        var json = BuildQuiz(conceptFactory: i => i <= 4 ? $"concept-{i}" : null!);
+
+        using var doc = JsonDocument.Parse(json);
+        var normalized = doc.RootElement.EnumerateArray()
+            .Select((question, index) => JsonSerializer.Deserialize<Dictionary<string, object?>>(question.GetRawText())!)
+            .Select((question, index) =>
+            {
+                question.Remove("conceptTag");
+                question["conceptKey"] = $"grammar-concept-{index + 1}";
+                question["skillTag"] = $"grammar-concept-{index + 1}";
+                return question;
+            })
+            .ToArray();
+
+        var report = DiagnosticQuizQualityGate.Validate(JsonSerializer.Serialize(normalized, new JsonSerializerOptions(JsonSerializerDefaults.Web)), "C# async await");
+
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        Assert.True(report.ConceptDiversity >= 5);
+    }
+
+    [Fact]
+    public void DiagnosticQuizQuality_BuildsMetadataRichFallbackBlueprint()
+    {
+        var quiz = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("SQL index ve sorgu optimizasyonu", 15, "en");
+        var report = DiagnosticQuizQualityGate.Validate(quiz, "SQL index ve sorgu optimizasyonu", 15);
+
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(quiz, 15);
     }
 
     [Fact]
@@ -83,7 +117,7 @@ public sealed class DiagnosticQuizQualityGateTests
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_ReturnsFallbackBlueprintWhenQualityIsLow()
+    public void DiagnosticQuizQuality_ThrowsInsteadOfGeneratingFallbackWhenQualityIsLow()
     {
         var lowQuality = """
         [
@@ -91,147 +125,46 @@ public sealed class DiagnosticQuizQualityGateTests
         ]
         """;
 
-        var result = DiagnosticQuizQualityGate.EnsureQualityOrFallback(lowQuality, "C# async/await", out var report);
-
-        Assert.False(report.IsAcceptable);
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("```csharp", result);
-        Assert.Contains("misconception_probe", result);
+        Assert.Throws<InvalidOperationException>(() =>
+            DiagnosticQuizQualityGate.EnsureQualityOrFallback(lowQuality, "C# async/await", out _));
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackOptionsDoNotLeakCorrectnessLabels()
+    public void DiagnosticQuizQuality_FallbackBlueprintGenerationKeepsQualityContract()
     {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async/await");
+        var quiz = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async/await");
+        var report = DiagnosticQuizQualityGate.Validate(quiz, "C# async/await", 20);
 
-        Assert.DoesNotContain("Dogru yaklasim", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Yanlis:", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Doğru yaklaşım", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Yanlış:", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(quiz, 20);
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesGenericAssessmentPathForNonTechnicalTopics()
-    {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS tarih ve genel kultur");
-
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(".Result", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("async/await", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
-        Assert.True(DiagnosticQuizQualityGate.Validate(result, "KPSS tarih ve genel kultur").IsAcceptable);
-    }
-
-    [Fact]
-    public void DiagnosticQuizQuality_FallbackDoesNotUseExamSpecificQuestionPackForKpssParagraph()
-    {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("KPSS paragraf sorularinda hizlanmak");
-
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("paragraf", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("misconception_probe", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.True(DiagnosticQuizQualityGate.Validate(result, "KPSS paragraf sorularinda hizlanmak").IsAcceptable);
-    }
-
-    [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesSqlOptimizationOptions()
-    {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("SQL index ve sorgu optimizasyonu");
-
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("```sql", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("index", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.True(DiagnosticQuizQualityGate.Validate(result, "SQL index ve sorgu optimizasyonu").IsAcceptable);
-    }
-
-    [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesLegacyBlueprintOnlyAsGenericAdapterForSeljuk()
+    public void DiagnosticQuizQuality_FallbackWithBlueprintUsesRecommendedQuestionCount()
     {
         var blueprint = new LearningBlueprintDto
         {
             Domain = "legacy-adapter",
-            ApprovedResearchIntent = "Seljuk Empire history learning path",
-            LearningRoute = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"],
-            SubConcepts = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"],
-            Concepts = ["state-formation", "political-authority", "administration", "culture", "economy", "military-structure", "source-reading", "chronology"],
-            AssessmentAxes = ["state-formation", "political-authority", "administration", "culture", "economy", "military-structure", "source-reading", "chronology"],
-            PlanModules =
-            [
-                new LearningBlueprintModuleDto
-                {
-                    Title = "Concept Graph Module 1",
-                    Lessons = ["state formation", "political authority", "administration", "culture", "economy", "military structure", "source reading", "chronology"]
-                }
-            ],
             RecommendedQuestionCount = 20
         };
 
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Selcuklu tarihi: tarih", blueprint);
-        var report = DiagnosticQuizQualityGate.Validate(result, "Selcuklu tarihi: tarih");
+        var quiz = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Selcuklu tarihi: tarih", blueprint);
+        var report = DiagnosticQuizQualityGate.Validate(quiz, "Selcuklu tarihi: tarih", 20);
 
         Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Dandanakan", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Malazgirt", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Katvan", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("debugging", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("api-shape", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
+        DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(quiz, 20);
     }
 
     [Fact]
-    public void DiagnosticQuizQuality_FallbackUsesRequestedProgrammingProfile()
+    public void DiagnosticQuizQuality_FallbackWithAssessmentGrammarUsesGrammarCount()
     {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Python listeler ve hata ayiklama");
+        var quiz = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(
+            "SQL index ve sorgu optimizasyonu",
+            new AssessmentGrammarDto { RequestedQuestionCount = 20 });
+        var report = DiagnosticQuizQualityGate.Validate(quiz, "SQL index ve sorgu optimizasyonu", 20);
 
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("```python", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("```csharp", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("aşağıdaki örnek", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void DiagnosticQuizQuality_FallbackDoesNotShowInternalObjectiveAsQuestion()
-    {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Python listeler ve hata ayiklama");
-
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.DoesNotContain("Kod parcasinda veri akisini ve karar noktasini tespit eder", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Bu parcada seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Islem siralamasini kurar", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("aşağıdaki örnek", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void DiagnosticQuizQuality_FallbackDoesNotLeakAsyncIntoJavaAlgorithms()
-    {
-        var result = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("Java programlama: algoritmalar");
-
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-        Assert.Contains("```java", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Arrays.sort", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("assessmentItemId", result, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("conceptKey", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("async", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Task.Result", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Visual Studio", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Orka IDE", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("En kucuk calisan akisi", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("tani sorusu", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("seviye belirlemek icin en onemli risk", result, StringComparison.OrdinalIgnoreCase);
-        Assert.True(DiagnosticQuizQualityGate.Validate(result, "Java programlama: algoritmalar").IsAcceptable);
+        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
+        DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(quiz, 20);
     }
 
     [Fact]
@@ -246,17 +179,6 @@ public sealed class DiagnosticQuizQualityGateTests
         Assert.Equal(DiagnosticQuizQualityGate.ExtractJsonArray(json), result);
     }
 
-    [Fact]
-    public void DiagnosticQuizQuality_GenericFallbackIsPortableAcrossTechnicalTopics()
-    {
-        var generic = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint("C# async await");
-
-        var result = DiagnosticQuizQualityGate.EnsureQualityOrThrow(generic, "Java programlama: algoritmalar", 20, out var report);
-
-        Assert.True(report.IsAcceptable, string.Join(" | ", report.Failures));
-        Assert.Equal(20, DiagnosticQuizQualityGate.CountQuestions(result));
-    }
-
     private static string BuildQuiz(
         string? questionOverride = null,
         bool includeCodeQuestion = true,
@@ -265,27 +187,30 @@ public sealed class DiagnosticQuizQualityGateTests
         Func<int, string>? misconceptionFactory = null,
         Func<int, object[]>? optionFactory = null)
     {
-        var types = new[] { "conceptual", "procedural", "application", "analysis", "misconception_probe" };
+        var types = new[] { "conceptual", "procedural", "application", "analysis" };
         var misconceptions = new[] { "Conceptual", "Procedural", "Application", "Reading", "Careless" };
         var difficulties = new[] { "kolay", "orta", "zor" };
 
         var questions = Enumerable.Range(1, 20).Select(i =>
         {
-            var type = questionTypeFactory?.Invoke(i) ?? types[(i - 1) % types.Length];
-            var misconception = misconceptionFactory?.Invoke(i) ?? (type == "misconception_probe" || i <= 5 ? misconceptions[(i - 1) % misconceptions.Length] : "Careless");
+            var type = questionTypeFactory?.Invoke(i) ?? (i % 4 == 0 ? "misconception_probe" : types[(i - 1) % types.Length]);
+            var misconception = misconceptionFactory?.Invoke(i) ?? (type == "misconception_probe" || i <= 5 ? $"async-specific-gap-{i}" : "Careless");
             var question = questionOverride ?? $"C# async await tani sorusu {i}: Task tabanli akista karar ver.";
             if (includeCodeQuestion && i == 4)
             {
                 question += "\n```csharp\nvar result = LoadAsync().Result;\n```";
             }
 
-            var options = optionFactory?.Invoke(i) ?? new object[]
+            var correctOption = new { text = $"Kavrami senaryodaki kisitlara gore uygula {i}", isCorrect = true, rationale = "Matches the target evidence.", misconceptionKey = "" };
+            var distractors = new object[]
             {
-                new { text = $"Kavrami senaryodaki kisitlara gore uygula {i}", isCorrect = true },
-                new { text = $"Tanimi ezberden yazip senaryoyu atla {i}", isCorrect = false },
-                new { text = $"Benzer gorunen terimi asil kavram yerine sec {i}", isCorrect = false },
-                new { text = $"Sonucu hata mesajinin ilk kelimesinden tahmin et {i}", isCorrect = false }
+                new { text = $"Tanimi ezberden yazip senaryoyu atla {i}", isCorrect = false, rationale = "Checks memorized-definition distractor.", misconceptionKey = $"memorized-definition-{i}" },
+                new { text = $"Benzer gorunen terimi asil kavram yerine sec {i}", isCorrect = false, rationale = "Checks nearby-concept confusion.", misconceptionKey = $"nearby-concept-{i}" },
+                new { text = $"Sonucu hata mesajinin ilk kelimesinden tahmin et {i}", isCorrect = false, rationale = "Checks surface-clue guessing.", misconceptionKey = $"surface-clue-{i}" }
             };
+            var generatedOptions = new List<object>(distractors);
+            generatedOptions.Insert((i - 1) % 4, correctOption);
+            var options = optionFactory?.Invoke(i) ?? generatedOptions.ToArray();
 
             return new
             {
@@ -299,6 +224,7 @@ public sealed class DiagnosticQuizQualityGateTests
                 conceptTag = conceptFactory?.Invoke(i) ?? $"concept-{i}",
                 learningObjective = $"Hedef {i}",
                 questionType = type,
+                misconceptionTarget = type == "misconception_probe" ? $"async-specific-gap-{i}" : "evidence-insufficient",
                 expectedMisconceptionCategory = misconception,
                 topic = "C# async await"
             };

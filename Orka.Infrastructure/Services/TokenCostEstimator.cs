@@ -13,6 +13,8 @@ namespace Orka.Infrastructure.Services;
 ///   Meta-Llama-3.1-405B : input $3.00   output $3.00
 ///   Llama 3.3 70B (Groq): input $0.59   output $0.79
 ///   Gemini 2.5 Flash    : input $0.075  output $0.30
+///   Gemini 3 Flash      : input $0.50   output $3.00
+///   Gemini 3.5 Flash    : input $1.50   output $9.00
 ///
 /// Notlar:
 /// - GitHub Models free-tier sunar ancak underlying Azure OpenAI fiyatını kullanırız (raporlama amaçlı).
@@ -30,6 +32,9 @@ public sealed class TokenCostEstimator : ITokenCostEstimator
         ["llama-3.3-70b-versatile"]   = new(0.59m, 0.79m),
         ["llama-3.3-70b"]              = new(0.59m, 0.79m),
         ["gemini-2.5-flash"]           = new(0.075m, 0.30m),
+        ["gemini-3-flash-preview"]     = new(0.50m, 3.00m),
+        ["gemini-3.1-flash-lite"]      = new(0.25m, 1.50m),
+        ["gemini-3.5-flash"]           = new(1.50m, 9.00m),
         ["gemini-1.5-flash"]           = new(0.075m, 0.30m),
     };
 

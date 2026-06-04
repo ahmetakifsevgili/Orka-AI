@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -18,6 +19,7 @@ public class RedisMemoryService : IRedisMemoryService
     private readonly IConnectionMultiplexer _redis;
     private readonly IDatabase _db;
     private readonly ILogger<RedisMemoryService> _logger;
+    private static int _streamsUnsupported;
 
     // ── Evaluator feedback JSON şeması ──────────────────────────────────────
     // Eski format: "[HH:mm:ss] Puan: {score} - Not: {feedback}" (fragile parsing)
@@ -477,6 +479,11 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task AddStreamEventAsync(string key, IReadOnlyDictionary<string, string> values, TimeSpan? ttl = null)
     {
+        if (StreamsAreUnsupported())
+        {
+            return;
+        }
+
         try
         {
             var fields = values.Count == 0
@@ -494,6 +501,10 @@ public class RedisMemoryService : IRedisMemoryService
                 await _db.KeyExpireAsync(key, ttl.Value);
             }
         }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+        }
         catch (Exception ex)
         {
             _logger.LogWarning("[Redis] Stream event yazilamadi. KeyRef={KeyRef} ErrorType={ErrorType}",
@@ -503,6 +514,11 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task<IReadOnlyList<RedisStreamEventDto>> ReadStreamEventsAsync(string key, string afterId = "0-0", int count = 50)
     {
+        if (StreamsAreUnsupported())
+        {
+            return [];
+        }
+
         try
         {
             var start = string.IsNullOrWhiteSpace(afterId) ? "0-0" : afterId;
@@ -511,6 +527,11 @@ public class RedisMemoryService : IRedisMemoryService
                 .Where(e => !string.Equals(e.Id, start, StringComparison.Ordinal))
                 .Select(ToStreamDto)
                 .ToList();
+        }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+            return [];
         }
         catch (Exception ex)
         {
@@ -522,6 +543,11 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task<bool> EnsureConsumerGroupAsync(string key, string group, string startId = "0-0")
     {
+        if (StreamsAreUnsupported())
+        {
+            return false;
+        }
+
         try
         {
             await _db.StreamCreateConsumerGroupAsync(key, group, startId, createStream: true);
@@ -530,6 +556,11 @@ public class RedisMemoryService : IRedisMemoryService
         catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP", StringComparison.OrdinalIgnoreCase))
         {
             return true;
+        }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+            return false;
         }
         catch (Exception ex)
         {
@@ -541,10 +572,20 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task<IReadOnlyList<RedisStreamEventDto>> ReadConsumerGroupAsync(string key, string group, string consumer, int count = 50, string streamId = ">")
     {
+        if (StreamsAreUnsupported())
+        {
+            return [];
+        }
+
         try
         {
             var entries = await _db.StreamReadGroupAsync(key, group, consumer, streamId, Math.Clamp(count, 1, 200));
             return entries.Select(ToStreamDto).ToList();
+        }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+            return [];
         }
         catch (Exception ex)
         {
@@ -556,6 +597,11 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task AckStreamEventsAsync(string key, string group, IEnumerable<string> eventIds)
     {
+        if (StreamsAreUnsupported())
+        {
+            return;
+        }
+
         var ids = eventIds
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Select(id => (RedisValue)id)
@@ -566,6 +612,10 @@ public class RedisMemoryService : IRedisMemoryService
         {
             await _db.StreamAcknowledgeAsync(key, group, ids);
         }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+        }
         catch (Exception ex)
         {
             _logger.LogWarning("[Redis] Stream ack basarisiz. KeyRef={KeyRef} Group={Group} ErrorType={ErrorType}",
@@ -575,9 +625,19 @@ public class RedisMemoryService : IRedisMemoryService
 
     public async Task<long> TrimStreamAsync(string key, long maxLength, bool approximate = true)
     {
+        if (StreamsAreUnsupported())
+        {
+            return 0;
+        }
+
         try
         {
             return await _db.StreamTrimAsync(key, Math.Max(1, maxLength), useApproximateMaxLength: approximate);
+        }
+        catch (RedisServerException ex) when (IsUnsupportedStreamCommand(ex))
+        {
+            MarkStreamsUnsupported(key, ex);
+            return 0;
         }
         catch (Exception ex)
         {
@@ -587,25 +647,43 @@ public class RedisMemoryService : IRedisMemoryService
         }
     }
 
-    public Task<IReadOnlyList<string>> ScanKeysAsync(string pattern, int take = 100)
+    public async Task<IReadOnlyList<string>> ScanKeysAsync(string pattern, int take = 100)
     {
         try
         {
-            var endpoint = _redis.GetEndPoints().FirstOrDefault();
-            if (endpoint == null) return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
-            var server = _redis.GetServer(endpoint);
-            var keys = server.Keys(pattern: pattern, pageSize: Math.Clamp(take, 10, 1000))
-                .Take(Math.Clamp(take, 1, 1000))
-                .Select(k => k.ToString())
-                .Where(k => !string.IsNullOrWhiteSpace(k))
-                .ToArray();
-            return Task.FromResult<IReadOnlyList<string>>(keys);
+            var keyList = new List<string>();
+            var endpoints = _redis.GetEndPoints();
+            var boundedTake = Math.Clamp(take, 1, 1000);
+
+            foreach (var endpoint in endpoints)
+            {
+                if (keyList.Count >= boundedTake)
+                    break;
+
+                var server = _redis.GetServer(endpoint);
+                if (!server.IsConnected || server.IsReplica)
+                    continue;
+
+                await foreach (var key in server.KeysAsync(database: _db.Database, pattern: pattern, pageSize: Math.Clamp(boundedTake, 10, 1000)))
+                {
+                    if (keyList.Count >= boundedTake)
+                        break;
+
+                    var keyStr = key.ToString();
+                    if (!string.IsNullOrWhiteSpace(keyStr))
+                    {
+                        keyList.Add(keyStr);
+                    }
+                }
+            }
+
+            return keyList;
         }
         catch (Exception ex)
         {
             _logger.LogWarning("[Redis] Key scan basarisiz. PatternRef={PatternRef} ErrorType={ErrorType}",
                 KeyRef(pattern), LogPrivacyGuard.SafeExceptionType(ex));
-            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            return Array.Empty<string>();
         }
     }
 
@@ -626,7 +704,19 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            await _db.KeyDeleteAsync(key);
+            await _db.ExecuteAsync("UNLINK", key);
+        }
+        catch (RedisServerException ex) when (IsUnknownCommand(ex, "UNLINK"))
+        {
+            try
+            {
+                await _db.KeyDeleteAsync(key);
+            }
+            catch (Exception fallbackEx)
+            {
+                _logger.LogWarning("[Redis] Cache silinemedi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                    KeyRef(key), LogPrivacyGuard.SafeExceptionType(fallbackEx));
+            }
         }
         catch (Exception ex)
         {
@@ -905,8 +995,7 @@ public class RedisMemoryService : IRedisMemoryService
         try
         {
             // Tüm feedback key'lerini tarar — "orka:feedback:*"
-            var server = _redis.GetServer(_redis.GetEndPoints().First());
-            var keys   = server.Keys(pattern: "orka:feedback:*").ToArray();
+            var keys = (await ScanKeysAsync("orka:feedback:*", 50)).ToArray();
 
             if (keys.Length == 0) return Enumerable.Empty<EvaluatorLogEntry>();
 
@@ -1251,6 +1340,21 @@ public class RedisMemoryService : IRedisMemoryService
     private static string QuizHashKey(Guid userId, Guid topicId) =>
         $"orka:v1:quiz:hashes:{userId}:{topicId}";
 
+    public static string ComputeQuestionHash(string question, string? skillTag, string? topicPath, string? topic, string? difficulty)
+    {
+        var tag = !string.IsNullOrWhiteSpace(skillTag) ? skillTag :
+                  !string.IsNullOrWhiteSpace(topicPath) ? topicPath :
+                  !string.IsNullOrWhiteSpace(topic) ? topic : "unknown";
+        var diff = !string.IsNullOrWhiteSpace(difficulty) ? difficulty : "orta";
+        var raw = $"{question}|{tag}|{diff}".ToLowerInvariant();
+        raw = Regex.Replace(raw, @"\s+", " ");
+        if (raw.Length > 180)
+        {
+            raw = raw[..180];
+        }
+        return raw;
+    }
+
     private static string NotebookVersionKey(Guid topicId) =>
         $"orka:v1:notebook:version:{topicId}";
 
@@ -1275,4 +1379,85 @@ public class RedisMemoryService : IRedisMemoryService
             x => x.Value.ToString(),
             StringComparer.OrdinalIgnoreCase)
     };
+
+    private bool StreamsAreUnsupported() =>
+        Volatile.Read(ref _streamsUnsupported) == 1;
+
+    private void MarkStreamsUnsupported(string key, RedisServerException ex)
+    {
+        if (Interlocked.Exchange(ref _streamsUnsupported, 1) == 0)
+        {
+            _logger.LogInformation(
+                "[Redis] Redis Streams desteklenmiyor; stream telemetry devre disi birakildi. KeyRef={KeyRef} ErrorType={ErrorType}",
+                KeyRef(key),
+                LogPrivacyGuard.SafeExceptionType(ex));
+        }
+    }
+
+    private static bool IsUnsupportedStreamCommand(RedisServerException ex) =>
+        IsUnknownCommand(ex, "XADD") ||
+        IsUnknownCommand(ex, "XREAD") ||
+        IsUnknownCommand(ex, "XGROUP") ||
+        IsUnknownCommand(ex, "XREADGROUP") ||
+        IsUnknownCommand(ex, "XACK") ||
+        IsUnknownCommand(ex, "XTRIM");
+
+    private static bool IsUnknownCommand(RedisServerException ex, string command) =>
+        ex.Message.Contains("unknown command", StringComparison.OrdinalIgnoreCase) &&
+        ex.Message.Contains(command, StringComparison.OrdinalIgnoreCase);
+
+    public async Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry)
+    {
+        try
+        {
+            return await _db.StringSetAsync(key, value, expiry, When.NotExists);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Failed to acquire lock for key {LockKey}.", key);
+            return false;
+        }
+    }
+
+    public async Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry)
+    {
+        try
+        {
+            var script = @"
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('pexpire', KEYS[1], ARGV[2])
+                else
+                    return 0
+                end";
+            var milliseconds = Math.Max(1, (long)expiry.TotalMilliseconds);
+            var result = await _db.ScriptEvaluateAsync(
+                script,
+                new RedisKey[] { key },
+                new RedisValue[] { value, milliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            return (long)result == 1;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Failed to renew lock for key {LockKey}.", key);
+            return false;
+        }
+    }
+
+    public async Task ReleaseLockAsync(string key, string value)
+    {
+        try
+        {
+            var script = @"
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('del', KEYS[1])
+                else
+                    return 0
+                end";
+            await _db.ScriptEvaluateAsync(script, [new RedisKey(key)], [(RedisValue)value]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Redis] Failed to release lock for key {LockKey}.", key);
+        }
+    }
 }

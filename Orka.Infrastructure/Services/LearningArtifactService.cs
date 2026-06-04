@@ -22,7 +22,10 @@ public sealed class LearningArtifactService : ILearningArtifactService
         "review_quiz", "misconception_repair_pack", "worked_example_set", "retrieval_card_set",
         "audio_transcript", "caption_track", "video_ready_package", "slide_export_manifest",
         "narration_script", "visual_instruction_set", "media_accessibility_note",
-        "source_question_thread", "source_question_review_summary"
+        "source_question_thread", "source_question_review_summary",
+        "glossary", "timeline", "uml_diagram", "properties_panel", "tag_map",
+        "backlink_map", "linked_mentions", "reference_map", "graph_view",
+        "template_set", "search_filter_index"
     };
 
     private static readonly HashSet<string> Origins = new(StringComparer.OrdinalIgnoreCase)
@@ -377,6 +380,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         SourceBasis = entity.SourceBasis,
         CitationIds = ParseStringArray(entity.CitationIdsJson),
         ToolTraceIds = ParseGuidArray(entity.ToolTraceIdsJson),
+        PhaseScope = ExtractPhaseScope(entity.ContentJson),
         Accessibility = accessibility ?? ParseAccessibility(entity.AccessibilityJson),
         Safety = safety ?? new LearningArtifactSafetyDto
         {
@@ -394,7 +398,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         {
             "mermaid_graph" => "mermaid_diagram",
             "comparison_table" => "table",
-            "timeline" => "diagram",
+            "timeline" => "timeline",
             "image_prompt" => "image_reference",
             "micro_quiz" => "retrieval_card",
             "evidence_card" => "source_excerpt_summary",
@@ -411,6 +415,23 @@ public sealed class LearningArtifactService : ILearningArtifactService
             "captions" => "caption_track",
             "video_outline" => "video_ready_package",
             "slide_manifest" => "slide_export_manifest",
+            "uml" => "uml_diagram",
+            "mermaid_uml" => "uml_diagram",
+            "properties" => "properties_panel",
+            "property_panel" => "properties_panel",
+            "metadata_panel" => "properties_panel",
+            "tags" => "tag_map",
+            "backlinks" => "backlink_map",
+            "linked_mention" => "linked_mentions",
+            "linked_mentions_map" => "linked_mentions",
+            "block_refs" => "reference_map",
+            "block_references" => "reference_map",
+            "references" => "reference_map",
+            "graph" => "graph_view",
+            "templates" => "template_set",
+            "template" => "template_set",
+            "search_filter" => "search_filter_index",
+            "search_filters" => "search_filter_index",
             "worked_example" => "worked_example",
             "retrieval_card" => "retrieval_card",
             "" => "concept_summary",
@@ -537,6 +558,64 @@ public sealed class LearningArtifactService : ILearningArtifactService
         try { return string.IsNullOrWhiteSpace(json) ? Array.Empty<Guid>() : JsonSerializer.Deserialize<Guid[]>(json, JsonOptions) ?? Array.Empty<Guid>(); }
         catch { return Array.Empty<Guid>(); }
     }
+
+    private static IReadOnlyList<string> ExtractPhaseScope(string? contentJson)
+    {
+        if (string.IsNullOrWhiteSpace(contentJson)) return Array.Empty<string>();
+        try
+        {
+            using var document = JsonDocument.Parse(contentJson);
+            var root = document.RootElement;
+            if (TryGetPropertyIgnoreCase(root, "phaseScope", out var topLevel) && topLevel.ValueKind == JsonValueKind.Array)
+            {
+                var scope = ReadStringArray(topLevel);
+                if (scope.Count > 0) return scope;
+            }
+            if (TryGetPropertyIgnoreCase(root, "featureContract", out var contract) &&
+                contract.ValueKind == JsonValueKind.Object &&
+                TryGetPropertyIgnoreCase(contract, "phaseScope", out var nested) &&
+                nested.ValueKind == JsonValueKind.Array)
+            {
+                var scope = ReadStringArray(nested);
+                if (scope.Count > 0) return scope;
+            }
+        }
+        catch
+        {
+            // Fall through to the safe substring fallback below.
+        }
+
+        if (contentJson.Contains("phase_1_contract", StringComparison.OrdinalIgnoreCase) &&
+            contentJson.Contains("phase_7_audio_classroom", StringComparison.OrdinalIgnoreCase))
+        {
+            return NotebookStudioPhaseScope.All;
+        }
+
+        return Array.Empty<string>();
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(JsonElement element) =>
+        element.EnumerateArray()
+            .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : null)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static LearningArtifactAccessibilityDto ParseAccessibility(string? json)
     {

@@ -49,10 +49,58 @@ public class ClassroomService : IClassroomService
         Guid? sessionId,
         Guid? audioOverviewJobId,
         string transcript,
+        string? surface = null,
+        Guid? wikiPageId = null,
+        Guid? sourceId = null,
+        string? audioMode = null,
         CancellationToken ct = default)
     {
-        if (!topicId.HasValue && !sessionId.HasValue && !audioOverviewJobId.HasValue && string.IsNullOrWhiteSpace(transcript))
-            throw new ArgumentException("Classroom baslatmak icin topicId, sessionId, audioOverviewJobId veya transcript gerekli.");
+        var context = NormalizeClassroomContext(surface, wikiPageId, sourceId, audioMode);
+        if (!topicId.HasValue && !sessionId.HasValue && !audioOverviewJobId.HasValue && !context.WikiPageId.HasValue && !context.SourceId.HasValue && string.IsNullOrWhiteSpace(transcript))
+            throw new ArgumentException("Classroom baslatmak icin topicId, sessionId, audioOverviewJobId, wikiPageId, sourceId veya transcript gerekli.");
+
+        AudioOverviewJob? audioOverviewJob = null;
+        if (audioOverviewJobId.HasValue)
+        {
+            audioOverviewJob = await _db.AudioOverviewJobs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
+            if (audioOverviewJob == null)
+                throw new NotFoundException("Classroom audio overview job bulunamadi.");
+
+            var jobContext = TryParseAudioOverviewContext(audioOverviewJob);
+            if (jobContext != null)
+            {
+                var canInferFromJob = string.IsNullOrWhiteSpace(surface) && !wikiPageId.HasValue && !sourceId.HasValue;
+                if (!canInferFromJob && !IsCompatibleClassroomContext(context, jobContext))
+                    throw new ArgumentException("Classroom surface/context audio overview job ile eslesmiyor.");
+
+                context = MergeClassroomContext(context, jobContext);
+            }
+
+            topicId ??= audioOverviewJob.TopicId;
+            sessionId ??= audioOverviewJob.SessionId;
+        }
+
+        if (context.WikiPageId.HasValue)
+        {
+            var page = await _db.WikiPages.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == context.WikiPageId.Value && p.UserId == userId && !p.IsDeleted, ct);
+            if (page == null)
+                throw new NotFoundException("Classroom wiki sayfasi bulunamadi.");
+            topicId ??= page.TopicId;
+            sessionId ??= page.SessionId;
+        }
+
+        if (context.SourceId.HasValue)
+        {
+            var source = await _db.LearningSources.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == context.SourceId.Value && s.UserId == userId && !s.IsDeleted, ct);
+            if (source == null)
+                throw new NotFoundException("Classroom kaynagi bulunamadi.");
+            topicId ??= source.TopicId;
+            sessionId ??= source.SessionId;
+        }
 
         if (topicId.HasValue)
         {
@@ -72,7 +120,7 @@ public class ClassroomService : IClassroomService
                 throw new NotFoundException("Classroom session bulunamadı.");
         }
 
-        if (audioOverviewJobId.HasValue)
+        if (audioOverviewJobId.HasValue && audioOverviewJob == null)
         {
             var jobExists = await _db.AudioOverviewJobs
                 .AsNoTracking()
@@ -85,8 +133,9 @@ public class ClassroomService : IClassroomService
             userId,
             topicId,
             sessionId,
-            audioOverviewJobId,
+            audioOverviewJob,
             transcript,
+            context,
             ct);
 
         var classroom = new ClassroomSession
@@ -111,7 +160,7 @@ public class ClassroomService : IClassroomService
             topicId,
             sessionId,
             LearningSignalTypes.ClassroomStarted,
-            payloadJson: JsonSerializer.Serialize(new { audioOverviewJobId }),
+            payloadJson: JsonSerializer.Serialize(new { audioOverviewJobId, context.Surface, context.ContextType, context.WikiPageId, context.SourceId, context.AudioMode, crossSurfaceSync = false }),
             ct: ct);
 
         return ToDto(classroom);
@@ -131,6 +180,7 @@ public class ClassroomService : IClassroomService
             .FirstOrDefaultAsync(c => c.Id == classroomSessionId && c.UserId == userId, ct);
         if (classroom == null) throw new NotFoundException("Classroom session bulunamadı.");
 
+        var context = ParseClassroomContext(classroom.Transcript);
         var segment = string.IsNullOrWhiteSpace(activeSegment) ? classroom.LastSegment : activeSegment.Trim();
         var systemPrompt = """
             Sen Orka Sesli Sinif ajanisin. Ogrenci ders dinlerken soru sordu.
@@ -179,12 +229,23 @@ public class ClassroomService : IClassroomService
             LearningSignalTypes.ClassroomQuestionAsked,
             score: null,
             isPositive: false,
-            payloadJson: JsonSerializer.Serialize(new { question, segment }),
+            payloadJson: JsonSerializer.Serialize(new { question, segment, context.Surface, context.ContextType, context.WikiPageId, context.SourceId, context.AudioMode, crossSurfaceSync = false }),
             ct: ct);
 
         _logger.LogInformation("[Classroom] Student question answered. ClassroomRef={ClassroomRef}",
             LogPrivacyGuard.SafeId(classroom.Id, "classroom"));
-        return new ClassroomAskResultDto(classroom.Id, interaction.Id, answer, ParseSpeakers(answer));
+        return new ClassroomAskResultDto(
+            classroom.Id,
+            interaction.Id,
+            answer,
+            ParseSpeakers(answer),
+            context.Surface,
+            context.ContextType,
+            context.WikiPageId,
+            context.SourceId,
+            context.AudioMode,
+            AudioQueued: true,
+            BrowserTtsFallback: true);
     }
 
     private async Task<string> GenerateClassroomAnswerOrFallbackAsync(
@@ -235,7 +296,7 @@ public class ClassroomService : IClassroomService
                     var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
                     var tts = scope.ServiceProvider.GetRequiredService<IEdgeTtsService>();
 
-                    var audioBytes = await tts.SynthesizeDialogueAsync(answer, ct);
+                    var audioBytes = await tts.SynthesizeDialogueAsync(answer, "standard", ct);
                     if (audioBytes.Length == 0) return;
 
                     var interaction = await db.ClassroomInteractions
@@ -276,70 +337,258 @@ public class ClassroomService : IClassroomService
         return (interaction.AudioBytes, interaction.ContentType);
     }
 
-    private static ClassroomSessionDto ToDto(ClassroomSession session) =>
-        new(session.Id, session.TopicId, session.SessionId, session.Transcript, session.LastSegment, session.Status, session.CreatedAt);
+    private static ClassroomSessionDto ToDto(ClassroomSession session)
+    {
+        var context = ParseClassroomContext(session.Transcript);
+        var publicTranscript = BuildPublicTranscript(session.Transcript);
+        return new ClassroomSessionDto(
+            session.Id,
+            session.TopicId,
+            session.SessionId,
+            publicTranscript,
+            ExtractLastSegment(publicTranscript),
+            session.Status,
+            session.CreatedAt,
+            context.Surface,
+            context.ContextType,
+            context.WikiPageId,
+            context.SourceId,
+            session.AudioOverviewJobId,
+            context.AudioMode,
+            CrossSurfaceSync: false,
+            InternalConnections: BuildInternalConnectionKeys(context.Surface));
+    }
 
     private async Task<string> BuildClassroomContextAsync(
         Guid userId,
         Guid? topicId,
         Guid? sessionId,
-        Guid? audioOverviewJobId,
+        AudioOverviewJob? audioOverviewJob,
         string? transcript,
+        ClassroomContext context,
         CancellationToken ct)
     {
-        var parts = new List<string>();
+        var parts = new List<string>
+        {
+            BuildClassroomContextHeader(context)
+        };
 
         if (!string.IsNullOrWhiteSpace(transcript))
             parts.Add($"[TRANSCRIPT]\n{Trim(transcript.Trim(), 4000)}");
 
-        if (topicId.HasValue)
+        if (context.Surface == "orkalm")
         {
-            var topic = await _db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
-            if (topic != null)
-                parts.Add($"[TOPIC]\n{topic.Title}");
+            if (context.SourceId.HasValue)
+            {
+                var source = await _db.LearningSources.AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == context.SourceId.Value && s.UserId == userId && !s.IsDeleted, ct);
+                if (source != null)
+                    parts.Add($"[SOURCE_NOTEBOOK]\n{source.Title}\nStatus: {source.Status}\nChunks: {source.ChunkCount}");
 
-            var wiki = await _wikiService.GetWikiFullContentAsync(topicId.Value, userId);
-            if (!string.IsNullOrWhiteSpace(wiki))
-                parts.Add($"[WIKI]\n{Trim(wiki, 2500)}");
+                var sourceBits = await _db.SourceChunks
+                    .AsNoTracking()
+                    .Where(c => c.LearningSourceId == context.SourceId.Value && c.LearningSource.UserId == userId && !c.LearningSource.IsDeleted)
+                    .OrderBy(c => c.PageNumber)
+                    .ThenBy(c => c.ChunkIndex)
+                    .Take(4)
+                    .Select(c => $"[citation:{c.LearningSourceId}:p{c.PageNumber}:c{c.ChunkIndex}] {c.HighlightHint ?? Trim(c.Text, 420)}")
+                    .ToListAsync(ct);
+                if (sourceBits.Count > 0)
+                    parts.Add("[CITATIONS]\n" + Trim(string.Join("\n\n", sourceBits), 2500));
+            }
+            else if (topicId.HasValue)
+            {
+                var sourceSummaries = await _db.LearningSources.AsNoTracking()
+                    .Where(s => s.UserId == userId && s.TopicId == topicId.Value && !s.IsDeleted)
+                    .OrderByDescending(s => s.UpdatedAt)
+                    .Take(4)
+                    .Select(s => $"{s.Title} | status={s.Status} | chunks={s.ChunkCount}")
+                    .ToListAsync(ct);
+                if (sourceSummaries.Count > 0)
+                    parts.Add("[SOURCE_COLLECTION]\n" + string.Join("\n", sourceSummaries));
+            }
 
-            var sourceBits = await _db.SourceChunks
-                .AsNoTracking()
-                .Include(c => c.LearningSource)
-                .Where(c => c.LearningSource.UserId == userId && c.LearningSource.TopicId == topicId)
-                .OrderBy(c => c.ChunkIndex)
-                .Take(4)
-                .Select(c => $"[doc:{c.LearningSourceId}:p{c.PageNumber}] {c.Text}")
-                .ToListAsync(ct);
-            if (sourceBits.Count > 0)
-                parts.Add("[SOURCES]\n" + Trim(string.Join("\n\n", sourceBits), 2500));
+            parts.Add("[SCOPE_GUARD]\nOrkaLM classroom only reads source notebook/citation/source Q&A context in this phase.");
+        }
+        else
+        {
+            if (context.WikiPageId.HasValue)
+            {
+                var page = await _db.WikiPages.AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == context.WikiPageId.Value && p.UserId == userId && !p.IsDeleted, ct);
+                if (page != null)
+                    parts.Add($"[WIKI_PAGE]\n{page.Title}\nConcept: {page.ConceptKey ?? "none"}\nSummary: {Trim(page.SafeSummary ?? string.Empty, 900)}");
+
+                var blocks = await _db.WikiBlocks.AsNoTracking()
+                    .Where(b => b.WikiPageId == context.WikiPageId.Value && !b.IsDeleted)
+                    .OrderBy(b => b.OrderIndex)
+                    .Take(6)
+                    .Select(b => $"{b.BlockType}: {b.Title} {b.Content} concept={b.ConceptKey ?? "none"} misconception={b.MisconceptionKey ?? "none"}")
+                    .ToListAsync(ct);
+                if (blocks.Count > 0)
+                    parts.Add("[WIKI_BLOCKS]\n" + Trim(string.Join("\n\n", blocks), 2500));
+            }
+            else if (topicId.HasValue)
+            {
+                var topic = await _db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == topicId.Value && t.UserId == userId, ct);
+                if (topic != null)
+                    parts.Add($"[TOPIC]\n{topic.Title}");
+
+                var wiki = await _wikiService.GetWikiFullContentAsync(topicId.Value, userId);
+                if (!string.IsNullOrWhiteSpace(wiki))
+                    parts.Add($"[WIKI]\n{Trim(wiki, 2500)}");
+            }
+
+            if (sessionId.HasValue)
+            {
+                var messages = await _db.Messages
+                    .AsNoTracking()
+                    .Where(m => m.SessionId == sessionId.Value && m.UserId == userId)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(8)
+                    .OrderBy(m => m.CreatedAt)
+                    .Select(m => $"{m.Role}: {m.Content}")
+                    .ToListAsync(ct);
+                if (messages.Count > 0)
+                    parts.Add("[SESSION]\n" + Trim(string.Join("\n", messages), 2500));
+            }
+
+            parts.Add("[SCOPE_GUARD]\nWiki classroom only reads Wiki lesson/tutor/question context in this phase.");
         }
 
-        if (sessionId.HasValue)
-        {
-            var messages = await _db.Messages
-                .AsNoTracking()
-                .Where(m => m.SessionId == sessionId.Value && m.UserId == userId)
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(8)
-                .OrderBy(m => m.CreatedAt)
-                .Select(m => $"{m.Role}: {m.Content}")
-                .ToListAsync(ct);
-            if (messages.Count > 0)
-                parts.Add("[SESSION]\n" + Trim(string.Join("\n", messages), 2500));
-        }
-
-        if (audioOverviewJobId.HasValue)
-        {
-            var audioJob = await _db.AudioOverviewJobs
-                .AsNoTracking()
-                .FirstOrDefaultAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
-            if (!string.IsNullOrWhiteSpace(audioJob?.Script))
-                parts.Add("[AUDIO_OVERVIEW]\n" + Trim(audioJob.Script, 2500));
-        }
+        if (!string.IsNullOrWhiteSpace(audioOverviewJob?.Script))
+            parts.Add("[AUDIO_OVERVIEW]\n" + Trim(audioOverviewJob.Script, 2500));
 
         return parts.Count == 0
             ? "Henuz classroom icin yeterli baglam yok."
             : Trim(string.Join("\n\n", parts), 9000);
+    }
+
+    private static ClassroomContext NormalizeClassroomContext(string? surface, Guid? wikiPageId, Guid? sourceId, string? audioMode)
+    {
+        var normalizedSurface = NormalizeSurface(surface, sourceId);
+        return new ClassroomContext(
+            normalizedSurface,
+            normalizedSurface == "orkalm" ? "source_notebook" : "wiki_page",
+            normalizedSurface == "wiki" ? wikiPageId : null,
+            normalizedSurface == "orkalm" ? sourceId : null,
+            NormalizeAudioMode(audioMode));
+    }
+
+    private static ClassroomContext ParseClassroomContext(string? transcript)
+    {
+        if (string.IsNullOrWhiteSpace(transcript))
+            return NormalizeClassroomContext(null, null, null, null);
+
+        var firstLine = transcript.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        if (firstLine == null || !firstLine.StartsWith("[ORKA_CLASSROOM_CONTEXT]", StringComparison.OrdinalIgnoreCase))
+            return NormalizeClassroomContext(null, null, null, null);
+
+        var values = firstLine.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Skip(1)
+            .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(pair => pair.Length == 2)
+            .ToDictionary(pair => pair[0], pair => pair[1], StringComparer.OrdinalIgnoreCase);
+
+        Guid? TryGuid(string key) =>
+            values.TryGetValue(key, out var value) && Guid.TryParse(value, out var parsed) ? parsed : null;
+
+        values.TryGetValue("surface", out var surface);
+        values.TryGetValue("audioMode", out var audioMode);
+        return NormalizeClassroomContext(surface, TryGuid("wikiPageId"), TryGuid("sourceId"), audioMode);
+    }
+
+    private static string BuildClassroomContextHeader(ClassroomContext context) =>
+        $"[ORKA_CLASSROOM_CONTEXT]; surface={context.Surface}; contextType={context.ContextType}; wikiPageId={context.WikiPageId?.ToString() ?? "none"}; sourceId={context.SourceId?.ToString() ?? "none"}; audioMode={context.AudioMode}; crossSurfaceSync=false";
+
+    private static ClassroomContext? TryParseAudioOverviewContext(AudioOverviewJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.SpeakersJson)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(job.SpeakersJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
+
+            var root = document.RootElement;
+            var surface = TryGetPropertyString(root, "surface");
+            var audioMode = TryGetPropertyString(root, "audioMode");
+            var wikiPageId = TryGetPropertyGuid(root, "wikiPageId");
+            var sourceId = TryGetPropertyGuid(root, "sourceId");
+            return NormalizeClassroomContext(surface, wikiPageId, sourceId, audioMode);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsCompatibleClassroomContext(ClassroomContext requested, ClassroomContext audioJob)
+    {
+        if (!string.Equals(requested.Surface, audioJob.Surface, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (requested.WikiPageId.HasValue && audioJob.WikiPageId.HasValue && requested.WikiPageId != audioJob.WikiPageId)
+            return false;
+        if (requested.SourceId.HasValue && audioJob.SourceId.HasValue && requested.SourceId != audioJob.SourceId)
+            return false;
+        return true;
+    }
+
+    private static ClassroomContext MergeClassroomContext(ClassroomContext requested, ClassroomContext audioJob) =>
+        NormalizeClassroomContext(
+            audioJob.Surface,
+            requested.WikiPageId ?? audioJob.WikiPageId,
+            requested.SourceId ?? audioJob.SourceId,
+            audioJob.AudioMode);
+
+    private static string? TryGetPropertyString(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static Guid? TryGetPropertyGuid(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out var parsed)
+            ? parsed
+            : null;
+
+    private static string BuildPublicTranscript(string? transcript)
+    {
+        if (string.IsNullOrWhiteSpace(transcript)) return string.Empty;
+        var context = ParseClassroomContext(transcript);
+        var publicLines = new List<string>
+        {
+            BuildClassroomContextHeader(context)
+        };
+
+        foreach (var line in transcript.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith("[HOCA]:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("[ASISTAN]:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("[KONUK]:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("[STUDENT]:", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("[NARRATOR]:", StringComparison.OrdinalIgnoreCase))
+            {
+                publicLines.Add(Trim(line, 900));
+            }
+        }
+
+        return string.Join("\n", publicLines);
+    }
+
+    private static IReadOnlyList<string> BuildInternalConnectionKeys(string surface) =>
+        surface == "orkalm"
+            ? ["source_notebook", "citation", "source_qa", "source_practice"]
+            : ["wiki_page", "plan_step", "tutor_trace", "question_bank_trace", "wiki_learning_trace"];
+
+    private static string NormalizeSurface(string? value, Guid? sourceId = null)
+    {
+        var key = string.IsNullOrWhiteSpace(value) ? (sourceId.HasValue ? "orkalm" : "wiki") : value.Trim().ToLowerInvariant();
+        return key is "orkalm" or "source" or "source_notebook" ? "orkalm" : "wiki";
+    }
+
+    private static string NormalizeAudioMode(string? value)
+    {
+        var key = string.IsNullOrWhiteSpace(value) ? "brief" : value.Trim().ToLowerInvariant().Replace('-', '_').Replace(' ', '_');
+        return key is "deep_dive" or "critique" or "debate" ? key : "brief";
     }
 
     private static string NormalizeDialogue(string raw)
@@ -373,4 +622,11 @@ public class ClassroomService : IClassroomService
 
     private static string Trim(string value, int maxChars) =>
         value.Length > maxChars ? value[^maxChars..] : value;
+
+    private sealed record ClassroomContext(
+        string Surface,
+        string ContextType,
+        Guid? WikiPageId,
+        Guid? SourceId,
+        string AudioMode);
 }

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Orka.Core.DTOs;
@@ -15,6 +16,29 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     private static readonly HashSet<string> PackTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "topic_overview", "milestone_review", "wiki_page_review", "source_digest", "source_notebook", "source_review", "misconception_repair", "exam_review", "project_review"
+    };
+    private static readonly string[] WikiNotebookArtifactTypes =
+    [
+        "milestone_review", "study_guide", "briefing_doc", "source_digest", "glossary", "timeline",
+        "misconception_repair_pack", "worked_example_set", "retrieval_card_set",
+        "flashcard_set", "review_quiz", "mind_map", "uml_diagram",
+        "slide_deck_outline", "slide_export_manifest", "properties_panel", "tag_map",
+        "backlink_map", "linked_mentions", "reference_map", "graph_view",
+        "template_set", "search_filter_index"
+    ];
+    private static readonly string[] SourceNotebookArtifactTypes =
+    [
+        "source_digest", "study_guide", "briefing_doc", "glossary", "timeline",
+        "misconception_repair_pack", "worked_example_set", "retrieval_card_set",
+        "flashcard_set", "review_quiz", "mind_map", "uml_diagram",
+        "slide_deck_outline", "slide_export_manifest", "properties_panel", "tag_map",
+        "backlink_map", "linked_mentions", "reference_map", "graph_view",
+        "template_set", "search_filter_index"
+    ];
+    private static readonly HashSet<string> FeatureParityArtifactTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "glossary", "timeline", "properties_panel", "tag_map", "backlink_map",
+        "linked_mentions", "reference_map", "graph_view", "template_set", "search_filter_index"
     };
 
     private readonly OrkaDbContext _db;
@@ -215,7 +239,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         if (request.IncludeArtifacts)
         {
             var artifactIds = new List<Guid>();
-            foreach (var artifactType in new[] { "milestone_review", "study_guide", "briefing_doc", "source_digest", "misconception_repair_pack", "worked_example_set", "retrieval_card_set", "slide_deck_outline" })
+            foreach (var artifactType in WikiNotebookArtifactTypes)
             {
                 var artifact = await BuildArtifactInternalAsync(userId, pack, artifactType, conceptState, sourceBundle, notebook, ct);
                 if (artifact != null) artifactIds.Add(artifact.Id);
@@ -267,12 +291,11 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
 
         var sourceBundle = await _sourceLifecycle.GetLatestSourceEvidenceBundleAsync(userId, source.TopicId.Value, source.SessionId, ct)
                            ?? await _sourceLifecycle.BuildSourceEvidenceBundleAsync(userId, source.TopicId.Value, source.SessionId, request.UserGoal ?? source.Title, ct);
-        var page = await EnsureOrkaLmSourcePageAsync(userId, source, sourceBundle, ct);
 
         var sourceRequest = new LearningNotebookPackRequestDto
         {
             SessionId = request.SessionId ?? source.SessionId,
-            WikiPageId = page.Id,
+            WikiPageId = null,
             SourceId = source.Id,
             SourceSurface = "source",
             PackType = string.IsNullOrWhiteSpace(request.PackType) || string.Equals(request.PackType, "milestone_review", StringComparison.OrdinalIgnoreCase)
@@ -451,7 +474,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         if (request.IncludeArtifacts)
         {
             var artifactIds = new List<Guid>();
-            foreach (var artifactType in new[] { "source_digest", "study_guide", "briefing_doc", "audio_script", "mind_map", "flashcard_set", "review_quiz", "slide_deck_outline", "slide_export_manifest" })
+            foreach (var artifactType in SourceNotebookArtifactTypes)
             {
                 var artifact = await BuildArtifactInternalAsync(userId, pack, artifactType, conceptState, sourceBundle, notebook, ct);
                 if (artifact != null) artifactIds.Add(artifact.Id);
@@ -476,8 +499,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         {
             if (source != null)
             {
-                return await _sourceConceptLinks.SyncSourceConceptLinksAsync(userId, source.Id, ct)
-                       ?? await _sourceConceptLinks.GetSourceConceptLinksAsync(userId, source.Id, ct);
+                return await _sourceConceptLinks.GetSourceConceptLinksAsync(userId, source.Id, ct);
             }
 
             if (wikiPageId.HasValue)
@@ -593,103 +615,6 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         catch
         {
             return null;
-        }
-    }
-
-    private async Task<WikiPage> EnsureOrkaLmSourcePageAsync(
-        Guid userId,
-        LearningSource source,
-        SourceEvidenceBundleDto sourceBundle,
-        CancellationToken ct)
-    {
-        if (!source.TopicId.HasValue)
-            throw new InvalidOperationException("Source topic is required for OrkaLM source pages.");
-
-        var pageKey = $"orkalm-source:{source.Id:N}";
-        var page = await _db.WikiPages
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.TopicId == source.TopicId.Value && p.PageKey == pageKey && !p.IsDeleted, ct);
-        var now = DateTime.UtcNow;
-        if (page == null)
-        {
-            page = new WikiPage
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                TopicId = source.TopicId.Value,
-                SessionId = source.SessionId,
-                PageKey = pageKey,
-                PageType = "orkalm_source",
-                Title = Clip(source.Title, 160),
-                SourceReadiness = sourceBundle.EvidenceStatus,
-                EvidenceStatus = sourceBundle.EvidenceStatus,
-                SafeSummary = $"OrkaLM source notebook page for {Clip(source.Title, 120)}.",
-                MetadataJson = Serialize(new
-                {
-                    sourceId = source.Id,
-                    sourceTitle = source.Title,
-                    sourceStatus = source.Status,
-                    sourceChunkCount = source.ChunkCount,
-                    sourceSurface = "orkalm_source"
-                }),
-                Status = StatusFor(sourceBundle.EvidenceStatus),
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.WikiPages.Add(page);
-        }
-        else
-        {
-            page.Title = Clip(source.Title, 160);
-            page.SourceReadiness = sourceBundle.EvidenceStatus;
-            page.EvidenceStatus = sourceBundle.EvidenceStatus;
-            page.SafeSummary = $"OrkaLM source notebook page for {Clip(source.Title, 120)}.";
-            page.MetadataJson = Serialize(new
-            {
-                sourceId = source.Id,
-                sourceTitle = source.Title,
-                sourceStatus = source.Status,
-                sourceChunkCount = source.ChunkCount,
-                sourceSurface = "orkalm_source"
-            });
-            page.Status = StatusFor(sourceBundle.EvidenceStatus);
-            page.UpdatedAt = now;
-        }
-
-        await _db.SaveChangesAsync(ct);
-        await EnsureSourceNoteTraceAsync(userId, source, page, sourceBundle, ct);
-        return page;
-    }
-
-    private async Task EnsureSourceNoteTraceAsync(
-        Guid userId,
-        LearningSource source,
-        WikiPage page,
-        SourceEvidenceBundleDto sourceBundle,
-        CancellationToken ct)
-    {
-        if (_wikiTraceWriter == null) return;
-        try
-        {
-            await _wikiTraceWriter.RecordSourceNoteAsync(new WikiLearningTraceRequestDto
-            {
-                UserId = userId,
-                TopicId = page.TopicId,
-                SessionId = source.SessionId,
-                ActiveWikiPageId = page.Id,
-                SourceId = source.Id,
-                SourceEvidenceBundleId = sourceBundle.EvidenceStatus is "source_grounded" or "mixed" ? sourceBundle.Id : null,
-                TraceType = "source_note",
-                Title = "OrkaLM source ready",
-                SafeContent = $"Source notebook page prepared for {Clip(source.Title, 120)}. Indexed chunks: {source.ChunkCount}. Evidence status: {sourceBundle.EvidenceStatus}.",
-                SourceBasis = sourceBundle.EvidenceStatus is "source_grounded" or "mixed" ? "source_grounded" : "evidence_insufficient",
-                CreatedBy = "orkalm_source_notebook",
-                Visibility = sourceBundle.EvidenceStatus is "source_grounded" or "mixed" ? "normal" : "highlighted",
-                MetadataJson = Serialize(new { sourceId = source.Id, sourceSurface = "orkalm_source" })
-            }, ct);
-        }
-        catch
-        {
-            // Source page creation must remain usable even if trace writing is unavailable.
         }
     }
 
@@ -816,6 +741,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         var pageContext = await LoadWikiPageContextAsync(userId, pack.WikiPageId ?? wikiPage.WikiPageId, ct);
         var payload = await BuildArtifactPayloadAsync(userId, pack, normalizedType, conceptState, sourceBundle, notebook, pageContext, ct);
         var content = payload.SafeContent;
+        var contentJson = BuildArtifactContractJson(pack, wikiPage, pageContext, normalizedType, sourceBundle, payload.ContentJson);
         var sourceBasis = SourceBasisFor(normalizedType, sourceBundle);
         var trust = await _trust.CheckPublicPayloadAsync(userId, new AgenticTrustCheckRequestDto
         {
@@ -848,7 +774,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             RenderFormat = payload.RenderFormat,
             Title = TitleFor(normalizedType, pack.Title),
             SafeContent = content,
-            ContentJson = payload.ContentJson,
+            ContentJson = contentJson,
             SourceBasis = sourceBasis,
             CitationIds = sourceBundle.EvidenceItems.Select(i => i.Label).Where(l => !string.IsNullOrWhiteSpace(l)).Take(8).ToArray(),
             Accessibility = new LearningArtifactAccessibilityDto
@@ -860,6 +786,70 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             }
         };
         return await _artifacts.CreateArtifactAsync(userId, request, ct);
+    }
+
+    private static string BuildArtifactContractJson(
+        LearningNotebookPack pack,
+        PackWikiPageMetadata metadata,
+        WikiPageContext? pageContext,
+        string artifactType,
+        SourceEvidenceBundleDto sourceBundle,
+        string? payloadJson)
+    {
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(payloadJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(payloadJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        values[property.Name] = property.Value.Clone();
+                    }
+                }
+            }
+            catch
+            {
+                values["payloadParseStatus"] = "fallback";
+            }
+        }
+
+        values["artifactType"] = artifactType;
+        values["surface"] = surface;
+        values["contextType"] = contextType;
+        values["packType"] = pack.PackType;
+        values["wikiPageId"] = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null;
+        values["sourceId"] = surface == "orkalm" ? metadata.SourceId : null;
+        values["sourceSurface"] = surface == "orkalm" ? metadata.SourceSurface : null;
+        values["evidenceStatus"] = sourceBundle.EvidenceStatus;
+        values["sourceReadiness"] = sourceBundle.EvidenceStatus;
+        values["sourceUploadAllowed"] = surface == "orkalm";
+        values["sourceUploadScope"] = surface == "orkalm" ? "orkalm_only" : "hidden_in_wiki";
+        values["audioDeferred"] = false;
+        values["audioPhase"] = "phase_7_active";
+        values["phaseSevenAudioAvailable"] = true;
+        values["phaseScope"] = NotebookStudioPhaseScope.All;
+        values["crossSurfaceSync"] = false;
+        values["crossSurfaceEdgesAllowed"] = false;
+        values["internalConnections"] = BuildInternalConnectionRows(surface);
+        values["featureContract"] = new
+        {
+            surface,
+            contextType,
+            contextAdapter = surface == "orkalm" ? "OrkaLmFeatureContext" : "WikiFeatureContext",
+            uploadCapability = surface == "orkalm" ? "source_upload_enabled" : "source_upload_hidden",
+            crossSurfaceSync = false,
+            crossSurfaceEdgesAllowed = false,
+            audioPhase = "phase_7_active",
+            phaseScope = NotebookStudioPhaseScope.All
+        };
+
+        return Serialize(values);
     }
 
     private async Task<ArtifactPayload> BuildArtifactPayloadAsync(
@@ -874,19 +864,19 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     {
         if (normalizedType == "audio_overview")
         {
-            return await BuildAudioOverviewPayloadAsync(userId, pack, conceptState, sourceBundle, ct);
+            return await BuildAudioOverviewPayloadAsync(userId, pack, conceptState, sourceBundle, pageContext, ct);
         }
         if (normalizedType == "audio_script")
         {
-            return BuildAudioScriptPayload(pack, conceptState, sourceBundle);
+            return BuildAudioScriptPayload(pack, conceptState, sourceBundle, pageContext);
         }
         if (normalizedType == "audio_transcript")
         {
-            return BuildAudioTranscriptPayload(pack, conceptState, sourceBundle);
+            return BuildAudioTranscriptPayload(pack, conceptState, sourceBundle, pageContext);
         }
         if (normalizedType == "caption_track")
         {
-            return BuildCaptionTrackPayload(pack, conceptState, sourceBundle);
+            return BuildCaptionTrackPayload(pack, conceptState, sourceBundle, pageContext);
         }
         if (normalizedType == "mind_map")
         {
@@ -903,6 +893,14 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         if (normalizedType == "slide_deck_outline")
         {
             return BuildSlideDeckOutlinePayload(pack, conceptState, sourceBundle, pageContext);
+        }
+        if (normalizedType == "uml_diagram")
+        {
+            return BuildUmlDiagramPayload(pack, conceptState, sourceBundle, pageContext);
+        }
+        if (FeatureParityArtifactTypes.Contains(normalizedType))
+        {
+            return BuildFeatureParityPayload(pack, normalizedType, conceptState, sourceBundle, notebook, pageContext);
         }
         if (normalizedType == "video_ready_package")
         {
@@ -1253,10 +1251,14 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         LearningNotebookPack pack,
         ConceptState conceptState,
         SourceEvidenceBundleDto sourceBundle,
+        WikiPageContext? pageContext,
         CancellationToken ct)
     {
-        var scriptPayload = BuildAudioScriptPayload(pack, conceptState, sourceBundle);
+        var scriptPayload = BuildAudioScriptPayload(pack, conceptState, sourceBundle, pageContext);
         var script = ExtractScript(scriptPayload.SafeContent);
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
         var trust = await _trust.CheckPublicPayloadAsync(userId, new AgenticTrustCheckRequestDto
         {
             TopicId = pack.TopicId,
@@ -1277,7 +1279,17 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             SessionId = pack.SessionId,
             Status = "generating",
             Script = script,
-            SpeakersJson = JsonSerializer.Serialize(AudioDialogueFormatter.ParseSpeakers(script), JsonOptions),
+            SpeakersJson = Serialize(new
+            {
+                speakers = AudioDialogueFormatter.ParseSpeakers(script),
+                surface,
+                contextType,
+                wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+                sourceId = surface == "orkalm" ? metadata.SourceId : null,
+                audioMode = "brief",
+                ttsQuality = "standard",
+                crossSurfaceSync = false
+            }),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -1288,7 +1300,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         {
             using var ttsTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             ttsTimeout.CancelAfter(NotebookTtsTimeout);
-            var audioBytes = await _tts.SynthesizeDialogueAsync(script, ttsTimeout.Token);
+            var audioBytes = await _tts.SynthesizeDialogueAsync(script, "standard", ttsTimeout.Token);
             if (audioBytes.Length == 0)
             {
                 throw new InvalidOperationException("Edge-TTS returned empty audio.");
@@ -1306,14 +1318,25 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             var content = BuildAudioOverviewContent(job.Id, script, job.Status, sourceBundle.EvidenceStatus);
             var contentJson = Serialize(new
             {
+                format = "audio_overview_v1",
                 job.Status,
+                surface,
+                contextType,
+                wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+                sourceId = surface == "orkalm" ? metadata.SourceId : null,
                 audioOverviewJobId = job.Id,
                 contentType = job.ContentType,
                 fileName = BuildAudioFileName(job.Id, job.ContentType),
                 downloadUrl = $"/api/audio/overview/{job.Id}/stream",
                 fallbackReason = (string?)null,
                 speakers = AudioDialogueFormatter.ParseSpeakers(script),
-                transcriptArtifact = true
+                transcriptArtifact = true,
+                captionTrack = BuildVttFromScript(script),
+                classroomReady = true,
+                audioDeferred = false,
+                audioPhase = "phase_7_active",
+                crossSurfaceSync = false,
+                retention = new { audioExpiresAt = job.AudioExpiresAt, purgeRemoves = "binary_audio_only" }
             });
             return new ArtifactPayload(content, contentJson, "markdown");
         }
@@ -1327,15 +1350,26 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             var content = BuildAudioOverviewContent(job.Id, script, job.Status, sourceBundle.EvidenceStatus);
             var contentJson = Serialize(new
             {
+                format = "audio_overview_v1",
                 audioOverviewJobId = job.Id,
                 job.Status,
+                surface,
+                contextType,
+                wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+                sourceId = surface == "orkalm" ? metadata.SourceId : null,
                 contentType = (string?)null,
                 fileName = (string?)null,
                 downloadUrl = (string?)null,
                 fallbackReason = "tts_unavailable_script_only",
                 safeErrorCode = ex.GetType().Name,
                 speakers = AudioDialogueFormatter.ParseSpeakers(script),
-                transcriptArtifact = true
+                transcriptArtifact = true,
+                captionTrack = BuildVttFromScript(script),
+                classroomReady = true,
+                audioDeferred = false,
+                audioPhase = "phase_7_active",
+                crossSurfaceSync = false,
+                retention = new { audioExpiresAt = (DateTime?)null, purgeRemoves = "binary_audio_only" }
             });
             return new ArtifactPayload(content, contentJson, "markdown");
         }
@@ -1344,26 +1378,41 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     private static ArtifactPayload BuildAudioScriptPayload(
         LearningNotebookPack pack,
         ConceptState conceptState,
-        SourceEvidenceBundleDto? sourceBundle)
+        SourceEvidenceBundleDto? sourceBundle,
+        WikiPageContext? pageContext = null)
     {
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
+        var focus = pageContext?.Title ?? metadata.SourceTitle ?? pack.Title;
         var completed = JoinOrFallback(conceptState.Completed, "tamamlanan concept sinyali henuz zayif");
         var weak = JoinOrFallback(conceptState.Weak, "zayif concept sinyali henuz yok");
         var evidence = sourceBundle?.EvidenceStatus ?? pack.EvidenceStatus;
         var script = AudioDialogueFormatter.NormalizeScript($"""
-            [HOCA]: {pack.Title} icin kisa bir Notebook Studio sesli tekrar metni hazirliyoruz.
+            [HOCA]: {focus} icin {surface} yuzeyinde kisa bir Sesli Ders metni hazirliyoruz.
             [ASISTAN]: Once tamamlanan kavramlari toparlayalim: {completed}.
             [HOCA]: Sonra dikkat isteyen alanlara gelelim: {weak}.
-            [ASISTAN]: Kaynak durumu {evidence}. Kaynak zemini sinirliyse bunu kesin kaynakli anlatim gibi sunmayacagiz.
+            [ASISTAN]: Baglam {contextType}; cross-surface sync kapali. Kaynak zemini sinirliyse bunu kesin kaynakli anlatim gibi sunmayacagiz.
             [HOCA]: Kapanista bir mini kontrol sorusu onerelim ve pasif dinleme yerine aktif hatirlama yapalim.
             """);
         var content = $"# Audio script\n\n{script}\n\nNot: Bu transcript LearningArtifact olarak saklanir; ham kaynak, prompt veya provider payload icermez.";
         var contentJson = Serialize(new
         {
+            format = "audio_script_v1",
             status = "script_ready",
+            surface,
+            contextType,
+            wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+            sourceId = surface == "orkalm" ? metadata.SourceId : null,
             speakers = AudioDialogueFormatter.ParseSpeakers(script),
             evidenceStatus = evidence,
             transcriptArtifact = true,
-            audioJobCreated = false
+            audioJobCreated = false,
+            captionTrack = BuildVttFromScript(script),
+            classroomReady = true,
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            crossSurfaceSync = false
         });
         return new ArtifactPayload(content, contentJson, "markdown");
     }
@@ -1371,11 +1420,15 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     private static ArtifactPayload BuildAudioTranscriptPayload(
         LearningNotebookPack pack,
         ConceptState conceptState,
-        SourceEvidenceBundleDto? sourceBundle)
+        SourceEvidenceBundleDto? sourceBundle,
+        WikiPageContext? pageContext = null)
     {
-        var scriptPayload = BuildAudioScriptPayload(pack, conceptState, sourceBundle);
+        var scriptPayload = BuildAudioScriptPayload(pack, conceptState, sourceBundle, pageContext);
         var script = ExtractScript(scriptPayload.SafeContent);
         var evidence = sourceBundle?.EvidenceStatus ?? pack.EvidenceStatus;
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
         var content = "# Audio transcript\n\n" +
                       $"{script}\n\n" +
                       $"Kaynak durumu: {evidence}\n\n" +
@@ -1384,11 +1437,20 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         {
             format = "audio_transcript_v1",
             status = "transcript_ready",
+            surface,
+            contextType,
+            wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+            sourceId = surface == "orkalm" ? metadata.SourceId : null,
             sourceReadiness = evidence,
             sourceBasis = MediaSourceBasisFor(evidence),
             speakers = AudioDialogueFormatter.ParseSpeakers(script),
             transcriptAvailable = true,
             captionTrackRecommended = true,
+            captionTrack = BuildVttFromScript(script),
+            classroomReady = true,
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            crossSurfaceSync = false,
             accessibility = new
             {
                 textFallback = true,
@@ -1402,30 +1464,44 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     private static ArtifactPayload BuildCaptionTrackPayload(
         LearningNotebookPack pack,
         ConceptState conceptState,
-        SourceEvidenceBundleDto? sourceBundle)
+        SourceEvidenceBundleDto? sourceBundle,
+        WikiPageContext? pageContext = null)
     {
-        var script = ExtractScript(BuildAudioScriptPayload(pack, conceptState, sourceBundle).SafeContent);
+        var script = ExtractScript(BuildAudioScriptPayload(pack, conceptState, sourceBundle, pageContext).SafeContent);
         var segments = AudioDialogueFormatter.ParseSegments(script).Take(12).ToArray();
         var cues = segments.Select((segment, index) => new
         {
             cueId = index + 1,
             speaker = segment.Speaker,
             text = Clip(segment.Text, 260),
+            start = FormatVttTime(TimeSpan.FromSeconds(index * 12)),
+            end = FormatVttTime(TimeSpan.FromSeconds((index + 1) * 12)),
             timingHint = $"segment_{index + 1}"
         }).ToArray();
         var evidence = sourceBundle?.EvidenceStatus ?? pack.EvidenceStatus;
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
         var content = "WEBVTT\n\n" + string.Join("\n\n", cues.Select(c =>
-            $"{c.cueId}\nNOTE {c.speaker} - {c.timingHint}\n{c.text}")) +
-            "\n\nNOTE Bu caption track deterministik text fallback'tir; henuz medya zaman kodu degildir.";
+            $"{c.cueId}\n{c.start} --> {c.end}\n{c.speaker}: {c.text}")) +
+            "\n\nNOTE Bu caption track deterministic text fallback'tir; Edge-TTS dosyasi hazirsa player ile birlikte kullanilir.";
         var contentJson = Serialize(new
         {
             format = "caption_track_v1",
-            status = "caption_outline_ready",
+            status = "caption_ready",
+            surface,
+            contextType,
+            wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+            sourceId = surface == "orkalm" ? metadata.SourceId : null,
             sourceReadiness = evidence,
-            timingMode = "segment_hint_only",
-            exportReadiness = "needs_review",
+            timingMode = "deterministic_segment_timing",
+            exportReadiness = "ready",
             cues,
-            warnings = new[] { "Gercek audio/video zaman kodu yok; export oncesi medya timeline ile eslestirilmeli." }
+            classroomReady = true,
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            crossSurfaceSync = false,
+            warnings = new[] { "Caption timing deterministic segment estimate'tir; profesyonel render pipeline'da tekrar hizalanabilir." }
         });
         return new ArtifactPayload(content, contentJson, "plain_text");
     }
@@ -1447,6 +1523,26 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         var ext = (contentType ?? "audio/mpeg").Contains("wav", StringComparison.OrdinalIgnoreCase) ? "wav" : "mp3";
         return $"orka-audio-overview-{id}.{ext}";
     }
+
+    private static string BuildVttFromScript(string script)
+    {
+        var segments = AudioDialogueFormatter.ParseSegments(script).Take(24).ToArray();
+        if (segments.Length == 0) return "WEBVTT\n";
+        var builder = new StringBuilder();
+        builder.AppendLine("WEBVTT");
+        builder.AppendLine();
+        foreach (var (segment, index) in segments.Select((segment, index) => (segment, index)))
+        {
+            builder.AppendLine((index + 1).ToString());
+            builder.AppendLine($"{FormatVttTime(TimeSpan.FromSeconds(index * 12))} --> {FormatVttTime(TimeSpan.FromSeconds((index + 1) * 12))}");
+            builder.AppendLine($"{segment.Speaker}: {Clip(segment.Text, 240)}");
+            builder.AppendLine();
+        }
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string FormatVttTime(TimeSpan value) =>
+        $"{(int)value.TotalHours:00}:{value.Minutes:00}:{value.Seconds:00}.000";
 
     private static ArtifactPayload BuildSlideDeckOutlinePayload(
         LearningNotebookPack pack,
@@ -1710,6 +1806,9 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         SourceEvidenceBundleDto sourceBundle,
         WikiPageContext? pageContext)
     {
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
         var pageTitle = pageContext?.Title ?? pack.Title;
         var content = "# Narration script\n\n" +
                       $"[HOCA]: {pageTitle} icin kisa bir anlatim akisi kuruyoruz.\n" +
@@ -1720,11 +1819,21 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         var contentJson = Serialize(new
         {
             format = "narration_script_v1",
-            status = "outline_ready",
+            status = "script_ready",
+            surface,
+            contextType,
+            wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+            sourceId = surface == "orkalm" ? metadata.SourceId : null,
             sourceBasis = MediaSourceBasisFor(sourceBundle.EvidenceStatus),
             sourceReadiness = sourceBundle.EvidenceStatus,
             speakerLabels = new[] { "HOCA", "ASISTAN" },
-            exportReadiness = "needs_review"
+            transcriptAvailable = true,
+            captionTrack = BuildVttFromScript(content),
+            classroomReady = true,
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            crossSurfaceSync = false,
+            exportReadiness = "ready"
         });
         return new ArtifactPayload(content, contentJson, "markdown");
     }
@@ -1932,6 +2041,462 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         return new ArtifactPayload(content, contentJson, "markdown");
     }
 
+    private static ArtifactPayload BuildUmlDiagramPayload(
+        LearningNotebookPack pack,
+        ConceptState conceptState,
+        SourceEvidenceBundleDto sourceBundle,
+        WikiPageContext? pageContext)
+    {
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
+        var focusLabel = EscapeMermaid(pageContext?.Title ?? metadata.SourceTitle ?? pack.Title);
+        var evidence = EscapeMermaid(sourceBundle.EvidenceStatus);
+        var lines = new List<string>
+        {
+            "classDiagram",
+            "class FeatureContract",
+            "class WikiFeatureContext",
+            "class OrkaLmFeatureContext",
+            "class Artifact",
+            "FeatureContract <|-- WikiFeatureContext",
+            "FeatureContract <|-- OrkaLmFeatureContext",
+            "FeatureContract --> Artifact",
+            $"FeatureContract : surface {surface}",
+            $"FeatureContract : contextType {contextType}",
+            $"Artifact : evidence {evidence}",
+            $"Artifact : focus {focusLabel}",
+            "WikiFeatureContext : wikiPageId only",
+            "WikiFeatureContext : plan tutor questionBank",
+            "OrkaLmFeatureContext : sourceId only",
+            "OrkaLmFeatureContext : sourceChunk citation notebook",
+            "Artifact : audioPhase phase_7_active"
+        };
+        var contentJson = Serialize(new
+        {
+            format = "orka_feature_contract_uml_v1",
+            surface,
+            contextType,
+            wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null,
+            sourceId = surface == "orkalm" ? metadata.SourceId : null,
+            sourceSurface = metadata.SourceSurface,
+            evidenceStatus = sourceBundle.EvidenceStatus,
+            completedConceptKeys = conceptState.Completed.Take(8).ToArray(),
+            weakConceptKeys = conceptState.Weak.Take(8).ToArray(),
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            crossSurfaceSync = false
+        });
+        return new ArtifactPayload(string.Join('\n', lines), contentJson, "mermaid");
+    }
+
+    private static ArtifactPayload BuildFeatureParityPayload(
+        LearningNotebookPack pack,
+        string artifactType,
+        ConceptState concepts,
+        SourceEvidenceBundleDto sourceBundle,
+        WikiKnowledgeNotebookDto notebook,
+        WikiPageContext? pageContext)
+    {
+        var metadata = ParseWikiPageMetadata(pack.SafeMetadataJson);
+        var surface = SurfaceFor(pack, metadata);
+        var contextType = ContextTypeFor(surface);
+        var title = pageContext?.Title ?? metadata.SourceTitle ?? pack.Title;
+        var completed = concepts.Completed.Take(8).ToArray();
+        var weak = concepts.Weak.Take(8).ToArray();
+        var misconceptions = concepts.Misconceptions.Take(8).ToArray();
+        var terms = BuildNotebookTerms(title, completed, weak, misconceptions, sourceBundle);
+        var tags = BuildContextTags(surface, contextType, sourceBundle, pageContext, metadata);
+        var refs = BuildReferenceRows(surface, sourceBundle, pageContext, metadata);
+        var wikiPageId = surface == "wiki" ? pageContext?.Id ?? metadata.WikiPageId : null;
+        var sourceId = surface == "orkalm" ? metadata.SourceId : null;
+        var properties = BuildPropertyRows(surface, contextType, artifactType, pack, sourceBundle, pageContext, metadata, wikiPageId, sourceId);
+        var timelineItems = BuildTimelineRows(surface, contextType);
+        var graphNodes = BuildScopedGraphNodes(surface, contextType, title, terms, refs);
+        var graphEdges = BuildScopedGraphEdges(surface, contextType, terms, refs);
+        var backlinks = BuildBacklinkRows(surface, title, refs);
+        var linkedMentions = BuildLinkedMentionRows(surface, contextType, terms);
+        var blockReferences = BuildBlockReferenceRows(surface, refs);
+        var internalConnections = BuildInternalConnectionRows(surface);
+        var templates = BuildNotebookTemplates(surface, contextType);
+        var searchFilters = BuildSearchFilters(surface, contextType, artifactType, tags, sourceBundle.EvidenceStatus);
+        var exportPreview = BuildExportPreviewRows(artifactType);
+        var featureContract = new
+        {
+            surface,
+            contextType,
+            contextAdapter = surface == "orkalm" ? "OrkaLmFeatureContext" : "WikiFeatureContext",
+            uploadCapability = surface == "orkalm" ? "source_upload_enabled" : "source_upload_hidden",
+            crossSurfaceSync = false,
+            crossSurfaceEdgesAllowed = false,
+            audioPhase = "phase_7_active",
+            phaseScope = NotebookStudioPhaseScope.All
+        };
+        var parityContract = new
+        {
+            featureParity = true,
+            surface,
+            contextType,
+            contextAdapter = surface == "orkalm" ? "OrkaLmFeatureContext" : "WikiFeatureContext",
+            sourceUploadAllowed = surface == "orkalm",
+            sourceUploadScope = surface == "orkalm" ? "orkalm_only" : "hidden_in_wiki",
+            wikiContextKeys = new[] { "wikiPageId", "conceptKey", "planStepId", "tutorTraceId", "questionBankTraceId" },
+            orkalmContextKeys = new[] { "sourceId", "sourceChunkId", "citationId", "sourceNotebookId" },
+            crossSurfaceSync = false,
+            crossSurfaceEdgesAllowed = false,
+            audioPhase = "phase_7_active"
+        };
+        var content = artifactType switch
+        {
+            "glossary" => "# Glossary\n\n" +
+                          ContextHeader(surface, contextType, title) + "\n\n" +
+                          string.Join('\n', terms.Select(term => $"- **{term.Term}**: {term.Description}")),
+            "timeline" => "# Timeline\n\n" +
+                          ContextHeader(surface, contextType, title) + "\n\n" +
+                          string.Join('\n', timelineItems.Select(item => $"- {item}")),
+            "properties_panel" => "# Properties\n\n" +
+                                  ContextHeader(surface, contextType, title) + "\n\n" +
+                                  string.Join('\n', properties.Select(row => $"- `{row.key}`: {row.value}")),
+            "tag_map" => "# Tags\n\n" +
+                         ContextHeader(surface, contextType, title) + "\n\n" +
+                         string.Join('\n', tags.Select(tag => $"- `{tag}`")),
+            "backlink_map" => "# Backlinks\n\n" +
+                              ContextHeader(surface, contextType, title) + "\n\n" +
+                              string.Join('\n', backlinks.Select(row => $"- `{row.linkType}`: {row.source} -> {row.target}")),
+            "linked_mentions" => "# Linked mentions\n\n" +
+                                 ContextHeader(surface, contextType, title) + "\n\n" +
+                                 string.Join('\n', linkedMentions.Select(row => $"- `{row.term}` mentioned in {row.mentionScope}.")),
+            "reference_map" => "# References\n\n" +
+                               ContextHeader(surface, contextType, title) + "\n\n" +
+                               string.Join('\n', blockReferences.Select(row => $"- `{row.refType}`: {row.label}")),
+            "graph_view" => "# Graph view\n\n" +
+                            ContextHeader(surface, contextType, title) + "\n\n" +
+                            $"- Nodes: {graphNodes.Count}\n- Edges: {graphEdges.Count}\n- Cross-surface edges: 0\n- Scope: `{surface}` / `{contextType}`",
+            "template_set" => "# Templates\n\n" +
+                              ContextHeader(surface, contextType, title) + "\n\n" +
+                              string.Join('\n', templates.Select(row => $"- `{row.templateKey}`: {row.title}")),
+            "search_filter_index" => "# Search/filter index\n\n" +
+                                     ContextHeader(surface, contextType, title) + "\n\n" +
+                                     string.Join('\n', searchFilters.Select(row => $"- `{row.filterKey}` = {row.value}")),
+            _ => BuildArtifactContent(pack, artifactType, concepts, sourceBundle, notebook, pageContext)
+        };
+        var contentJson = Serialize(new
+        {
+            format = $"orka_{artifactType}_v1",
+            artifactType,
+            surface,
+            contextType,
+            wikiPageId,
+            sourceId,
+            sourceSurface = metadata.SourceSurface,
+            sourceUploadAllowed = surface == "orkalm",
+            sourceUploadScope = surface == "orkalm" ? "orkalm_only" : "hidden_in_wiki",
+            crossSurfaceEdgesAllowed = false,
+            title,
+            featureContract,
+            parityContract,
+            properties,
+            searchFilters,
+            templateArtifactTypes = templates.Select(row => row.defaultArtifactType).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            templates,
+            graphNodes,
+            graphEdges,
+            evidenceStatus = sourceBundle.EvidenceStatus,
+            sourceReadiness = sourceBundle.EvidenceStatus,
+            tags,
+            terms,
+            references = refs,
+            timelineItems,
+            backlinks,
+            linkedMentions,
+            blockReferences,
+            internalConnections,
+            exportPreview,
+            completedConceptKeys = completed,
+            weakConceptKeys = weak,
+            misconceptionKeys = misconceptions,
+            notebookCoverage = new { notebook.ConceptCoverage, notebook.SourceCoverage },
+            audioDeferred = false,
+            audioPhase = "phase_7_active",
+            phaseSevenAudioAvailable = true,
+            crossSurfaceSync = false
+        });
+        return new ArtifactPayload(content, contentJson, "markdown");
+    }
+
+    private static IReadOnlyList<NotebookTerm> BuildNotebookTerms(
+        string title,
+        IReadOnlyList<string> completed,
+        IReadOnlyList<string> weak,
+        IReadOnlyList<string> misconceptions,
+        SourceEvidenceBundleDto sourceBundle)
+    {
+        var values = completed
+            .Concat(weak)
+            .Concat(misconceptions)
+            .Concat(sourceBundle.EvidenceItems.Select(i => i.Title))
+            .Where(NotBlank)
+            .Select(value => Trim(value!, 80))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+        if (values.Count == 0) values.Add(Trim(title, 80));
+        return values.Select(value => new NotebookTerm(
+            value,
+            $"This term is part of the current notebook context and should be studied with active recall.")).ToArray();
+    }
+
+    private static IReadOnlyList<string> BuildContextTags(
+        string surface,
+        string contextType,
+        SourceEvidenceBundleDto sourceBundle,
+        WikiPageContext? pageContext,
+        PackWikiPageMetadata metadata)
+    {
+        var tags = new List<string>
+        {
+            surface == "orkalm" ? "#orkalm" : "#wiki",
+            $"#{contextType.Replace('_', '-')}",
+            $"#evidence-{sourceBundle.EvidenceStatus.Replace('_', '-')}",
+            "#audio-ready"
+        };
+        if (pageContext?.ConceptKey is { Length: > 0 } conceptKey)
+            tags.Add($"#concept-{Slug(conceptKey)}");
+        if (metadata.SourceId.HasValue)
+            tags.Add("#source-notebook");
+        return tags.Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToArray();
+    }
+
+    private static IReadOnlyList<string> BuildReferenceRows(
+        string surface,
+        SourceEvidenceBundleDto sourceBundle,
+        WikiPageContext? pageContext,
+        PackWikiPageMetadata metadata)
+    {
+        if (surface == "orkalm")
+        {
+            var rows = sourceBundle.EvidenceItems
+                .Take(8)
+                .Select(item => $"source citation `{item.Label}` - {Clip(item.SnippetSummary, 180)}")
+                .ToList();
+            if (rows.Count == 0 && metadata.SourceId.HasValue)
+                rows.Add($"source notebook `{metadata.SourceId}` has no ready citation rows yet");
+            return rows.Count == 0 ? ["source collection has no ready references yet"] : rows;
+        }
+
+        var wikiRows = pageContext?.BlockSnippets
+            .Take(8)
+            .Select((snippet, index) => $"wiki block `{index + 1}` - {Clip(snippet, 180)}")
+            .ToList() ?? [];
+        return wikiRows.Count == 0 ? ["wiki page has no block references yet"] : wikiRows;
+    }
+
+    private static IReadOnlyList<NotebookPropertyRow> BuildPropertyRows(
+        string surface,
+        string contextType,
+        string artifactType,
+        LearningNotebookPack pack,
+        SourceEvidenceBundleDto sourceBundle,
+        WikiPageContext? pageContext,
+        PackWikiPageMetadata metadata,
+        Guid? wikiPageId,
+        Guid? sourceId)
+    {
+        var focus = pageContext?.Title ?? metadata.SourceTitle ?? pack.Title;
+        return
+        [
+            new("surface", "Surface", surface, "locked"),
+            new("context_type", "Context type", contextType, "locked"),
+            new("context_adapter", "Context adapter", surface == "orkalm" ? "OrkaLmFeatureContext" : "WikiFeatureContext", "active"),
+            new("artifact_type", "Artifact type", artifactType, "active"),
+            new("pack_type", "Pack type", pack.PackType, pack.PackStatus),
+            new("focus", "Focus", Clip(focus, 120), "active"),
+            new("evidence_status", "Evidence status", sourceBundle.EvidenceStatus, StatusFor(sourceBundle.EvidenceStatus)),
+            new("wiki_page_id", "Wiki page id", surface == "wiki" ? wikiPageId?.ToString("N") ?? "none" : "not_applicable", surface == "wiki" ? "active" : "hidden"),
+            new("source_id", "Source id", surface == "orkalm" ? sourceId?.ToString("N") ?? "collection" : "not_applicable", surface == "orkalm" ? "active" : "hidden"),
+            new("source_upload", "Source upload", surface == "orkalm" ? "enabled_in_orkalm" : "hidden_in_wiki", surface == "orkalm" ? "enabled" : "hidden"),
+            new("cross_surface_sync", "Cross-surface sync", "disabled", "locked"),
+            new("audio_phase", "Audio phase", "phase_7_active", "active")
+        ];
+    }
+
+    private static IReadOnlyList<string> BuildTimelineRows(string surface, string contextType) =>
+    [
+        $"Phase 1 contract locks `{surface}` / `{contextType}` and keeps upload in OrkaLM only.",
+        "Phase 2 properties, tags, backlinks, references and graph remain scoped to the active surface.",
+        "Phase 3 briefing, study guide, glossary, timeline, quiz and flashcards use the same feature catalog.",
+        "Phase 4 slide outline, preview, speaker notes, checkpoints, mind map and UML stay professional and export-safe.",
+        "Phase 5 search, templates and export preview remain scoped to the active surface.",
+        "Phase 6 internal links stay inside Wiki or OrkaLM without auto sync.",
+        "Phase 7 audio, transcript, captions, fallback and live classroom are active with the same context separation."
+    ];
+
+    private static IReadOnlyList<NotebookGraphNode> BuildScopedGraphNodes(
+        string surface,
+        string contextType,
+        string title,
+        IReadOnlyList<NotebookTerm> terms,
+        IReadOnlyList<string> references)
+    {
+        var nodes = new List<NotebookGraphNode>
+        {
+            new($"{surface}:root", Clip(title, 96), "root", surface, "active"),
+            new($"{surface}:surface", surface, "surface", surface, "locked"),
+            new($"{surface}:context", contextType, "context", surface, "locked")
+        };
+
+        nodes.AddRange(terms.Take(8).Select((term, index) =>
+            new NotebookGraphNode($"{surface}:term:{index + 1}:{Slug(term.Term)}", Clip(term.Term, 80), "term", surface, "active")));
+        nodes.AddRange(references.Take(6).Select((reference, index) =>
+            new NotebookGraphNode($"{surface}:ref:{index + 1}", Clip(reference, 80), surface == "orkalm" ? "citation" : "block_ref", surface, "active")));
+
+        return nodes;
+    }
+
+    private static IReadOnlyList<NotebookGraphEdge> BuildScopedGraphEdges(
+        string surface,
+        string contextType,
+        IReadOnlyList<NotebookTerm> terms,
+        IReadOnlyList<string> references)
+    {
+        var rootId = $"{surface}:root";
+        var edges = new List<NotebookGraphEdge>
+        {
+            new(rootId, $"{surface}:surface", "scoped_to", contextType, false),
+            new(rootId, $"{surface}:context", "uses_context", contextType, false)
+        };
+
+        edges.AddRange(terms.Take(8).Select((term, index) =>
+            new NotebookGraphEdge(rootId, $"{surface}:term:{index + 1}:{Slug(term.Term)}", "mentions", contextType, false)));
+        edges.AddRange(references.Take(6).Select((_, index) =>
+            new NotebookGraphEdge(rootId, $"{surface}:ref:{index + 1}", surface == "orkalm" ? "cites" : "references_block", contextType, false)));
+
+        return edges;
+    }
+
+    private static IReadOnlyList<NotebookBacklinkRow> BuildBacklinkRows(string surface, string title, IReadOnlyList<string> references)
+    {
+        var root = Clip(title, 80);
+        var rows = surface == "orkalm"
+            ? new List<NotebookBacklinkRow>
+            {
+                new(root, "source notebook", "source_notebook_backlink", surface, "scoped"),
+                new(root, "source chunks", "chunk_backlink", surface, "scoped"),
+                new(root, "citations", "citation_backlink", surface, "scoped"),
+                new(root, "source Q&A", "source_qa_backlink", surface, "scoped"),
+                new(root, "source practice", "source_practice_backlink", surface, "scoped")
+            }
+            : new List<NotebookBacklinkRow>
+            {
+                new(root, "wiki page blocks", "wiki_block_backlink", surface, "scoped"),
+                new(root, "plan steps", "plan_step_backlink", surface, "scoped"),
+                new(root, "tutor notes", "tutor_trace_backlink", surface, "scoped"),
+                new(root, "question bank traces", "question_bank_backlink", surface, "scoped")
+            };
+
+        rows.AddRange(references.Take(4).Select(reference =>
+            new NotebookBacklinkRow(root, Clip(reference, 96), surface == "orkalm" ? "citation_reference" : "block_reference", surface, "scoped")));
+        rows.Add(new NotebookBacklinkRow(root, "cross-surface graph", "cross_surface_edge", surface, "disabled"));
+        return rows;
+    }
+
+    private static IReadOnlyList<NotebookMentionRow> BuildLinkedMentionRows(
+        string surface,
+        string contextType,
+        IReadOnlyList<NotebookTerm> terms)
+    {
+        var rows = terms.Take(10)
+            .Select(term => new NotebookMentionRow(term.Term, contextType, surface == "orkalm" ? "source_notebook" : "wiki_page", "scoped"))
+            .ToList();
+        if (rows.Count == 0)
+            rows.Add(new NotebookMentionRow(contextType, contextType, surface == "orkalm" ? "source_notebook" : "wiki_page", "empty"));
+        return rows;
+    }
+
+    private static IReadOnlyList<NotebookBlockReferenceRow> BuildBlockReferenceRows(string surface, IReadOnlyList<string> references)
+    {
+        var refType = surface == "orkalm" ? "source_chunk_ref" : "wiki_block_ref";
+        var rows = references.Take(10)
+            .Select(reference => new NotebookBlockReferenceRow(refType, Clip(reference, 140), surface, "scoped"))
+            .ToList();
+        if (rows.Count == 0)
+            rows.Add(new NotebookBlockReferenceRow(refType, surface == "orkalm" ? "source notebook has no ready chunk refs yet" : "wiki page has no ready block refs yet", surface, "empty"));
+        return rows;
+    }
+
+    private static IReadOnlyList<NotebookInternalConnectionRow> BuildInternalConnectionRows(string surface)
+    {
+        var rows = surface == "orkalm"
+            ? new List<NotebookInternalConnectionRow>
+            {
+                new("source_notebook", "Source notebook", "active", "orkalm"),
+                new("citation", "Citation/source chunk", "active", "orkalm"),
+                new("source_qa", "Source Q&A memory", "active", "orkalm"),
+                new("source_practice", "Source practice", "active", "orkalm"),
+                new("wiki_learning_trace", "Wiki learning trace", "blocked", "wiki")
+            }
+            : new List<NotebookInternalConnectionRow>
+            {
+                new("wiki_page", "Wiki page/block", "active", "wiki"),
+                new("plan_step", "Plan step", "active", "wiki"),
+                new("tutor_trace", "Tutor trace", "active", "wiki"),
+                new("question_bank_trace", "Question bank trace", "active", "wiki"),
+                new("wiki_learning_trace", "Wiki learning trace", "active", "wiki"),
+                new("source_notebook", "Source notebook", "blocked", "orkalm")
+            };
+        rows.Add(new("cross_surface_sync", "Cross-surface auto sync", "disabled", "system"));
+        return rows;
+    }
+
+    private static IReadOnlyList<NotebookTemplateRow> BuildNotebookTemplates(string surface, string contextType) =>
+    [
+        new("briefing", "Briefing / quick summary", contextType, "briefing_doc"),
+        new("study_guide", "Study guide", contextType, "study_guide"),
+        new("glossary", "Glossary", contextType, "glossary"),
+        new("timeline", "Timeline", contextType, "timeline"),
+        new("quiz", "Review quiz", contextType, "review_quiz"),
+        new("flashcards", "Flashcards", contextType, "flashcard_set"),
+        new("slides", "Slide outline with notes", contextType, "slide_deck_outline"),
+        new("diagram", "Mind map / UML", contextType, "uml_diagram"),
+        new("export", "Export preview", surface == "orkalm" ? "source export scope" : "wiki export scope", "slide_export_manifest")
+    ];
+
+    private static IReadOnlyList<NotebookSearchFilterRow> BuildSearchFilters(
+        string surface,
+        string contextType,
+        string artifactType,
+        IReadOnlyList<string> tags,
+        string evidenceStatus)
+    {
+        var rows = new List<NotebookSearchFilterRow>
+        {
+            new("surface", "Surface", surface, surface),
+            new("context_type", "Context type", contextType, surface),
+            new("artifact_type", "Artifact type", artifactType, surface),
+            new("evidence_status", "Evidence status", evidenceStatus, surface),
+            new("cross_surface_sync", "Cross-surface sync", "false", surface),
+            new("audio_phase", "Audio phase", "phase_7_active", surface)
+        };
+        rows.AddRange(tags.Take(6).Select(tag => new NotebookSearchFilterRow("tag", "Tag", tag, surface)));
+        return rows;
+    }
+
+    private static IReadOnlyList<NotebookExportPreviewRow> BuildExportPreviewRows(string artifactType)
+    {
+        var rows = new List<NotebookExportPreviewRow>
+        {
+            new("markdown", "Markdown preview", "ready"),
+            new("html", "HTML preview", "ready"),
+            new("manifest", "Artifact manifest", "ready")
+        };
+        if (artifactType is "uml_diagram" or "mind_map" or "graph_view")
+            rows.Add(new("mermaid", "Mermaid diagram", "ready"));
+        return rows;
+    }
+
+    private static string ContextHeader(string surface, string contextType, string title) =>
+        $"Surface: `{surface}`\n\nContext: `{contextType}`\n\nFocus: {title}\n\nCross-surface auto sync: disabled.";
+
     private async Task<IReadOnlyDictionary<string, string>> LoadConceptLabelsAsync(
         Guid userId,
         Guid topicId,
@@ -2009,6 +2574,8 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         {
             "source_digest" => $"# Kaynak ozeti\n\nKanıt durumu: {sourceBundle.EvidenceStatus}\n\n{sourceBlock}\n\nNot: Silinmis veya stale kaynaklar guclu kanit sayilmaz.",
             "misconception_repair_pack" => $"# Yanlis anlama onarim paketi\n\nZayif alanlar: {weak}\n\nMisconception sinyalleri: {misconceptions}\n\nIlk hamle: kisa aciklama, sonra bir mikro kontrol sorusu.",
+            "worked_example_set" => $"# Worked example set\n\nKanit durumu: {sourceBundle.EvidenceStatus}\n\n{sourceBlock}\n\nHedef kavramlar: {weak}\n\n1. Kaynaktaki ana iddiayi kisa tanimla.\n2. Citation notunu bir ornek probleme cevir.\n3. Cozum adimlarini acikla.\n4. Sonunda benzer ama daha kucuk bir deneme sorusu ver.",
+            "retrieval_card_set" => $"# Retrieval card set\n\nKanit durumu: {sourceBundle.EvidenceStatus}\n\nAktif hatirlama hedefleri: {completed}\n\nDikkat isteyen hedefler: {weak}\n\nKart onerileri:\n- Kaynaktaki tanimi kapatip kendi cumlenle yaz.\n- Citation notundan tek bir neden-sonuc karti kur.\n- Yanlis anlama sinyali varsa hata kalibini adlandir.\n\nKaynak notlari:\n{sourceBlock}",
             "slide_deck_outline" => $"# Slayt taslagi\n\n1. Bu milestone neyi kapsar?\n2. Tamamlanan kavramlar: {completed}\n3. Dikkat isteyen kavramlar: {weak}\n4. Kaynak durumu: {sourceBundle.EvidenceStatus}\n5. Mini kontrol: bir ornek uzerinden acikla.\n\nSpeaker note: Pasif tekrar yerine ornek + kontrol sorusu kullan.",
             "briefing_doc" => $"# Kisa briefing\n\nPaket: {pack.Title}\n\nTamamlananlar: {completed}\n\nZayif alanlar: {weak}\n\nWiki kapsam: {notebook.ConceptCoverage} / {notebook.SourceCoverage}",
             "review_quiz" => $"# Review quiz tohumu\n\nOlcum modu: review_check\n\nHedef kavramlar: {weak}\n\nGuvenlik: Cevap anahtari submit oncesi gosterilmez.",
@@ -2020,7 +2587,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
     private static string BuildSummary(string topicTitle, ConceptState concepts, SourceEvidenceBundleDto sourceBundle, WikiKnowledgeNotebookDto notebook, WikiPageContext? pageContext) =>
         pageContext == null
             ? BuildSummary(topicTitle, concepts, sourceBundle, notebook)
-            : $"{pageContext.Title} Wiki sayfasi icin OrkaLM paketi hazirlandi. Blok sayisi: {pageContext.BlockSnippets.Count}. Ogrenci soru sinyali: {pageContext.QuestionSnippets.Count}. Kaynak durumu: {sourceBundle.EvidenceStatus}.";
+            : $"{pageContext.Title} Wiki sayfasi icin Wiki ders paketi hazirlandi. Blok sayisi: {pageContext.BlockSnippets.Count}. Ogrenci soru sinyali: {pageContext.QuestionSnippets.Count}. Kaynak durumu: {sourceBundle.EvidenceStatus}.";
 
     private static string BuildSummary(string topicTitle, ConceptState concepts, SourceEvidenceBundleDto sourceBundle, WikiKnowledgeNotebookDto notebook) =>
         $"{topicTitle} icin milestone paketi hazirlandi. Tamamlanan concept sayisi: {concepts.Completed.Count}. Zayif concept sayisi: {concepts.Weak.Count}. Kaynak durumu: {sourceBundle.EvidenceStatus}. Wiki kapsam: {notebook.ConceptCoverage}.";
@@ -2128,7 +2695,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         var artifacts = new List<LearningArtifactDto>();
         if (includeArtifacts)
         {
-            foreach (var id in artifactIds.Take(20))
+            foreach (var id in artifactIds.Take(40))
             {
                 var artifact = await _artifacts.GetArtifactAsync(pack.UserId, id, ct);
                 if (artifact != null) artifacts.Add(artifact);
@@ -2162,6 +2729,7 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
             CompletedConceptKeys = ParseStrings(pack.CompletedConceptKeysJson),
             WeakConceptKeys = ParseStrings(pack.WeakConceptKeysJson),
             MisconceptionKeys = ParseStrings(pack.MisconceptionKeysJson),
+            PhaseScope = NotebookStudioPhaseScope.All,
             ArtifactIds = artifactIds,
             Artifacts = artifacts,
             NextActions = Parse(pack.NextActionsJson, Array.Empty<NotebookStudioNextActionDto>()),
@@ -2189,10 +2757,35 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         return key is "source" or "source_notebook" or "source_collection" or "orkalm" or "orkalm_source";
     }
 
+    private static string SurfaceFor(LearningNotebookPack pack, PackWikiPageMetadata metadata) =>
+        IsSourceSurface(metadata.SourceSurface) || pack.PackType is "source_digest" or "source_notebook" or "source_review"
+            ? "orkalm"
+            : "wiki";
+
+    private static string ContextTypeFor(string surface) =>
+        surface == "orkalm" ? "source_notebook" : "wiki_page";
+
     private static string NormalizeArtifactType(string? value)
     {
         var key = Normalize(value);
-        return string.IsNullOrWhiteSpace(key) ? "study_guide" : key;
+        return key switch
+        {
+            "" => "study_guide",
+            "uml" => "uml_diagram",
+            "mermaid_uml" => "uml_diagram",
+            "properties" => "properties_panel",
+            "property_panel" => "properties_panel",
+            "metadata_panel" => "properties_panel",
+            "tags" => "tag_map",
+            "backlinks" => "backlink_map",
+            "block_refs" => "reference_map",
+            "block_references" => "reference_map",
+            "references" => "reference_map",
+            "graph" => "graph_view",
+            "templates" => "template_set",
+            "search_filter" => "search_filter_index",
+            _ => key
+        };
     }
 
     private static string SourceBasisFor(string artifactType, SourceEvidenceBundleDto bundle)
@@ -2251,6 +2844,11 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
 
     private static bool NotBlank(string? value) => !string.IsNullOrWhiteSpace(value);
     private static string Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+    private static string Slug(string value) =>
+        string.Join('-', Normalize(value)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Replace("_", "-", StringComparison.Ordinal);
+
     private static string Trim(string value, int maxLength)
     {
         var trimmed = value.Trim();
@@ -2384,6 +2982,18 @@ public sealed class LearningNotebookStudioService : ILearningNotebookStudioServi
         string? SourceSurface,
         Guid? SourceId,
         string? SourceTitle);
+
+    private sealed record NotebookTerm(string Term, string Description);
+    private sealed record NotebookPropertyRow(string key, string label, string value, string status);
+    private sealed record NotebookGraphNode(string id, string label, string nodeType, string surface, string status);
+    private sealed record NotebookGraphEdge(string sourceId, string targetId, string edgeType, string scope, bool crossSurface);
+    private sealed record NotebookBacklinkRow(string source, string target, string linkType, string surface, string status);
+    private sealed record NotebookMentionRow(string term, string mentionScope, string source, string status);
+    private sealed record NotebookBlockReferenceRow(string refType, string label, string scope, string status);
+    private sealed record NotebookInternalConnectionRow(string connectionKey, string label, string status, string surface);
+    private sealed record NotebookTemplateRow(string templateKey, string title, string appliesTo, string defaultArtifactType);
+    private sealed record NotebookSearchFilterRow(string filterKey, string label, string value, string surface);
+    private sealed record NotebookExportPreviewRow(string format, string label, string status);
 
     private sealed record ConceptState(
         IReadOnlyList<string> Completed,

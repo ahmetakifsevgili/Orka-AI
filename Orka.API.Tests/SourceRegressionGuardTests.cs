@@ -655,6 +655,22 @@ public sealed class SourceRegressionGuardTests
     }
 
     [Fact]
+    public void ExpensiveEndpoints_KeepConcurrencyLimiterPolicies()
+    {
+        var auth = ReadRepoText("Orka.API/Extensions/AuthInfrastructureExtensions.cs");
+        Assert.Contains("GlobalLimiter", auth);
+        Assert.Contains("TryGetExpensiveEndpointSection", auth);
+        Assert.Contains("AddPolicy<string>(\"AudioLimiter\"", auth);
+        Assert.Contains("AddPolicy<string>(\"QuestionDraftLimiter\"", auth);
+        Assert.Contains("AddPolicy<string>(\"QuestionImportLimiter\"", auth);
+        Assert.Contains("GetTokenBucketLimiter", auth);
+        Assert.Contains("GetConcurrencyLimiter", auth);
+        Assert.Contains("BuildRateLimitPartitionKey", auth);
+        Assert.Contains("RateLimits:{section}:ConcurrencyLimit", auth);
+        Assert.Contains("QueueLimit = 0", auth);
+    }
+
+    [Fact]
     public void BackgroundJobs_UseCentralQueueInsteadOfRawTaskRun()
     {
         var program = ReadRepoText("Orka.API/Program.cs");
@@ -667,6 +683,9 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("Channel.CreateBounded", queueService);
         Assert.Contains("MaxAttempts", queueService);
         Assert.Contains("Timeout", queueService);
+        Assert.Contains("ScopedWork", queueInterface);
+        Assert.Contains("IServiceScopeFactory", queueService);
+        Assert.Contains("SemaphoreSlim(_maxConcurrency)", queueService);
 
         string[] queuedServices =
         [
@@ -831,6 +850,17 @@ public sealed class SourceRegressionGuardTests
 
         Assert.True(leakingControllers.Length == 0,
             "Raw exception messages leak through controller responses or diagnostics: " + string.Join(", ", leakingControllers));
+    }
+
+    [Fact]
+    public void LegacyQuizGenerate_DoesNotExposeCorrectOptionFlags()
+    {
+        var quizController = ReadRepoText("Orka.API/Controllers/QuizController.cs");
+
+        Assert.DoesNotContain("isCorrect = isOptCorrect", quizController, StringComparison.Ordinal);
+        Assert.DoesNotContain("isCorrect = opt", quizController, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ConceptGraphSnapshotId = Guid.Empty", quizController, StringComparison.Ordinal);
+        Assert.Contains("isCorrect = false", quizController, StringComparison.Ordinal);
     }
 
     [Fact]

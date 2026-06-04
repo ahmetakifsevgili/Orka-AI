@@ -57,6 +57,50 @@ public sealed class RichQuestionImportTests
     }
 
     [Fact]
+    public async Task ApprovalSanitizesLearnerFacingContentJsonBeforeStorage()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "rich-import-contentjson-safe");
+        var ids = await ImportExamTreeAsync(user);
+        var package = ValidRichPackage(ids);
+        package.Stimuli[0].ContentJson = """
+        { "title": "ok", "answerKey": "A", "nested": { "correctAnswer": "A" }, "items": [ { "text": "visible", "solution": "hidden" } ] }
+        """;
+        package.Questions[0].ContentBlocks[1].ContentJson = """
+        { "headers": ["A"], "rows": [["B"]], "rubric": "hidden", "children": [ { "text": "safe", "isCorrect": true } ] }
+        """;
+        package.Questions[0].Options[0].ContentBlocks =
+        [
+            new QuestionImportContentBlockDto
+            {
+                BlockType = "table",
+                ContentJson = """{ "caption": "safe", "correctOptionId": "A", "values": [1, 2] }""",
+                SortOrder = 0
+            }
+        ];
+
+        var preview = await PreviewPackageAsync(user, package);
+        var approve = await user.Client.PostAsJsonAsync("/api/question-imports/approve", new QuestionImportApprovalDto { ImportPreviewId = preview.Id });
+        approve.EnsureSuccessStatusCode();
+        var result = await approve.Content.ReadFromJsonAsync<QuestionImportResultDto>();
+        var question = await user.Client.GetFromJsonAsync<QuestionItemDto>($"/api/questions/{result!.CreatedQuestionIds[0]}");
+
+        var serialized = string.Join("\n",
+            question!.Stimuli.Select(s => s.ContentJson)
+                .Concat(question.ContentBlocks.Select(b => b.ContentJson))
+                .Concat(question.Options.SelectMany(o => o.ContentBlocks).Select(b => b.ContentJson))
+                .Where(json => !string.IsNullOrWhiteSpace(json)));
+        Assert.Contains("visible", serialized);
+        Assert.Contains("headers", serialized);
+        Assert.DoesNotContain("answerKey", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctAnswer", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("solution", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rubric", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("isCorrect", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("correctOptionId", serialized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task JsonV2ValidationRejectsUnsafePackageReferences()
     {
         using var factory = new ApiSmokeFactory();

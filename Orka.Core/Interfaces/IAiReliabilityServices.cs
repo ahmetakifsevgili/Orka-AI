@@ -18,7 +18,7 @@ public interface IAiProviderCircuitBreaker
     bool IsOpen(string provider);
     string GetState(string provider);
     void RecordSuccess(string provider);
-    void RecordFailure(string provider, TimeSpan cooldown);
+    void RecordFailure(string provider, TimeSpan cooldown, int failureThreshold = 1);
 }
 
 public interface IAiRequestContextAccessor

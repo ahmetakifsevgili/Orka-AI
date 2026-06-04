@@ -179,6 +179,47 @@ public sealed class ContentOperationsTests
         Assert.NotEqual("published", loaded!.QualityStatus);
     }
 
+    [Fact]
+    public async Task CuratedQuestionWithoutKgBindingWarnsButDoesNotBlockContentPublish()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "content-ops-curated-kg-warning");
+        var ids = await ImportExamTreeAsync(user);
+        var question = await CreateQuestionAsync(user, ids);
+
+        await user.Client.PostAsJsonAsync($"/api/content-ops/questions/{question.Id}/submit-review", new SubmitQuestionReviewDto());
+        await AdvanceAsync(user, question.Id, "pedagogy_review");
+        await AdvanceAsync(user, question.Id, "accessibility_review");
+        await AdvanceAsync(user, question.Id, "source_review");
+        await AdvanceAsync(user, question.Id, "approved");
+
+        var readiness = await user.Client.GetFromJsonAsync<QuestionPublishReadinessDto>($"/api/content-ops/questions/{question.Id}/publish-readiness");
+        Assert.True(readiness!.IsReadyToPublish);
+        Assert.Contains(readiness.WarningIssues, i => i.Code == "assessment_item_binding_required");
+        Assert.Contains(readiness.WarningIssues, i => i.Code == "concept_graph_binding_required");
+        Assert.Contains(readiness.WarningIssues, i => i.Code == "distractor_diagnostic_metadata_missing");
+    }
+
+    [Fact]
+    public async Task ProfessionalDiagnosticQuestionRequiresKgBindingScoringAndDistractorSignals()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "content-ops-professional-block");
+        var ids = await ImportExamTreeAsync(user);
+        var question = await CreateQuestionAsync(user, ids, questionBankSource: "diagnostic_assessment_item");
+
+        await user.Client.PostAsJsonAsync($"/api/content-ops/questions/{question.Id}/submit-review", new SubmitQuestionReviewDto());
+        var readiness = await user.Client.GetFromJsonAsync<QuestionPublishReadinessDto>($"/api/content-ops/questions/{question.Id}/publish-readiness");
+
+        Assert.False(readiness!.IsReadyToPublish);
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "assessment_item_binding_required");
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "concept_graph_binding_required");
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "learning_concept_binding_required");
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "scoring_rule_required");
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "distractor_rationale_required");
+        Assert.Contains(readiness.BlockingIssues, i => i.Code == "distractor_diagnostic_signal_required");
+    }
+
     private static async Task<QuestionItemDto> CreateAndPublishThroughContentOpsAsync(CoordinationTestUser user, QuestionTreeIds ids)
     {
         var question = await CreateQuestionAsync(user, ids);
@@ -222,7 +263,8 @@ public sealed class ContentOperationsTests
         string licenseStatus = "open",
         string? sourceTitle = "Safe source",
         string sourceOrigin = "user_provided",
-        string explanation = "A is the intended answer.")
+        string explanation = "A is the intended answer.",
+        string? questionBankSource = null)
     {
         var response = await user.Client.PostAsJsonAsync("/api/questions", new CreateQuestionDto
         {
@@ -232,6 +274,7 @@ public sealed class ContentOperationsTests
             ExamSubjectId = ids.SubjectId,
             ExamTopicId = ids.TopicId,
             ExamOutcomeId = ids.OutcomeId,
+            QuestionBankSource = questionBankSource,
             QuestionType = "multiple_choice",
             Stem = "Which option best matches the outcome?",
             Difficulty = "medium",

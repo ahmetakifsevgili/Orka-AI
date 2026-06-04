@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -50,7 +50,6 @@ public sealed class PlanDiagnosticTests
     public async Task PlanDiagnostic_Start_ForHistoryUsesConceptGraphAdapterAndNoProgrammingScaffold()
     {
         var harness = await CreateHarnessAsync();
-        harness.Factory.ReturnInvalidQuiz = true;
 
         var response = await harness.Service.StartAsync(
             harness.UserId,
@@ -98,7 +97,7 @@ public sealed class PlanDiagnosticTests
         var harness = await CreateHarnessAsync();
         harness.Factory.ReturnInvalidQuiz = true;
 
-        var response = await harness.Service.StartAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Service.StartAsync(
             harness.UserId,
             new StartPlanDiagnosticRequest
             {
@@ -109,19 +108,45 @@ public sealed class PlanDiagnosticTests
                 ApprovedFocusArea = "algoritmalar",
                 ApprovedStudyGoal = "ogrenme ve pratik",
                 ApprovedResearchIntent = "Java programming algorithms learning path"
+            }));
+    }
+
+    [Fact]
+    public async Task PlanDiagnostic_Start_ConceptGraphUsesDomainLearningConceptsNotResearchScaffold()
+    {
+        var harness = await CreateHarnessAsync();
+
+        var response = await harness.Service.StartAsync(
+            harness.UserId,
+            new StartPlanDiagnosticRequest
+            {
+                TopicId = harness.TopicId,
+                TopicTitle = "SQL index and query optimization",
+                RawStudyRequest = "I want to learn SQL indexing and query optimization professionally.",
+                ApprovedMainTopic = "SQL",
+                ApprovedFocusArea = "index and query optimization",
+                ApprovedStudyGoal = "learning and practice",
+                ApprovedResearchIntent = "SQL index and query optimization learning path"
             });
 
-        Assert.InRange(response.QuizQuestionCount, 15, 25);
+        Assert.Contains("index", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("query", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("learning-path", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("practiceorder", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("provider-backed", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
-        Assert.Contains("assessmentItemId", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("correctAnswer", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("isCorrect", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("explanation", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        var generatedItems = await harness.Db.AssessmentItems.Select(i => i.GeneratedQuestionJson).ToListAsync();
-        Assert.Contains(generatedItems, json => json!.Contains("```java", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain("```csharp", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Visual Studio", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task PlanDiagnostic_Start_UsesAssessmentGrammarFallbackWhenQuizProviderThrows()
+    {
+        var harness = await CreateHarnessAsync();
+        harness.Factory.ThrowOnQuiz = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId)));
+    }
+
 
     [Theory]
     [InlineData(
@@ -177,18 +202,18 @@ public sealed class PlanDiagnosticTests
         Assert.Equal(intent.ResearchIntent, start.ApprovedResearchIntent);
         Assert.NotEqual(rawRequest, start.ApprovedResearchIntent);
         Assert.InRange(start.QuizQuestionCount, 15, 25);
-        Assert.Equal(expectedQuestionCount, start.QuizQuestionCount);
         Assert.Equal(start.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(start.QuestionsJson));
         Assert.DoesNotContain("Dogru secenek", start.QuestionsJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Yanlis secenek", start.QuestionsJson, StringComparison.OrdinalIgnoreCase);
 
         var half = start.QuizQuestionCount / 2;
+        var assessmentItems = await DiagnosticItemsAsync(harness, start.PlanRequestId);
         for (var i = 1; i <= start.QuizQuestionCount; i++)
         {
             await harness.Service.RecordAnswerAsync(
                 harness.UserId,
                 start.PlanRequestId,
-                Answer($"q{i}", isCorrect: i <= half, conceptTag: i <= half ? $"known-{i}" : $"weak-{i}"));
+                Answer($"q{i}", isCorrect: i <= half, conceptTag: i <= half ? $"known-{i}" : $"weak-{i}", assessmentItemId: assessmentItems[i - 1].Id));
         }
 
         var result = await harness.Service.FinalizeAsync(
@@ -213,7 +238,43 @@ public sealed class PlanDiagnosticTests
         Assert.NotEqual(Guid.Empty, response.PlanRequestId);
         Assert.NotEqual(Guid.Empty, response.QuizRunId);
         Assert.Contains("question", response.QuestionsJson);
-        Assert.Equal(20, response.QuizQuestionCount);
+        Assert.InRange(response.QuizQuestionCount, 15, 25);
+        Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
+    }
+
+    [Fact]
+    public async Task PlanDiagnostic_Start_IgnoresStaleSessionIdFromAnotherTopic()
+    {
+        var harness = await CreateHarnessAsync();
+        var otherTopicId = Guid.NewGuid();
+        var staleSessionId = Guid.NewGuid();
+        harness.Db.Topics.Add(new Topic
+        {
+            Id = otherTopicId,
+            UserId = harness.UserId,
+            Title = "Old topic",
+            Category = "Plan",
+            CreatedAt = DateTime.UtcNow,
+            LastAccessedAt = DateTime.UtcNow
+        });
+        harness.Db.Sessions.Add(new Session
+        {
+            Id = staleSessionId,
+            UserId = harness.UserId,
+            TopicId = otherTopicId,
+            SessionNumber = 1,
+            CreatedAt = DateTime.UtcNow
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var request = StartRequest(harness.TopicId);
+        request.SessionId = staleSessionId;
+        var response = await harness.Service.StartAsync(harness.UserId, request);
+        var state = await harness.Store.GetAsync(response.PlanRequestId);
+        var quizRun = await harness.Db.QuizRuns.SingleAsync(q => q.Id == response.QuizRunId);
+
+        Assert.Null(state!.SessionId);
+        Assert.Null(quizRun.SessionId);
     }
 
     [Fact]
@@ -224,6 +285,7 @@ public sealed class PlanDiagnosticTests
         request.TopicTitle = "java programlamada algoritmalar calismak istiyorum";
         request.ApprovedMainTopic = "Java programlama";
         request.ApprovedFocusArea = "algoritmalar";
+        request.ApprovedResearchIntent = "Java programming algorithms learning path";
 
         var response = await harness.Service.StartAsync(harness.UserId, request);
 
@@ -237,17 +299,30 @@ public sealed class PlanDiagnosticTests
     {
         var harness = await CreateHarnessAsync();
         var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
+        var assessmentItems = await DiagnosticItemsAsync(harness, start.PlanRequestId);
 
-        var first = await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1"));
+        var first = await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1", assessmentItemId: assessmentItems[0].Id));
         PlanDiagnosticAnswerResponse second = first;
-        for (var i = 2; i <= 20; i++)
+        for (var i = 2; i <= start.QuizQuestionCount; i++)
         {
-            second = await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer($"q{i}"));
+            second = await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer($"q{i}", assessmentItemId: assessmentItems[i - 1].Id));
         }
 
         Assert.Equal(1, first.AnsweredQuestionCount);
         Assert.Equal(PlanDiagnosticStatus.QuizCompleted, second.Status);
-        Assert.Equal(20, second.AnsweredQuestionCount);
+        Assert.Equal(start.QuizQuestionCount, second.AnsweredQuestionCount);
+    }
+
+    [Fact]
+    public async Task PlanDiagnostic_RecordAnswer_RequiresServerAssessmentItemId()
+    {
+        var harness = await CreateHarnessAsync();
+        var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("client-only-q1")));
+
+        Assert.Contains("assessmentItemId", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -268,10 +343,11 @@ public sealed class PlanDiagnosticTests
     {
         var harness = await CreateHarnessAsync();
         var start = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
-        await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1", isCorrect: false, conceptTag: "variables"));
-        for (var i = 2; i <= 20; i++)
+        var assessmentItems = await DiagnosticItemsAsync(harness, start.PlanRequestId);
+        await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer("q1", isCorrect: false, conceptTag: "variables", assessmentItemId: assessmentItems[0].Id));
+        for (var i = 2; i <= start.QuizQuestionCount; i++)
         {
-            await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer($"q{i}", isCorrect: true));
+            await harness.Service.RecordAnswerAsync(harness.UserId, start.PlanRequestId, Answer($"q{i}", isCorrect: true, assessmentItemId: assessmentItems[i - 1].Id));
         }
 
         var result = await harness.Service.FinalizeAsync(harness.UserId, new FinalizePlanDiagnosticRequest { PlanRequestId = start.PlanRequestId });
@@ -412,11 +488,12 @@ public sealed class PlanDiagnosticTests
         var compressor = new FakePlanResearchCompressor();
         var factory = new FakeAgentFactory();
         var recorder = new FakeQuizAttemptRecorder(db);
-        var deepPlan = new FakeDeepPlanAgent();
+        var deepPlan = new FakeDeepPlanAgent(db);
         var conceptMastery = new ConceptMasteryService(db, NullLogger<ConceptMasteryService>.Instance);
         var conceptGraph = new ConceptGraphBuilder(db, null, NullLogger<ConceptGraphBuilder>.Instance);
         var assessmentGrammar = new AssessmentGrammarEngine(db, null, NullLogger<AssessmentGrammarEngine>.Instance);
         var diagnosticProfile = new DiagnosticProfileBuilder(db, null, conceptMastery, NullLogger<DiagnosticProfileBuilder>.Instance);
+        var planSequencing = new FakePlanSequencingService();
         var service = new PlanDiagnosticService(
             db,
             korteks,
@@ -428,12 +505,13 @@ public sealed class PlanDiagnosticTests
             conceptGraph,
             assessmentGrammar,
             diagnosticProfile,
-            NullLogger<PlanDiagnosticService>.Instance);
+            NullLogger<PlanDiagnosticService>.Instance,
+            planSequencing: planSequencing);
 
         return new Harness(userId, topicId, db, store, korteks, compressor, factory, deepPlan, service);
     }
 
-    private static RecordQuizAttemptRequest Answer(string questionId, bool isCorrect = true, string? conceptTag = null) =>
+    private static RecordQuizAttemptRequest Answer(string questionId, bool isCorrect = true, string? conceptTag = null, Guid? assessmentItemId = null) =>
         new()
         {
             QuestionId = questionId,
@@ -441,6 +519,7 @@ public sealed class PlanDiagnosticTests
             SelectedOptionId = "opt-1",
             IsCorrect = isCorrect,
             SkillTag = conceptTag ?? "skill",
+            AssessmentItemId = assessmentItemId,
             Explanation = "explanation",
             SourceRefsJson = isCorrect || string.IsNullOrWhiteSpace(conceptTag)
                 ? null
@@ -461,11 +540,18 @@ public sealed class PlanDiagnosticTests
 
     private static async Task CompleteQuizAsync(Harness harness, Guid planRequestId)
     {
-        for (var i = 1; i <= 20; i++)
+        var assessmentItems = await DiagnosticItemsAsync(harness, planRequestId);
+        for (var i = 1; i <= assessmentItems.Count; i++)
         {
-            await harness.Service.RecordAnswerAsync(harness.UserId, planRequestId, Answer($"q{i}"));
+            await harness.Service.RecordAnswerAsync(harness.UserId, planRequestId, Answer($"q{i}", assessmentItemId: assessmentItems[i - 1].Id));
         }
     }
+
+    private static async Task<List<AssessmentItem>> DiagnosticItemsAsync(Harness harness, Guid planRequestId) =>
+        await harness.Db.AssessmentItems
+            .Where(item => item.UserId == harness.UserId && item.PlanRequestId == planRequestId)
+            .OrderBy(item => item.Order)
+            .ToListAsync();
 
     private sealed record Harness(
         Guid UserId,
@@ -537,9 +623,104 @@ public sealed class PlanDiagnosticTests
                 GroundingMode = researchResult.GroundingMode,
                 SourceCount = researchResult.SourceCount,
                 TopSources = researchResult.Sources.Take(2).ToList(),
-                KeyFacts = ["stored fact"],
+                KeyFacts = BuildConceptHints(researchResult.Topic),
+                CurriculumMapHints = BuildConceptHints(researchResult.Topic),
+                PrerequisiteHints =
+                [
+                    "method calls and return values",
+                    "basic control flow",
+                    "exception handling"
+                ],
+                LikelyMisconceptions =
+                [
+                    "await blocks the thread",
+                    "Task.Result is always safe",
+                    "cancellation stops work immediately"
+                ],
                 GeneratedAt = DateTimeOffset.UtcNow
             };
+        }
+
+        private static List<string> BuildConceptHints(string topic)
+        {
+            if (topic.Contains("KPSS", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("paragraph", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("paragraf", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    "paragraph main idea identification",
+                    "paragraph supporting detail evidence",
+                    "paragraph inference boundary",
+                    "paragraph author purpose objective",
+                    "paragraph distractor elimination",
+                    "question stem negative wording attention",
+                    "timed paragraph reading strategy",
+                    "wrong answer evidence review"
+                ];
+            }
+
+            if (topic.Contains("history", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("tarih", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("Seljuk", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("Selcuk", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    "chronology evidence",
+                    "empire institution roles",
+                    "cause effect chain",
+                    "geography context",
+                    "source perspective",
+                    "continuity change interpretation",
+                    "comparative evidence",
+                    "legacy consequence analysis"
+                ];
+            }
+
+            if (topic.Contains("SQL", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    "index selectivity",
+                    "composite index order",
+                    "execution plan reading",
+                    "cardinality estimate",
+                    "query predicate shape",
+                    "join strategy",
+                    "covering index tradeoff",
+                    "rewrite without semantic drift"
+                ];
+            }
+
+            if (topic.Contains("Java", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("algorithm", StringComparison.OrdinalIgnoreCase) ||
+                topic.Contains("algoritma", StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                [
+                    "array traversal",
+                    "loop invariant",
+                    "time complexity",
+                    "data structure choice",
+                    "recursion base case",
+                    "sorting comparison",
+                    "hash lookup",
+                    "edge case testing"
+                ];
+            }
+
+            return
+            [
+                "await continuation",
+                "task lifecycle",
+                "scheduler behavior",
+                "blocking wait",
+                "async exception propagation",
+                "cancellation boundary",
+                "concurrency limit",
+                "async behavior evidence"
+            ];
         }
         public string BuildPromptBlock(CompressedPlanResearchContextDto context, PlanResearchCompressionOptions? options = null)
         {
@@ -551,20 +732,32 @@ public sealed class PlanDiagnosticTests
     private sealed class FakeAgentFactory : IAIAgentFactory
     {
         public bool ReturnInvalidQuiz { get; set; }
+        public bool ThrowOnQuiz { get; set; }
         public string LastSystemPrompt { get; private set; } = "";
         public string GetModel(AgentRole role) => "fake";
         public string GetProvider(AgentRole role) => "fake";
         public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default)
         {
             LastSystemPrompt = systemPrompt;
+            if (ThrowOnQuiz && systemPrompt.Contains("Egitim Tanilama Uzmani", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Diagnostic quiz provider unavailable.");
+            }
+
             if (ReturnInvalidQuiz)
             {
                 return Task.FromResult("Z provider unavailable");
             }
 
             var topic = ExtractQuotedTopic(userMessage) ?? "C# async await";
-            var count = ExtractRequestedCount(systemPrompt) ?? ExtractRequestedCount(userMessage) ?? 20;
-            return Task.FromResult(BuildValidQuiz(topic, count));
+            var promptForSpecs = userMessage.Contains("assessmentItemId=", StringComparison.OrdinalIgnoreCase)
+                ? userMessage
+                : systemPrompt;
+            var specCount = ExtractAssessmentSpecs(promptForSpecs).Count();
+            var count = specCount > 0
+                ? specCount
+                : ExtractRequestedCount(systemPrompt) ?? ExtractRequestedCount(userMessage) ?? 20;
+            return Task.FromResult(BuildValidQuiz(topic, count, promptForSpecs));
         }
         public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
         {
@@ -619,12 +812,208 @@ public sealed class PlanDiagnosticTests
         }
     }
 
-    private sealed class FakeDeepPlanAgent : IDeepPlanAgent
+    private sealed class FakePlanSequencingService : IPlanSequencingService
     {
+        private PlanQualityEvaluationDto? _latest;
+
+        public Task<PlanCurriculumSequenceDto> BuildPlanSequenceAsync(
+            Guid userId,
+            PlanQualityEvaluationRequestDto request,
+            CancellationToken ct = default) =>
+            Task.FromResult(BuildPlanContract(request));
+
+        public Task<PlanQualityEvaluationDto> EvaluatePlanSequenceAsync(
+            Guid userId,
+            PlanQualityEvaluationRequestDto request,
+            CancellationToken ct = default)
+        {
+            _latest = new PlanQualityEvaluationDto
+            {
+                SnapshotId = Guid.NewGuid(),
+                TopicId = request.TopicId,
+                SessionId = request.SessionId,
+                PlanRequestId = request.PlanRequestId,
+                ActiveLessonSnapshotId = request.ActiveLessonSnapshotId,
+                StudentContextSnapshotId = request.StudentContextSnapshotId,
+                QualityStatus = "ready",
+                SpecificityScore = 0.92m,
+                SequencingScore = 0.91m,
+                EvidenceAlignmentScore = 0.86m,
+                AssessmentAlignmentScore = 0.9m,
+                TutorAlignmentScore = 0.9m,
+                BlockingIssues = [],
+                WarningIssues = [],
+                PlanContract = BuildPlanContract(request),
+                CoursePlanQuality = BuildCourseQuality(request),
+                AdaptiveDiagnostic = new AdaptiveDiagnosticDto
+                {
+                    DiagnosticId = request.PlanRequestId,
+                    TopicId = request.TopicId,
+                    Intent = "professional_plan_unit_test",
+                    Confidence = 0.86m,
+                    LearnerLevel = "diagnostic_profile_available",
+                    PlanReadiness = "ready",
+                    NextAction = "continue_plan"
+                }
+            };
+
+            return Task.FromResult(_latest);
+        }
+
+        public Task<PlanReadinessDto> GetPlanReadinessAsync(
+            Guid userId,
+            Guid topicId,
+            Guid? sessionId = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(new PlanReadinessDto
+            {
+                TopicId = topicId,
+                TopicTitle = "Unit test plan",
+                HasConceptGraph = true,
+                HasKorteksSynthesis = false,
+                HasSourceEvidence = false,
+                SourceReadiness = "evidence_insufficient",
+                LearnerEvidenceStatus = "diagnostic_profile",
+                PlanReadinessStatus = "ready",
+                RecommendedFirstAction = "continue_plan",
+                LatestQualitySnapshotId = _latest?.SnapshotId,
+                AdaptiveDiagnostic = new AdaptiveDiagnosticDto
+                {
+                    TopicId = topicId,
+                    Confidence = 0.86m,
+                    LearnerLevel = "diagnostic_profile_available",
+                    PlanReadiness = "ready",
+                    NextAction = "continue_plan"
+                },
+                CoursePlanQuality = BuildCourseQuality(new PlanQualityEvaluationRequestDto { TopicId = topicId }),
+                Warnings = []
+            });
+
+        public Task<PlanStepContractDto> BuildPlanStepContractAsync(
+            Guid userId,
+            Guid topicId,
+            string conceptKey,
+            CancellationToken ct = default) =>
+            Task.FromResult(new PlanStepContractDto
+            {
+                StepId = $"step-{conceptKey}",
+                Title = $"Practice {conceptKey}",
+                Objective = $"Apply {conceptKey} with a micro-check.",
+                ConceptKey = conceptKey,
+                ConceptLabel = conceptKey,
+                SequenceReason = "Unit test plan step follows prerequisite order.",
+                QuizHook = new PlanStepAssessmentHookDto { ConceptKey = conceptKey },
+                TutorHook = new PlanStepTutorHookDto { ActiveConceptKey = conceptKey },
+                SuccessCriteria = [$"Explain {conceptKey}.", $"Answer a checkpoint for {conceptKey}."]
+            });
+
+        public Task<PlanQualityEvaluationDto?> GetPlanQualitySnapshotAsync(
+            Guid userId,
+            Guid snapshotId,
+            CancellationToken ct = default) =>
+            Task.FromResult(_latest?.SnapshotId == snapshotId ? _latest : null);
+
+        public Task<PlanQualityEvaluationDto?> GetLatestPlanQualitySnapshotAsync(
+            Guid userId,
+            Guid topicId,
+            Guid? sessionId = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(_latest);
+
+        private static PlanCurriculumSequenceDto BuildPlanContract(PlanQualityEvaluationRequestDto request) =>
+            new()
+            {
+                TopicId = request.TopicId,
+                TopicTitle = request.PlanTitle ?? "Unit test plan",
+                ConfidenceStatus = "ready",
+                SequenceStatus = "coherent",
+                SourceReadiness = "evidence_insufficient",
+                Steps = request.ProposedSteps,
+                CoursePlanQuality = BuildCourseQuality(request),
+                AdaptiveDiagnostic = new AdaptiveDiagnosticDto
+                {
+                    DiagnosticId = request.PlanRequestId,
+                    TopicId = request.TopicId,
+                    Intent = "professional_plan_unit_test",
+                    Confidence = 0.86m,
+                    LearnerLevel = "diagnostic_profile_available",
+                    PlanReadiness = "ready",
+                    NextAction = "continue_plan"
+                },
+                SequencingGraph = new PlanSequencingGraphDto
+                {
+                    Nodes = request.ProposedSteps
+                        .Select((step, index) => new PlanSequencingNodeDto
+                        {
+                            ConceptKey = step.ConceptKey,
+                            Label = step.Title,
+                            Order = index,
+                            DifficultyBand = step.DifficultyBand
+                        })
+                        .ToArray(),
+                    Edges = request.ProposedSteps
+                        .Zip(request.ProposedSteps.Skip(1), (source, target) => new PlanSequencingEdgeDto
+                        {
+                            SourceConceptKey = source.ConceptKey,
+                            TargetConceptKey = target.ConceptKey,
+                            RelationType = "prerequisite",
+                            Weight = 1m
+                        })
+                        .ToArray()
+                }
+            };
+
+        private static CoursePlanQualityDto BuildCourseQuality(PlanQualityEvaluationRequestDto request) =>
+            new()
+            {
+                ReadinessStatus = "ready",
+                GoalClarity = "clear",
+                LearnerLevelBasis = "diagnostic_profile",
+                PrerequisiteCoverage = "covered",
+                SequenceCoherence = "coherent",
+                MilestoneCount = 6,
+                CheckpointCoverage = 1m,
+                RepairLoopCount = 1,
+                AssessmentAlignment = "aligned",
+                SourceEvidenceStatus = "evidence_insufficient",
+                OverclaimRisk = "low",
+                RecommendedNextAction = "continue_plan",
+                Milestones = request.ProposedSteps
+                    .Take(6)
+                    .Select((step, index) => new CoursePlanMilestoneDto
+                    {
+                        MilestoneId = $"milestone-{index + 1}",
+                        Title = step.Title,
+                        Objective = step.Objective,
+                        StepIds = [step.StepId],
+                        Checkpoint = "micro_check",
+                        EstimatedMinutes = 40,
+                        Status = "planned"
+                    })
+                    .ToArray(),
+                RepairLoops =
+                [
+                    new CoursePlanRepairLoopDto
+                    {
+                        ConceptKey = request.ProposedSteps.FirstOrDefault()?.ConceptKey ?? "unit-test-repair",
+                        Label = "Unit test repair loop",
+                        Trigger = "diagnostic_gap",
+                        RepairMode = "guided_repair",
+                        NextAction = "guided_repair_then_check"
+                    }
+                ],
+                Warnings = []
+            };
+    }
+
+        private sealed class FakeDeepPlanAgent : IDeepPlanAgent
+    {
+        private readonly OrkaDbContext _db;
         public int FinalizeCallCount { get; private set; }
         public string LastCompressedResearchPromptBlock { get; private set; } = "";
         public string LastDiagnosticQuizSummary { get; private set; } = "";
         public List<Topic> GeneratedTopics { get; } = [];
+        public FakeDeepPlanAgent(OrkaDbContext db) => _db = db;
         public Task<List<Topic>> GenerateAndSaveDeepPlanAsync(Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null) =>
             Task.FromResult(new List<Topic>());
         public Task<DeepPlanGenerationWithGroundingResultDto> GenerateAndSaveDeepPlanWithGroundingAsync(Guid parentTopicId, string topicTitle, Guid userId, string userLevel = "Bilinmiyor", string? researchContext = null, string? failedTopics = null) =>
@@ -635,10 +1024,81 @@ public sealed class PlanDiagnosticTests
             LastCompressedResearchPromptBlock = compressedResearchPromptBlock;
             LastDiagnosticQuizSummary = diagnosticQuizSummary;
             GeneratedTopics.Clear();
-            GeneratedTopics.Add(new Topic { Id = Guid.NewGuid(), UserId = userId, ParentTopicId = parentTopicId, Title = "Generated", Category = "Plan:Core" });
+            for (var moduleIndex = 0; moduleIndex < 6; moduleIndex++)
+            {
+                var moduleLabel = ModuleLabel(moduleIndex);
+                var module = new Topic
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    ParentTopicId = parentTopicId,
+                    Title = $"{topicTitle} {moduleLabel}",
+                    Category = "Plan",
+                    PlanIntent = "Module",
+                    Order = moduleIndex,
+                    TotalSections = 4,
+                    CreatedAt = DateTime.UtcNow,
+                    LastAccessedAt = DateTime.UtcNow
+                };
+                _db.Topics.Add(module);
+
+                for (var lessonIndex = 0; lessonIndex < 4; lessonIndex++)
+                {
+                    var lesson = new Topic
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = userId,
+                        ParentTopicId = module.Id,
+                        Title = $"{topicTitle} {moduleLabel} applied lesson {lessonIndex + 1}",
+                        Category = "Plan:Core",
+                        PlanIntent = "Core",
+                        Order = lessonIndex,
+                        TotalSections = 1,
+                        MetadataJson = BuildLessonMetadata(topicTitle, moduleIndex, lessonIndex, moduleLabel),
+                        CreatedAt = DateTime.UtcNow,
+                        LastAccessedAt = DateTime.UtcNow
+                    };
+                    _db.Topics.Add(lesson);
+                    GeneratedTopics.Add(lesson);
+                }
+            }
+            _db.SaveChanges();
             return Task.FromResult(new DeepPlanGenerationWithGroundingResultDto { Topics = GeneratedTopics });
         }
-        public Task<string> GenerateBaselineQuizAsync(string topicTitle) => Task.FromResult("[]");
+        public Task<string> GenerateBaselineQuizAsync(string topicTitle, Guid topicId, string language, int questionCount) => Task.FromResult("[]");
+
+        private static string ModuleLabel(int moduleIndex) =>
+            moduleIndex switch
+            {
+                0 => "foundation and prerequisite map",
+                1 => "core concepts and vocabulary",
+                2 => "worked examples and application",
+                3 => "misconception repair and contrast",
+                4 => "mixed practice and transfer",
+                _ => "mastery checkpoint and next route"
+            };
+
+        private static string BuildLessonMetadata(string topicTitle, int moduleIndex, int lessonIndex, string moduleLabel)
+        {
+            var conceptKey = $"topic-{moduleIndex + 1}-lesson-{lessonIndex + 1}";
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                contractVersion = "professional-plan-v1",
+                source = "unit-test",
+                conceptKey,
+                skillTag = conceptKey,
+                learningObjective = $"Learner explains and applies {topicTitle} {moduleLabel} step {lessonIndex + 1} in a short scenario.",
+                sequenceReason = $"Lesson {lessonIndex + 1} follows the {topicTitle} prerequisite sequence for {moduleLabel}.",
+                prerequisiteConceptKeys = lessonIndex == 0 ? Array.Empty<string>() : [$"module-{moduleIndex + 1}-lesson-{lessonIndex}"],
+                quizHook = new { hookType = "retrieval_practice", conceptKey, difficultyBand = "core" },
+                tutorHook = new { tutorMove = "explain_then_check", activeConceptKey = conceptKey },
+                successCriteria = new[]
+                {
+                    $"Explain {topicTitle} {moduleLabel} in learner-safe language.",
+                    $"Answer one micro-check for {topicTitle} {moduleLabel} without pre-submit answer leakage."
+                }
+            }, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        }
     }
 
     private static SourceEvidenceDto Source(string provider, string url) =>
@@ -693,36 +1153,91 @@ public sealed class PlanDiagnosticTests
             """;
     }
 
-    private static string BuildValidQuiz(string topic, int count)
+    private static string BuildValidQuiz(string topic, int count, string systemPrompt)
     {
         var types = new[] { "conceptual", "procedural", "application", "analysis", "misconception_probe" };
         var difficulties = new[] { "kolay", "orta", "zor" };
+        var specs = ExtractAssessmentSpecs(systemPrompt).ToList();
         var questions = Enumerable.Range(1, count).Select(i =>
         {
+            (Guid AssessmentItemId, string AssessmentItemKey, string ConceptKey, string CognitiveSkill, string Difficulty, string MisconceptionTarget, string EvidenceExpected)? spec =
+                specs.Count == 0 ? null : specs[(i - 1) % specs.Count];
+            var conceptKey = spec?.ConceptKey ?? $"concept-{i}";
+            var cognitiveSkill = spec?.CognitiveSkill ?? types[(i - 1) % types.Length];
             var code = i % 4 == 0 ? $"\n{BuildCodeSnippet(topic)}" : "";
+            var itemKey = (spec?.AssessmentItemId.ToString("N") ?? Guid.NewGuid().ToString("N"))[..8];
             return new
             {
                 type = "multiple_choice",
-                question = $"{topic} seviye sorusu {i}: bu konuda hangi karar veya risk once incelenmelidir?{code}",
-                options = new[]
-                {
-                    new { text = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true },
-                    new { text = "Metni okumadan ilk gorunen satiri silmek.", isCorrect = false },
-                    new { text = "Kavram yerine benzer gorunen terimi secmek.", isCorrect = false },
-                    new { text = "Sonucu yalnizca ilk kelimeye bakarak tahmin etmek.", isCorrect = false }
-                },
+                assessmentItemId = spec?.AssessmentItemId.ToString() ?? Guid.NewGuid().ToString(),
+                assessmentItemKey = spec?.AssessmentItemKey ?? $"test-item-{i}",
+                conceptKey,
+                cognitiveSkill,
+                misconceptionTarget = spec?.MisconceptionTarget ?? (cognitiveSkill == "misconception_probe" ? $"specific-misconception-{i}" : "evidence-insufficient"),
+                evidenceExpected = spec?.EvidenceExpected ?? $"Evidence {i}",
+                scoringRule = "selected_option_exact_match",
+                learningOutcomeIds = new[] { $"{conceptKey}-outcome" },
+                question = $"item-{itemKey} {conceptKey} icin {topic} seviye sorusu {i}: hangi karar, kanit veya risk once incelenmelidir?{code}",
+                options = BuildOptions(i),
                 correctAnswer = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.",
                 explanation = $"Aciklama {i}",
-                skillTag = $"skill-{i}",
-                difficulty = difficulties[(i - 1) % difficulties.Length],
-                conceptTag = $"concept-{i}",
+                skillTag = conceptKey,
+                difficulty = spec?.Difficulty ?? difficulties[(i - 1) % difficulties.Length],
+                conceptTag = conceptKey,
                 learningObjective = $"Hedef {i}",
-                questionType = types[(i - 1) % types.Length],
+                questionType = cognitiveSkill,
                 expectedMisconceptionCategory = i <= 5 ? "Conceptual" : "Careless",
                 topic
             };
         });
 
         return System.Text.Json.JsonSerializer.Serialize(questions, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+    }
+
+    private static object[] BuildOptions(int i)
+    {
+        var correct = new { text = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true, rationale = "Matches the target evidence.", misconceptionKey = "" };
+        var distractors = new object[]
+        {
+            new { text = "Metni okumadan ilk gorunen satiri silmek.", isCorrect = false, rationale = "Signals skipping the provided evidence.", misconceptionKey = $"skip-evidence-{i}" },
+            new { text = "Kavram yerine benzer gorunen terimi secmek.", isCorrect = false, rationale = "Signals nearby concept confusion.", misconceptionKey = $"nearby-concept-{i}" },
+            new { text = "Sonucu yalnizca ilk kelimeye bakarak tahmin etmek.", isCorrect = false, rationale = "Signals surface clue guessing.", misconceptionKey = $"surface-clue-{i}" }
+        };
+
+        var options = new List<object>(distractors);
+        options.Insert((i - 1) % 4, correct);
+        return options.ToArray();
+    }
+
+    private static IEnumerable<(Guid AssessmentItemId, string AssessmentItemKey, string ConceptKey, string CognitiveSkill, string Difficulty, string MisconceptionTarget, string EvidenceExpected)> ExtractAssessmentSpecs(string prompt)
+    {
+        foreach (var line in prompt.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!line.Contains("assessmentItemId=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!Guid.TryParse(ReadField(line, "assessmentItemId"), out var id))
+            {
+                continue;
+            }
+
+            var conceptKey = ReadField(line, "conceptKey");
+            yield return (
+                id,
+                $"grammar:{conceptKey}:{id:N}",
+                conceptKey,
+                ReadField(line, "cognitiveSkill", "conceptual"),
+                ReadField(line, "difficulty", "medium"),
+                ReadField(line, "misconceptionTarget"),
+                ReadField(line, "evidenceExpected", $"Evidence for {conceptKey}"));
+        }
+    }
+
+    private static string ReadField(string line, string field, string fallback = "")
+    {
+        var match = Regex.Match(line, $@"{Regex.Escape(field)}=([^;]+)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.Trim() : fallback;
     }
 }

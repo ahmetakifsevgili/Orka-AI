@@ -70,6 +70,7 @@ public class TutorAgent : ITutorAgent
                Frontend bu linkleri hover preview'lı citation olarak gösterir.
 
             [P4 GÖRSEL ÖĞRENME VALIDATOR - ACTION PLAN ÖNCELİKLİ]:
+            [P4 GÖRSEL ÖĞRENME VALIDATOR - ACTION PLAN ÖNCELİKLİ]
             Cevabı göndermeden önce zihinsel kontrol yap:
             - Konu matematik/formül içeriyorsa en az bir LaTeX formül veya adım tablosu olmalı.
             - Konu algoritma, mimari, süreç, sistem veya workflow ise en az bir Mermaid akış/sequence/state diyagramı olmalı.
@@ -136,11 +137,12 @@ public class TutorAgent : ITutorAgent
         _tutorPedagogyQualityGate = tutorPedagogyQualityGate;
     }
 
-    public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending)
+    public async Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending, CancellationToken ct = default)
     {
+        var question = content ?? string.Empty;
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var hasTopic = session.TopicId.HasValue;
-        var isStrictGrounding = (content ?? "").Contains("FocusSourceRef:");
+        var isStrictGrounding = question.Contains("FocusSourceRef:");
 
         var parallelResults = await Task.WhenAll(
             (!isStrictGrounding && hasTopic) ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
@@ -150,7 +152,7 @@ public class TutorAgent : ITutorAgent
             !isStrictGrounding ? FetchPistonContextAsync(session.Id) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchGoldExamplesAsync(session.UserId, session.TopicId) : Task.FromResult(string.Empty),
             !isStrictGrounding ? FetchLowQualityFeedbackAsync(session.Id) : Task.FromResult(string.Empty),
-            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content ?? "") : Task.FromResult(string.Empty),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, question) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchLearningSignalContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchReviewPressureContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty)
@@ -174,7 +176,7 @@ public class TutorAgent : ITutorAgent
             userId,
             session.TopicId,
             session.Id,
-            content,
+            question,
             notebookContext,
             wikiContext,
             learnerEvidenceContext,
@@ -183,13 +185,13 @@ public class TutorAgent : ITutorAgent
             userId,
             session.TopicId,
             session.Id,
-            content,
+            question,
             notebookContext,
             wikiContext,
             learnerEvidenceContext);
         var orchestration = await BuildTutorOrchestrationAsync(
             userId,
-            content,
+            question,
             session,
             contextMessages,
             notebookContext,
@@ -201,7 +203,7 @@ public class TutorAgent : ITutorAgent
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            content: content,
+            content: question,
             educatorCoreContext: teacherContext.PromptBlock,
             tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
@@ -259,7 +261,7 @@ public class TutorAgent : ITutorAgent
     }
 
     public async Task<string> GetDeepPlanWelcomeAsync(
-        Guid userId, string content, Session session, IReadOnlyList<string> planTitles)
+        Guid userId, string content, Session session, IReadOnlyList<string> planTitles, CancellationToken ct = default)
     {
         var numberedPlan = string.Join("\n", planTitles.Select((t, i) => $"{i + 1}. {t}"));
 
@@ -287,7 +289,7 @@ public class TutorAgent : ITutorAgent
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
     }
 
-    public Task<string> GetOptionsWelcomeAsync(Guid userId, string content, Session session)
+    public Task<string> GetOptionsWelcomeAsync(Guid userId, string content, Session session, CancellationToken ct = default)
     {
         var response = $"""
 Harika bir konu! Bu konuyu nasıl öğrenmek istersin? Sana iki farklı yol sunabilirim:
@@ -303,7 +305,8 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
     public async Task<string> GetFirstLessonAsync(
         string parentTopicTitle,
         string lessonTitle,
-        IReadOnlyList<string>? curriculumTitles = null)
+        IReadOnlyList<string>? curriculumTitles = null,
+        CancellationToken ct = default)
     {
         // Hallucination Guard: müfredat listesi geçilmişse AI sadece bu başlıklara bağlı kalır
         var curriculumNote = curriculumTitles?.Count > 0
@@ -332,7 +335,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, $"Konu: {lessonTitle}");
     }
 
-    public async Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null)
+    public async Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null, CancellationToken ct = default)
     {
         var contextInfo = "";
         if (!string.IsNullOrWhiteSpace(researchContext))
@@ -398,7 +401,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         return await _factory.CompleteChatAsync(AgentRole.Quiz, systemPrompt, $"Konu: \"{topicTitle}\"");
     }
 
-    public async Task<bool> EvaluateQuizAnswerAsync(string question, string answer)
+    public async Task<bool> EvaluateQuizAnswerAsync(string question, string answer, CancellationToken ct = default)
     {
 #if DEBUG
         // ── PLAYWRIGHT BACKDOOR (yalnızca DEBUG build'de aktif) ──────────────
@@ -417,11 +420,12 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
     public async IAsyncEnumerable<string> GetResponseStreamAsync(Guid userId, string content, Session session, bool isQuizPending, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        var question = content ?? string.Empty;
         yield return BuildStreamEvent("thinking", new { message = "Tutor state hazırlanıyor" });
 
         var contextTask = _contextBuilder.BuildConversationContextAsync(session);
         var hasTopic = session.TopicId.HasValue;
-        var isStrictGrounding = (content ?? "").Contains("FocusSourceRef:");
+        var isStrictGrounding = question.Contains("FocusSourceRef:");
 
         var parallelResults = await Task.WhenAll(
             (!isStrictGrounding && hasTopic) ? FetchActiveTopicContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
@@ -431,7 +435,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             !isStrictGrounding ? FetchPistonContextAsync(session.Id) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchGoldExamplesAsync(session.UserId, session.TopicId) : Task.FromResult(string.Empty),
             !isStrictGrounding ? FetchLowQualityFeedbackAsync(session.Id) : Task.FromResult(string.Empty),
-            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, content ?? "", ct) : Task.FromResult(string.Empty),
+            hasTopic ? FetchNotebookContextAsync(userId, session.TopicId, question, ct) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchLearningSignalContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchYouTubeContextAsync(userId, session.TopicId) : Task.FromResult(string.Empty),
             (!isStrictGrounding && hasTopic) ? FetchReviewPressureContextAsync(userId, session.TopicId, ct) : Task.FromResult(string.Empty)
@@ -455,7 +459,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             userId,
             session.TopicId,
             session.Id,
-            content,
+            question,
             notebookContext,
             wikiContext,
             learnerEvidenceContext,
@@ -465,14 +469,14 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             userId,
             session.TopicId,
             session.Id,
-            content,
+            question,
             notebookContext,
             wikiContext,
             learnerEvidenceContext,
             ct);
         var orchestrationState = await BuildTutorStateAndActionPlanAsync(
             userId,
-            content,
+            question,
             session,
             contextMessages,
             notebookContext,
@@ -526,7 +530,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
-            content: content,
+            content: question,
             educatorCoreContext: teacherContext.PromptBlock,
             tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
         var userMessage = BuildContextSummary(contextMessages);
@@ -1205,6 +1209,7 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
 
             [KODLAMA VE ALGORİTMA GÖREVLERİ (KRİTİK KURAL)]:
             ORKA IDE VARSAYILAN ORTAMDIR:
+            - ORKA IDE VARSAYILAN ORTAMDIR; harici kurulumları ilk adım gibi anlatma.
             - Kullanıcı "C#, Python, JavaScript, SQL, algoritma, kod yazalım" gibi bir hedef verdiğinde ilk anlatım ve ilk pratik Orka IDE/sandbox üzerinden kurgulanır.
             - Visual Studio, VS Code, Rider, PyCharm veya harici kurulumları ilk adım gibi anlatma; kullanıcı özellikle yerel kurulum sorarsa opsiyonel ek not olarak ver.
             - Başlangıç derslerinde "Orka IDE'de deneyelim, çıktıyı Tutor'a gönderelim, hata varsa bunu öğrenme sinyaline çevirelim" çizgisini koru.

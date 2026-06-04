@@ -57,6 +57,28 @@ public sealed class TutorPedagogyEvaluationTests
     }
 
     [Fact]
+    public void Rubric_GenericQuestionMark_IsNotProfessionalMicroCheck()
+    {
+        var service = new TutorPedagogyRubricService();
+        var request = Request(answer: "Anladin mi?");
+
+        var scores = service.EvaluateDeterministic(request);
+
+        Assert.Contains(scores, s => s.RubricKey == "micro_check" && s.Score < 0.60m);
+    }
+
+    [Fact]
+    public void Rubric_ConceptualLearnerAction_IsProfessionalMicroCheck()
+    {
+        var service = new TutorPedagogyRubricService();
+        var request = Request(answer: "For concept a, try one: why does this step work?");
+
+        var scores = service.EvaluateDeterministic(request);
+
+        Assert.Contains(scores, s => s.RubricKey == "micro_check" && s.Score >= 0.80m);
+    }
+
+    [Fact]
     public async Task EvaluationService_WritesRunScoresEventsAndFeedbackPatch()
     {
         await using var db = CreateDb();
@@ -96,6 +118,77 @@ public sealed class TutorPedagogyEvaluationTests
         Assert.True(await db.LearningEvents.AnyAsync(e => e.EventType == "tutor.feedback.patch.created"));
         Assert.Contains(redis.Stored.Keys, k => k.StartsWith("orka:v3:tutor-pedagogy-feedback:", StringComparison.Ordinal));
         Assert.Contains(workingMemory.Events, e => e.EventType == "tutor.pedagogy_evaluation.ready");
+    }
+
+    [Fact]
+    public async Task ActionPlanner_UnknownMastery_DoesNotForceRemediation()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var sessionId = Guid.NewGuid();
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = sessionId,
+            UserMessage = "Explain the next idea clearly.",
+            ActiveConceptKey = "concept-a",
+            ActiveConceptLabel = "Concept A",
+            LearnerState = "unknown",
+            RemediationNeed = "unknown",
+            PracticeReadiness = "guided",
+            GroundingStatus = "model_only",
+            SourceEvidenceCount = 0
+        };
+
+        var plan = await new TutorActionPlanner(db, new TestTutorWorkingMemoryService()).PlanAsync(state);
+
+        Assert.NotEqual("remediate", plan.TeachingMode);
+        Assert.Null(plan.RemediationLesson);
+    }
+
+    [Fact]
+    public async Task ActionPlanner_RemediationSignalWithoutMastery_UsesBeginnerDeliveryLevel()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "I still do not understand this misconception.",
+            ActiveConceptKey = "concept-a",
+            ActiveConceptLabel = "Concept A",
+            LearnerState = "needs_remediation",
+            RemediationNeed = "medium",
+            PracticeReadiness = "guided",
+            LearningLoopStatus = "remediation_ready",
+            LatestAssessmentMode = "misconception_probe",
+            MisconceptionSignal = new MisconceptionSignalDto
+            {
+                Category = "concept_confusion",
+                UserSafeLabel = "Concept confusion",
+                ConfidenceStatus = "usable",
+                ConceptKey = "concept-a",
+                Label = "Concept A"
+            },
+            RemediationSeed = new RemediationSeedDto
+            {
+                ConceptKey = "concept-a",
+                Label = "Concept A",
+                ConfidenceStatus = "usable",
+                FirstAction = "tutor_explain"
+            }
+        };
+
+        var plan = await new TutorActionPlanner(db, new TestTutorWorkingMemoryService()).PlanAsync(state);
+
+        Assert.Equal("beginner", plan.LessonDelivery?.LearnerLevel);
+        Assert.Equal("misconception_repair", plan.LessonDelivery?.DeliveryMode);
+        Assert.NotNull(plan.RemediationLesson);
     }
 
     [Fact]
@@ -263,5 +356,8 @@ public sealed class TutorPedagogyEvaluationTests
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry) => Task.FromResult(true);
+        public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 }

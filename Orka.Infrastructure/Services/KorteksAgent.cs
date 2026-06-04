@@ -64,10 +64,10 @@ public class KorteksAgent : IKorteksAgent
         // Fallback chain: OpenRouter -> Gemini -> Groq -> OpenRouter
         return primaryProvider.ToLowerInvariant() switch
         {
-            "openrouter" => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:Model"] ?? "gemini-2.0-flash"),
+            "openrouter" => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview"),
             "gemini"     => ("groq", _config["AI:Groq:ModelKorteks"] ?? _config["AI:Groq:Model"] ?? "llama-3.3-70b-versatile"),
             "groq"       => ("openrouter", _config["AI:OpenRouter:ModelKorteks"] ?? _config["AI:OpenRouter:Model"] ?? "meta-llama/llama-4-maverick"),
-            "sambanova"  => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:Model"] ?? "gemini-2.0-flash"),
+            "sambanova"  => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview"),
             _            => null
         };
     }
@@ -115,7 +115,16 @@ public class KorteksAgent : IKorteksAgent
             .AddOpenAIChatCompletion(modelId: model, apiKey: apiKey, endpoint: new Uri(baseUrl))
             .Build();
 
-        kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<TavilySearchPlugin>(), "WebSearch");
+        if (_config.GetValue("AI:Tavily:Enabled", true) &&
+            _serviceProvider.GetService<TavilySearchPlugin>() is { } tavily)
+        {
+            kernel.Plugins.AddFromObject(tavily, "WebSearch");
+        }
+        else
+        {
+            _logger.LogInformation("[Korteks] Tavily WebSearch plugin disabled; continuing with Wikipedia/Academic/YouTube providers.");
+        }
+
         kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<WikipediaPlugin>(), "Wikipedia");
         kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<AcademicSearchPlugin>(), "Academic");
         kernel.Plugins.AddFromObject(_serviceProvider.GetRequiredService<TopicPlugin>(), "Topics");
@@ -408,18 +417,21 @@ public class KorteksAgent : IKorteksAgent
 
             HALLUCİNASYON ÖNLEME KURALLARI:
             - Kaynağı olmayan bilgiyi ekleme.
-            - Tavily raw_content kısmını temel al. Yeterli veri yoksa "Bulunamadı" de.
+            - Kaynak araclarindan donen icerigi temel al. Yeterli veri yoksa "Bulunamadi" de.
 
             DİL: Türkçe. Teknik terimlerin İngilizce karşılığını parantez içinde ver.
             FORMAT: Markdown.
+            TAVILY_DISABLED: WebSearch/Tavily is temporarily disabled. Do not call WebSearch functions; use Wikipedia, Academic, YouTube and OrkaWiki tools only.
             {topicContext}{fileSection}
             """;
 
         var chatHistory = new ChatHistory(systemPrompt);
         chatHistory.AddUserMessage(
             $"Konu: \"{topic}\"\n\n" +
-            $"Adımları sırayla uygula: önce WebSearch-SearchWebDeep ile paralel ara, " +
-            $"sonra Wikipedia-SearchWikipedia ile doğrula, YouTube-SearchYouTubeVideos ile eğitim videosu bul, ardından raporu yaz.");
+            $"Tavily/WebSearch gecici olarak devre disi; WebSearch fonksiyonu cagirma.\n\n" +
+            $"Adimlari sirayla uygula: once Wikipedia-SearchWikipedia ile dogrula, " +
+            $"Academic-SearchSemanticScholar/Academic-SearchArXiv ile akademik kaynak ara, " +
+            $"YouTube-SearchYouTubeVideos ile egitim videosu bul, ardindan raporu yaz.");
 
         var settings = new OpenAIPromptExecutionSettings
         {

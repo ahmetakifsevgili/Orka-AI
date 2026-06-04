@@ -55,6 +55,7 @@ public sealed class ConceptGraphQualityService : IConceptGraphQualityService
 
         var failures = new List<string>();
         if (conceptCount == 0) failures.Add("concept_count_zero");
+        if (conceptCount is > 0 and < 5) failures.Add("concept_count_low");
         if (duplicateRatio > 0.15m) failures.Add("duplicate_ratio_high");
         if (hasCycle) failures.Add("prerequisite_cycle");
         if (conceptCount > 2 && orphanCount > Math.Ceiling(conceptCount * 0.30m)) failures.Add("orphan_concept_high");
@@ -90,7 +91,7 @@ public sealed class ConceptGraphQualityService : IConceptGraphQualityService
         await _db.SaveChangesAsync(ct);
 
         var dto = ToDto(entity);
-        await TryCacheAsync($"orka:v2:graph-quality:{snapshotId:N}", dto, TimeSpan.FromHours(6));
+        await TryCacheAsync($"orka:v10:graph-quality:{snapshotId:N}", dto, TimeSpan.FromHours(6));
         return dto;
     }
 

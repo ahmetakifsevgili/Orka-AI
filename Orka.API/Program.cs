@@ -119,6 +119,10 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 // CorrelationId ilk sıraya gelmeli — tüm sonraki middleware'ler ID'yi kullanabilsin
 app.UseMiddleware<CorrelationIdMiddleware>();
+
+app.UseRouting();
+app.UseCors("OrkaCors");
+
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<MultipartBodyLimitMiddleware>();
@@ -132,10 +136,9 @@ if (app.Environment.IsDevelopment())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.UseCors("OrkaCors");
-app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<ExpensiveEndpointConcurrencyMiddleware>();
 app.UseRateLimiter();
 
 app.MapControllers();
@@ -151,4 +154,3 @@ public partial class Program { }
 // - services.AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>())
 // - services.AddScoped<IEducatorCoreService, EducatorCoreService>()
 // - services.AddScoped<ITextHealthService, TextHealthService>()
-

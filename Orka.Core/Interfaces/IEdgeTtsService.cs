@@ -9,4 +9,6 @@ public interface IEdgeTtsService
     /// Edge-TTS kullanarak podcast script'ini (HOCA, ASISTAN rolleriyle) MP3'e çevirir.
     /// </summary>
     Task<byte[]> SynthesizeDialogueAsync(string script, CancellationToken ct = default);
+
+    Task<byte[]> SynthesizeDialogueAsync(string script, string? ttsQuality, CancellationToken ct = default);
 }

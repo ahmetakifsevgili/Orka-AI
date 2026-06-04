@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
 
 [Authorize]
+[EnableRateLimiting("AudioLimiter")]
 [ApiController]
 [Route("api/audio")]
 public class AudioController : ControllerBase
@@ -22,18 +24,34 @@ public class AudioController : ControllerBase
     [HttpPost("overview")]
     public async Task<IActionResult> CreateOverview([FromBody] AudioOverviewRequest request)
     {
-        if (!request.TopicId.HasValue && !request.SessionId.HasValue)
+        var surface = NormalizeSurface(request.Surface);
+        if (surface == "wiki" && request.SourceId.HasValue)
         {
-            return BadRequest(new { message = "Audio Overview icin topicId veya sessionId zorunlu." });
+            return BadRequest(new { message = "Wiki audio sourceId ile baslatilamaz; kaynak sesleri OrkaLM yuzeyinde calisir." });
+        }
+
+        if (surface == "orkalm" && request.WikiPageId.HasValue)
+        {
+            return BadRequest(new { message = "OrkaLM audio wikiPageId ile baslatilamaz; Wiki ders sesleri Wiki yuzeyinde calisir." });
+        }
+
+        if (!request.TopicId.HasValue && !request.SessionId.HasValue && !request.WikiPageId.HasValue && !request.SourceId.HasValue)
+        {
+            return BadRequest(new { message = "Audio Overview icin topicId, sessionId, wikiPageId veya sourceId zorunlu." });
         }
 
         var job = await _audio.CreateOverviewAsync(
             GetUserId(),
             request.TopicId,
             request.SessionId,
+            surface,
+            request.WikiPageId,
+            request.SourceId,
+            request.AudioMode,
+            request.TtsQuality,
             HttpContext.RequestAborted);
 
-        return Ok(job);
+        return Accepted(job);
     }
 
     [HttpGet("overview/{jobId:guid}")]
@@ -53,10 +71,21 @@ public class AudioController : ControllerBase
 
         return File(audio.Value.Bytes, audio.Value.ContentType, audio.Value.FileName, enableRangeProcessing: true);
     }
+
+    private static string NormalizeSurface(string? value)
+    {
+        var key = string.IsNullOrWhiteSpace(value) ? "wiki" : value.Trim().ToLowerInvariant();
+        return key is "orkalm" or "source" or "source_notebook" ? "orkalm" : "wiki";
+    }
 }
 
 public class AudioOverviewRequest
 {
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
+    public string? Surface { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public Guid? SourceId { get; set; }
+    public string? AudioMode { get; set; }
+    public string? TtsQuality { get; set; }
 }

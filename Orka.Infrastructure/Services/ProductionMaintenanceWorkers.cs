@@ -35,6 +35,7 @@ public sealed class RetentionCleanupWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var cleanup = scope.ServiceProvider.GetRequiredService<IRetentionCleanupService>();
                 await cleanup.PurgeExpiredAudioAsync(stoppingToken);
+                await cleanup.PurgeExpiredTelemetryAndTracesAsync(stoppingToken);
             }
             catch (Exception ex)
             {

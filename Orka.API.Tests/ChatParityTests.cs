@@ -360,7 +360,7 @@ public sealed class ChatParityTests
             string userLevel = "Bilinmiyor") =>
             Task.FromResult(new DeepPlanGenerationWithGroundingResultDto());
 
-        public Task<string> GenerateBaselineQuizAsync(string topicTitle) =>
+        public Task<string> GenerateBaselineQuizAsync(string topicTitle, Guid topicId, string language, int questionCount) =>
             Task.FromResult("""[{"question":"async ne yapar?","options":[{"text":"bekler","isCorrect":true}],"correctAnswer":"bekler","explanation":"ok"}]""");
     }
 

@@ -20,6 +20,16 @@ public interface IConceptGraphBuilder
         CancellationToken ct = default);
 }
 
+public interface IConceptScopePlanner
+{
+    ConceptScopePlanDto BuildScope(
+        string approvedResearchIntent,
+        string topicTitle,
+        string approvedMainTopic,
+        string approvedFocusArea,
+        CompressedPlanResearchContextDto compressedContext);
+}
+
 public interface IConceptGraphQualityService
 {
     Task<ConceptGraphQualityDto> EvaluateAndSaveAsync(
@@ -50,6 +60,11 @@ public interface IAssessmentGrammarEngine
     string BuildPromptBlock(AssessmentGrammarDto grammar);
 
     Task<string> AttachQuestionMetadataAsync(
+        string quizJson,
+        AssessmentGrammarDto grammar,
+        CancellationToken ct = default);
+
+    Task<string> AttachQuestionMetadataWithOrderFallbackAsync(
         string quizJson,
         AssessmentGrammarDto grammar,
         CancellationToken ct = default);
@@ -566,6 +581,19 @@ public interface IQuestionBankService
         Guid userId,
         Guid optionId,
         CreateQuestionOptionContentBlockDto request,
+        CancellationToken ct = default);
+}
+
+public interface IQuestionPracticeService
+{
+    Task<QuestionPracticeSessionDto> StartAsync(
+        Guid userId,
+        QuestionPracticeStartRequestDto request,
+        CancellationToken ct = default);
+
+    Task<QuestionPracticeSubmitResponseDto> SubmitAsync(
+        Guid userId,
+        QuestionPracticeSubmitRequestDto request,
         CancellationToken ct = default);
 }
 
@@ -1354,6 +1382,8 @@ public interface IRetentionCleanupService
     Task<AudioRetentionSummaryDto> GetAudioRetentionSummaryAsync(CancellationToken ct = default);
 
     Task<AudioRetentionSummaryDto> PurgeExpiredAudioAsync(CancellationToken ct = default);
+
+    Task PurgeExpiredTelemetryAndTracesAsync(CancellationToken ct = default);
 }
 
 public interface IRedisStreamMaintenanceService

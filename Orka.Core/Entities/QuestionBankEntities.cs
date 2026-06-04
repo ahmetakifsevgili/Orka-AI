@@ -10,6 +10,20 @@ public sealed class QuestionItem
     public Guid? ExamSubjectId { get; set; }
     public Guid? ExamTopicId { get; set; }
     public Guid? ExamOutcomeId { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string QuestionBankSource { get; set; } = "curated_question_item";
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string VisualReadinessStatus { get; set; } = "not_required";
     public string QuestionType { get; set; } = "multiple_choice";
     public string Stem { get; set; } = string.Empty;
     public string Difficulty { get; set; } = "medium";
@@ -31,6 +45,11 @@ public sealed class QuestionItem
     public ExamSubject? ExamSubject { get; set; }
     public ExamTopic? ExamTopic { get; set; }
     public ExamOutcome? ExamOutcome { get; set; }
+    public Topic? LearningTopic { get; set; }
+    public ConceptGraphSnapshot? ConceptGraphSnapshot { get; set; }
+    public LearningConcept? LearningConcept { get; set; }
+    public AssessmentItem? AssessmentItem { get; set; }
+    public QuizRun? QuizRun { get; set; }
     public ICollection<QuestionOption> Options { get; set; } = [];
     public ICollection<QuestionExplanation> Explanations { get; set; } = [];
     public ICollection<QuestionTag> Tags { get; set; } = [];
@@ -46,6 +65,9 @@ public sealed class QuestionOption
     public string OptionKey { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
+    public string? Rationale { get; set; }
+    public string? MisconceptionKey { get; set; }
+    public string? DiagnosticSignalJson { get; set; }
     public int SortOrder { get; set; }
 
     public QuestionItem QuestionItem { get; set; } = null!;
@@ -109,6 +131,12 @@ public sealed class QuestionAsset
     public string? AltText { get; set; }
     public string? Caption { get; set; }
     public string? LongDescription { get; set; }
+    public string? GenerationProvider { get; set; }
+    public string? GenerationModel { get; set; }
+    public string? RenderStrategy { get; set; }
+    public string? GenerationPromptHash { get; set; }
+    public string? ValidationReportJson { get; set; }
+    public string VisualReadinessStatus { get; set; } = "needs_validation";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; }

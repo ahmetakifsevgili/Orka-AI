@@ -1,5 +1,19 @@
 namespace Orka.Core.DTOs;
 
+public static class NotebookStudioPhaseScope
+{
+    public static readonly IReadOnlyList<string> All =
+    [
+        "phase_1_contract",
+        "phase_2_graph_metadata",
+        "phase_3_text_notebook",
+        "phase_4_slide_diagram",
+        "phase_5_search_template_export",
+        "phase_6_internal_connections",
+        "phase_7_audio_classroom"
+    ];
+}
+
 public sealed class LearningNotebookPackDto
 {
     public Guid Id { get; set; }
@@ -26,6 +40,7 @@ public sealed class LearningNotebookPackDto
     public IReadOnlyList<string> CompletedConceptKeys { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> WeakConceptKeys { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> MisconceptionKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> PhaseScope { get; set; } = Array.Empty<string>();
     public IReadOnlyList<Guid> ArtifactIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<LearningArtifactDto> Artifacts { get; set; } = Array.Empty<LearningArtifactDto>();
     public IReadOnlyList<NotebookStudioNextActionDto> NextActions { get; set; } = Array.Empty<NotebookStudioNextActionDto>();
@@ -69,6 +84,13 @@ public sealed class NotebookExportResultDto
 {
     public Guid PackId { get; set; }
     public Guid? SlideDeckArtifactId { get; set; }
+    public string Surface { get; set; } = "wiki";
+    public string ContextType { get; set; } = "wiki_page";
+    public Guid? WikiPageId { get; set; }
+    public Guid? SourceId { get; set; }
+    public string ExportScope { get; set; } = "wiki_export_scope";
+    public bool SourceUploadAllowed { get; set; }
+    public bool CrossSurfaceSync { get; set; }
     public string Format { get; set; } = "markdown";
     public string Status { get; set; } = "preview_ready";
     public string ExportReadiness { get; set; } = "preview_ready";
@@ -83,6 +105,10 @@ public sealed class NotebookExportResultDto
     public NotebookSlideExportPreviewDto Preview { get; set; } = new();
     public NotebookExportSafetyDto Safety { get; set; } = new();
     public NotebookExportAccessibilityDto Accessibility { get; set; } = new();
+    public IReadOnlyList<string> TemplateKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SearchFilterKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> InternalConnectionKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> PhaseScope { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -91,6 +117,13 @@ public sealed class NotebookSlideExportPreviewDto
 {
     public Guid PackId { get; set; }
     public Guid? SlideDeckArtifactId { get; set; }
+    public string Surface { get; set; } = "wiki";
+    public string ContextType { get; set; } = "wiki_page";
+    public Guid? WikiPageId { get; set; }
+    public Guid? SourceId { get; set; }
+    public string ExportScope { get; set; } = "wiki_export_scope";
+    public bool SourceUploadAllowed { get; set; }
+    public bool CrossSurfaceSync { get; set; }
     public string DeckTitle { get; set; } = string.Empty;
     public int SlideCount { get; set; }
     public string SourceBasis { get; set; } = "evidence_insufficient";
@@ -98,6 +131,10 @@ public sealed class NotebookSlideExportPreviewDto
     public string ExportReadiness { get; set; } = "preview_ready";
     public IReadOnlyList<NotebookSlideExportItemDto> Slides { get; set; } = Array.Empty<NotebookSlideExportItemDto>();
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> TemplateKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SearchFilterKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> InternalConnectionKeys { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> PhaseScope { get; set; } = Array.Empty<string>();
     public string AccessibilitySummary { get; set; } = string.Empty;
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }

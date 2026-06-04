@@ -220,7 +220,7 @@ public sealed class ProductionSafetyLiteTests
         var tokenB = await LoginAndReadTokenAsync(client, credsB.Email, credsB.Password);
 
         // We make 11 requests for User A. The 11th request must return 429 Too Many Requests.
-        HttpResponseMessage lastResponseA = null;
+        HttpResponseMessage? lastResponseA = null;
         for (int i = 0; i < 11; i++)
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, "/api/chat/message");
@@ -229,6 +229,7 @@ public sealed class ProductionSafetyLiteTests
             lastResponseA = await client.SendAsync(req);
         }
 
+        Assert.NotNull(lastResponseA);
         Assert.Equal(HttpStatusCode.TooManyRequests, lastResponseA.StatusCode);
 
         // Now, make a request for User B. User B should NOT be rate limited!

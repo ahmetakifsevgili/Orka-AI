@@ -9,6 +9,7 @@ using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
+using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Utilities;
@@ -20,6 +21,21 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan StateTtl = TimeSpan.FromHours(2);
+    private const int MinimumPlanModules = 6;
+    private const int MinimumPlanLessons = 24;
+    private static readonly HashSet<string> HardPlanQualityBlockingIssueCodes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "unsafe_success_claim",
+        "unsafe_official_claim",
+        "teacher_workflow_copy",
+        "internal_payload_leak",
+        "plan_empty",
+        "plan_too_generic",
+        "step_missing_concept_or_objective",
+        "step_missing_sequence_reason",
+        "step_missing_quiz_hook",
+        "step_missing_tutor_hook"
+    };
 
     private readonly OrkaDbContext _db;
     private readonly IKorteksAgent _korteks;
@@ -93,6 +109,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             throw new InvalidOperationException("Topic not found for plan diagnostic start.");
         }
 
+        var effectiveSessionId = await ResolvePlanSessionIdAsync(userId, request.TopicId, request.SessionId, ct);
+
         var approvedResearchIntent = NormalizeApprovedIntent(request.ApprovedResearchIntent);
         if (string.IsNullOrWhiteSpace(approvedResearchIntent))
         {
@@ -113,7 +131,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             PlanRequestId = planRequestId,
             UserId = userId,
             TopicId = request.TopicId,
-            SessionId = request.SessionId,
+            SessionId = effectiveSessionId,
             TopicTitle = topicTitle,
             IntentRequestId = request.IntentRequestId,
             RawStudyRequest = CleanOrDefault(request.RawStudyRequest, topicTitle),
@@ -129,6 +147,119 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         };
 
         await _stateStore.SaveAsync(state, ct);
+        return await CompleteStartAsync(state, ct);
+    }
+
+    public async Task<StartPlanDiagnosticResponse> StartQueuedAsync(
+        Guid userId,
+        StartPlanDiagnosticRequest request,
+        CancellationToken ct = default)
+    {
+        var topic = await _db.Topics.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == request.TopicId && t.UserId == userId, ct);
+
+        if (topic == null)
+        {
+            throw new InvalidOperationException("Topic not found for plan diagnostic start.");
+        }
+
+        var effectiveSessionId = await ResolvePlanSessionIdAsync(userId, request.TopicId, request.SessionId, ct);
+        var approvedResearchIntent = NormalizeApprovedIntent(request.ApprovedResearchIntent);
+        if (string.IsNullOrWhiteSpace(approvedResearchIntent))
+        {
+            throw new InvalidOperationException("Approved study intent is required before learning research.");
+        }
+
+        var approvedMainTopic = CleanOrDefault(request.ApprovedMainTopic, topic.Title);
+        var approvedFocusArea = CleanOrDefault(request.ApprovedFocusArea, "genel kapsam");
+        var approvedStudyGoal = CleanOrDefault(request.ApprovedStudyGoal, "ogrenme ve pratik");
+        var topicTitle = BuildApprovedTopicTitle(request.TopicTitle, approvedMainTopic, approvedFocusArea, topic.Title);
+        var now = DateTime.UtcNow;
+
+        var state = new PlanDiagnosticStateDto
+        {
+            PlanRequestId = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = request.TopicId,
+            SessionId = effectiveSessionId,
+            TopicTitle = topicTitle,
+            IntentRequestId = request.IntentRequestId,
+            RawStudyRequest = CleanOrDefault(request.RawStudyRequest, topicTitle),
+            ApprovedMainTopic = approvedMainTopic,
+            ApprovedFocusArea = approvedFocusArea,
+            ApprovedStudyGoal = approvedStudyGoal,
+            ApprovedResearchIntent = approvedResearchIntent,
+            UserLevel = string.IsNullOrWhiteSpace(request.UserLevel) ? topic.LanguageLevel ?? "Bilinmiyor" : request.UserLevel.Trim(),
+            Status = PlanDiagnosticStatus.Researching,
+            QuizRunId = Guid.NewGuid(),
+            CreatedAt = now,
+            ExpiresAt = now.Add(StateTtl)
+        };
+
+        await _stateStore.SaveAsync(state, ct);
+        return BuildStartResponse(state, questionsJson: "[]", isAsync: true, message: "Plan diagnostic generation queued.");
+    }
+
+    public async Task RunQueuedStartAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default)
+    {
+        var state = await RequireStateAsync(userId, planRequestId, ct);
+        if (state.Status is PlanDiagnosticStatus.QuizPending or PlanDiagnosticStatus.QuizCompleted or PlanDiagnosticStatus.PlanGenerating or PlanDiagnosticStatus.PlanGenerated)
+        {
+            return;
+        }
+
+        await CompleteStartAsync(state, ct);
+    }
+
+    public async Task<StartPlanDiagnosticResponse> GetStartStatusAsync(
+        Guid userId,
+        Guid planRequestId,
+        CancellationToken ct = default)
+    {
+        var state = await RequireStateAsync(userId, planRequestId, ct);
+        var questionsJson = state.Status is PlanDiagnosticStatus.QuizPending or PlanDiagnosticStatus.QuizCompleted or PlanDiagnosticStatus.PlanGenerating or PlanDiagnosticStatus.PlanGenerated
+            ? await LoadLearnerQuizJsonAsync(userId, state, ct)
+            : "[]";
+
+        return BuildStartResponse(
+            state,
+            questionsJson,
+            state.KorteksResearchWorkflowId.HasValue ? "completed" : "not_available",
+            string.IsNullOrWhiteSpace(state.LearningBlueprintSourceConfidence) ? "low" : state.LearningBlueprintSourceConfidence,
+            isAsync: true);
+    }
+
+    private async Task<StartPlanDiagnosticResponse> CompleteStartAsync(
+        PlanDiagnosticStateDto state,
+        CancellationToken ct)
+    {
+        var userId = state.UserId;
+        var planRequestId = state.PlanRequestId;
+        var quizRunId = state.QuizRunId;
+        var effectiveSessionId = state.SessionId;
+        var topicTitle = state.TopicTitle;
+        var approvedMainTopic = state.ApprovedMainTopic;
+        var approvedFocusArea = state.ApprovedFocusArea;
+        var approvedStudyGoal = state.ApprovedStudyGoal;
+        var approvedResearchIntent = state.ApprovedResearchIntent;
+        var requestedQuestionCount = DetermineDiagnosticQuestionCount(approvedMainTopic, approvedFocusArea, approvedResearchIntent);
+        var now = DateTime.UtcNow;
+        var request = new StartPlanDiagnosticRequest
+        {
+            TopicId = state.TopicId,
+            SessionId = effectiveSessionId,
+            IntentRequestId = state.IntentRequestId,
+            ApprovedMainTopic = approvedMainTopic,
+            ApprovedFocusArea = approvedFocusArea,
+            ApprovedStudyGoal = approvedStudyGoal,
+            ApprovedResearchIntent = approvedResearchIntent,
+            TopicTitle = topicTitle,
+            RawStudyRequest = state.RawStudyRequest,
+            UserLevel = state.UserLevel
+        };
 
         try
         {
@@ -149,7 +280,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                     new KorteksResearchSynthesisContextDto
                     {
                         TopicId = request.TopicId,
-                        SessionId = request.SessionId,
+                        SessionId = effectiveSessionId,
                         PlanRequestId = planRequestId,
                         ApprovedIntent = approvedResearchIntent,
                         ApprovedMainTopic = approvedMainTopic,
@@ -169,6 +300,29 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 approvedFocusArea,
                 compressed,
                 ct);
+
+            _db.QuizRuns.Add(new QuizRun
+            {
+                Id = quizRunId,
+                UserId = userId,
+                TopicId = request.TopicId,
+                SessionId = effectiveSessionId,
+                QuizType = "baseline",
+                Status = "preparing",
+                TotalQuestions = requestedQuestionCount,
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    planRequestId,
+                    intentRequestId = request.IntentRequestId,
+                    approvedMainTopic,
+                    approvedFocusArea,
+                    approvedResearchIntent,
+                    sourceCount = compressed.SourceCount
+                }, JsonOptions),
+                CreatedAt = now
+            });
+            await _db.SaveChangesAsync(ct);
+
             var assessmentDraft = await _assessmentGrammar.BuildOrLoadDraftAsync(
                 userId,
                 request.TopicId,
@@ -182,12 +336,11 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 compressed);
             if (learningBlueprint.Concepts.Count == 0)
             {
-                learningBlueprint = BuildLegacyBlueprintFromContext(
-                approvedResearchIntent,
-                topicTitle,
-                approvedMainTopic,
-                approvedFocusArea,
-                compressed);
+                throw new InvalidOperationException("Concept graph did not produce a usable learning blueprint; diagnostic quiz generation is blocked instead of using a generic fallback blueprint.");
+            }
+            if (learningBlueprint.Concepts.Distinct(StringComparer.OrdinalIgnoreCase).Count() < 5)
+            {
+                throw new InvalidOperationException("Concept graph did not produce enough measurable diagnostic concepts; quiz generation is blocked instead of accepting a shallow assessment contract.");
             }
             var effectiveQuestionCount = Math.Clamp(
                 assessmentDraft.Grammar.RequestedQuestionCount > 0 ? assessmentDraft.Grammar.RequestedQuestionCount : learningBlueprint.RecommendedQuestionCount > 0 ? learningBlueprint.RecommendedQuestionCount : requestedQuestionCount,
@@ -241,31 +394,24 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 effectiveQuestionCount,
                 ct);
             var questionCount = CountQuestions(quizJson);
+            await PersistGeneratedQuestionJsonAsync(userId, planRequestId, quizJson, ct);
             var learnerQuizJson = StripAnswerKeysForLearner(quizJson);
 
-            _db.QuizRuns.Add(new QuizRun
+            var quizRun = await _db.QuizRuns.FirstAsync(q => q.Id == quizRunId && q.UserId == userId, ct);
+            quizRun.Status = "active";
+            quizRun.TotalQuestions = questionCount;
+            quizRun.MetadataJson = JsonSerializer.Serialize(new
             {
-                Id = quizRunId,
-                UserId = userId,
-                TopicId = request.TopicId,
-                SessionId = request.SessionId,
-                QuizType = "baseline",
-                Status = "active",
-                TotalQuestions = questionCount,
-                MetadataJson = JsonSerializer.Serialize(new
-                {
-                    planRequestId,
-                    intentRequestId = request.IntentRequestId,
-                    approvedMainTopic,
-                    approvedFocusArea,
-                    approvedResearchIntent,
-                    blueprintDomain = learningBlueprint.Domain,
-                    blueprintConfidence = learningBlueprint.SourceConfidence,
-                    blueprintHash = learningBlueprintHash,
-                    sourceCount = compressed.SourceCount
-                }, JsonOptions),
-                CreatedAt = now
-            });
+                planRequestId,
+                intentRequestId = request.IntentRequestId,
+                approvedMainTopic,
+                approvedFocusArea,
+                approvedResearchIntent,
+                blueprintDomain = learningBlueprint.Domain,
+                blueprintConfidence = learningBlueprint.SourceConfidence,
+                blueprintHash = learningBlueprintHash,
+                sourceCount = compressed.SourceCount
+            }, JsonOptions);
             await _db.SaveChangesAsync(ct);
             var persistedAssessmentItems = await _db.AssessmentItems
                 .Where(item => item.UserId == userId && item.PlanRequestId == planRequestId)
@@ -287,44 +433,165 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
             await RefreshLearningSnapshotsAsync(userId, state, ct);
 
-            return new StartPlanDiagnosticResponse
-            {
-                PlanRequestId = state.PlanRequestId,
-                QuizRunId = state.QuizRunId,
-                TopicId = state.TopicId,
-                TopicTitle = state.TopicTitle,
-                Status = state.Status,
-                QuestionsJson = learnerQuizJson,
-                GroundingMode = state.GroundingMode,
-                SourceCount = state.SourceCount,
-                ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
-                AssessmentDraftId = state.AssessmentDraftId,
-                ConceptGraphQualityStatus = state.ConceptGraphQualityStatus,
-                AssessmentQualityStatus = state.AssessmentQualityStatus,
-                QualityReportId = state.QualityReportId,
-                SourceBundleHash = state.SourceBundleHash,
-                SourceBundleCacheKey = state.SourceBundleCacheKey,
-                KorteksResearchWorkflowId = state.KorteksResearchWorkflowId,
-                KorteksSynthesisStatus = korteksWorkflow?.Status ?? "not_available",
-                KorteksSourceConfidence = korteksWorkflow?.SourceConfidence ?? "low",
-                QuizQuestionCount = state.QuizQuestionCount,
-                IntentRequestId = state.IntentRequestId,
-                ApprovedMainTopic = state.ApprovedMainTopic,
-                ApprovedFocusArea = state.ApprovedFocusArea,
-                ApprovedStudyGoal = state.ApprovedStudyGoal,
-                ApprovedResearchIntent = state.ApprovedResearchIntent
-            };
+            return BuildStartResponse(
+                state,
+                learnerQuizJson,
+                korteksWorkflow?.Status ?? "not_available",
+                korteksWorkflow?.SourceConfidence ?? "low");
         }
         catch (Exception ex)
         {
             state.Status = PlanDiagnosticStatus.Failed;
             state.ErrorMessage = ex.Message;
             await _stateStore.SaveAsync(state, ct);
-            _logger.LogWarning("[PlanDiagnostic] Start failed. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+            _logger.LogWarning(ex, "[PlanDiagnostic] Start failed. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeId(planRequestId, "plan"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             throw;
         }
+    }
+
+    private async Task<string> LoadLearnerQuizJsonAsync(Guid userId, PlanDiagnosticStateDto state, CancellationToken ct)
+    {
+        var items = await _db.AssessmentItems.AsNoTracking()
+            .Where(item => item.UserId == userId &&
+                           item.QuizRunId == state.QuizRunId &&
+                           item.GeneratedQuestionJson != null &&
+                           item.GeneratedQuestionJson != string.Empty)
+            .OrderBy(item => item.Order)
+            .Select(item => item.GeneratedQuestionJson!)
+            .ToListAsync(ct);
+
+        if (items.Count == 0)
+        {
+            return "[]";
+        }
+
+        var array = new JsonArray();
+        foreach (var item in items)
+        {
+            try
+            {
+                var node = JsonNode.Parse(item);
+                if (node != null)
+                {
+                    array.Add(node);
+                }
+            }
+            catch (JsonException)
+            {
+                // A single malformed persisted item should not leak raw JSON to the learner.
+            }
+        }
+
+        return StripAnswerKeysForLearner(array.ToJsonString(JsonOptions));
+    }
+
+    private async Task PersistGeneratedQuestionJsonAsync(
+        Guid userId,
+        Guid planRequestId,
+        string quizJson,
+        CancellationToken ct)
+    {
+        var array = JsonNode.Parse(DiagnosticQuizQualityGate.ExtractJsonArray(quizJson)) as JsonArray;
+        if (array == null)
+        {
+            return;
+        }
+
+        var entitiesById = await _db.AssessmentItems
+            .Where(item => item.UserId == userId && item.PlanRequestId == planRequestId)
+            .ToDictionaryAsync(item => item.Id, ct);
+        foreach (var question in array.OfType<JsonObject>())
+        {
+            if (!Guid.TryParse(question["assessmentItemId"]?.GetValue<string>(), out var id) ||
+                !entitiesById.TryGetValue(id, out var entity))
+            {
+                continue;
+            }
+
+            entity.GeneratedQuestionJson = question.ToJsonString(JsonOptions);
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static StartPlanDiagnosticResponse BuildStartResponse(
+        PlanDiagnosticStateDto state,
+        string questionsJson,
+        string korteksSynthesisStatus = "not_available",
+        string korteksSourceConfidence = "low",
+        bool isAsync = false,
+        string? message = null)
+    {
+        var isReady = state.Status is PlanDiagnosticStatus.QuizPending or
+            PlanDiagnosticStatus.QuizCompleted or
+            PlanDiagnosticStatus.PlanGenerating or
+            PlanDiagnosticStatus.PlanGenerated;
+
+        return new StartPlanDiagnosticResponse
+        {
+            PlanRequestId = state.PlanRequestId,
+            QuizRunId = state.QuizRunId,
+            TopicId = state.TopicId,
+            TopicTitle = state.TopicTitle,
+            Status = state.Status,
+            QuestionsJson = questionsJson,
+            GroundingMode = state.GroundingMode,
+            SourceCount = state.SourceCount,
+            ConceptGraphSnapshotId = state.ConceptGraphSnapshotId,
+            AssessmentDraftId = state.AssessmentDraftId,
+            ConceptGraphQualityStatus = state.ConceptGraphQualityStatus,
+            AssessmentQualityStatus = state.AssessmentQualityStatus,
+            QualityReportId = state.QualityReportId,
+            SourceBundleHash = state.SourceBundleHash,
+            SourceBundleCacheKey = state.SourceBundleCacheKey,
+            KorteksResearchWorkflowId = state.KorteksResearchWorkflowId,
+            KorteksSynthesisStatus = korteksSynthesisStatus,
+            KorteksSourceConfidence = korteksSourceConfidence,
+            QuizQuestionCount = state.QuizQuestionCount,
+            IntentRequestId = state.IntentRequestId,
+            ApprovedMainTopic = state.ApprovedMainTopic,
+            ApprovedFocusArea = state.ApprovedFocusArea,
+            ApprovedStudyGoal = state.ApprovedStudyGoal,
+            ApprovedResearchIntent = state.ApprovedResearchIntent,
+            IsAsync = isAsync,
+            IsReady = isReady,
+            Message = message,
+            ErrorMessage = state.Status == PlanDiagnosticStatus.Failed ? state.ErrorMessage : null
+        };
+    }
+
+    private async Task<Guid?> ResolvePlanSessionIdAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? requestedSessionId,
+        CancellationToken ct)
+    {
+        if (!requestedSessionId.HasValue)
+        {
+            return null;
+        }
+
+        var belongsToTopic = await _db.Sessions.AsNoTracking()
+            .AnyAsync(s =>
+                s.Id == requestedSessionId.Value &&
+                s.UserId == userId &&
+                s.TopicId == topicId,
+                ct);
+
+        if (belongsToTopic)
+        {
+            return requestedSessionId;
+        }
+
+        _logger.LogWarning(
+            "[PlanDiagnostic] Ignoring stale session for plan start. UserRef={UserRef} TopicRef={TopicRef} SessionRef={SessionRef}",
+            LogPrivacyGuard.SafeId(userId, "usr"),
+            LogPrivacyGuard.SafeId(topicId, "topic"),
+            LogPrivacyGuard.SafeId(requestedSessionId.Value, "session"));
+
+        return null;
     }
 
     public async Task<PlanDiagnosticAnswerResponse> RecordAnswerAsync(
@@ -338,6 +605,10 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         request.TopicId = state.TopicId;
         request.SessionId ??= state.SessionId;
         await EnrichAttemptRequestFromAssessmentAsync(state, request, ct);
+        if (!request.AssessmentItemId.HasValue)
+        {
+            throw new InvalidOperationException("Plan diagnostic answers require a server-issued assessmentItemId.");
+        }
 
         var recordResult = await _quizRecorder.RecordAsync(userId, request, ct);
 
@@ -401,6 +672,12 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             };
         }
 
+        var existingPlan = await TryCompleteExistingMaterializedPlanAsync(userId, state, null, ct);
+        if (existingPlan != null)
+        {
+            return existingPlan;
+        }
+
         state.Status = PlanDiagnosticStatus.PlanGenerating;
         await _stateStore.SaveAsync(state, ct);
 
@@ -411,19 +688,91 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         var diagnosticSummary = await BuildCurrentDiagnosticSummaryAsync(userId, state.QuizRunId, ct) +
                                 "\n" +
                                 _diagnosticProfileBuilder.BuildPromptBlock(diagnosticProfile);
-        var planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            state.TopicId,
-            state.TopicTitle,
-            userId,
-            state.CompressedResearchPromptBlock,
-            diagnosticSummary,
-            state.UserLevel);
+        DeepPlanGenerationWithGroundingResultDto planResult;
+        try
+        {
+            planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                state.TopicId,
+                state.TopicTitle,
+                userId,
+                state.CompressedResearchPromptBlock,
+                diagnosticSummary,
+                state.UserLevel);
+        }
+        catch (InvalidOperationException ex)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = ex.Message;
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = []
+            };
+        }
+
+        var materialization = await ValidatePlanMaterializationAsync(userId, state.TopicId, ct);
+        if (!materialization.IsValid)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = "Generated plan has no valid module/lesson hierarchy.";
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            };
+        }
+
+        var professionalGate = ValidateProfessionalPlanContract(materialization, state);
+        if (!professionalGate.IsValid)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = professionalGate.Message;
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            };
+        }
+
+        await EnsureMinimumWikiMaterialAsync(userId, state.TopicId, state.TopicTitle, materialization, ct);
+
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
+        var planQuality = await EvaluatePlanQualityAsync(userId, state, materialization.Lessons, ct);
+        if (PlanQualityBlocksGeneration(planQuality))
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = "Generated plan failed professional plan quality gate.";
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList(),
+                PlanQuality = planQuality
+            };
+        }
 
         state.Status = PlanDiagnosticStatus.PlanGenerated;
         state.GeneratedPlanRootTopicId = state.TopicId;
         await _stateStore.SaveAsync(state, ct);
-        await RefreshLearningSnapshotsAsync(userId, state, ct);
-        var planQuality = await EvaluatePlanQualityAsync(userId, state, planResult.Topics, ct);
 
         return new FinalizePlanDiagnosticResponse
         {
@@ -460,6 +809,16 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             };
         }
 
+        var existingPlan = await TryCompleteExistingMaterializedPlanAsync(
+            userId,
+            state,
+            "Diagnostic quiz skipped; beginner plan generated without fake quiz mistakes.",
+            ct);
+        if (existingPlan != null)
+        {
+            return existingPlan;
+        }
+
         state.Status = PlanDiagnosticStatus.PlanGenerating;
         state.QuizCompletedAt ??= DateTime.UtcNow;
         await _stateStore.SaveAsync(state, ct);
@@ -477,19 +836,91 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             "Instruction: The learner explicitly skipped the diagnostic quiz and chose to start from zero. Build a beginner-safe plan, but do not infer weak skills or record fake mistakes from skipped questions."
         });
 
-        var planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            state.TopicId,
-            state.TopicTitle,
-            userId,
-            state.CompressedResearchPromptBlock,
-            diagnosticSummary,
-            state.UserLevel);
+        DeepPlanGenerationWithGroundingResultDto planResult;
+        try
+        {
+            planResult = await _deepPlan.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                state.TopicId,
+                state.TopicTitle,
+                userId,
+                state.CompressedResearchPromptBlock,
+                diagnosticSummary,
+                state.UserLevel);
+        }
+        catch (InvalidOperationException ex)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = ex.Message;
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = []
+            };
+        }
+
+        var materialization = await ValidatePlanMaterializationAsync(userId, state.TopicId, ct);
+        if (!materialization.IsValid)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = "Generated plan has no valid module/lesson hierarchy.";
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            };
+        }
+
+        var professionalGate = ValidateProfessionalPlanContract(materialization, state);
+        if (!professionalGate.IsValid)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = professionalGate.Message;
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList()
+            };
+        }
+
+        await EnsureMinimumWikiMaterialAsync(userId, state.TopicId, state.TopicTitle, materialization, ct);
+
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
+        var planQuality = await EvaluatePlanQualityAsync(userId, state, materialization.Lessons, ct);
+        if (PlanQualityBlocksGeneration(planQuality))
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = "Generated plan failed professional plan quality gate.";
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList(),
+                PlanQuality = planQuality
+            };
+        }
 
         state.Status = PlanDiagnosticStatus.PlanGenerated;
         state.GeneratedPlanRootTopicId = state.TopicId;
         await _stateStore.SaveAsync(state, ct);
-        await RefreshLearningSnapshotsAsync(userId, state, ct);
-        var planQuality = await EvaluatePlanQualityAsync(userId, state, planResult.Topics, ct);
 
         return new FinalizePlanDiagnosticResponse
         {
@@ -499,6 +930,72 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             Message = "Diagnostic quiz skipped; beginner plan generated without fake quiz mistakes.",
             GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
             GeneratedTopicIds = planResult.Topics.Select(t => t.Id).ToList(),
+            PlanQuality = planQuality
+        };
+    }
+
+    private async Task<FinalizePlanDiagnosticResponse?> TryCompleteExistingMaterializedPlanAsync(
+        Guid userId,
+        PlanDiagnosticStateDto state,
+        string? successMessage,
+        CancellationToken ct)
+    {
+        var materialization = await ValidatePlanMaterializationAsync(userId, state.TopicId, ct);
+        if (!materialization.IsValid)
+        {
+            return null;
+        }
+
+        var professionalGate = ValidateProfessionalPlanContract(materialization, state);
+        if (!professionalGate.IsValid)
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = professionalGate.Message;
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = materialization.Modules.Concat(materialization.Lessons).Select(t => t.Id).ToList()
+            };
+        }
+
+        await EnsureMinimumWikiMaterialAsync(userId, state.TopicId, state.TopicTitle, materialization, ct);
+        await RefreshLearningSnapshotsAsync(userId, state, ct);
+        var planQuality = await EvaluatePlanQualityAsync(userId, state, materialization.Lessons, ct);
+        if (PlanQualityBlocksGeneration(planQuality))
+        {
+            state.Status = PlanDiagnosticStatus.Failed;
+            state.ErrorMessage = "Generated plan failed professional plan quality gate.";
+            await _stateStore.SaveAsync(state, ct);
+            return new FinalizePlanDiagnosticResponse
+            {
+                PlanRequestId = state.PlanRequestId,
+                Status = state.Status,
+                PlanGenerated = false,
+                Message = state.ErrorMessage,
+                GeneratedPlanRootTopicId = state.TopicId,
+                GeneratedTopicIds = materialization.Modules.Concat(materialization.Lessons).Select(t => t.Id).ToList(),
+                PlanQuality = planQuality
+            };
+        }
+
+        state.Status = PlanDiagnosticStatus.PlanGenerated;
+        state.GeneratedPlanRootTopicId = state.TopicId;
+        state.ErrorMessage = null;
+        await _stateStore.SaveAsync(state, ct);
+
+        return new FinalizePlanDiagnosticResponse
+        {
+            PlanRequestId = state.PlanRequestId,
+            Status = state.Status,
+            PlanGenerated = true,
+            Message = successMessage ?? "Plan was already materialized; generation was not repeated.",
+            GeneratedPlanRootTopicId = state.GeneratedPlanRootTopicId,
+            GeneratedTopicIds = materialization.Modules.Concat(materialization.Lessons).Select(t => t.Id).ToList(),
             PlanQuality = planQuality
         };
     }
@@ -536,51 +1033,490 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             - En az 8 farkli conceptTag kullan.
             - En az 4 farkli questionType kullan.
             - En az 5 soru beklenen kavram yanilgisini hedeflesin.
+            - En az %30 soru misconception_probe olmali; misconceptionTarget spesifik yanilgi slug'i olmali, CommonMistakes gibi genel etiket kullanma.
+            - Dogru secenek konumu dengeli dagilmali; dogru cevabi her zaman ilk secenek yapma.
+            - Her yanlis secenek option-level diagnostic signal tasimali: rationale ve misconceptionKey bos olmayacak.
             - Teknik konularda en az bir soru gercek kod parcasi, kod okuma veya hata ayiklama senaryosu icersin.
             - Her soru su alanlari icersin: question, options, correctAnswer, explanation, skillTag, difficulty, conceptTag, learningObjective, questionType, expectedMisconceptionCategory.
             - Yeni mimari alanlari eksik kalmamali: assessmentItemId, conceptKey, cognitiveSkill, misconceptionTarget, evidenceExpected, scoringRule, learningOutcomeIds.
+            - Her soru objesi su JSON sekline birebir uymali:
+              {
+                "type": "multiple_choice",
+                "assessmentItemId": "[ASSESSMENT GRAMMAR icindeki exact Guid]",
+                "assessmentItemKey": "[ASSESSMENT GRAMMAR icindeki exact key]",
+                "conceptKey": "[ASSESSMENT GRAMMAR icindeki exact conceptKey]",
+                "cognitiveSkill": "conceptual|procedural|application|analysis|misconception_probe",
+                "misconceptionTarget": "spesifik-yanilgi-slug veya evidence_insufficient",
+                "evidenceExpected": "olculecek kanit",
+                "scoringRule": "selected_option_exact_match",
+                "learningOutcomeIds": ["outcome-key"],
+                "question": "soru kok metni",
+                "options": [
+                  { "text": "secenek", "isCorrect": true, "rationale": "neden dogru", "misconceptionKey": "" },
+                  { "text": "secenek", "isCorrect": false, "rationale": "hangi yanilgiyi gosterir", "misconceptionKey": "misconception-key" },
+                  { "text": "secenek", "isCorrect": false, "rationale": "hangi yanilgiyi gosterir", "misconceptionKey": "misconception-key" },
+                  { "text": "secenek", "isCorrect": false, "rationale": "hangi yanilgiyi gosterir", "misconceptionKey": "misconception-key" }
+                ],
+                "correctAnswer": "dogru secenek metni",
+                "explanation": "kisa egitici aciklama",
+                "skillTag": "[conceptKey ile ayni]",
+                "difficulty": "kolay|orta|zor",
+                "conceptTag": "[conceptKey ile ayni]",
+                "learningObjective": "olculebilir hedef",
+                "questionType": "conceptual|procedural|application|analysis|misconception_probe",
+                "expectedMisconceptionCategory": "Conceptual|Procedural|Careless|EvidenceInsufficient"
+              }
+            - JSON array disinda tek karakter yazma.
 
             SADECE JSON array dondur.
             """;
 
-        var rawQuiz = await _factory.CompleteChatAsync(
-            AgentRole.DeepPlan,
-            systemPrompt,
-            $"Konu: \"{topicTitle}\" icin tam {requestedQuestionCount} adet tanilayici baseline sorusu uret.",
-            ct);
+        Exception? lastFailure = null;
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                var rawQuiz = await GenerateDiagnosticQuizInBatchesAsync(
+                    systemPrompt,
+                    topicTitle,
+                    requestedQuestionCount,
+                    assessmentGrammar,
+                    attempt,
+                    lastFailure,
+                    ct);
+
+                var candidateQuiz = NormalizeDiagnosticQuizForDelivery(rawQuiz);
+                candidateQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(candidateQuiz, topicTitle, requestedQuestionCount, out var quality, learningBlueprint);
+                DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(candidateQuiz, requestedQuestionCount);
+
+                var validatedQuiz = NormalizeDiagnosticQuizForDelivery(
+                    await _assessmentGrammar.AttachQuestionMetadataAsync(candidateQuiz, assessmentGrammar, ct));
+                DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(validatedQuiz, requestedQuestionCount);
+                if (!quality.IsAcceptable)
+                {
+                    _logger.LogWarning(
+                        "[PlanDiagnostic] Diagnostic quiz quality failed. TopicRef={TopicRef} FailureCount={FailureCount}",
+                        LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                        quality.Failures.Count);
+                }
+
+                return validatedQuiz;
+            }
+            catch (Exception ex) when ((ex is not OperationCanceledException || !ct.IsCancellationRequested) && attempt < maxAttempts && !IsProviderInfrastructureFailure(ex))
+            {
+                lastFailure = ex;
+                _logger.LogWarning(
+                    "[PlanDiagnostic] Diagnostic quiz contract attempt failed; retrying with strict regeneration. TopicRef={TopicRef} Attempt={Attempt}/{MaxAttempts} ErrorType={ErrorType} Error={Error}",
+                    LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                    attempt,
+                    maxAttempts,
+                    LogPrivacyGuard.SafeExceptionType(ex),
+                    LogPrivacyGuard.SafeTextRef(ex.Message, "err"));
+            }
+        }
+
         try
         {
-            var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, requestedQuestionCount, out var quality, learningBlueprint);
-            validatedQuiz = await _assessmentGrammar.AttachQuestionMetadataAsync(validatedQuiz, assessmentGrammar, ct);
-            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(validatedQuiz, requestedQuestionCount);
-            if (!quality.IsAcceptable)
-            {
-                _logger.LogWarning(
-                    "[PlanDiagnostic] Diagnostic quiz quality failed. TopicRef={TopicRef} FailureCount={FailureCount}",
-                    LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
-                    quality.Failures.Count);
-            }
-
-            return validatedQuiz;
+            throw lastFailure ?? new InvalidOperationException("Diagnostic quiz provider returned no usable output.");
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _logger.LogWarning(
-                "[PlanDiagnostic] Diagnostic quiz provider output failed quality gate; using domain-aware fallback. TopicRef={TopicRef} ErrorType={ErrorType}",
+                "[PlanDiagnostic] Diagnostic quiz provider failed or returned unusable output. TopicRef={TopicRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
                 LogPrivacyGuard.SafeExceptionType(ex));
 
-            var fallback = DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar);
-            fallback = await _assessmentGrammar.AttachQuestionMetadataAsync(fallback, assessmentGrammar, ct);
-            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(fallback, DiagnosticQuizQualityGate.CountQuestions(fallback));
-            var fallbackCount = DiagnosticQuizQualityGate.CountQuestions(fallback);
-            if (fallbackCount is < 15 or > 25)
+            throw new InvalidOperationException($"Diagnostic quiz provider did not produce a valid assessment contract: {ex.Message}", ex);
+        }
+    }
+
+    private async Task<string> GenerateDiagnosticQuizInBatchesAsync(
+        string systemPrompt,
+        string topicTitle,
+        int requestedQuestionCount,
+        AssessmentGrammarDto assessmentGrammar,
+        int attempt,
+        Exception? previousFailure,
+        CancellationToken ct)
+    {
+        var specs = assessmentGrammar.Items
+            .OrderBy(item => item.Order)
+            .Take(requestedQuestionCount)
+            .ToList();
+        if (specs.Count != requestedQuestionCount)
+        {
+            throw new InvalidOperationException($"Assessment grammar item count {specs.Count}/{requestedQuestionCount}.");
+        }
+
+        const int batchSize = 5;
+        const int maxConcurrentBatches = 2;
+        var batches = specs
+            .Chunk(batchSize)
+            .Select((batch, index) => new
             {
-                throw new InvalidOperationException($"Fallback diagnostic quiz is invalid; count={fallbackCount}.", ex);
+                Index = index + 1,
+                Items = batch.ToList()
+            })
+            .ToList();
+
+        using var batchGate = new SemaphoreSlim(maxConcurrentBatches);
+        var batchTasks = batches.Select(async batch =>
+        {
+            await batchGate.WaitAsync(ct);
+            try
+            {
+                var questions = await GenerateValidatedDiagnosticBatchAsync(
+                    systemPrompt,
+                    topicTitle,
+                    requestedQuestionCount,
+                    batch.Items,
+                    attempt,
+                    batch.Index,
+                    previousFailure,
+                    ct);
+                return new DiagnosticBatchResult(batch.Index, questions);
+            }
+            finally
+            {
+                batchGate.Release();
+            }
+        }).ToArray();
+
+        var completedBatches = await Task.WhenAll(batchTasks);
+
+        var merged = new JsonArray();
+        foreach (var batch in completedBatches.OrderBy(batch => batch.Index))
+        {
+            foreach (var question in batch.Questions)
+            {
+                merged.Add(question);
+            }
+        }
+
+        if (merged.Count != requestedQuestionCount)
+        {
+            throw new InvalidOperationException($"Batched diagnostic quiz question count mismatch: {merged.Count}/{requestedQuestionCount}.");
+        }
+
+        return merged.ToJsonString(JsonOptions);
+    }
+
+    private sealed record DiagnosticBatchResult(int Index, IReadOnlyList<JsonNode> Questions);
+
+    private async Task<IReadOnlyList<JsonNode>> GenerateValidatedDiagnosticBatchAsync(
+        string systemPrompt,
+        string topicTitle,
+        int requestedQuestionCount,
+        IReadOnlyList<AssessmentItemSpecDto> batchItems,
+        int quizAttempt,
+        int batchIndex,
+        Exception? previousQuizFailure,
+        CancellationToken ct)
+    {
+        const int maxBatchAttempts = 2;
+        Exception? lastBatchFailure = previousQuizFailure;
+        for (var batchAttempt = 1; batchAttempt <= maxBatchAttempts; batchAttempt++)
+        {
+            var userMessage = BuildDiagnosticBatchPrompt(
+                topicTitle,
+                requestedQuestionCount,
+                batchItems,
+                quizAttempt,
+                batchAttempt,
+                lastBatchFailure);
+
+            try
+            {
+                var rawBatch = await _factory.CompleteChatAsync(AgentRole.Quiz, systemPrompt, userMessage, ct);
+                return ParseValidatedBatch(rawBatch, batchItems);
+            }
+            catch (Exception ex) when ((ex is not OperationCanceledException || !ct.IsCancellationRequested) &&
+                                       batchAttempt < maxBatchAttempts &&
+                                       !IsProviderInfrastructureFailure(ex))
+            {
+                lastBatchFailure = ex;
+                _logger.LogWarning(
+                    "[PlanDiagnostic] Diagnostic quiz batch contract failed; retrying only failed batch. TopicRef={TopicRef} Batch={BatchIndex} Attempt={Attempt}/{MaxAttempts} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                    batchIndex,
+                    batchAttempt,
+                    maxBatchAttempts,
+                    LogPrivacyGuard.SafeExceptionType(ex));
+            }
+        }
+
+        throw lastBatchFailure ?? new InvalidOperationException("Diagnostic quiz batch provider returned no usable output.");
+    }
+
+    private static bool IsProviderInfrastructureFailure(Exception ex)
+    {
+        if (ex is AiProviderCallException)
+        {
+            return true;
+        }
+
+        return ex.InnerException is not null && IsProviderInfrastructureFailure(ex.InnerException);
+    }
+
+    private static string BuildDiagnosticBatchPrompt(
+        string topicTitle,
+        int requestedQuestionCount,
+        IReadOnlyList<AssessmentItemSpecDto> batchItems,
+        int quizAttempt,
+        int batchAttempt,
+        Exception? previousFailure)
+    {
+        var sb = new StringBuilder();
+        if (quizAttempt > 1 || batchAttempt > 1)
+        {
+            sb.AppendLine("Onceki provider cikti contract validation'dan gecmedi; sadece bu batch'i bastan ve daha disiplinli uret.");
+            sb.AppendLine($"Hata ozeti: {previousFailure?.Message}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"Konu: \"{topicTitle}\".");
+        sb.AppendLine($"Toplam quiz {requestedQuestionCount} soru olacak; bu cagri sadece asagidaki {batchItems.Count} exact item icin {batchItems.Count} soru uretecek.");
+        sb.AppendLine("Bu batch disindaki assessmentItemId'leri kullanma, fazladan soru ekleme, eksik soru birakma.");
+        sb.AppendLine("Her soru assessmentItemId, assessmentItemKey, conceptKey, cognitiveSkill, difficulty, misconceptionTarget, evidenceExpected, scoringRule ve learningOutcomeIds alanlarini exact spec'ten tasiyacak.");
+        sb.AppendLine("questionType cognitiveSkill ile ayni olacak; skillTag ve conceptTag conceptKey ile ayni olacak.");
+        sb.AppendLine("Her soruda 4 option olacak; yanlis option'larda rationale ve misconceptionKey bos olmayacak.");
+        sb.AppendLine("Dogru secenek konumunu bu batch icinde dengeli dagit; dogru cevabi surekli ilk option yapma.");
+        sb.AppendLine("misconception_probe item'larda misconceptionTarget CommonMistakes gibi genel etiket degil, spesifik yanilgi slug'i olacak.");
+        sb.AppendLine("SADECE JSON array dondur.");
+        sb.AppendLine();
+        sb.AppendLine("[BATCH ASSESSMENT ITEMS]");
+        foreach (var item in batchItems)
+        {
+            sb.AppendLine($"- assessmentItemId={item.AssessmentItemId}; assessmentItemKey={item.AssessmentItemKey}; conceptKey={item.ConceptKey}; concept={item.ConceptLabel}; cognitiveSkill={item.CognitiveSkill}; difficulty={item.Difficulty}; misconceptionTarget={item.MisconceptionTarget}; evidenceExpected={item.EvidenceExpected}; outcomes={string.Join(",", item.LearningOutcomeKeys)}; scoringRule={item.ScoringRule}");
+        }
+
+        return sb.ToString();
+    }
+
+    private static IReadOnlyList<JsonNode> ParseValidatedBatch(string rawBatch, IReadOnlyList<AssessmentItemSpecDto> batchItems)
+    {
+        var cleaned = DiagnosticQuizQualityGate.ExtractJsonArray(rawBatch);
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(cleaned);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Diagnostic quiz batch output is not valid JSON.", ex);
+        }
+
+        using (doc)
+        {
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException("Diagnostic quiz batch output is not a JSON array.");
+        }
+
+        var questions = doc.RootElement.EnumerateArray()
+            .Where(element => element.ValueKind == JsonValueKind.Object)
+            .ToList();
+        if (questions.Count != batchItems.Count)
+        {
+            throw new InvalidOperationException($"Diagnostic quiz batch question count mismatch: {questions.Count}/{batchItems.Count}.");
+        }
+
+        var nodes = new List<JsonNode>(questions.Count);
+        for (var i = 0; i < questions.Count; i++)
+        {
+            var question = questions[i];
+            var node = JsonNode.Parse(question.GetRawText());
+            if (node is null)
+            {
+                throw new InvalidOperationException("Diagnostic quiz batch contains an unparsable question object.");
             }
 
-            return fallback;
+            if (node is JsonObject questionObject)
+            {
+                ApplyAssessmentSpecMetadata(questionObject, batchItems[i]);
+            }
+
+            nodes.Add(node);
         }
+
+        return nodes;
+        }
+    }
+
+    private static void ApplyAssessmentSpecMetadata(JsonObject question, AssessmentItemSpecDto spec)
+    {
+        question["assessmentItemId"] = spec.AssessmentItemId;
+        question["assessmentItemKey"] = spec.AssessmentItemKey;
+        question["conceptKey"] = spec.ConceptKey;
+        question["conceptTag"] = spec.ConceptKey;
+        question["skillTag"] = spec.ConceptKey;
+        question["cognitiveSkill"] = spec.CognitiveSkill;
+        question["questionType"] = spec.CognitiveSkill;
+        question["difficulty"] = spec.Difficulty;
+        question["misconceptionTarget"] = string.IsNullOrWhiteSpace(spec.MisconceptionTarget)
+            ? "evidence_insufficient"
+            : spec.MisconceptionTarget;
+        question["evidenceExpected"] = spec.EvidenceExpected;
+        question["scoringRule"] = spec.ScoringRule;
+        if (string.IsNullOrWhiteSpace(ReadJsonString(question, "learningObjective")))
+        {
+            question["learningObjective"] = string.IsNullOrWhiteSpace(spec.EvidenceExpected)
+                ? $"{spec.ConceptLabel} kavramini ayirt edip uygun durumda uygulamak."
+                : spec.EvidenceExpected;
+        }
+
+        if (string.IsNullOrWhiteSpace(ReadJsonString(question, "expectedMisconceptionCategory")))
+        {
+            question["expectedMisconceptionCategory"] = spec.CognitiveSkill.Contains("procedural", StringComparison.OrdinalIgnoreCase)
+                ? "Procedural"
+                : spec.CognitiveSkill.Contains("application", StringComparison.OrdinalIgnoreCase)
+                    ? "Application"
+                    : spec.CognitiveSkill.Contains("analysis", StringComparison.OrdinalIgnoreCase)
+                        ? "Conceptual"
+                        : spec.CognitiveSkill.Contains("misconception", StringComparison.OrdinalIgnoreCase)
+                            ? "Conceptual"
+                            : "EvidenceInsufficient";
+        }
+
+        var outcomes = new JsonArray();
+        foreach (var outcome in spec.LearningOutcomeKeys)
+        {
+            outcomes.Add(outcome);
+        }
+        question["learningOutcomeIds"] = outcomes;
+
+        var sourceRefs = question["sourceRefs"] as JsonObject ?? new JsonObject();
+        sourceRefs["assessmentItemId"] = spec.AssessmentItemId;
+        sourceRefs["assessmentItemKey"] = spec.AssessmentItemKey;
+        sourceRefs["conceptKey"] = spec.ConceptKey;
+        sourceRefs["cognitiveSkill"] = spec.CognitiveSkill;
+        sourceRefs["difficulty"] = spec.Difficulty;
+        sourceRefs["misconceptionTarget"] = question["misconceptionTarget"]?.GetValue<string>() ?? "evidence_insufficient";
+        sourceRefs["evidenceExpected"] = spec.EvidenceExpected;
+        sourceRefs["scoringRule"] = spec.ScoringRule;
+        question["sourceRefs"] = sourceRefs;
+
+        NormalizeOptionDiagnostics(question, spec);
+    }
+
+    private static void NormalizeOptionDiagnostics(JsonObject question, AssessmentItemSpecDto spec)
+    {
+        if (question["options"] is not JsonArray options)
+        {
+            return;
+        }
+
+        string? correctText = null;
+        foreach (var option in options.OfType<JsonObject>())
+        {
+            var isCorrect = option["isCorrect"]?.GetValue<bool?>() == true;
+            var optionText = ReadJsonString(option, "text") ??
+                             ReadJsonString(option, "label") ??
+                             ReadJsonString(option, "value") ??
+                             ReadJsonString(option, "id") ??
+                             string.Empty;
+            if (isCorrect && string.IsNullOrWhiteSpace(correctText))
+            {
+                correctText = optionText;
+            }
+
+            if (isCorrect)
+            {
+                if (string.IsNullOrWhiteSpace(ReadJsonString(option, "rationale")))
+                {
+                    option["rationale"] = $"Bu secenek {spec.ConceptLabel} icin beklenen kaniti karsilar.";
+                }
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(ReadJsonString(option, "misconceptionKey")))
+            {
+                option["misconceptionKey"] = string.IsNullOrWhiteSpace(spec.MisconceptionTarget)
+                    ? $"{spec.ConceptKey}-gap"
+                    : spec.MisconceptionTarget;
+            }
+
+            if (string.IsNullOrWhiteSpace(ReadJsonString(option, "rationale")))
+            {
+                option["rationale"] = $"Bu secim {spec.ConceptLabel} konusunda {question["misconceptionTarget"]?.GetValue<string>() ?? "evidence_insufficient"} sinyali verebilir.";
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(ReadJsonString(question, "correctAnswer")) &&
+            !string.IsNullOrWhiteSpace(correctText))
+        {
+            question["correctAnswer"] = correctText;
+        }
+    }
+
+    private static string? ReadJsonString(JsonObject node, string propertyName)
+    {
+        if (!node.TryGetPropertyValue(propertyName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return value.GetValue<string>();
+        }
+        catch
+        {
+            return value.ToJsonString(JsonOptions);
+        }
+    }
+
+    private static string NormalizeDiagnosticQuizForDelivery(string quizJson)
+    {
+        var array = JsonNode.Parse(DiagnosticQuizQualityGate.ExtractJsonArray(quizJson)) as JsonArray;
+        if (array == null)
+        {
+            return quizJson;
+        }
+
+        PublicTextNormalizer.RepairJsonStrings(array);
+        foreach (var item in array.OfType<JsonObject>())
+        {
+            ShuffleOptionsDeterministically(item);
+        }
+
+        return array.ToJsonString(JsonOptions);
+    }
+
+    private static void ShuffleOptionsDeterministically(JsonObject question)
+    {
+        if (question["options"] is not JsonArray options || options.Count < 2)
+        {
+            return;
+        }
+
+        var seedText =
+            question["assessmentItemId"]?.GetValue<string>() ??
+            question["assessmentItemKey"]?.GetValue<string>() ??
+            question["question"]?.GetValue<string>() ??
+            Guid.NewGuid().ToString("N");
+        var decorated = options
+            .Select((option, index) => new
+            {
+                Option = option?.DeepClone(),
+                Sort = StableOptionSort(seedText, option?.ToJsonString(JsonOptions) ?? string.Empty, index)
+            })
+            .OrderBy(x => x.Sort, StringComparer.Ordinal)
+            .ToList();
+
+        options.Clear();
+        foreach (var entry in decorated)
+        {
+            options.Add(entry.Option);
+        }
+    }
+
+    private static string StableOptionSort(string seedText, string optionText, int index)
+    {
+        var payload = $"{seedText}|{index}|{optionText}";
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(bytes);
     }
 
     private async Task<KorteksResearchResultDto> BuildDirectLearningResearchAsync(
@@ -748,12 +1684,31 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var blueprint = BuildLegacyBlueprintFromLabels(
-            string.IsNullOrWhiteSpace(graph.Domain) ? "concept-graph-adapter" : graph.Domain,
-            graph.ApprovedResearchIntent,
-            labels,
-            context,
-            Math.Clamp(Math.Max(18, orderedConcepts.Count * 2), 15, 25));
+        var blueprint = new LearningBlueprintDto
+        {
+            Domain = string.IsNullOrWhiteSpace(graph.Domain) ? "concept-graph" : graph.Domain,
+            ApprovedResearchIntent = CleanLegacyText(graph.ApprovedResearchIntent, 180),
+            SourceConfidence = LegacySourceConfidence(context),
+            SourceSignals = LegacySourceSignals(context),
+            LearningRoute = labels.Take(10).ToList(),
+            SubConcepts = labels.Take(12).ToList(),
+            PracticeOrder = orderedConcepts
+                .Select(c => $"{c.StableKey}|order={c.Order}|difficulty={c.DifficultyBand}")
+                .Where(IsUsefulLegacyText)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(16)
+                .ToList(),
+            PlanModules = labels
+                .Chunk(4)
+                .Select(chunk => new LearningBlueprintModuleDto
+                {
+                    Title = CleanLegacyText(chunk.FirstOrDefault() ?? graph.TopicTitle, 120),
+                    Lessons = chunk.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList()
+                })
+                .Where(m => m.Lessons.Count > 0)
+                .ToList(),
+            RecommendedQuestionCount = Math.Clamp(Math.Max(18, orderedConcepts.Count * 2), 15, 25)
+        };
 
         blueprint.Prerequisites = orderedConcepts
             .SelectMany(c => c.PrerequisiteKeys)
@@ -780,84 +1735,32 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(16)
             .ToList();
-
-        return blueprint;
-    }
-
-    private static LearningBlueprintDto BuildLegacyBlueprintFromContext(
-        string approvedResearchIntent,
-        string topicTitle,
-        string approvedMainTopic,
-        string approvedFocusArea,
-        CompressedPlanResearchContextDto context)
-    {
-        IEnumerable<string>[] labelSources =
-        [
-            context.CurriculumMapHints,
-            context.KeyFacts,
-            context.PrerequisiteHints,
-            new[] { approvedFocusArea, approvedMainTopic, topicTitle }
-        ];
-
-        var labels = labelSources
-            .SelectMany(v => v)
-            .Select(v => CleanLegacyText(v, 140))
+        blueprint.LearningOutcomes = orderedConcepts
+            .SelectMany(c => c.LearningOutcomeKeys)
             .Where(IsUsefulLegacyText)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(16)
             .ToList();
-
-        if (labels.Count < 8)
-        {
-            labels = labels
-                .Concat(Enumerable.Range(1, 8).Select(i => $"{CleanLegacyText(topicTitle, 100)} concept {i}"))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(12)
-                .ToList();
-        }
-
-        return BuildLegacyBlueprintFromLabels(
-            "legacy-adapter",
-            approvedResearchIntent,
-            labels,
-            context,
-            Math.Clamp(Math.Max(18, labels.Count * 2), 15, 25));
-    }
-
-    private static LearningBlueprintDto BuildLegacyBlueprintFromLabels(
-        string domain,
-        string approvedResearchIntent,
-        IReadOnlyList<string> labels,
-        CompressedPlanResearchContextDto context,
-        int recommendedQuestionCount)
-    {
-        var modules = labels
-            .Chunk(4)
-            .Select((chunk, index) => new LearningBlueprintModuleDto
-            {
-                Title = $"Concept Graph Module {index + 1}",
-                Lessons = chunk.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(6).ToList()
-            })
+        blueprint.ConceptGraphKeys = orderedConcepts
+            .Select(c => c.StableKey)
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(24)
+            .ToList();
+        blueprint.MisconceptionMap = orderedConcepts
+            .SelectMany(c => c.Misconceptions.Select(m => $"{c.StableKey}:{StableLegacyKey(m)}"))
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToList();
+        blueprint.DiagnosticSkillMatrix = orderedConcepts
+            .Select(c => $"{c.StableKey}|{c.DifficultyBand}|minEvidence=2|role={(c.PrerequisiteKeys.Count > 0 ? "target" : "prerequisite_or_foundation")}")
+            .Where(IsUsefulLegacyText)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(24)
             .ToList();
 
-        return new LearningBlueprintDto
-        {
-            Domain = string.IsNullOrWhiteSpace(domain) ? "legacy-adapter" : domain,
-            ApprovedResearchIntent = CleanLegacyText(approvedResearchIntent, 180),
-            SourceConfidence = LegacySourceConfidence(context),
-            SourceSignals = LegacySourceSignals(context),
-            LearningRoute = labels.Take(10).ToList(),
-            Prerequisites = context.PrerequisiteHints.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList(),
-            SubConcepts = labels.Take(12).ToList(),
-            CommonMistakes = context.LikelyMisconceptions.Where(IsUsefulLegacyText).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList(),
-            PracticeOrder = labels.Select(label => $"practice: {label}").Take(8).ToList(),
-            AssessmentAxes = labels.Select(StableLegacyKey).Take(10).ToList(),
-            Concepts = labels.Select(StableLegacyKey).Take(16).ToList(),
-            PlanModules = modules.Count > 0
-                ? modules
-                : [new LearningBlueprintModuleDto { Title = "Concept Graph Module 1", Lessons = ["core concept"] }],
-            RecommendedQuestionCount = Math.Clamp(recommendedQuestionCount, 15, 25)
-        };
+        return blueprint;
     }
 
     private static string BuildLegacyBlueprintPromptBlock(LearningBlueprintDto blueprint)
@@ -871,6 +1774,8 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         AppendLegacyPromptLine(sb, "AdapterSubConcepts", blueprint.SubConcepts);
         AppendLegacyPromptLine(sb, "AdapterCommonMistakes", blueprint.CommonMistakes);
         AppendLegacyPromptLine(sb, "AdapterAssessmentAxes", blueprint.AssessmentAxes);
+        AppendLegacyPromptLine(sb, "AdapterLearningOutcomes", blueprint.LearningOutcomes);
+        AppendLegacyPromptLine(sb, "AdapterDiagnosticSkillMatrix", blueprint.DiagnosticSkillMatrix);
         AppendLegacyPromptLine(sb, "AdapterPlanModules", blueprint.PlanModules.Select(m => $"{m.Title}: {string.Join(" | ", m.Lessons.Take(5))}"));
         AppendLegacyPromptLine(sb, "AdapterSourceSignals", blueprint.SourceSignals);
         sb.AppendLine($"AdapterRecommendedQuestionCount: {blueprint.RecommendedQuestionCount}");
@@ -963,32 +1868,109 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
         if (!request.AssessmentItemId.HasValue)
         {
-            return;
+            request.AssessmentItemId = await ResolveAssessmentItemIdFromQuestionAsync(state, request, ct);
+            if (!request.AssessmentItemId.HasValue)
+            {
+                return;
+            }
         }
 
         var item = await _db.AssessmentItems.AsNoTracking()
             .FirstOrDefaultAsync(i =>
                 i.Id == request.AssessmentItemId.Value &&
                 i.UserId == state.UserId &&
-                i.PlanRequestId == state.PlanRequestId,
+                i.PlanRequestId == state.PlanRequestId &&
+                i.QuizRunId == state.QuizRunId &&
+                i.TopicId == state.TopicId,
                 ct);
         if (item == null)
         {
-            return;
+            throw new InvalidOperationException("Plan diagnostic assessmentItemId does not belong to this plan request.");
         }
 
-        request.ConceptKey = CleanOrDefault(request.ConceptKey, item.ConceptKey);
-        request.ConceptTag = CleanOrDefault(request.ConceptTag, item.ConceptKey);
-        request.SkillTag = CleanOrDefault(request.SkillTag, item.ConceptKey);
-        request.CognitiveSkill = CleanOrDefault(request.CognitiveSkill, item.CognitiveSkill);
-        request.QuestionType = CleanOrDefault(request.QuestionType, item.QuestionType);
-        request.Difficulty = CleanOrDefault(request.Difficulty, item.Difficulty);
-        request.MisconceptionTarget = CleanOrDefault(request.MisconceptionTarget, item.MisconceptionTarget);
-        request.EvidenceExpected = CleanOrDefault(request.EvidenceExpected, item.EvidenceExpected);
-        request.ScoringRule = CleanOrDefault(request.ScoringRule, item.ScoringRuleJson);
-        request.LearningOutcomeIdsJson = CleanOrDefault(request.LearningOutcomeIdsJson, item.LearningOutcomeKeysJson);
-        request.LearningObjective = CleanOrDefault(request.LearningObjective, item.EvidenceExpected);
+        request.ConceptKey = item.ConceptKey;
+        request.ConceptTag = item.ConceptKey;
+        request.SkillTag = item.ConceptKey;
+        request.CognitiveSkill = item.CognitiveSkill;
+        request.QuestionType = item.QuestionType;
+        request.Difficulty = item.Difficulty;
+        request.MisconceptionTarget = item.MisconceptionTarget;
+        request.EvidenceExpected = item.EvidenceExpected;
+        request.ScoringRule = item.ScoringRuleJson;
+        request.LearningOutcomeIdsJson = item.LearningOutcomeKeysJson;
+        request.LearningObjective = item.EvidenceExpected;
     }
+
+    private async Task<Guid?> ResolveAssessmentItemIdFromQuestionAsync(
+        PlanDiagnosticStateDto state,
+        RecordQuizAttemptRequest request,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.QuestionId) && string.IsNullOrWhiteSpace(request.Question))
+        {
+            return null;
+        }
+
+        var items = await _db.AssessmentItems.AsNoTracking()
+            .Where(i =>
+                i.UserId == state.UserId &&
+                i.PlanRequestId == state.PlanRequestId &&
+                i.QuizRunId == state.QuizRunId &&
+                i.TopicId == state.TopicId)
+            .OrderBy(i => i.Order)
+            .Take(80)
+            .ToListAsync(ct);
+
+        return items
+            .FirstOrDefault(item => AssessmentItemMatchesRequest(item.GeneratedQuestionJson, request.QuestionId, request.Question))
+            ?.Id;
+    }
+
+    private static bool AssessmentItemMatchesRequest(string? generatedQuestionJson, string? questionId, string? questionText)
+    {
+        if (string.IsNullOrWhiteSpace(generatedQuestionJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(generatedQuestionJson);
+            var root = doc.RootElement;
+            var itemIds = new[]
+            {
+                TryGetString(root, "assessmentItemId"),
+                TryGetString(root, "assessmentItemKey"),
+                TryGetString(root, "questionId"),
+                TryGetString(root, "id")
+            }.Where(value => !string.IsNullOrWhiteSpace(value));
+
+            if (!string.IsNullOrWhiteSpace(questionId) &&
+                itemIds.Any(id => string.Equals(id, questionId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            var stem = TryGetString(root, "question");
+            return !string.IsNullOrWhiteSpace(questionText) &&
+                   !string.IsNullOrWhiteSpace(stem) &&
+                   string.Equals(NormalizeQuestionText(stem), NormalizeQuestionText(questionText), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeQuestionText(string value) =>
+        System.Text.RegularExpressions.Regex.Replace(value.Trim(), @"\s+", " ");
+
+    private static string? TryGetString(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object &&
+        element.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private async Task<List<QuizAttempt>> LoadDiagnosticAttemptsAsync(Guid userId, Guid quizRunId, CancellationToken ct) =>
         await _db.QuizAttempts.AsNoTracking()
@@ -1034,6 +2016,306 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
     }
 
+    private async Task<PlanMaterializationSnapshot> ValidatePlanMaterializationAsync(Guid userId, Guid rootTopicId, CancellationToken ct)
+    {
+        var modules = await _db.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId &&
+                        t.ParentTopicId == rootTopicId &&
+                        t.PlanIntent == "Module" &&
+                        !t.IsArchived)
+            .OrderBy(t => t.Order)
+            .ThenBy(t => t.CreatedAt)
+            .ToListAsync(ct);
+
+        if (modules.Count == 0)
+        {
+            return new PlanMaterializationSnapshot([], [], false, "no_modules");
+        }
+
+        var moduleIds = modules.Select(m => m.Id).ToList();
+        var lessons = await _db.Topics
+            .AsNoTracking()
+            .Where(t => t.UserId == userId &&
+                        t.ParentTopicId.HasValue &&
+                        moduleIds.Contains(t.ParentTopicId.Value) &&
+                        !t.IsArchived)
+            .OrderBy(t => t.ParentTopicId)
+            .ThenBy(t => t.Order)
+            .ThenBy(t => t.CreatedAt)
+            .ToListAsync(ct);
+
+        var hasEmptyModule = modules.Any(module => lessons.All(lesson => lesson.ParentTopicId != module.Id));
+        var isValid = modules.Count >= MinimumPlanModules &&
+                      lessons.Count >= MinimumPlanLessons &&
+                      !hasEmptyModule;
+        var reason = isValid
+            ? "valid"
+            : hasEmptyModule
+                ? "empty_module"
+                : $"below_minimum:{modules.Count}/{MinimumPlanModules}:{lessons.Count}/{MinimumPlanLessons}";
+
+        return new PlanMaterializationSnapshot(modules, lessons, isValid, reason);
+    }
+
+    private async Task EnsureMinimumWikiMaterialAsync(
+        Guid userId,
+        Guid rootTopicId,
+        string planTitle,
+        PlanMaterializationSnapshot materialization,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var root = await _db.Topics.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == rootTopicId && t.UserId == userId, ct);
+        if (root == null)
+        {
+            return;
+        }
+
+        var rootPage = await EnsureWikiPageAsync(
+            userId,
+            root.Id,
+            $"topic:{root.Id:N}",
+            "topic_root",
+            root.Title,
+            $"Master overview for {SafePlanLabel(planTitle)}. This page collects the module route, checkpoints, and learner repair notes for the plan.",
+            0,
+            now,
+            ct);
+        await EnsureWikiBlockAsync(rootPage.Id, WikiBlockType.Summary, "Master overview",
+            $"Plan route for {SafePlanLabel(planTitle)}: {materialization.Modules.Count} modules and {materialization.Lessons.Count} lessons are ready. Use the lesson pages for summaries, checkpoints, tutor notes, and repair work.",
+            "model_assisted", null, now, ct);
+
+        foreach (var module in materialization.Modules)
+        {
+            var moduleLessons = materialization.Lessons
+                .Where(lesson => lesson.ParentTopicId == module.Id)
+                .OrderBy(lesson => lesson.Order)
+                .ToList();
+            var page = await EnsureWikiPageAsync(
+                userId,
+                module.Id,
+                $"module:{module.Id:N}",
+                "module",
+                module.Title,
+                $"Module overview for {SafePlanLabel(module.Title)}. It contains {moduleLessons.Count} lessons and a checkpoint path.",
+                module.Order,
+                now,
+                ct);
+            await EnsureWikiBlockAsync(page.Id, WikiBlockType.Summary, "Module overview",
+                $"This module introduces {SafePlanLabel(module.Title)} through {moduleLessons.Count} sequenced lessons. Start from the first lesson, then complete the checkpoint before moving forward.",
+                "model_assisted", null, now, ct);
+            await EnsureWikiBlockAsync(page.Id, WikiBlockType.Checkpoint, "Module checkpoint",
+                "Retrieval check: explain the main idea of this module, name one prerequisite, and solve or describe one representative example without looking at the notes.",
+                "model_assisted", null, now, ct);
+        }
+
+        foreach (var lesson in materialization.Lessons)
+        {
+            var page = await EnsureWikiPageAsync(
+                userId,
+                lesson.Id,
+                $"lesson:{lesson.Id:N}",
+                "lesson",
+                lesson.Title,
+                $"Learning note for {SafePlanLabel(lesson.Title)}.",
+                lesson.Order,
+                now,
+                ct);
+            await EnsureWikiBlockAsync(page.Id, WikiBlockType.Summary, "Lesson summary",
+                $"Study focus: {SafePlanLabel(lesson.Title)}. First understand the core idea, then do one worked example, then answer the checkpoint in your own words.",
+                "model_assisted", StablePlanQualityKey(lesson.PlanIntent ?? lesson.Title), now, ct);
+        }
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task<WikiPage> EnsureWikiPageAsync(
+        Guid userId,
+        Guid topicId,
+        string pageKey,
+        string pageType,
+        string title,
+        string safeSummary,
+        int orderIndex,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var page = await _db.WikiPages
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.TopicId == topicId && p.PageKey == pageKey && !p.IsDeleted, ct);
+        if (page == null)
+        {
+            page = new WikiPage
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                PageKey = pageKey,
+                PageType = pageType,
+                Title = SafePlanLabel(title, 240),
+                SafeSummary = SafePlanLabel(safeSummary, 1200),
+                SourceReadiness = "evidence_insufficient",
+                EvidenceStatus = "evidence_insufficient",
+                MetadataJson = "{}",
+                Status = "ready",
+                OrderIndex = orderIndex,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            _db.WikiPages.Add(page);
+            return page;
+        }
+
+        page.PageType = string.IsNullOrWhiteSpace(page.PageType) ? pageType : page.PageType;
+        page.Title = SafePlanLabel(title, 240);
+        page.SafeSummary = SafePlanLabel(safeSummary, 1200);
+        page.SourceReadiness = string.IsNullOrWhiteSpace(page.SourceReadiness) ? "evidence_insufficient" : page.SourceReadiness;
+        page.EvidenceStatus = string.IsNullOrWhiteSpace(page.EvidenceStatus) ? "evidence_insufficient" : page.EvidenceStatus;
+        page.Status = "ready";
+        page.OrderIndex = orderIndex;
+        page.UpdatedAt = now;
+        return page;
+    }
+
+    private async Task EnsureWikiBlockAsync(
+        Guid wikiPageId,
+        WikiBlockType blockType,
+        string title,
+        string content,
+        string sourceBasis,
+        string? conceptKey,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var exists = await _db.WikiBlocks.AnyAsync(b =>
+            b.WikiPageId == wikiPageId &&
+            b.BlockType == blockType &&
+            b.Title == title &&
+            !b.IsDeleted, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        var maxOrder = await _db.WikiBlocks
+            .Where(b => b.WikiPageId == wikiPageId && !b.IsDeleted)
+            .MaxAsync(b => (int?)b.OrderIndex, ct) ?? 0;
+        _db.WikiBlocks.Add(new WikiBlock
+        {
+            Id = Guid.NewGuid(),
+            WikiPageId = wikiPageId,
+            BlockType = blockType,
+            Title = SafePlanLabel(title, 240),
+            Content = SafePlanLabel(content, 2000),
+            SourceBasis = sourceBasis,
+            ConceptKey = conceptKey,
+            Visibility = blockType == WikiBlockType.Checkpoint ? "highlighted" : "normal",
+            SafetyWarningsJson = "[]",
+            OrderIndex = maxOrder + 1,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+    }
+
+    private static string SafePlanLabel(string? value, int maxLength = 500)
+    {
+        var cleaned = string.IsNullOrWhiteSpace(value)
+            ? "Learning item"
+            : System.Text.RegularExpressions.Regex.Replace(value.Trim(), @"\s+", " ");
+        return cleaned.Length <= maxLength ? cleaned : cleaned[..maxLength];
+    }
+
+    private sealed record PlanMaterializationSnapshot(
+        IReadOnlyList<Topic> Modules,
+        IReadOnlyList<Topic> Lessons,
+        bool IsValid,
+        string Reason);
+
+    private sealed record ProfessionalPlanGateResult(bool IsValid, string Message);
+
+    private static ProfessionalPlanGateResult ValidateProfessionalPlanContract(
+        PlanMaterializationSnapshot materialization,
+        PlanDiagnosticStateDto state)
+    {
+        var steps = BuildPlanStepsFromGeneratedTopics(materialization.Lessons, state);
+        if (steps.Count < MinimumPlanLessons)
+        {
+            return new(false, $"Generated plan contract has too few measurable lesson steps: {steps.Count}/{MinimumPlanLessons}.");
+        }
+
+        var missingCoreContract = steps.Count(step =>
+            string.IsNullOrWhiteSpace(step.ConceptKey) ||
+            string.IsNullOrWhiteSpace(step.Objective) ||
+            string.IsNullOrWhiteSpace(step.SequenceReason) ||
+            step.QuizHook == null ||
+            string.IsNullOrWhiteSpace(step.QuizHook.ConceptKey) ||
+            step.TutorHook == null ||
+            string.IsNullOrWhiteSpace(step.TutorHook.ActiveConceptKey) ||
+            step.SuccessCriteria.Count == 0);
+        if (missingCoreContract > 0)
+        {
+            return new(false, $"Generated plan contract is missing professional lesson metadata for {missingCoreContract} lessons.");
+        }
+
+        var conceptDiversity = steps
+            .Select(step => step.ConceptKey)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        if (conceptDiversity < 8)
+        {
+            return new(false, $"Generated plan concept diversity is too low: {conceptDiversity}/8.");
+        }
+
+        var genericModuleCount = materialization.Modules.Count(module => LooksGenericModuleTitle(module.Title, state.TopicTitle));
+        if (genericModuleCount > Math.Max(1, materialization.Modules.Count / 4))
+        {
+            return new(false, $"Generated plan module titles are too generic: {genericModuleCount}/{materialization.Modules.Count}.");
+        }
+
+        var moduleTitleDiversity = materialization.Modules
+            .Select(module => StablePlanQualityKey(module.Title))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        if (moduleTitleDiversity < Math.Min(MinimumPlanModules, materialization.Modules.Count))
+        {
+            return new(false, "Generated plan module title diversity is too low.");
+        }
+
+        var diagnosticWeakConcepts = ExtractDiagnosticWeakConcepts(state);
+        if (diagnosticWeakConcepts.Count > 0)
+        {
+            var earlySteps = steps.Take(Math.Min(12, steps.Count)).ToList();
+            var hasRepair = earlySteps.Any(step =>
+                step.RemediationNeed is "medium" or "high" ||
+                step.TutorHook.TutorMove.Contains("repair", StringComparison.OrdinalIgnoreCase) ||
+                step.TargetMisconceptions.Count > 0 ||
+                diagnosticWeakConcepts.Any(weak =>
+                    step.ConceptKey.Contains(weak, StringComparison.OrdinalIgnoreCase) ||
+                    step.Title.Contains(weak, StringComparison.OrdinalIgnoreCase) ||
+                    step.Objective.Contains(weak, StringComparison.OrdinalIgnoreCase)));
+            if (!hasRepair)
+            {
+                return new(false, "Generated plan does not place diagnostic weak concepts into the early repair path.");
+            }
+        }
+
+        return new(true, "professional_plan_contract_ready");
+    }
+
+    private static bool PlanQualityBlocksGeneration(PlanQualityEvaluationDto? quality)
+    {
+        if (quality == null)
+        {
+            return true;
+        }
+
+        return quality.QualityStatus is "insufficient" ||
+               quality.BlockingIssues.Any(issue => HardPlanQualityBlockingIssueCodes.Contains(issue.Code)) ||
+               quality.PlanContract.CoursePlanQuality.ReadinessStatus is "thin_plan";
+    }
+
     private async Task<PlanQualityEvaluationDto?> EvaluatePlanQualityAsync(
         Guid userId,
         PlanDiagnosticStateDto state,
@@ -1067,7 +2349,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug("[PlanDiagnostic] Plan quality evaluation skipped. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+            _logger.LogWarning(ex, "[PlanDiagnostic] Plan quality evaluation failed. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeId(state.PlanRequestId, "plan"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             return null;
@@ -1087,7 +2369,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug("[PlanDiagnostic] Latest plan quality lookup skipped. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+            _logger.LogWarning(ex, "[PlanDiagnostic] Latest plan quality lookup failed. PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeId(state.PlanRequestId, "plan"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             return null;
@@ -1100,15 +2382,24 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     {
         return generatedTopics
             .OrderBy(t => t.Order)
-            .Take(12)
             .Select((topic, index) =>
             {
-                var conceptKey = StablePlanQualityKey(topic.PlanIntent ?? topic.Title);
+                var metadata = LessonContractMetadata.FromJson(topic.MetadataJson);
+                var conceptKey = StablePlanQualityKey(FirstNonEmpty(metadata.ConceptKey, metadata.SkillTag, topic.Title, topic.PlanIntent));
+                var objective = FirstNonEmpty(
+                    metadata.LearningObjective,
+                    $"{topic.Title} adimini olculebilir kavram kontroluyle tamamlamak.")!;
+                var sequenceReason = FirstNonEmpty(
+                    metadata.SequenceReason,
+                    $"Bu ders {FirstNonEmpty(metadata.ModuleTitle, "uretildigi modul")} icindeki konuya ozel ogrenme sirasina gore geldi.")!;
+                var successCriteria = metadata.SuccessCriteria.Count > 0
+                    ? metadata.SuccessCriteria
+                    : [$"{topic.Title} kavramini aciklar.", $"{topic.Title} icin mikro kontrolu tamamlar."];
                 return new PlanStepContractDto
                 {
                     StepId = $"generated-{index + 1}-{topic.Id:N}"[..Math.Min(92, $"generated-{index + 1}-{topic.Id:N}".Length)],
                     Title = topic.Title,
-                    Objective = $"{topic.Title} adimini olculebilir kavram kontroluyle tamamlamak.",
+                    Objective = objective,
                     ConceptKey = conceptKey,
                     ConceptLabel = topic.Title,
                     MasteryTarget = topic.PlanIntent == "Assessment" ? "micro_check_ready" : "understand_and_apply",
@@ -1125,20 +2416,20 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                     },
                     QuizHook = new PlanStepAssessmentHookDto
                     {
-                        HookType = topic.PlanIntent == "Assessment" ? "micro_quiz" : "retrieval_practice",
+                        HookType = FirstNonEmpty(metadata.QuizHookType, topic.PlanIntent == "Assessment" ? "micro_quiz" : "retrieval_practice")!,
                         ConceptKey = conceptKey,
-                        DifficultyBand = topic.PlanIntent == "DeepDive" ? "advanced" : "core",
+                        DifficultyBand = FirstNonEmpty(metadata.DifficultyBand, topic.PlanIntent == "DeepDive" ? "advanced" : "core")!,
                         UserSafeReason = "Bu plan adimi kisa olcumle dogrulanabilir."
                     },
                     TutorHook = new PlanStepTutorHookDto
                     {
-                        TutorMove = topic.PlanIntent switch
+                        TutorMove = FirstNonEmpty(metadata.TutorMove, topic.PlanIntent switch
                         {
                             "Remediation" => "misconception_repair",
                             "PracticeLab" => "example",
                             "DeepDive" => "scaffold",
                             _ => "explain"
-                        },
+                        })!,
                         ActiveConceptKey = conceptKey,
                         UserSafeReason = "Tutor bu adimi aktif kavram ve mikro kontrolle isler."
                     },
@@ -1146,12 +2437,103 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                     {
                         SourceReadiness = string.IsNullOrWhiteSpace(state.SourceBundleHash) ? "evidence_insufficient" : "source_aware"
                     },
-                    SuccessCriteria = ["Kavrami aciklar.", "Mikro kontrolu tamamlar."],
+                    SuccessCriteria = successCriteria,
                     NextStepTrigger = "micro_check_passed",
                     FallbackIfEvidenceWeak = "Kaynak/ogrenci kaniti zayifsa Tutor scaffold ve diagnostic kontrol uygular."
                 };
             })
             .ToArray();
+    }
+
+    private static IReadOnlyList<string> ExtractDiagnosticWeakConcepts(PlanDiagnosticStateDto state)
+    {
+        return Array.Empty<string>();
+    }
+
+    private static void AddWeakConceptsFromText(List<string> concepts, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        foreach (var part in value.Split(new[] { ' ', ',', ';', '/', ':' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part.Trim().Length >= 4)
+            {
+                concepts.Add(part.Trim());
+            }
+        }
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string? TryGetNestedString(JsonElement root, string objectName, string propertyName) =>
+        root.ValueKind == JsonValueKind.Object &&
+        root.TryGetProperty(objectName, out var nested)
+            ? TryGetString(nested, propertyName)
+            : null;
+
+    private static IReadOnlyList<string> TryGetStringArray(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty(propertyName, out var value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item!.Trim())
+            .Take(8)
+            .ToArray();
+    }
+
+    private sealed class LessonContractMetadata
+    {
+        public string? ModuleTitle { get; private init; }
+        public string? SkillTag { get; private init; }
+        public string? ConceptKey { get; private init; }
+        public string? LearningObjective { get; private init; }
+        public string? SequenceReason { get; private init; }
+        public string? QuizHookType { get; private init; }
+        public string? TutorMove { get; private init; }
+        public string? DifficultyBand { get; private init; }
+        public IReadOnlyList<string> SuccessCriteria { get; private init; } = Array.Empty<string>();
+
+        public static LessonContractMetadata FromJson(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new LessonContractMetadata();
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                return new LessonContractMetadata
+                {
+                    ModuleTitle = TryGetString(root, "moduleTitle"),
+                    SkillTag = TryGetString(root, "skillTag"),
+                    ConceptKey = TryGetString(root, "conceptKey"),
+                    LearningObjective = TryGetString(root, "learningObjective"),
+                    SequenceReason = TryGetString(root, "sequenceReason"),
+                    QuizHookType = TryGetNestedString(root, "quizHook", "hookType"),
+                    TutorMove = TryGetNestedString(root, "tutorHook", "tutorMove"),
+                    DifficultyBand = TryGetNestedString(root, "quizHook", "difficultyBand"),
+                    SuccessCriteria = TryGetStringArray(root, "successCriteria")
+                };
+            }
+            catch (JsonException)
+            {
+                return new LessonContractMetadata();
+            }
+        }
     }
 
     private static string StablePlanQualityKey(string? value)
@@ -1160,6 +2542,34 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         var chars = text.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray();
         var key = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
         return string.IsNullOrWhiteSpace(key) ? "plan-step" : key.Length <= 80 ? key : key[..80].Trim('-');
+    }
+
+    private static bool LooksGenericModuleTitle(string? moduleTitle, string topicTitle)
+    {
+        var text = StablePlanQualityKey(moduleTitle);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        var topicTokens = StablePlanQualityKey(topicTitle)
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => token.Length >= 3)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var moduleTokens = text
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => token.Length >= 3)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var hasTopicOverlap = topicTokens.Count > 0 && moduleTokens.Overlaps(topicTokens);
+        var genericOnly = text is
+            "fundamentals" or "core-concepts" or "practice" or "advanced" or
+            "temel-bilgiler" or "ana-kavram-omurgasi" or "uygulama-ve-ornekleme" or
+            "yanilgi-onarimi" or "karma-pratik" or "mastery-kontrolu-ve-sonraki-rota" or "onkosul-haritasi" ||
+            text.StartsWith("module-", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("modul-", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("concept-graph-module", StringComparison.OrdinalIgnoreCase);
+
+        return genericOnly && !hasTopicOverlap;
     }
 
     private static string BuildConceptGraphPromptBlock(ConceptGraphDto graph)
@@ -1672,21 +3082,6 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
     private static int DetermineDiagnosticQuestionCount(string mainTopic, string focusArea, string researchIntent)
     {
         var text = $"{mainTopic} {focusArea} {researchIntent}".ToLowerInvariant();
-        var broadSignals = new[]
-        {
-            "algorithm",
-            "algoritma",
-            "data structure",
-            "veri yap",
-            "programming",
-            "programlama",
-            "sql",
-            "kpss",
-            "yks",
-            "curriculum",
-            "roadmap"
-        };
-
         var narrowSignals = new[]
         {
             "temel",
@@ -1697,10 +3092,47 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             "single topic"
         };
 
-        var score = broadSignals.Count(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase)) -
-                    narrowSignals.Count(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase));
+        if (narrowSignals.Any(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase)))
+            return 15;
 
-        return Math.Clamp(18 + score * 2, 15, 25);
+        var hasAlgorithm = text.Contains("algorithm", StringComparison.OrdinalIgnoreCase) ||
+                           text.Contains("algoritma", StringComparison.OrdinalIgnoreCase);
+        var hasDataStructures = text.Contains("data structure", StringComparison.OrdinalIgnoreCase) ||
+                                text.Contains("veri yap", StringComparison.OrdinalIgnoreCase);
+        if (hasAlgorithm && hasDataStructures)
+            return 25;
+
+        var hasSqlOptimization = text.Contains("sql", StringComparison.OrdinalIgnoreCase) &&
+                                 (text.Contains("index", StringComparison.OrdinalIgnoreCase) ||
+                                  text.Contains("indeks", StringComparison.OrdinalIgnoreCase) ||
+                                  text.Contains("query", StringComparison.OrdinalIgnoreCase) ||
+                                  text.Contains("sorgu", StringComparison.OrdinalIgnoreCase) ||
+                                  text.Contains("optimization", StringComparison.OrdinalIgnoreCase) ||
+                                  text.Contains("optimizasyon", StringComparison.OrdinalIgnoreCase));
+        if (hasSqlOptimization)
+            return 24;
+
+        var mediumScopeSignals = new[]
+        {
+            "kpss",
+            "yks",
+            "ielts",
+            "paragraf",
+            "problem",
+            "exam",
+            "sinav",
+            "practice",
+            "pratik"
+        };
+        if (mediumScopeSignals.Any(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase)))
+            return 20;
+
+        if (hasAlgorithm ||
+            text.Contains("curriculum", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("roadmap", StringComparison.OrdinalIgnoreCase))
+            return 20;
+
+        return 15;
     }
 
     private static int CountQuestions(string quizJson)
@@ -1728,6 +3160,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                 return quizJson;
             }
 
+            PublicTextNormalizer.RepairJsonStrings(node);
             foreach (var item in node.OfType<JsonObject>())
             {
                 item.Remove("correctAnswer");
@@ -1747,9 +3180,17 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
                 foreach (var option in options.OfType<JsonObject>())
                 {
-                    option.Remove("isCorrect");
-                    option.Remove("is_correct");
-                    option.Remove("correct");
+                    var id = option["id"]?.DeepClone();
+                    var optionId = option["optionId"]?.DeepClone();
+                    var value = option["value"]?.DeepClone();
+                    var label = option["label"]?.DeepClone();
+                    var text = option["text"]?.DeepClone();
+                    option.Clear();
+                    if (id != null) option["id"] = id;
+                    if (optionId != null) option["optionId"] = optionId;
+                    if (value != null) option["value"] = value;
+                    if (label != null) option["label"] = label;
+                    if (text != null) option["text"] = text;
                 }
             }
 

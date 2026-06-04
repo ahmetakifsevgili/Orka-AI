@@ -195,7 +195,7 @@ public sealed class LearningNotebookStudioTests
     }
 
     [Fact]
-    public async Task BuildSourcePack_CreatesSourcePageAndFiltersSourcePacks()
+    public async Task BuildSourcePack_StaysSourceScopedAndFiltersSourcePacks()
     {
         using var factory = new ApiSmokeFactory();
         var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "source-pack-owner");
@@ -219,10 +219,58 @@ public sealed class LearningNotebookStudioTests
         Assert.Equal(sourceId, pack!.SourceId);
         Assert.Equal("source", pack.SourceSurface);
         Assert.Equal("source_digest", pack.PackType);
-        Assert.NotNull(pack.WikiPageId);
+        Assert.Null(pack.WikiPageId);
+        AssertFullNotebookPhaseScope(pack.PhaseScope);
         Assert.Contains(pack.Artifacts, a => a.ArtifactType == "source_digest");
+        var artifactTypes = pack.Artifacts.Select(a => a.ArtifactType).ToArray();
+        Assert.Contains("briefing_doc", artifactTypes);
+        Assert.Contains("study_guide", artifactTypes);
+        Assert.Contains("glossary", artifactTypes);
+        Assert.Contains("timeline", artifactTypes);
+        Assert.Contains("misconception_repair_pack", artifactTypes);
+        Assert.Contains("worked_example_set", artifactTypes);
+        Assert.Contains("retrieval_card_set", artifactTypes);
+        Assert.Contains("flashcard_set", artifactTypes);
+        Assert.Contains("review_quiz", artifactTypes);
+        Assert.Contains("mind_map", artifactTypes);
+        Assert.Contains("uml_diagram", artifactTypes);
+        Assert.Contains("slide_deck_outline", artifactTypes);
+        Assert.Contains("slide_export_manifest", artifactTypes);
+        Assert.Contains("properties_panel", artifactTypes);
+        Assert.Contains("tag_map", artifactTypes);
+        Assert.Contains("backlink_map", artifactTypes);
+        Assert.Contains("linked_mentions", artifactTypes);
+        Assert.Contains("reference_map", artifactTypes);
+        Assert.Contains("graph_view", artifactTypes);
+        Assert.Contains("template_set", artifactTypes);
+        Assert.Contains("search_filter_index", artifactTypes);
+        Assert.DoesNotContain("audio_script", artifactTypes);
+        Assert.DoesNotContain("audio_overview", artifactTypes);
+        var properties = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "properties_panel"));
+        Assert.Contains("\"surface\":\"orkalm\"", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"contextType\":\"source_notebook\"", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"properties\"", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("enabled_in_orkalm", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"sourceUploadAllowed\":true", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var graph = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "graph_view"));
+        Assert.Contains("\"graphNodes\"", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"graphEdges\"", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"crossSurfaceEdgesAllowed\":false", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var templates = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "template_set"));
+        Assert.Contains("\"templates\"", templates.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("slide_deck_outline", templates.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var searchFilters = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "search_filter_index"));
+        Assert.Contains("\"searchFilters\"", searchFilters.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"filterKey\":\"surface\"", searchFilters.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.All(pack.Artifacts, artifact =>
         {
+            Assert.NotNull(artifact.ContentJson);
+            Assert.Contains("\"surface\":\"orkalm\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"contextType\":\"source_notebook\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"featureContract\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"phaseScope\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            AssertFullNotebookPhaseScope(artifact.PhaseScope);
+            Assert.Contains("\"crossSurfaceSync\":false", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("rawProviderPayload", artifact.SafeContent, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("rawSourceChunk", artifact.SafeContent, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("answerKey", artifact.SafeContent, StringComparison.OrdinalIgnoreCase);
@@ -234,12 +282,38 @@ public sealed class LearningNotebookStudioTests
         Assert.Equal(pack.Id, filteredPack.Id);
         Assert.Equal(sourceId, filteredPack.SourceId);
 
+        var exportPreview = await owner.Client.GetFromJsonAsync<NotebookSlideExportPreviewDto>($"/api/notebook-studio/packs/{pack.Id}/export/preview");
+        Assert.NotNull(exportPreview);
+        Assert.Equal("orkalm", exportPreview!.Surface);
+        Assert.Equal("source_notebook", exportPreview.ContextType);
+        Assert.Equal(sourceId, exportPreview.SourceId);
+        Assert.Null(exportPreview.WikiPageId);
+        Assert.Equal("orkalm_source_export_scope", exportPreview.ExportScope);
+        Assert.True(exportPreview.SourceUploadAllowed);
+        Assert.False(exportPreview.CrossSurfaceSync);
+        AssertFullNotebookPhaseScope(exportPreview.PhaseScope);
+        Assert.Contains("source_export", exportPreview.TemplateKeys);
+        Assert.Contains("source_qa", exportPreview.InternalConnectionKeys);
+
+        var sourceManifestResponse = await owner.Client.PostAsJsonAsync($"/api/notebook-studio/packs/{pack.Id}/export", new { format = "manifest_only" });
+        sourceManifestResponse.EnsureSuccessStatusCode();
+        var sourceManifest = await sourceManifestResponse.Content.ReadFromJsonAsync<NotebookExportResultDto>();
+        Assert.NotNull(sourceManifest);
+        Assert.Equal("orkalm", sourceManifest!.Surface);
+        Assert.Equal(sourceId, sourceManifest.SourceId);
+        Assert.Null(sourceManifest.WikiPageId);
+        Assert.Contains("Surface: orkalm", sourceManifest.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Source id:", sourceManifest.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Wiki page id:", sourceManifest.Content, StringComparison.OrdinalIgnoreCase);
+        AssertFullNotebookPhaseScope(sourceManifest.PhaseScope);
+
         var denied = await other.Client.PostAsJsonAsync($"/api/notebook-studio/sources/{sourceId}/pack", new { includeArtifacts = false });
         Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-        Assert.Equal(1, await db.WikiPages.CountAsync(p => p.UserId == owner.UserId && p.TopicId == topicId && p.PageType == "orkalm_source"));
+        Assert.Equal(0, await db.WikiPages.CountAsync(p => p.UserId == owner.UserId && p.TopicId == topicId && p.PageType == "orkalm_source"));
+        Assert.Equal(0, await db.WikiLinks.CountAsync(l => l.UserId == owner.UserId && l.TopicId == topicId && !l.IsDeleted));
     }
 
     [Fact]
@@ -284,9 +358,10 @@ public sealed class LearningNotebookStudioTests
         var links = await sync.Content.ReadFromJsonAsync<SourceConceptLinkSummaryDto>();
         Assert.NotNull(links);
         Assert.Equal(sourceId, links!.SourceId);
-        Assert.True(links.ConfirmedLinkCount >= 1);
+        Assert.Equal(0, links.ConfirmedLinkCount);
+        Assert.True(links.SuggestedLinkCount >= 1);
         Assert.Contains(links.Links, l =>
-            !l.IsSuggestion &&
+            l.IsSuggestion &&
             l.WikiPageId == conceptPageId &&
             l.ConceptKey == "binary-search" &&
             l.Confidence == "high");
@@ -300,7 +375,7 @@ public sealed class LearningNotebookStudioTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
-            Assert.Equal(1, await db.WikiLinks.CountAsync(l =>
+            Assert.Equal(0, await db.WikiLinks.CountAsync(l =>
                 l.UserId == owner.UserId &&
                 l.TargetPageId == conceptPageId &&
                 l.LinkType == "source_supports" &&
@@ -309,13 +384,13 @@ public sealed class LearningNotebookStudioTests
 
         var graph = await owner.Client.GetFromJsonAsync<SourceConceptGraphDto>($"/api/sources/topic/{topicId}/concept-graph");
         Assert.NotNull(graph);
-        Assert.Contains(graph!.Nodes, n => n.NodeType == "source_page");
-        Assert.Contains(graph.Nodes, n => n.NodeType == "concept_page" && n.ConceptKey == "binary-search");
-        Assert.Contains(graph.Edges, e => e.LinkType == "source_supports" && e.Confidence == "high");
+        Assert.Contains(graph!.Nodes, n => n.NodeType == "source" && n.SourceId == sourceId);
+        Assert.Contains(graph.Nodes, n => n.NodeType == "concept" && n.ConceptKey == "binary-search");
+        Assert.Contains(graph.Edges, e => e.LinkType == "source_mentions" && e.Confidence == "high" && e.IsSuggestion);
 
         var supportingSources = await owner.Client.GetFromJsonAsync<SourceConceptLinkSummaryDto>($"/api/wiki/pages/{conceptPageId}/source-links");
         Assert.NotNull(supportingSources);
-        Assert.Contains(supportingSources!.Links, l => l.SourceId == sourceId && !l.IsSuggestion);
+        Assert.Empty(supportingSources!.Links);
 
         var denied = await other.Client.GetAsync($"/api/sources/{sourceId}/concept-links");
         Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
@@ -405,7 +480,11 @@ public sealed class LearningNotebookStudioTests
         var audio = await audioResponse.Content.ReadFromJsonAsync<LearningArtifactDto>();
         Assert.Equal("audio_overview", audio!.ArtifactType);
         Assert.DoesNotContain("systemPrompt", audio.SafeContent, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioPhase\":\"phase_7_active\"", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioDeferred\":false", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("audioOverviewJobId", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("captionTrack", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("classroomReady", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("transcriptArtifact", audio.ContentJson!, StringComparison.OrdinalIgnoreCase);
 
         var scriptResponse = await user.Client.PostAsJsonAsync($"/api/notebook-studio/packs/{pack.Id}/artifact", new
@@ -416,6 +495,9 @@ public sealed class LearningNotebookStudioTests
         var script = await scriptResponse.Content.ReadFromJsonAsync<LearningArtifactDto>();
         Assert.Equal("audio_script", script!.ArtifactType);
         Assert.Contains("[HOCA]:", script.SafeContent, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioPhase\":\"phase_7_active\"", script.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioDeferred\":false", script.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"classroomReady\":true", script.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("rawProviderPayload", script.SafeContent, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -439,6 +521,7 @@ public sealed class LearningNotebookStudioTests
         Assert.Equal(pageId, pack!.WikiPageId);
         Assert.Equal("Big-O Wiki", pack.WikiPageTitle);
         Assert.Equal("wiki_page_review", pack.PackType);
+        AssertFullNotebookPhaseScope(pack.PhaseScope);
         Assert.Contains("big-o", pack.CompletedConceptKeys);
         Assert.Contains("big-o", pack.WeakConceptKeys);
         Assert.Contains("growth-rate-confusion", pack.MisconceptionKeys);
@@ -451,9 +534,48 @@ public sealed class LearningNotebookStudioTests
         Assert.Contains("misconception_repair_pack", artifactTypes);
         Assert.Contains("worked_example_set", artifactTypes);
         Assert.Contains("retrieval_card_set", artifactTypes);
+        Assert.Contains("glossary", artifactTypes);
+        Assert.Contains("timeline", artifactTypes);
+        Assert.Contains("flashcard_set", artifactTypes);
+        Assert.Contains("review_quiz", artifactTypes);
+        Assert.Contains("mind_map", artifactTypes);
+        Assert.Contains("uml_diagram", artifactTypes);
+        Assert.Contains("slide_deck_outline", artifactTypes);
+        Assert.Contains("slide_export_manifest", artifactTypes);
+        Assert.Contains("properties_panel", artifactTypes);
+        Assert.Contains("tag_map", artifactTypes);
+        Assert.Contains("backlink_map", artifactTypes);
+        Assert.Contains("linked_mentions", artifactTypes);
+        Assert.Contains("reference_map", artifactTypes);
+        Assert.Contains("graph_view", artifactTypes);
+        Assert.Contains("template_set", artifactTypes);
+        Assert.Contains("search_filter_index", artifactTypes);
+        Assert.DoesNotContain("audio_script", artifactTypes);
+        Assert.DoesNotContain("audio_overview", artifactTypes);
+        var properties = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "properties_panel"));
+        Assert.Contains("\"properties\"", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("hidden_in_wiki", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"sourceUploadAllowed\":false", properties.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var graph = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "graph_view"));
+        Assert.Contains("\"graphNodes\"", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"graphEdges\"", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"crossSurfaceEdgesAllowed\":false", graph.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var templates = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "template_set"));
+        Assert.Contains("\"templates\"", templates.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("slide_deck_outline", templates.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        var searchFilters = Assert.Single(pack.Artifacts.Where(a => a.ArtifactType == "search_filter_index"));
+        Assert.Contains("\"searchFilters\"", searchFilters.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"filterKey\":\"surface\"", searchFilters.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.All(pack.Artifacts, artifact =>
         {
             Assert.Equal($"wiki_page:{pageId:N}", artifact.WikiNotebookSectionKey);
+            Assert.NotNull(artifact.ContentJson);
+            Assert.Contains("\"surface\":\"wiki\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"contextType\":\"wiki_page\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"featureContract\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"phaseScope\"", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
+            AssertFullNotebookPhaseScope(artifact.PhaseScope);
+            Assert.Contains("\"crossSurfaceSync\":false", artifact.ContentJson!, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("rawProviderPayload", artifact.SafeContent, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("hiddenPrompt", artifact.SafeContent, StringComparison.OrdinalIgnoreCase);
         });
@@ -478,13 +600,41 @@ public sealed class LearningNotebookStudioTests
 
         var audioResponse = await owner.Client.PostAsJsonAsync("/api/audio/overview", new
         {
-            topicId
+            topicId,
+            wikiPageId = pageId,
+            surface = "wiki",
+            audioMode = "deep_dive"
         });
-        audioResponse.EnsureSuccessStatusCode();
+        Assert.True(audioResponse.StatusCode == HttpStatusCode.Accepted || audioResponse.StatusCode == HttpStatusCode.OK);
         var audio = await audioResponse.Content.ReadFromJsonAsync<AudioOverviewJobDto>();
         Assert.NotNull(audio);
-        Assert.Contains("Big-O Wiki", audio!.Script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("OrkaLM pack", audio.Script, StringComparison.OrdinalIgnoreCase);
+
+        var jobId = audio.Id;
+        var maxRetries = 25;
+        var retryCount = 0;
+        while (retryCount < maxRetries)
+        {
+            var getResponse = await owner.Client.GetAsync($"/api/audio/overview/{jobId}");
+            getResponse.EnsureSuccessStatusCode();
+            audio = await getResponse.Content.ReadFromJsonAsync<AudioOverviewJobDto>();
+            Assert.NotNull(audio);
+            if (audio.Status != "generating" && audio.Status != "pending")
+            {
+                break;
+            }
+            await Task.Delay(200);
+            retryCount++;
+        }
+
+        Assert.Equal("wiki", audio!.Surface);
+        Assert.Equal("wiki_page", audio.ContextType);
+        Assert.Equal(pageId, audio.WikiPageId);
+        Assert.Null(audio.SourceId);
+        Assert.Equal("deep_dive", audio.AudioMode);
+        Assert.False(audio.CrossSurfaceSync);
+        Assert.True(audio.ClassroomReady);
+        Assert.Contains("WEBVTT", audio.CaptionTrack, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Big-O Wiki", audio.Script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("growth-rate-confusion", audio.Script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("rawSourceChunk", audio.Script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("systemPrompt", audio.Script, StringComparison.OrdinalIgnoreCase);
@@ -591,17 +741,19 @@ public sealed class LearningNotebookStudioTests
 
         var transcript = await BuildArtifactAsync(owner, pack.Id, "audio_transcript");
         Assert.Equal("audio_transcript", transcript.ArtifactType);
-        Assert.Contains("audio_transcript_v1", transcript.ContentJson!, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("transcript_ready", transcript.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("phase_7_active", transcript.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioDeferred\":false", transcript.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("captionTrack", transcript.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("[HOCA]:", transcript.SafeContent, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("rawSourceChunk", transcript.SafeContent, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("hiddenPrompt", transcript.SafeContent, StringComparison.OrdinalIgnoreCase);
 
         var captions = await BuildArtifactAsync(owner, pack.Id, "caption_track");
         Assert.Equal("caption_track", captions.ArtifactType);
         Assert.Equal("plain_text", captions.RenderFormat);
+        Assert.Contains("phase_7_active", captions.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioDeferred\":false", captions.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WEBVTT", captions.SafeContent, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("caption_track_v1", captions.ContentJson!, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("needs_review", captions.ContentJson!, StringComparison.OrdinalIgnoreCase);
 
         var videoReady = await BuildArtifactAsync(owner, pack.Id, "video_ready_package");
         Assert.Equal("video_ready_package", videoReady.ArtifactType);
@@ -626,7 +778,8 @@ public sealed class LearningNotebookStudioTests
 
         var narration = await BuildArtifactAsync(owner, pack.Id, "narration_script");
         Assert.Equal("narration_script", narration.ArtifactType);
-        Assert.Contains("narration_script_v1", narration.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("phase_7_active", narration.ContentJson!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"audioDeferred\":false", narration.ContentJson!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("[HOCA]:", narration.SafeContent, StringComparison.OrdinalIgnoreCase);
 
         var visuals = await BuildArtifactAsync(owner, pack.Id, "visual_instruction_set");
@@ -676,6 +829,16 @@ public sealed class LearningNotebookStudioTests
         Assert.NotNull(preview);
         Assert.True(preview!.SlideCount >= 4);
         Assert.Equal("preview_ready", preview.ExportReadiness);
+        Assert.Equal("wiki", preview.Surface);
+        Assert.Equal("wiki_page", preview.ContextType);
+        Assert.Equal(pageId, preview.WikiPageId);
+        Assert.Null(preview.SourceId);
+        Assert.Equal("wiki_lesson_export_scope", preview.ExportScope);
+        Assert.False(preview.CrossSurfaceSync);
+        AssertFullNotebookPhaseScope(preview.PhaseScope);
+        Assert.Contains("wiki_export", preview.TemplateKeys);
+        Assert.Contains("cross_surface_sync:false", preview.SearchFilterKeys);
+        Assert.Contains("wiki_learning_trace", preview.InternalConnectionKeys);
         Assert.Contains(preview.SourceBasis, new[] { "wiki_backed", "evidence_insufficient", "model_assisted" });
         Assert.Contains(preview.SourceReadiness, new[] { "wiki_backed", "evidence_insufficient", "model_assisted" });
         Assert.Contains(preview.Slides, slide => slide.HasSpeakerNotes && !string.IsNullOrWhiteSpace(slide.CheckpointQuestion));
@@ -695,6 +858,15 @@ public sealed class LearningNotebookStudioTests
         var markdown = await markdownResponse.Content.ReadFromJsonAsync<NotebookExportResultDto>();
         Assert.NotNull(markdown);
         Assert.Equal("markdown", markdown!.Format);
+        Assert.Equal("wiki", markdown.Surface);
+        Assert.Equal("wiki_page", markdown.ContextType);
+        Assert.Equal(pageId, markdown.WikiPageId);
+        Assert.Null(markdown.SourceId);
+        Assert.Equal("wiki_lesson_export_scope", markdown.ExportScope);
+        AssertFullNotebookPhaseScope(markdown.PhaseScope);
+        Assert.Contains("Surface: wiki", markdown.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Export scope: wiki_lesson_export_scope", markdown.Content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Source id:", markdown.Content, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("ready", markdown.Status);
         Assert.Equal("text/markdown", markdown.ContentType);
         Assert.Contains("Slide count", markdown.Content, StringComparison.OrdinalIgnoreCase);
@@ -852,6 +1024,17 @@ public sealed class LearningNotebookStudioTests
         var artifact = await response.Content.ReadFromJsonAsync<LearningArtifactDto>();
         Assert.NotNull(artifact);
         return artifact!;
+    }
+
+    private static void AssertFullNotebookPhaseScope(IReadOnlyList<string> phaseScope)
+    {
+        Assert.Contains("phase_1_contract", phaseScope);
+        Assert.Contains("phase_2_graph_metadata", phaseScope);
+        Assert.Contains("phase_3_text_notebook", phaseScope);
+        Assert.Contains("phase_4_slide_diagram", phaseScope);
+        Assert.Contains("phase_5_search_template_export", phaseScope);
+        Assert.Contains("phase_6_internal_connections", phaseScope);
+        Assert.Contains("phase_7_audio_classroom", phaseScope);
     }
 
     private static async Task<Guid> SeedNotebookWikiPageAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)

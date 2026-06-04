@@ -1395,9 +1395,19 @@ public class LearningSourceService : ILearningSourceService
         {
             new() { ActionType = "source_digest", UserSafeLabel = "Create a source digest.", Priority = "high" },
             new() { ActionType = "study_guide", UserSafeLabel = "Turn this source into a study guide.", Priority = "high" },
-            new() { ActionType = "audio_script", UserSafeLabel = "Create a safe audio script or overview.", Priority = "normal" },
+            new() { ActionType = "ask_source", UserSafeLabel = "Ask a grounded question against the selected source.", Priority = "high" },
+            new() { ActionType = "question_threads", UserSafeLabel = "Save source Q&A as reviewable threads.", Priority = "normal" },
+            new() { ActionType = "citation_review", UserSafeLabel = "Review citation coverage before relying on the source.", Priority = "normal" },
+            new() { ActionType = "sync_concept_links", UserSafeLabel = "Build OrkaLM source-concept suggestions without writing to Wiki.", Priority = "normal" },
+            new() { ActionType = "glossary", UserSafeLabel = "Extract a source-scoped glossary.", Priority = "normal" },
+            new() { ActionType = "timeline", UserSafeLabel = "Create a source-scoped timeline.", Priority = "normal" },
+            new() { ActionType = "mind_map", UserSafeLabel = "Build a source-scoped mind map.", Priority = "normal" },
+            new() { ActionType = "uml_diagram", UserSafeLabel = "Create a Mermaid/UML diagram from the source context.", Priority = "normal" },
             new() { ActionType = "review_quiz", UserSafeLabel = "Start a source-based review quiz.", Priority = "normal" },
-            new() { ActionType = "slide_deck_outline", UserSafeLabel = "Build a source-backed slide outline.", Priority = "normal" }
+            new() { ActionType = "slide_deck_outline", UserSafeLabel = "Build a source-backed slide outline.", Priority = "normal" },
+            new() { ActionType = "compare_sources", UserSafeLabel = "Compare selected sources when multiple sources are ready.", Priority = "normal" },
+            new() { ActionType = "search_filter", UserSafeLabel = "Search and filter this source notebook.", Priority = "normal" },
+            new() { ActionType = "templates", UserSafeLabel = "Use source notebook templates.", Priority = "normal" }
         };
 
         if (string.Equals(evidenceStatus, "stale", StringComparison.OrdinalIgnoreCase) ||

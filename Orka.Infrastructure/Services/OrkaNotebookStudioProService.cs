@@ -426,11 +426,6 @@ public sealed class OrkaNotebookStudioProService : IOrkaNotebookStudioProService
             yield return Action("create_slide_outline", "Slide outline preview ac", "Bu sadece preview/outline; gercek PPTX/video uretilmez.", "normal", "Notebook Studio", "notebook-studio", context, ["export_preview_only"]);
         }
 
-        if (artifacts.Any(a => a.ArtifactType is "audio_script" or "source_digest" or "study_guide"))
-        {
-            yield return Action("create_audio_script", "Audio/script outline ac", "Ses/video uretmeden guvenli script/outline preview gosterilir.", "normal", "Notebook Studio", "notebook-studio", context, ["export_preview_only"]);
-        }
-
         if (packs.Count > 0)
         {
             foreach (var pack in packs.Take(3))
@@ -504,7 +499,7 @@ public sealed class OrkaNotebookStudioProService : IOrkaNotebookStudioProService
                 RenderFormat = SafeKey(artifact.RenderFormat, "metadata"),
                 Title = SafeText(artifact.Title, "Artifact"),
                 SourceBasis = SafeKey(artifact.SourceBasis, "evidence_insufficient"),
-                PreviewOnly = artifact.ArtifactType is "slide_deck_outline" or "slide_export_manifest" or "audio_script" or "mind_map",
+                PreviewOnly = artifact.ArtifactType is "slide_deck_outline" or "slide_export_manifest" or "mind_map" or "uml_diagram",
                 ReasonCodes = SafeReasonCodes(ReadStringList(artifact.SafetyWarningsJson).Concat([artifact.SourceBasis])),
                 Warnings = ReadStringList(artifact.SafetyWarningsJson).Where(NotBlank).Take(8).ToArray()
             };
@@ -518,12 +513,12 @@ public sealed class OrkaNotebookStudioProService : IOrkaNotebookStudioProService
                 ArtifactType = ArtifactTypeForAction(action.ActionType),
                 Status = "suggested",
                 Origin = "notebook_studio_pro",
-                RenderFormat = action.ActionType is "create_slide_outline" or "create_audio_script" ? "outline" : "metadata",
+                RenderFormat = action.ActionType is "create_slide_outline" ? "outline" : "metadata",
                 Title = action.Label,
                 SourceBasis = facts.HasSourceBlocker ? "evidence_insufficient" : "derived_metadata",
-                PreviewOnly = action.ActionType is "create_slide_outline" or "create_audio_script",
+                PreviewOnly = action.ActionType is "create_slide_outline",
                 ReasonCodes = SafeReasonCodes(action.ReasonCodes),
-                Warnings = action.ActionType is "create_slide_outline" or "create_audio_script" ? ["export_preview_only"] : Array.Empty<string>()
+                Warnings = action.ActionType is "create_slide_outline" ? ["export_preview_only"] : Array.Empty<string>()
             };
         }
     }
@@ -553,19 +548,17 @@ public sealed class OrkaNotebookStudioProService : IOrkaNotebookStudioProService
             };
         }
 
-        foreach (var artifact in artifacts.Where(a => a.ArtifactType is "slide_deck_outline" or "slide_export_manifest" or "audio_script").Take(4))
+        foreach (var artifact in artifacts.Where(a => a.ArtifactType is "slide_deck_outline" or "slide_export_manifest").Take(4))
         {
             yield return new NotebookStudioExportPreviewDto
             {
-                PreviewType = artifact.ArtifactType == "audio_script" ? "audio_script_outline" : "slide_outline",
+                PreviewType = "slide_outline",
                 ReadinessStatus = "preview_only",
                 ArtifactId = artifact.Id,
                 ArtifactCount = 1,
                 SourceWarning = sourceWarning,
                 AccessibilityWarning = "review_required",
-                ExportLimitations = artifact.ArtifactType == "audio_script"
-                    ? ["audio_generation_not_enabled", "video_generation_not_enabled"]
-                    : ["real_pptx_not_enabled", "video_generation_not_enabled"],
+                ExportLimitations = ["real_pptx_not_enabled", "video_generation_not_enabled"],
                 ReasonCodes = ["export_preview_only"]
             };
         }

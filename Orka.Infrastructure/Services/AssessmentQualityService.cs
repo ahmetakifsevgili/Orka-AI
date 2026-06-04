@@ -55,7 +55,7 @@ public sealed class AssessmentQualityService : IAssessmentQualityService
         if (outcomeCoverage < 0.80m) failures.Add("learning_outcome_coverage_low");
         if (difficultySpread < 2) failures.Add("difficulty_spread_low");
         if (cognitiveSpread < 3) failures.Add("cognitive_skill_spread_low");
-        if (misconceptionRatio < 0.10m) failures.Add("misconception_targeting_low");
+        if (misconceptionRatio < 0.30m) failures.Add("misconception_targeting_low");
         if (optionQualityRatio < 0.90m) failures.Add("option_quality_low");
         if (scoringRatio < 1.00m) failures.Add("scoring_rule_missing");
 

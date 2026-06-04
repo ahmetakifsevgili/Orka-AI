@@ -40,5 +40,5 @@ public interface IDeepPlanAgent
         string diagnosticQuizSummary,
         string userLevel = "Bilinmiyor");
 
-    Task<string> GenerateBaselineQuizAsync(string topicTitle);
+    Task<string> GenerateBaselineQuizAsync(string topicTitle, Guid topicId, string language, int questionCount);
 }

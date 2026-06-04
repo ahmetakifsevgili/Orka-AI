@@ -598,7 +598,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         return ValueTask.CompletedTask;
     }
 
-    public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null)
+    public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null, CancellationToken ct = default)
     {
         Session? session = await GetOrCreateSessionAsync(userId, topicId, sessionId, content);
         if (session == null) throw new Exception("Oturum oluşturulamadı veya SmallTalk.");
@@ -1027,7 +1027,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 .ThenBy(p => p.CreatedAt)
                 .Take(200)
                 .ToListAsync();
-            if (pages.Count == 0) return null;
+            if (pages.Count == 0 && _wikiTraceWriter == null) return null;
 
             var conceptKey = FirstNonEmpty(
                 metadata.ActiveConceptKey,
@@ -1038,7 +1038,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 : null;
             page ??= pages.FirstOrDefault(p => string.Equals(p.PageType, "topic_root", StringComparison.OrdinalIgnoreCase));
             page ??= pages.FirstOrDefault();
-            if (page == null) return null;
+            if (page == null && _wikiTraceWriter == null) return null;
+            var activeWikiPageId = page?.Id;
 
             var blockType = TutorWikiBlockType(metadata);
             var artifactId = metadata.ArtifactIds.FirstOrDefault();
@@ -1052,7 +1053,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                         UserId = userId,
                         TopicId = session.TopicId,
                         SessionId = session.Id,
-                        ActiveWikiPageId = page.Id,
+                        ActiveWikiPageId = activeWikiPageId,
                         ConceptKey = conceptKey,
                         MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
                         TutorTurnStateId = metadata.TutorTurnStateId,
@@ -1063,7 +1064,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                         CreatedBy = "student",
                         Visibility = "normal"
                     })
-                    : await _wikiService.AddWikiBlockAsync(page.Id, userId, new CreateWikiBlockRequestDto
+                    : await _wikiService.AddWikiBlockAsync(page!.Id, userId, new CreateWikiBlockRequestDto
                 {
                     BlockType = "student_question",
                     Title = "Ogrenci sorusu",
@@ -1084,7 +1085,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     UserId = userId,
                     TopicId = session.TopicId,
                     SessionId = session.Id,
-                    ActiveWikiPageId = page.Id,
+                    ActiveWikiPageId = activeWikiPageId,
                     ConceptKey = conceptKey,
                     MisconceptionKey = FirstNonEmpty(metadata.MisconceptionSignal?.Category, metadata.RemediationSeed?.MisconceptionCategory),
                     TutorTurnStateId = metadata.TutorTurnStateId,
@@ -1096,7 +1097,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                     CreatedBy = "tutor",
                     Visibility = blockType == "repair_note" ? "highlighted" : "normal"
                 })
-                : await _wikiService.AddWikiBlockAsync(page.Id, userId, new CreateWikiBlockRequestDto
+                : await _wikiService.AddWikiBlockAsync(page!.Id, userId, new CreateWikiBlockRequestDto
             {
                 BlockType = blockType,
                 Title = TutorWikiBlockTitle(metadata),
@@ -1844,7 +1845,31 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 topic.PlanIntent ??= "Core";
                 await _db.SaveChangesAsync();
 
-                var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+                var user = await _db.Users.FindAsync(topic.UserId);
+                var language = user?.Language ?? "Turkish";
+                if (language == "English" && !string.IsNullOrWhiteSpace(content))
+                {
+                    var lower = content.ToLowerInvariant();
+                    if (lower.Contains("icin") || lower.Contains("için") || lower.Contains("hazirla") || lower.Contains("hazırla") || lower.Contains("plan") || lower.Contains("nedir") || lower.Contains("nasil") || lower.Contains("nasıl") || lower.Contains("anlat"))
+                    {
+                        language = "Turkish";
+                    }
+                }
+                int questionCount = 20;
+                if (!string.IsNullOrEmpty(topic.MetadataJson))
+                {
+                    try
+                    {
+                        using var metaDoc = System.Text.Json.JsonDocument.Parse(topic.MetadataJson);
+                        if (metaDoc.RootElement.TryGetProperty("quizQuestionCount", out var qcProp) && qcProp.TryGetInt32(out var parsedCount))
+                        {
+                            questionCount = parsedCount;
+                        }
+                    }
+                    catch { }
+                }
+
+                var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title, topic.Id, language, questionCount);
                 var firstQuizJson = ExtractNthQuizFromArray(allQuizJson, 0);
 
                 session.BaselineQuizData = allQuizJson;
@@ -1854,8 +1879,12 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 session.CurrentState = SessionState.BaselineQuizMode;
                 await _db.SaveChangesAsync();
 
-                var responseText = $"Senin için en uygun öğrenme yolunu çizebilmem için **20 soruluk** kapsamlı bir seviye testi yapacağım. \n\n" +
-                                   $"{allQuizJson}";
+                var isTurkish = language.StartsWith("tr", System.StringComparison.OrdinalIgnoreCase) ||
+                                 language.StartsWith("tü", System.StringComparison.OrdinalIgnoreCase) ||
+                                 language.StartsWith("tu", System.StringComparison.OrdinalIgnoreCase);
+                var responseText = isTurkish
+                    ? $"Senin için en uygun öğrenme yolunu çizebilmem için **{questionCount} soruluk** kapsamlı bir seviye testi yapacağım. \n\n{allQuizJson}"
+                    : $"I will conduct a comprehensive **{questionCount}-question** assessment to customize your learning path. \n\n{allQuizJson}";
 
                 return (responseText, false);
             }
@@ -2777,7 +2806,31 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _logger.LogInformation("[DeepPlan] Mufredat plani seviye tespiti baslatiliyor. TopicRef={TopicRef}",
             LogPrivacyGuard.SafeTextRef(topic.Title, "topic"));
 
-        var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title);
+        var user = await _db.Users.FindAsync(topic.UserId);
+        var language = user?.Language ?? "Turkish";
+        if (language == "English" && !string.IsNullOrWhiteSpace(content))
+        {
+            var lower = content.ToLowerInvariant();
+            if (lower.Contains("icin") || lower.Contains("için") || lower.Contains("hazirla") || lower.Contains("hazırla") || lower.Contains("plan") || lower.Contains("nedir") || lower.Contains("nasil") || lower.Contains("nasıl") || lower.Contains("anlat"))
+            {
+                language = "Turkish";
+            }
+        }
+        int questionCount = 20;
+        if (!string.IsNullOrEmpty(topic.MetadataJson))
+        {
+            try
+            {
+                using var metaDoc = System.Text.Json.JsonDocument.Parse(topic.MetadataJson);
+                if (metaDoc.RootElement.TryGetProperty("quizQuestionCount", out var qcProp) && qcProp.TryGetInt32(out var parsedCount))
+                {
+                    questionCount = parsedCount;
+                }
+            }
+            catch { }
+        }
+
+        var allQuizJson = await _deepPlanAgent.GenerateBaselineQuizAsync(topic.Title, topic.Id, language, questionCount);
 
         session.BaselineQuizData = allQuizJson;
         session.BaselineQuizIndex = 0;
@@ -2786,9 +2839,16 @@ public class AgentOrchestratorService : IAgentOrchestrator
         session.CurrentState = SessionState.BaselineQuizMode;
         await _db.SaveChangesAsync();
 
-        var responseText = $"Harika! **{topic.Title}** konusu için detaylı bir akademik planlama süreci başlatıyorum. \n\n" +
-                            "Öncelikle senin için en uygun öğrenme müfredatını çizebilmem için **Seviye Testi** yapacağım.\n\n" +
-                            $"Lütfen aşağıdaki soruları dikkatlice yanıtla:\n\n{allQuizJson}";
+        var isTurkish = language.StartsWith("tr", System.StringComparison.OrdinalIgnoreCase) ||
+                         language.StartsWith("tü", System.StringComparison.OrdinalIgnoreCase) ||
+                         language.StartsWith("tu", System.StringComparison.OrdinalIgnoreCase);
+        var responseText = isTurkish
+            ? $"Harika! **{topic.Title}** konusu için detaylı bir akademik planlama süreci başlatıyorum. \n\n" +
+              $"Öncelikle senin için en uygun öğrenme müfredatını çizebilmem için **Seviye Testi** ({questionCount} soru) yapacağım.\n\n" +
+              $"Lütfen aşağıdaki soruları dikkatlice yanıtla:\n\n{allQuizJson}"
+            : $"Excellent! I am starting a detailed academic planning process for **{topic.Title}**. \n\n" +
+              $"First, I will conduct a **Placement Quiz** ({questionCount} questions) to customize your learning curriculum.\n\n" +
+              $"Please answer the following questions carefully:\n\n{allQuizJson}";
 
         return (responseText, false);
     }

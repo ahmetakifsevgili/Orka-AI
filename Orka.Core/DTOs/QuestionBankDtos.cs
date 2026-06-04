@@ -4,12 +4,26 @@ public sealed class QuestionItemDto
 {
     public Guid Id { get; set; }
     public string OwnershipState { get; set; } = "user";
+    public string QuestionBankSource { get; set; } = "curated_question_item";
     public Guid ExamDefinitionId { get; set; }
     public Guid? ExamVariantId { get; set; }
     public Guid? ExamSectionId { get; set; }
     public Guid? ExamSubjectId { get; set; }
     public Guid? ExamTopicId { get; set; }
     public Guid? ExamOutcomeId { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string VisualReadinessStatus { get; set; } = "not_required";
     public string QuestionType { get; set; } = "multiple_choice";
     public string Stem { get; set; } = string.Empty;
     public string Difficulty { get; set; } = "medium";
@@ -37,6 +51,9 @@ public sealed class QuestionOptionDto
     public string OptionKey { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
+    public string? Rationale { get; set; }
+    public string? MisconceptionKey { get; set; }
+    public string? DiagnosticSignalJson { get; set; }
     public int SortOrder { get; set; }
     public List<QuestionOptionContentBlockDto> ContentBlocks { get; set; } = [];
 }
@@ -73,6 +90,20 @@ public sealed class CreateQuestionDto
     public Guid? ExamSubjectId { get; set; }
     public Guid? ExamTopicId { get; set; }
     public Guid? ExamOutcomeId { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
     public string QuestionType { get; set; } = "multiple_choice";
     public string Stem { get; set; } = string.Empty;
     public string Difficulty { get; set; } = "medium";
@@ -97,6 +128,20 @@ public sealed class UpdateQuestionDto
     public Guid? ExamSubjectId { get; set; }
     public Guid? ExamTopicId { get; set; }
     public Guid? ExamOutcomeId { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string? ScoringRuleJson { get; set; }
+    public string? CalibrationStatus { get; set; }
+    public string? VisualReadinessStatus { get; set; }
+    public string? QuestionBankSource { get; set; }
     public string? QuestionType { get; set; }
     public string? Stem { get; set; }
     public string? Difficulty { get; set; }
@@ -123,6 +168,14 @@ public sealed class QuestionBankFilterDto
     public Guid? ExamSubjectId { get; set; }
     public Guid? ExamTopicId { get; set; }
     public Guid? ExamOutcomeId { get; set; }
+    public Guid? LearningTopicId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public string? ConceptKey { get; set; }
+    public bool IncludeDiagnosticItems { get; set; } = true;
     public string? QualityStatus { get; set; }
     public string? QuestionType { get; set; }
     public string? Difficulty { get; set; }
@@ -155,6 +208,12 @@ public sealed class QuestionAssetDto
     public string? AltText { get; set; }
     public string? Caption { get; set; }
     public string? LongDescription { get; set; }
+    public string? GenerationProvider { get; set; }
+    public string? GenerationModel { get; set; }
+    public string? RenderStrategy { get; set; }
+    public string? GenerationPromptHash { get; set; }
+    public string? ValidationReportJson { get; set; }
+    public string VisualReadinessStatus { get; set; } = "needs_validation";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -175,6 +234,12 @@ public sealed class CreateQuestionAssetDto
     public string? AltText { get; set; }
     public string? Caption { get; set; }
     public string? LongDescription { get; set; }
+    public string? GenerationProvider { get; set; }
+    public string? GenerationModel { get; set; }
+    public string? RenderStrategy { get; set; }
+    public string? GenerationPromptHash { get; set; }
+    public string? ValidationReportJson { get; set; }
+    public string VisualReadinessStatus { get; set; } = "needs_validation";
 }
 
 public sealed class QuestionContentBlockDto
@@ -260,6 +325,101 @@ public sealed class QuestionStimulusLinkDto
 {
     public Guid QuestionStimulusId { get; set; }
     public int SortOrder { get; set; }
+}
+
+public sealed class QuestionPracticeStartRequestDto
+{
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public List<Guid> LearningConceptIds { get; set; } = [];
+    public List<Guid> AssessmentItemIds { get; set; } = [];
+    public List<string> ConceptKeys { get; set; } = [];
+    public string? QuestionBankSource { get; set; }
+    public string Mode { get; set; } = "weak_concept_drill";
+    public int Count { get; set; } = 8;
+}
+
+public sealed class QuestionPracticeSessionDto
+{
+    public Guid PracticeSetId { get; set; } = Guid.NewGuid();
+    public string Status { get; set; } = "ready";
+    public string EmptyState { get; set; } = string.Empty;
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string Mode { get; set; } = "weak_concept_drill";
+    public List<string> ConceptKeys { get; set; } = [];
+    public int TotalQuestions { get; set; }
+    public List<QuestionPracticeQuestionDto> Questions { get; set; } = [];
+}
+
+public sealed class QuestionPracticeQuestionDto
+{
+    public Guid QuestionItemId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public Guid? ConceptGraphSnapshotId { get; set; }
+    public Guid? LearningConceptId { get; set; }
+    public Guid? QuizRunId { get; set; }
+    public Guid? PlanRequestId { get; set; }
+    public Guid? TopicId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string? ConceptLabel { get; set; }
+    public string QuestionBankSource { get; set; } = "curated_question_item";
+    public string QuestionType { get; set; } = "multiple_choice";
+    public string Stem { get; set; } = string.Empty;
+    public string Difficulty { get; set; } = "medium";
+    public string CognitiveSkill { get; set; } = "conceptual";
+    public string? MisconceptionTarget { get; set; }
+    public string? EvidenceExpected { get; set; }
+    public string VisualReadinessStatus { get; set; } = "not_required";
+    public List<QuestionOptionDto> Options { get; set; } = [];
+    public List<QuestionContentBlockDto> ContentBlocks { get; set; } = [];
+    public List<QuestionStimulusDto> Stimuli { get; set; } = [];
+}
+
+public sealed class QuestionPracticeSubmitRequestDto
+{
+    public Guid? PracticeSetId { get; set; }
+    public Guid? TopicId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string Mode { get; set; } = "weak_concept_drill";
+    public List<QuestionPracticeAnswerDto> Answers { get; set; } = [];
+}
+
+public sealed class QuestionPracticeAnswerDto
+{
+    public Guid QuestionItemId { get; set; }
+    public string? SelectedOptionKey { get; set; }
+    public int? ResponseTimeMs { get; set; }
+    public bool WasSkipped { get; set; }
+    public decimal? ConfidenceSelfRating { get; set; }
+}
+
+public sealed class QuestionPracticeSubmitResponseDto
+{
+    public Guid PracticeSetId { get; set; }
+    public string Status { get; set; } = "submitted";
+    public int TotalQuestions { get; set; }
+    public int AnsweredCount { get; set; }
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int BlankCount { get; set; }
+    public List<QuestionPracticeResultDto> Results { get; set; } = [];
+    public List<QuizResultLearningImpactDto> LearningImpacts { get; set; } = [];
+}
+
+public sealed class QuestionPracticeResultDto
+{
+    public Guid QuestionItemId { get; set; }
+    public Guid? AssessmentItemId { get; set; }
+    public string? ConceptKey { get; set; }
+    public string SelectedOptionKey { get; set; } = string.Empty;
+    public bool IsBlank { get; set; }
+    public bool IsCorrect { get; set; }
+    public string Explanation { get; set; } = string.Empty;
+    public QuizResultLearningImpactDto? LearningImpact { get; set; }
 }
 
 public sealed class QuestionAccessibilityValidationDto

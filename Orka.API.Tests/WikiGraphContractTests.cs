@@ -213,6 +213,151 @@ public sealed class WikiGraphContractTests
     }
 
     [Fact]
+    public async Task WikiPage_ReportsTypedLearningSystemBindingSeparatelyFromContentReadiness()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-system-binding");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "System Binding");
+        var (_, childPageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+        var planStepId = Guid.NewGuid();
+        var quizAttemptId = Guid.NewGuid();
+        var tutorTurnStateId = Guid.NewGuid();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var page = await db.WikiPages.FirstAsync(p => p.Id == childPageId);
+            page.PlanStepId = planStepId;
+            var repair = await db.WikiBlocks.FirstAsync(b => b.WikiPageId == childPageId && b.BlockType == WikiBlockType.RepairNote);
+            repair.QuizAttemptId = quizAttemptId;
+            db.WikiBlocks.Add(new WikiBlock
+            {
+                Id = Guid.NewGuid(),
+                WikiPageId = childPageId,
+                BlockType = WikiBlockType.TutorExplanation,
+                Title = "Tutor trace",
+                Content = "Tutor explanation bound to the active concept.",
+                SourceBasis = "tutor_generated",
+                ConceptKey = "big-o",
+                TutorTurnStateId = tutorTurnStateId,
+                OrderIndex = 2,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{childPageId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var pageJson = body.RootElement.GetProperty("page");
+        Assert.Equal("ready", pageJson.GetProperty("contentReadiness").GetString());
+        Assert.Equal(planStepId, pageJson.GetProperty("planStepId").GetGuid());
+        var binding = pageJson.GetProperty("learningSystemBinding");
+        Assert.Equal("bound", binding.GetProperty("readiness").GetString());
+        Assert.True(binding.GetProperty("hasConceptBinding").GetBoolean());
+        Assert.True(binding.GetProperty("hasPlanBinding").GetBoolean());
+        Assert.True(binding.GetProperty("hasDiagnosticBinding").GetBoolean());
+        Assert.True(binding.GetProperty("hasTutorBinding").GetBoolean());
+        Assert.True(binding.GetProperty("hasAssessmentOrQuestionBankBinding").GetBoolean());
+        Assert.Contains(binding.GetProperty("reasonCodes").EnumerateArray(), code => code.GetString() == "plan_step_id_present");
+        Assert.Contains(binding.GetProperty("reasonCodes").EnumerateArray(), code => code.GetString() == "quiz_attempt_or_review_signal_present");
+
+        var list = await user.Client.GetAsync($"/api/wiki/{tree.LessonId}");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listJson = await JsonDocument.ParseAsync(await list.Content.ReadAsStreamAsync());
+        var listedPage = Assert.Single(listJson.RootElement.EnumerateArray());
+        Assert.Equal("bound", listedPage.GetProperty("learningSystemBinding").GetProperty("readiness").GetString());
+    }
+
+    [Fact]
+    public async Task WikiPageQuestions_ReturnsPracticeReadyConceptQuestionsWithoutAnswerKeys()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-page-questions");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Wiki Questions");
+        var (_, pageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+        var seeded = await SeedWikiPracticeQuestionAsync(factory, user.UserId, tree.RootId, "big-o");
+
+        var response = await user.Client.GetAsync($"/api/wiki/page/{pageId}/questions?count=3");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var raw = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("correctAnswer", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("answerKey", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("isCorrect\":true", raw, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("diagnosticSignalIfChosen", raw, StringComparison.OrdinalIgnoreCase);
+
+        var body = JsonSerializer.Deserialize<WikiPageQuestionSetDto>(raw, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(body);
+        Assert.Equal(pageId, body!.PageId);
+        Assert.Equal(tree.LessonId, body.TopicId);
+        Assert.Equal("big-o", body.ConceptKey);
+        Assert.Equal("ready", body.Status);
+
+        var question = Assert.Single(body.Questions);
+        Assert.Equal(seeded.QuestionItemId, question.QuestionItemId);
+        Assert.Equal(seeded.AssessmentItemId, question.AssessmentItemId);
+        Assert.Equal(tree.RootId, question.TopicId);
+        Assert.Equal("big-o", question.ConceptKey);
+        Assert.All(question.Options, option =>
+        {
+            Assert.False(option.IsCorrect);
+            Assert.Null(option.Rationale);
+            Assert.Null(option.DiagnosticSignalJson);
+        });
+    }
+
+    [Fact]
+    public async Task WikiPagePracticeStart_UsesPageScopeAndRecordsLearningAttempt()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "wiki-page-practice");
+        var tree = await CoordinationTestHelpers.SeedTopicTreeAsync(factory, user.UserId, "Wiki Practice");
+        var (_, pageId) = await SeedGraphPagesAsync(factory, user.UserId, tree.RootId, tree.LessonId);
+        var seeded = await SeedWikiPracticeQuestionAsync(factory, user.UserId, tree.RootId, "big-o");
+
+        var start = await user.Client.PostAsJsonAsync($"/api/wiki/page/{pageId}/practice/start", new WikiPagePracticeStartRequestDto
+        {
+            Count = 3,
+            Mode = "wiki_micro_drill"
+        });
+        Assert.Equal(HttpStatusCode.OK, start.StatusCode);
+
+        var session = await start.Content.ReadFromJsonAsync<QuestionPracticeSessionDto>();
+        Assert.NotNull(session);
+        Assert.Equal("ready", session!.Status);
+        Assert.Equal("wiki_micro_drill", session.Mode);
+        var question = Assert.Single(session.Questions);
+        Assert.Equal(seeded.QuestionItemId, question.QuestionItemId);
+
+        var submit = await user.Client.PostAsJsonAsync("/api/question-practice/submit", new QuestionPracticeSubmitRequestDto
+        {
+            PracticeSetId = session.PracticeSetId,
+            TopicId = tree.LessonId,
+            Mode = session.Mode,
+            Answers =
+            [
+                new QuestionPracticeAnswerDto
+                {
+                    QuestionItemId = seeded.QuestionItemId,
+                    SelectedOptionKey = "B",
+                    ConfidenceSelfRating = 0.35m
+                }
+            ]
+        });
+        Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var attempt = await db.QuizAttempts.SingleAsync(a => a.UserId == user.UserId && a.AssessmentItemId == seeded.AssessmentItemId);
+        Assert.False(attempt.IsCorrect);
+        Assert.Equal(tree.RootId, attempt.TopicId);
+        Assert.Equal("big-o", attempt.SkillTag);
+    }
+
+    [Fact]
     public async Task AddWikiBlock_CreatesPageAwareLearningBlockAndRedactsUnsafeMarkers()
     {
         using var factory = new ApiSmokeFactory();
@@ -765,6 +910,122 @@ public sealed class WikiGraphContractTests
         return (rootPageId, childPageId);
     }
 
+    private static async Task<WikiPracticeQuestionIds> SeedWikiPracticeQuestionAsync(
+        ApiSmokeFactory factory,
+        Guid userId,
+        Guid topicId,
+        string conceptKey)
+    {
+        using var scope = factory.Services.CreateScope();
+        var examService = scope.ServiceProvider.GetRequiredService<IExamFrameworkService>();
+        var exam = await examService.CreateSystemSkeletonAsync();
+
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var now = DateTime.UtcNow;
+        var snapshotId = Guid.NewGuid();
+        var conceptId = Guid.NewGuid();
+        var assessmentItemId = Guid.NewGuid();
+
+        db.ConceptGraphSnapshots.Add(new ConceptGraphSnapshot
+        {
+            Id = snapshotId,
+            UserId = userId,
+            TopicId = topicId,
+            ApprovedResearchIntent = "wiki practice concept binding",
+            TopicTitle = "Wiki practice concept binding",
+            Domain = "computer_science",
+            SourceConfidence = "model_assisted",
+            GraphJson = "{}",
+            CreatedAt = now
+        });
+        db.LearningConcepts.Add(new LearningConcept
+        {
+            Id = conceptId,
+            ConceptGraphSnapshotId = snapshotId,
+            StableKey = conceptKey,
+            Label = "Big-O growth",
+            Description = "Explain growth rate with input size.",
+            DifficultyBand = "core",
+            Order = 1,
+            CreatedAt = now
+        });
+
+        var generatedQuestionJson = $$"""
+        {
+          "assessmentItemId": "{{assessmentItemId}}",
+          "question": "Which statement best diagnoses a Big-O misconception?",
+          "options": [
+            { "id": "A", "text": "Big-O describes growth rate as input size changes.", "isCorrect": true, "rationale": "This checks growth-rate reasoning.", "diagnosticSignalIfChosen": "growth_rate_reasoning_present" },
+            { "id": "B", "text": "Big-O is the exact runtime for every input.", "isCorrect": false, "rationale": "This exposes exact-runtime confusion.", "diagnosticSignalIfChosen": "big_o_exact_runtime_confusion" },
+            { "id": "C", "text": "Big-O only applies to loops with one counter.", "isCorrect": false, "rationale": "This exposes syntax-only reasoning.", "diagnosticSignalIfChosen": "syntax_only_big_o_reasoning" }
+          ],
+          "correctAnswer": "A",
+          "explanation": "Big-O is about growth behavior, not exact runtime."
+        }
+        """;
+
+        db.AssessmentItems.Add(new AssessmentItem
+        {
+            Id = assessmentItemId,
+            UserId = userId,
+            TopicId = topicId,
+            ConceptGraphSnapshotId = snapshotId,
+            LearningConceptId = conceptId,
+            AssessmentItemKey = $"{conceptKey}:wiki-practice-1",
+            ConceptKey = conceptKey,
+            ConceptLabel = "Big-O growth",
+            QuestionType = "diagnostic_multiple_choice",
+            CognitiveSkill = "conceptual",
+            Difficulty = "core",
+            MisconceptionTarget = "big_o_exact_runtime_confusion",
+            EvidenceExpected = "Learner distinguishes growth rate from exact runtime.",
+            GeneratedQuestionJson = generatedQuestionJson,
+            ScoringRuleJson = """{"basis":"assessment_item","signals":["growth_rate_reasoning_present","big_o_exact_runtime_confusion"]}""",
+            Order = 1,
+            CreatedAt = now
+        });
+
+        var question = new QuestionItem
+        {
+            Id = Guid.NewGuid(),
+            OwnerUserId = userId,
+            ExamDefinitionId = exam.Id,
+            LearningTopicId = topicId,
+            ConceptGraphSnapshotId = snapshotId,
+            LearningConceptId = conceptId,
+            AssessmentItemId = assessmentItemId,
+            QuestionBankSource = "diagnostic_assessment_item",
+            ConceptKey = conceptKey,
+            ConceptLabel = "Big-O growth",
+            MisconceptionTarget = "big_o_exact_runtime_confusion",
+            EvidenceExpected = "Learner distinguishes growth rate from exact runtime.",
+            ScoringRuleJson = """{"basis":"assessment_item","signals":["growth_rate_reasoning_present","big_o_exact_runtime_confusion"]}""",
+            CalibrationStatus = "review_ready",
+            VisualReadinessStatus = "not_required",
+            QuestionType = "multiple_choice",
+            Stem = "Which statement best diagnoses a Big-O misconception?",
+            Difficulty = "medium",
+            CognitiveSkill = "conceptual",
+            QualityStatus = "diagnostic_ready",
+            LicenseStatus = "user_provided",
+            SourceOrigin = "diagnostic_engine",
+            SourceTitle = "Orka diagnostic assessment item",
+            Explanation = "Big-O is about growth behavior, not exact runtime.",
+            CreatedAt = now,
+            UpdatedAt = now,
+            Options =
+            [
+                new QuestionOption { OptionKey = "A", Text = "Big-O describes growth rate as input size changes.", IsCorrect = true, Rationale = "This checks growth-rate reasoning.", DiagnosticSignalJson = """{"signal":"growth_rate_reasoning_present"}""", SortOrder = 0 },
+                new QuestionOption { OptionKey = "B", Text = "Big-O is the exact runtime for every input.", IsCorrect = false, Rationale = "This exposes exact-runtime confusion.", MisconceptionKey = "big_o_exact_runtime_confusion", DiagnosticSignalJson = """{"signal":"big_o_exact_runtime_confusion"}""", SortOrder = 1 },
+                new QuestionOption { OptionKey = "C", Text = "Big-O only applies to loops with one counter.", IsCorrect = false, Rationale = "This exposes syntax-only reasoning.", MisconceptionKey = "syntax_only_big_o_reasoning", DiagnosticSignalJson = """{"signal":"syntax_only_big_o_reasoning"}""", SortOrder = 2 }
+            ]
+        };
+
+        db.QuestionItems.Add(question);
+        await db.SaveChangesAsync();
+        return new WikiPracticeQuestionIds(assessmentItemId, question.Id);
+    }
+
     private static async Task<Guid> SeedConceptGraphAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)
     {
         using var scope = factory.Services.CreateScope();
@@ -838,4 +1099,6 @@ public sealed class WikiGraphContractTests
         await db.SaveChangesAsync();
         return graphId;
     }
+
+    private sealed record WikiPracticeQuestionIds(Guid AssessmentItemId, Guid QuestionItemId);
 }

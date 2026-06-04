@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
@@ -13,13 +14,16 @@ public sealed class AssessmentController : ControllerBase
 {
     private readonly IAssessmentCalibrationService _calibration;
     private readonly IAssessmentBlueprintService _blueprints;
+    private readonly ResourceOwnershipGuard _ownership;
 
     public AssessmentController(
         IAssessmentCalibrationService calibration,
-        IAssessmentBlueprintService blueprints)
+        IAssessmentBlueprintService blueprints,
+        ResourceOwnershipGuard ownership)
     {
         _calibration = calibration;
         _blueprints = blueprints;
+        _ownership = ownership;
     }
 
     [HttpGet("topic/{topicId:guid}/blueprint")]
@@ -107,6 +111,11 @@ public sealed class AssessmentController : ControllerBase
     public async Task<IActionResult> GetCalibration(Guid topicId, CancellationToken ct)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId, ct))
+        {
+            return NotFound();
+        }
+
         var result = await _calibration.GetLatestAsync(userId, topicId, ct);
         return result == null ? NotFound() : Ok(result);
     }
@@ -115,6 +124,11 @@ public sealed class AssessmentController : ControllerBase
     public async Task<IActionResult> RunCalibration(Guid topicId, CancellationToken ct)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (!await _ownership.TopicBelongsToUserAsync(userId, topicId, ct))
+        {
+            return NotFound();
+        }
+
         var result = await _calibration.RunAsync(userId, topicId, ct);
         return Ok(result);
     }

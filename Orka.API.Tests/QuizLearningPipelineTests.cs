@@ -14,7 +14,7 @@ namespace Orka.API.Tests;
 public sealed class QuizLearningPipelineTests
 {
     [Fact]
-    public async Task ChatQuizCompletion_RecordsDurableAttemptAndCanonicalLearningState()
+    public async Task ChatQuizCompletion_RecordsObservedAttemptAndCanonicalLessonProgress()
     {
         await using var factory = CreateFactory();
         var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "quiz-pipe");
@@ -46,10 +46,15 @@ public sealed class QuizLearningPipelineTests
             a.UserId == user.UserId &&
             a.SessionId == sessionId &&
             a.TopicId == tree.LessonId);
-        Assert.True(attempt.IsCorrect);
+        // Chat quiz completion may advance the lesson, but durable correctness stays observed-only
+        // until a server-authored assessment item verifies the answer key.
+        Assert.False(attempt.IsCorrect);
         Assert.StartsWith("chat:", attempt.QuestionHash);
 
-        Assert.True(await db.LearningSignals.AnyAsync(s =>
+        using var metadata = JsonDocument.Parse(attempt.SourceRefsJson!);
+        Assert.False(metadata.RootElement.GetProperty("correctnessVerified").GetBoolean());
+        Assert.True(metadata.RootElement.GetProperty("clientCorrectnessIgnored").GetBoolean());
+        Assert.False(await db.LearningSignals.AnyAsync(s =>
             s.UserId == user.UserId &&
             s.SessionId == sessionId &&
             s.QuizAttemptId == attempt.Id &&
@@ -58,10 +63,11 @@ public sealed class QuizLearningPipelineTests
             e.UserId == user.UserId &&
             e.SessionId == sessionId &&
             e.QuizAttemptId == attempt.Id));
-        Assert.True(await db.SkillMasteries.AnyAsync(m =>
-            m.UserId == user.UserId &&
-            m.TopicId == tree.LessonId &&
-            m.SubTopicTitle == "QuizPipe Lesson"));
+        Assert.True(await db.LearningSignals.AnyAsync(s =>
+            s.UserId == user.UserId &&
+            s.SessionId == sessionId &&
+            s.TopicId == tree.LessonId &&
+            s.SignalType == "LessonCompleted"));
 
         var lesson1 = await db.Topics.SingleAsync(t => t.Id == tree.LessonId);
         var lesson2 = await db.Topics.SingleAsync(t => t.Id == secondLessonId);
@@ -114,7 +120,7 @@ public sealed class QuizLearningPipelineTests
     }
 
     [Fact]
-    public async Task LegacyWrongChatQuizAnswer_RecordsDurableAttemptAndLearningSignal()
+    public async Task LegacyWrongChatQuizAnswer_RecordsObservedAttemptWithoutStrongLearningSignal()
     {
         await using var factory = CreateFactory(services =>
         {
@@ -143,7 +149,10 @@ public sealed class QuizLearningPipelineTests
             a.SessionId == sessionId &&
             a.TopicId == tree.LessonId);
         Assert.False(attempt.IsCorrect);
-        Assert.True(await db.LearningSignals.AnyAsync(s =>
+        using var metadata = JsonDocument.Parse(attempt.SourceRefsJson!);
+        Assert.False(metadata.RootElement.GetProperty("correctnessVerified").GetBoolean());
+        Assert.True(metadata.RootElement.GetProperty("clientCorrectnessIgnored").GetBoolean());
+        Assert.False(await db.LearningSignals.AnyAsync(s =>
             s.UserId == user.UserId &&
             s.SessionId == sessionId &&
             s.QuizAttemptId == attempt.Id &&
@@ -293,7 +302,7 @@ public sealed class QuizLearningPipelineTests
 
     private sealed class AlwaysWrongTutorAgent : ITutorAgent
     {
-        public Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending) =>
+        public Task<string> GetResponseAsync(Guid userId, string content, Session session, bool isQuizPending, CancellationToken ct = default) =>
             Task.FromResult("Tutor response");
 
         public async IAsyncEnumerable<string> GetResponseStreamAsync(
@@ -303,22 +312,22 @@ public sealed class QuizLearningPipelineTests
             bool isQuizPending,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            yield return await GetResponseAsync(userId, content, session, isQuizPending);
+            yield return await GetResponseAsync(userId, content, session, isQuizPending, ct);
         }
 
-        public Task<string> GetDeepPlanWelcomeAsync(Guid userId, string content, Session session, IReadOnlyList<string> planTitles) =>
+        public Task<string> GetDeepPlanWelcomeAsync(Guid userId, string content, Session session, IReadOnlyList<string> planTitles, CancellationToken ct = default) =>
             Task.FromResult("Welcome");
 
-        public Task<string> GetOptionsWelcomeAsync(Guid userId, string content, Session session) =>
+        public Task<string> GetOptionsWelcomeAsync(Guid userId, string content, Session session, CancellationToken ct = default) =>
             Task.FromResult("Options");
 
-        public Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle, IReadOnlyList<string>? curriculumTitles = null) =>
+        public Task<string> GetFirstLessonAsync(string parentTopicTitle, string lessonTitle, IReadOnlyList<string>? curriculumTitles = null, CancellationToken ct = default) =>
             Task.FromResult("First lesson");
 
-        public Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null) =>
+        public Task<string> GenerateTopicQuizAsync(string topicTitle, string? researchContext = null, CancellationToken ct = default) =>
             Task.FromResult(PendingQuiz);
 
-        public Task<bool> EvaluateQuizAnswerAsync(string question, string answer) =>
+        public Task<bool> EvaluateQuizAnswerAsync(string question, string answer, CancellationToken ct = default) =>
             Task.FromResult(false);
     }
 }

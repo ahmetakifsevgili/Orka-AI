@@ -108,6 +108,7 @@ public sealed class WikiKnowledgeNotebookDto
     public string ConceptCoverage { get; set; } = "unknown";
     public IReadOnlyList<WikiNotebookSectionDto> Sections { get; set; } = Array.Empty<WikiNotebookSectionDto>();
     public IReadOnlyList<string> SourceWarnings { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<NotebookStudioNextActionDto> NextActions { get; set; } = Array.Empty<NotebookStudioNextActionDto>();
     public DateTime LastUpdatedAt { get; set; }
 }
 

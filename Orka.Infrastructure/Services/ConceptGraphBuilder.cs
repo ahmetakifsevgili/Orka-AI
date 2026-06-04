@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnyAscii;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
@@ -21,6 +22,7 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
     private readonly IRedisMemoryService? _redis;
     private readonly IConceptGraphQualityService? _quality;
     private readonly IResourceConceptAlignmentService? _alignment;
+    private readonly IConceptScopePlanner _scopePlanner;
     private readonly ILogger<ConceptGraphBuilder> _logger;
 
     public ConceptGraphBuilder(
@@ -28,12 +30,14 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         IRedisMemoryService? redis,
         ILogger<ConceptGraphBuilder> logger,
         IConceptGraphQualityService? quality = null,
-        IResourceConceptAlignmentService? alignment = null)
+        IResourceConceptAlignmentService? alignment = null,
+        IConceptScopePlanner? scopePlanner = null)
     {
         _db = db;
         _redis = redis;
         _quality = quality;
         _alignment = alignment;
+        _scopePlanner = scopePlanner ?? new ConceptScopePlanner();
         _logger = logger;
     }
 
@@ -49,8 +53,8 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         CancellationToken ct = default)
     {
         var intentHash = ComputeIntentHash(approvedResearchIntent, approvedMainTopic, approvedFocusArea);
-        var cacheKey = $"orka:v2:concept-graph:{intentHash}";
-        var sourceBundleCacheKey = $"orka:v2:source-bundle:{intentHash}";
+        var cacheKey = $"orka:v11:concept-graph:{intentHash}";
+        var sourceBundleCacheKey = $"orka:v11:source-bundle:{intentHash}";
 
         var existing = await _db.ConceptGraphSnapshots
             .Include(s => s.Concepts)
@@ -83,7 +87,7 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
                 SourceBundleCacheKey = sourceBundleCacheKey,
                 QualityRunId = existingQuality?.Id,
                 QualityStatus = existingQuality?.QualityStatus ?? "unknown",
-                QualityCacheKey = $"orka:v2:graph-quality:{existing.Id:N}",
+                QualityCacheKey = $"orka:v10:graph-quality:{existing.Id:N}",
                 CacheHit = true
             };
         }
@@ -152,7 +156,7 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
             SourceBundleCacheKey = sourceBundleCacheKey,
             QualityRunId = quality?.Id,
             QualityStatus = quality?.QualityStatus ?? "unknown",
-            QualityCacheKey = $"orka:v2:graph-quality:{snapshot.Id:N}",
+            QualityCacheKey = $"orka:v10:graph-quality:{snapshot.Id:N}",
             CacheHit = cachedGraph != null
         };
     }
@@ -253,7 +257,7 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         }
     }
 
-    private static ConceptGraphDto BuildGraph(
+    private ConceptGraphDto BuildGraph(
         string intentHash,
         string approvedResearchIntent,
         string topicTitle,
@@ -261,44 +265,43 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         string approvedFocusArea,
         CompressedPlanResearchContextDto context)
     {
-        var domain = DetectDomain(approvedResearchIntent, topicTitle, approvedMainTopic, approvedFocusArea);
+        var scope = _scopePlanner.BuildScope(
+            approvedResearchIntent,
+            topicTitle,
+            approvedMainTopic,
+            approvedFocusArea,
+            context);
+        var domain = scope.Domain;
         var sourceBundleHash = ComputeSourceBundleHash(context);
         var sourceConfidence = SourceConfidence(context);
-        var conceptLabels = BuildConceptLabels(approvedResearchIntent, topicTitle, approvedMainTopic, approvedFocusArea, domain, context);
-        var misconceptionPool = context.LikelyMisconceptions.Count > 0
-            ? context.LikelyMisconceptions
-            : DefaultMisconceptions(domain);
-        var sourceLabels = context.TopSources
-            .Select(s => $"{Trim(s.Provider, 40)}: {Trim(s.Title, 120)}")
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Take(6)
-            .ToList();
+        var conceptSeeds = scope.Seeds.Count > 0
+            ? scope.Seeds
+            : new ConceptScopePlanner()
+                .BuildScope(approvedResearchIntent, topicTitle, approvedMainTopic, approvedFocusArea, context)
+                .Seeds;
 
-        var outcomes = conceptLabels.Select((label, index) => new LearningOutcomeDto
+        var outcomes = conceptSeeds.Select((seed, index) => new LearningOutcomeDto
         {
-            StableKey = $"{NormalizeKey(label)}-outcome",
-            Label = $"{label} outcome",
-            Description = $"Learner can explain, apply, or diagnose {label} within {topicTitle}.",
-            StandardUri = $"orka:outcome:{intentHash}:{NormalizeKey(label)}",
+            StableKey = $"{seed.StableKey}-outcome",
+            Label = $"{seed.Label} outcome",
+            Description = $"Learner can explain, apply, or diagnose {seed.Label} within {topicTitle}.",
+            StandardUri = $"orka:outcome:{intentHash}:{seed.StableKey}",
             CognitiveLevel = index % 4 == 0 ? "remember" : index % 4 == 1 ? "understand" : index % 4 == 2 ? "apply" : "analyze"
         }).ToList();
 
-        var concepts = conceptLabels.Select((label, index) =>
+        var concepts = conceptSeeds.Select((seed, index) =>
         {
-            var key = NormalizeKey(label);
-            var prereqKeys = index == 0 ? new List<string>() : [NormalizeKey(conceptLabels[index - 1])];
-            var misconception = misconceptionPool[index % misconceptionPool.Count];
             return new LearningConceptDto
             {
-                StableKey = key,
-                Label = label,
-                Description = BuildDescription(label, domain, topicTitle),
-                DifficultyBand = index < Math.Max(2, conceptLabels.Count / 4) ? "foundation" : index > conceptLabels.Count * 0.7 ? "advanced" : "core",
+                StableKey = seed.StableKey,
+                Label = seed.Label,
+                Description = BuildDescription(seed.Label, domain, topicTitle, seed.EvidenceBasis),
+                DifficultyBand = string.IsNullOrWhiteSpace(seed.DifficultyBand) ? "core" : seed.DifficultyBand,
                 Order = index,
-                PrerequisiteKeys = prereqKeys,
-                Misconceptions = [Trim(misconception, 180)],
+                PrerequisiteKeys = seed.PrerequisiteKeys,
+                Misconceptions = seed.Misconceptions.Count > 0 ? seed.Misconceptions : ["common misconception"],
                 LearningOutcomeKeys = [outcomes[index].StableKey],
-                SourceEvidenceLabels = sourceLabels.Take(3).ToList()
+                SourceEvidenceLabels = seed.SourceEvidenceLabels
             };
         }).ToList();
 
@@ -494,65 +497,13 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         string approvedFocusArea,
         string domain,
         CompressedPlanResearchContextDto context)
-    {
-        var candidates = context.CurriculumMapHints
-            .Concat(context.PrerequisiteHints)
-            .Concat(context.KeyFacts)
-            .Select(ConceptLabelFromText)
-            .Where(IsUsefulLabel)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(10)
-            .ToList();
-
-        var fallback = DefaultConceptLabels(domain, approvedMainTopic, approvedFocusArea, approvedResearchIntent, topicTitle);
-        return candidates.Concat(fallback)
-            .Select(label => Trim(label, 90))
-            .Where(IsUsefulLabel)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(12)
-            .ToList();
-    }
-
-    private static List<string> DefaultConceptLabels(string domain, string mainTopic, string focusArea, string intent, string topicTitle)
-    {
-        var baseTopic = FirstNonBlank(mainTopic, focusArea, intent, topicTitle, "core topic");
-        return domain switch
-        {
-            "programming" => [$"{baseTopic} execution model", "syntax and types", "control flow", "functions and data flow", "error reading", "small implementation practice", "debugging reflection", "mixed project checkpoint"],
-            "algorithms" => [$"{baseTopic} problem reading", "arrays and lists", "search and sorting", "complexity reasoning", "data structure choice", "recursion", "graph traversal", "pattern selection"],
-            "sql" => [$"{baseTopic} schema reading", "filter selectivity", "index fundamentals", "join plans", "aggregation and sorting cost", "execution plan evidence", "safe optimization", "before-after validation"],
-            "history" => [$"{baseTopic} chronology", "geography and setting", "main actors", "key events", "institutions", "cause and effect", "culture and legacy", "source comparison"],
-            "math" => [$"{baseTopic} definitions", "formula intuition", "worked examples", "condition reading", "procedure selection", "mixed problems", "error checking", "review transfer"],
-            "language" => [$"{baseTopic} vocabulary", "grammar in use", "listening and reading input", "speaking prompts", "writing practice", "error correction", "spaced review", "real context transfer"],
-            "exam" => [$"{baseTopic} kazanım map", "question stem reading", "distractor recognition", "timed decision", "wrong answer analysis", "mixed drill", "review pressure", "mock checkpoint"],
-            _ => [$"{baseTopic} prerequisites", "core vocabulary", "concept model", "worked examples", "guided practice", "misconception repair", "mixed application", "review checkpoint"]
-        };
-    }
-
-    private static List<string> DefaultMisconceptions(string domain) => domain switch
-    {
-        "programming" => ["copying syntax without tracing state", "ignoring error messages", "mixing compile-time and runtime behavior"],
-        "algorithms" => ["memorizing patterns without preconditions", "off-by-one loop boundaries", "choosing data structures by familiarity"],
-        "sql" => ["adding indexes without measuring plan evidence", "ignoring selectivity", "optimizing while changing query semantics"],
-        "history" => ["mixing periods chronologically", "memorizing actors without cause-effect", "ignoring geography and institutions"],
-        "math" => ["using formulas before reading conditions", "treating examples as rules", "skipping sanity checks"],
-        "language" => ["translating word-for-word", "knowing rules but not using them", "avoiding output practice"],
-        "exam" => ["answering from familiarity instead of evidence", "missing negative wording", "spending equal time on every question"],
-        _ => ["memorization without context", "skipping prerequisites", "mixing similar terms"]
-    };
-
-    private static string DetectDomain(params string[] values)
-    {
-        var text = NormalizeSearch(string.Join(' ', values));
-        if (ContainsAny(text, "sql", "postgres", "mssql", "database", "veritabani", "query", "index")) return "sql";
-        if (ContainsAny(text, "algorithm", "algoritma", "data structure", "veri yapi", "leetcode", "dynamic programming")) return "algorithms";
-        if (ContainsAny(text, "python", "java", "csharp", "c#", ".net", "javascript", "typescript", "programlama", "coding", "react")) return "programming";
-        if (ContainsAny(text, "kpss", "yks", "tyt", "ayt", "ielts", "toefl", "sinav", "exam", "paragraf")) return "exam";
-        if (ContainsAny(text, "matematik", "math", "olasilik", "kombinasyon", "geometry", "geometri")) return "math";
-        if (ContainsAny(text, "english", "ingilizce", "language", "speaking", "grammar")) return "language";
-        if (ContainsAny(text, "history", "tarih", "ottoman", "osmanli", "seljuk", "selcuk", "roma", "medieval")) return "history";
-        return "general";
-    }
+        => ResearchConceptExtractor.ExtractConceptLabels(
+            context,
+            domain,
+            approvedMainTopic,
+            approvedFocusArea,
+            approvedResearchIntent,
+            topicTitle);
 
     private static string SourceConfidence(CompressedPlanResearchContextDto context)
     {
@@ -561,12 +512,13 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         return "low";
     }
 
-    private static string BuildDescription(string label, string domain, string topicTitle) =>
-        $"{label} is a measurable {domain} learning concept inside {topicTitle}. It can be assessed, remediated, and connected to source evidence.";
+    private static string BuildDescription(string label, string domain, string topicTitle, string evidenceBasis = "") =>
+        $"{label} is a measurable {domain} learning concept inside {topicTitle}. It can be assessed, remediated, and connected to source evidence. Basis: {FirstNonBlank(evidenceBasis, "concept_scope_planner")}.";
 
     private static string ConceptLabelFromText(string text)
     {
         var clean = Regex.Replace(text, @"https?://\S+", " ");
+        clean = Regex.Replace(clean, @"\b(www\.|doi:|isbn:)\S+", " ", RegexOptions.IgnoreCase);
         clean = Regex.Replace(clean, @"^[\-\*\d\.\)\s]+", " ");
         clean = Regex.Replace(clean, @"\s+", " ").Trim(' ', '.', ':', ';');
         if (clean.Contains(':'))
@@ -576,9 +528,63 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
         return Trim(clean, 90);
     }
 
+    private static bool LooksLikeResearchInstruction(string label)
+    {
+        var text = NormalizeSearch(label);
+        return ContainsAny(text,
+            "research", "search for", "look up", "find sources", "source-backed", "source grounded",
+            "use sources", "provide citations", "provider", "tool", "workflow", "korteks",
+            "compress", "summarize", "report", "brief", "learning path", "study plan",
+            "map the focus", "identify sub-concepts", "break down", "start from", "move from",
+            "watch for", "available videos", "youtube", "playlist");
+    }
+
+    private static bool LooksLikeSourceReference(string label)
+    {
+        var text = NormalizeSearch(label);
+        return ContainsAny(text,
+            "http", "www", ".com", ".org", ".edu", ".gov", "wikipedia", "khan academy",
+            "coursera", "edx", "youtube", "video", "channel", "playlist", "official docs",
+            "documentation", "article", "paper", "chapter", "book", "lecture notes",
+            "retrieved", "source", "url");
+    }
+
+    private static bool LooksLikeCurriculumContainer(string label)
+    {
+        var text = NormalizeSearch(label);
+        return ContainsAny(text,
+            "unit ", "module ", "lesson ", "week ", "day ", "part ", "phase ",
+            "checkpoint", "roadmap", "syllabus", "curriculum", "course outline",
+            "introductory", "advanced topics", "practice set", "homework", "exercise set",
+            "exam prep", "mock test", "review session");
+    }
+
     private static bool IsUsefulLabel(string label) =>
         !string.IsNullOrWhiteSpace(label) &&
         label.Length >= 4 &&
+        !ContainsAny(NormalizeSearch(label),
+            "start from prerequisites",
+            "move from small examples",
+            "small examp",
+            "map the focus area",
+            "sub-concepts",
+            "sub concepts",
+            "prior skills",
+            "basic examples",
+            "learner starts",
+            "watch for",
+            "memorized definitions",
+            "confused terminology",
+            "direct learning",
+            "research brief",
+            "need source grounded",
+            "practiceorder",
+            "learning path",
+            "conservative curriculum",
+            "provider-backed sources",
+            "available videos",
+            "generated from",
+            "research intent") &&
         !label.Contains("degraded", StringComparison.OrdinalIgnoreCase) &&
         !label.Contains("unavailable", StringComparison.OrdinalIgnoreCase);
 
@@ -603,6 +609,9 @@ public sealed class ConceptGraphBuilder : IConceptGraphBuilder
     }
 
     private static string NormalizeSearch(string value) =>
+        value.ToLowerInvariant().Transliterate();
+
+    private static string NormalizeSearchLegacy(string value) =>
         value.ToLowerInvariant()
             .Replace('ç', 'c')
             .Replace('ğ', 'g')

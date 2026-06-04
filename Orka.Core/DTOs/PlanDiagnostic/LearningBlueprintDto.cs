@@ -12,6 +12,10 @@ public sealed class LearningBlueprintDto
     public List<string> CommonMistakes { get; set; } = [];
     public List<string> PracticeOrder { get; set; } = [];
     public List<string> AssessmentAxes { get; set; } = [];
+    public List<string> LearningOutcomes { get; set; } = [];
+    public List<string> ConceptGraphKeys { get; set; } = [];
+    public List<string> MisconceptionMap { get; set; } = [];
+    public List<string> DiagnosticSkillMatrix { get; set; } = [];
     public int RecommendedQuestionCount { get; set; } = 20;
     public List<LearningBlueprintModuleDto> PlanModules { get; set; } = [];
 

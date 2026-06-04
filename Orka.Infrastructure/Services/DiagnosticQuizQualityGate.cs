@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnyAscii;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.PlanDiagnostic;
 
@@ -27,9 +28,19 @@ public static class DiagnosticQuizQualityGate
 
     public static string EnsureQualityOrFallback(string rawJson, string topicTitle, out DiagnosticQuizQualityReport report)
     {
+        return EnsureQualityOrFallback(rawJson, topicTitle, 20, "Turkish", out report);
+    }
+
+    public static string EnsureQualityOrFallback(string rawJson, string topicTitle, int expectedQuestionCount, string language, out DiagnosticQuizQualityReport report)
+    {
         var cleaned = ExtractJsonArray(rawJson);
-        report = Validate(cleaned, topicTitle);
-        return report.IsAcceptable ? cleaned : BuildFallbackDiagnosticBlueprint(topicTitle);
+        report = Validate(cleaned, topicTitle, expectedQuestionCount);
+        if (!report.IsAcceptable)
+        {
+            throw new InvalidOperationException($"Diagnostic quiz quality failed: {string.Join(" | ", report.Failures.Take(5))}");
+        }
+
+        return cleaned;
     }
 
     public static string EnsureQualityOrThrow(
@@ -40,7 +51,7 @@ public static class DiagnosticQuizQualityGate
         LearningBlueprintDto? learningBlueprint = null)
     {
         var cleaned = ExtractJsonArray(rawJson);
-        report = Validate(cleaned, topicTitle);
+        report = Validate(cleaned, topicTitle, expectedQuestionCount);
 
         var failures = report.Failures.ToList();
         if (report.QuestionCount != expectedQuestionCount)
@@ -85,6 +96,11 @@ public static class DiagnosticQuizQualityGate
 
     public static DiagnosticQuizQualityReport Validate(string rawJson, string topicTitle)
     {
+        return Validate(rawJson, topicTitle, 20);
+    }
+
+    public static DiagnosticQuizQualityReport Validate(string rawJson, string topicTitle, int expectedQuestionCount)
+    {
         var failures = new List<string>();
         var questions = ParseQuestions(rawJson, failures);
 
@@ -102,7 +118,7 @@ public static class DiagnosticQuizQualityGate
 
         var missingMetadata = questions.Count(q =>
             string.IsNullOrWhiteSpace(q.Question) ||
-            q.Options.Count < 2 ||
+            q.Options.Count < 4 ||
             string.IsNullOrWhiteSpace(q.CorrectAnswer) ||
             string.IsNullOrWhiteSpace(q.Explanation) ||
             string.IsNullOrWhiteSpace(q.SkillTag) ||
@@ -124,12 +140,24 @@ public static class DiagnosticQuizQualityGate
             failures.Add($"Answer options leak correctness labels instead of testing knowledge: {correctnessLabelLeakCount}.");
         }
 
+        var unresolvedCorrectOptions = questions.Count(q => q.CorrectOptionIndex < 0);
+        if (unresolvedCorrectOptions > 0)
+        {
+            failures.Add($"Questions where correct option cannot be resolved from options: {unresolvedCorrectOptions}.");
+        }
+
+        var firstOptionCorrectCount = questions.Count(q => q.CorrectOptionIndex == 0);
+        if (questions.Count >= 8 && firstOptionCorrectCount >= Math.Ceiling(questions.Count * 0.60m))
+        {
+            failures.Add($"Correct option position pattern is unsafe: first option is correct {firstOptionCorrectCount}/{questions.Count}.");
+        }
+
         var conceptDiversity = questions
             .Select(q => NormalizeTag(q.ConceptTag))
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
-        var minConceptDiversity = questions.Count >= 15 ? 8 : Math.Min(4, Math.Max(2, questions.Count / 2));
+        var minConceptDiversity = expectedQuestionCount >= 15 ? 5 : Math.Min(4, Math.Max(2, expectedQuestionCount / 2));
         if (conceptDiversity < minConceptDiversity)
         {
             failures.Add($"Concept diversity too low: {conceptDiversity}/{minConceptDiversity}.");
@@ -140,17 +168,32 @@ public static class DiagnosticQuizQualityGate
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
-        var minQuestionTypeDiversity = questions.Count >= 15 ? 4 : Math.Min(3, Math.Max(2, questions.Count / 2));
+        var minQuestionTypeDiversity = expectedQuestionCount >= 15 ? 4 : Math.Min(3, Math.Max(2, expectedQuestionCount / 2));
         if (questionTypeDiversity < minQuestionTypeDiversity)
         {
             failures.Add($"Question type diversity too low: {questionTypeDiversity}/{minQuestionTypeDiversity}.");
         }
 
         var misconceptionProbeCount = questions.Count(IsMisconceptionProbe);
-        var minMisconceptionProbes = questions.Count >= 15 ? 5 : Math.Min(2, Math.Max(1, questions.Count / 4));
+        var minMisconceptionProbes = expectedQuestionCount >= 15 ? 5 : Math.Min(2, Math.Max(1, expectedQuestionCount / 4));
         if (misconceptionProbeCount < minMisconceptionProbes)
         {
             failures.Add($"Misconception probes too low: {misconceptionProbeCount}/{minMisconceptionProbes}.");
+        }
+
+        var misconceptionProbeWithoutRationales = questions.Count(q => IsMisconceptionProbe(q) && q.DistractorRationaleCount < 3);
+        if (misconceptionProbeWithoutRationales > 0)
+        {
+            failures.Add($"Misconception probes missing option-level distractor rationales: {misconceptionProbeWithoutRationales}.");
+        }
+
+        var genericMisconceptionTargets = questions.Count(q =>
+            IsMisconceptionProbe(q) &&
+            (string.IsNullOrWhiteSpace(q.MisconceptionTarget) ||
+             NormalizeTag(q.MisconceptionTarget) is "commonmistakes" or "common_mistakes" or "misconception" or "conceptual" or "procedural"));
+        if (genericMisconceptionTargets > Math.Max(1, misconceptionProbeCount / 2))
+        {
+            failures.Add($"Misconception probes are too generic: {genericMisconceptionTargets}/{misconceptionProbeCount}.");
         }
 
         var hasCodeLikeQuestion = questions.Any(q => LooksCodeLike(q.Question) || q.Options.Any(LooksCodeLike));
@@ -171,87 +214,140 @@ public static class DiagnosticQuizQualityGate
 
     public static string BuildFallbackDiagnosticBlueprint(string topicTitle, LearningBlueprintDto? learningBlueprint = null)
     {
-        var profile = DetectFallbackProfile(topicTitle);
-        var items = BuildLegacyAdapterSpecs(topicTitle, learningBlueprint, profile, 20);
-        return BuildFallbackDiagnosticBlueprint(topicTitle, new AssessmentGrammarDto
-        {
-            RequestedQuestionCount = items.Count,
-            Items = items
-        });
+        var questionCount = NormalizeQuestionCount(learningBlueprint?.RecommendedQuestionCount ?? 20);
+        return BuildFallbackDiagnosticBlueprint(topicTitle, questionCount, "Turkish", learningBlueprint);
+    }
+
+    public static string BuildFallbackDiagnosticBlueprint(string topicTitle, int questionCount, string language, LearningBlueprintDto? learningBlueprint = null)
+    {
+        return BuildFallbackDiagnosticBlueprintCore(topicTitle, NormalizeQuestionCount(questionCount), language, learningBlueprint, null);
     }
 
     public static string BuildFallbackDiagnosticBlueprint(string topicTitle, AssessmentGrammarDto assessmentGrammar)
     {
-        var profile = DetectFallbackProfile(topicTitle);
-        var items = assessmentGrammar.Items
-            .OrderBy(i => i.Order)
-            .Where(i => !string.IsNullOrWhiteSpace(i.ConceptKey))
-            .ToList();
+        return BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar, "Turkish");
+    }
 
-        if (items.Count == 0)
+    public static string BuildFallbackDiagnosticBlueprint(string topicTitle, AssessmentGrammarDto assessmentGrammar, string language)
+    {
+        var questionCount = assessmentGrammar.RequestedQuestionCount > 0
+            ? assessmentGrammar.RequestedQuestionCount
+            : assessmentGrammar.Items.Count > 0 ? assessmentGrammar.Items.Count : 20;
+        return BuildFallbackDiagnosticBlueprintCore(topicTitle, NormalizeQuestionCount(questionCount), language, null, assessmentGrammar);
+    }
+
+    private static string BuildFallbackDiagnosticBlueprintCore(
+        string topicTitle,
+        int questionCount,
+        string language,
+        LearningBlueprintDto? learningBlueprint,
+        AssessmentGrammarDto? assessmentGrammar)
+    {
+        var topicLabel = CleanTopicLabel(topicTitle);
+        var topicKey = BuildTopicKey(topicLabel);
+        var misconceptionProbeTarget = Math.Max(5, (int)Math.Ceiling(questionCount * 0.35m));
+        var typeCycle = new[] { "conceptual", "procedural", "application", "analysis" };
+        var difficultyCycle = new[] { "kolay", "orta", "zor" };
+        var grammarItems = assessmentGrammar?.Items.OrderBy(i => i.Order).ToArray() ?? [];
+
+        var questions = Enumerable.Range(1, questionCount).Select(i =>
         {
-            items = BuildLegacyAdapterSpecs(topicTitle, null, profile, 20);
+            var grammarItem = i <= grammarItems.Length ? grammarItems[i - 1] : null;
+            var questionType = i <= misconceptionProbeTarget
+                ? "misconception_probe"
+                : typeCycle[(i - misconceptionProbeTarget - 1) % typeCycle.Length];
+            var conceptKey = CleanOrDefault(grammarItem?.ConceptKey, $"{topicKey}-concept-{((i - 1) % 8) + 1}");
+            var conceptLabel = CleanOrDefault(grammarItem?.ConceptLabel, $"{topicLabel} kavram {((i - 1) % 8) + 1}");
+            var misconceptionTarget = CleanOrDefault(
+                grammarItem?.MisconceptionTarget,
+                $"{conceptKey}-evidence-misread-{i}");
+            var correctText = $"{conceptLabel} icin kaniti, kavrami ve kisiti birlikte kontrol eder {i}";
+            var options = BuildFallbackOptions(i, correctText, misconceptionTarget);
+            var question = BuildFallbackQuestionText(topicLabel, conceptLabel, questionType, i);
+            var assessmentItemId = grammarItem?.AssessmentItemId is { } id && id != Guid.Empty
+                ? id
+                : Guid.Parse($"00000000-0000-0000-0000-{i:000000000000}");
+
+            return new
+            {
+                type = "multiple_choice",
+                assessmentItemId,
+                assessmentItemKey = CleanOrDefault(grammarItem?.AssessmentItemKey, $"{topicKey}-diagnostic-{i}"),
+                question,
+                options,
+                correctAnswer = correctText,
+                explanation = $"{conceptLabel} icin cevap, kanit ve kisitlari birlikte degerlendiren secenektir.",
+                skillTag = conceptKey,
+                difficulty = CleanOrDefault(grammarItem?.Difficulty, difficultyCycle[(i - 1) % difficultyCycle.Length]),
+                conceptTag = conceptKey,
+                conceptKey,
+                cognitiveSkill = CleanOrDefault(grammarItem?.CognitiveSkill, questionType),
+                learningObjective = CleanOrDefault(
+                    grammarItem?.EvidenceExpected,
+                    $"{conceptLabel} icin tani kaniti uretmek."),
+                learningOutcomeIds = grammarItem?.LearningOutcomeKeys.Count > 0
+                    ? grammarItem.LearningOutcomeKeys.ToArray()
+                    : new[] { $"outcome:{conceptKey}" },
+                questionType,
+                misconceptionTarget,
+                expectedMisconceptionCategory = $"{conceptKey}-misconception-pattern",
+                evidenceExpected = CleanOrDefault(
+                    grammarItem?.EvidenceExpected,
+                    $"{conceptLabel} hakkinda gerekceli karar."),
+                scoringRule = CleanOrDefault(grammarItem?.ScoringRule, "selected_option_exact_match"),
+                language = string.IsNullOrWhiteSpace(language) ? "Turkish" : language,
+                source = learningBlueprint?.Domain ?? "deterministic_assessment_contract"
+            };
+        });
+
+        return JsonSerializer.Serialize(questions, JsonOptions);
+    }
+
+    private static object[] BuildFallbackOptions(int index, string correctText, string misconceptionTarget)
+    {
+        var distractors = new object[]
+        {
+            new { text = $"Sadece tanimi ezberler ve senaryodaki kaniti atlar {index}", isCorrect = false, rationale = "Evidence is ignored.", misconceptionKey = $"{misconceptionTarget}-definition-only" },
+            new { text = $"Benzer kavrami asil hedefle karistirir {index}", isCorrect = false, rationale = "Nearby concept confusion.", misconceptionKey = $"{misconceptionTarget}-nearby-concept" },
+            new { text = $"Ilk ipucuna bakip gerekce yazmadan karar verir {index}", isCorrect = false, rationale = "Surface clue guessing.", misconceptionKey = $"{misconceptionTarget}-surface-clue" }
+        };
+        var options = new List<object>(distractors);
+        options.Insert((index - 1) % 4, new { text = correctText, isCorrect = true, rationale = "Matches the target evidence.", misconceptionKey = string.Empty });
+        return options.ToArray();
+    }
+
+    private static string BuildFallbackQuestionText(string topicLabel, string conceptLabel, string questionType, int index)
+    {
+        var prompt = $"Tani {index}: {topicLabel} icin {conceptLabel} konusunda hangi secenek kanita dayali en iyi karari verir?";
+        if (index == 2 && IsTechnicalTopic(topicLabel))
+        {
+            prompt += topicLabel.Contains("sql", StringComparison.OrdinalIgnoreCase)
+                ? "\n```sql\nSELECT key, value FROM sample_table WHERE key = @target;\n```"
+                : "\n```text\nfor (int i = 0; i < n; i++) { total += values[i]; }\n```";
         }
 
-        var requestedCount = Math.Clamp(
-            assessmentGrammar.RequestedQuestionCount > 0 ? assessmentGrammar.RequestedQuestionCount : items.Count,
-            15,
-            25);
-
-        var questions = Enumerable.Range(0, requestedCount).Select(i =>
-        {
-            var spec = items[i % items.Count];
-            var codeSnippet = profile.IsTechnical && i is 0 or 5 or 10 or 15
-                ? $"\n\nKod:\n```{profile.CodeFenceLanguage}\n{BuildGenericCodeSnippet(profile, spec)}\n```"
-                : string.Empty;
-            var options = BuildNeutralDiagnosticOptions(i, profile, spec);
-            var correctOption = options.First(option => option.IsCorrect).Text;
-            var misconception = string.IsNullOrWhiteSpace(spec.MisconceptionTarget)
-                ? ((i % 5) == 4 ? "Conceptual" : "Reading")
-                : spec.MisconceptionTarget;
-
-            return new DiagnosticQuestionBlueprint
-            {
-                Type = "multiple_choice",
-                AssessmentItemId = spec.AssessmentItemId == Guid.Empty ? Guid.NewGuid() : spec.AssessmentItemId,
-                AssessmentItemKey = string.IsNullOrWhiteSpace(spec.AssessmentItemKey)
-                    ? $"fallback:{spec.ConceptKey}:{i + 1:00}"
-                    : spec.AssessmentItemKey,
-                ConceptKey = spec.ConceptKey,
-                CognitiveSkill = string.IsNullOrWhiteSpace(spec.CognitiveSkill)
-                    ? RequiredQuestionTypes[i % RequiredQuestionTypes.Length]
-                    : spec.CognitiveSkill,
-                MisconceptionTarget = spec.MisconceptionTarget,
-                EvidenceExpected = string.IsNullOrWhiteSpace(spec.EvidenceExpected)
-                    ? BuildSafeLearningObjective(profile, i)
-                    : spec.EvidenceExpected,
-                ScoringRule = string.IsNullOrWhiteSpace(spec.ScoringRule)
-                    ? "selected_option_exact_match"
-                    : spec.ScoringRule,
-                LearningOutcomeIds = spec.LearningOutcomeKeys.Count > 0
-                    ? spec.LearningOutcomeKeys
-                    : [$"{spec.ConceptKey}-outcome"],
-                Question = BuildFallbackQuestionText(topicTitle, i, profile, spec, codeSnippet),
-                Options = options,
-                CorrectAnswer = correctOption,
-                Explanation = BuildFallbackExplanation(profile, topicTitle, i, spec),
-                SkillTag = spec.ConceptKey,
-                Difficulty = string.IsNullOrWhiteSpace(spec.Difficulty) ? BuildDifficulty(i, requestedCount) : spec.Difficulty,
-                ConceptTag = spec.ConceptKey,
-                LearningObjective = string.IsNullOrWhiteSpace(spec.EvidenceExpected)
-                    ? BuildSafeLearningObjective(profile, i)
-                    : spec.EvidenceExpected,
-                QuestionType = string.IsNullOrWhiteSpace(spec.CognitiveSkill)
-                    ? RequiredQuestionTypes[i % RequiredQuestionTypes.Length]
-                    : spec.CognitiveSkill,
-                ExpectedMisconceptionCategory = misconception,
-                Topic = topicTitle
-            };
-        }).ToList();
-
-        return JsonSerializer.Serialize(questions, JsonOptions)
-            .Replace("\\u0060", "`", StringComparison.OrdinalIgnoreCase);
+        return questionType == "misconception_probe"
+            ? $"{prompt} Ayrica yaygin yanilgiyi ayirt et."
+            : prompt;
     }
+
+    private static int NormalizeQuestionCount(int questionCount) =>
+        Math.Clamp(questionCount <= 0 ? 20 : questionCount, 15, 25);
+
+    private static string CleanTopicLabel(string topicTitle) =>
+        string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
+
+    private static string BuildTopicKey(string topicTitle)
+    {
+        var key = Regex.Replace(topicTitle.Transliterate().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+        if (string.IsNullOrWhiteSpace(key))
+            key = "konu";
+
+        return key.Length <= 48 ? key : key[..48].Trim('-');
+    }
+
+    private static string CleanOrDefault(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
 
     public static string ExtractJsonArray(string raw)
     {
@@ -299,8 +395,10 @@ public static class DiagnosticQuizQualityGate
             string.IsNullOrWhiteSpace(GetString(q, "assessmentItemId")) ||
             string.IsNullOrWhiteSpace(GetString(q, "conceptKey")) ||
             string.IsNullOrWhiteSpace(GetString(q, "cognitiveSkill")) ||
+            string.IsNullOrWhiteSpace(GetString(q, "misconceptionTarget")) ||
             string.IsNullOrWhiteSpace(GetString(q, "evidenceExpected")) ||
             string.IsNullOrWhiteSpace(GetString(q, "scoringRule")) ||
+            !HasAtLeastOptions(q, 4) ||
             !q.TryGetProperty("learningOutcomeIds", out var outcomes) ||
             outcomes.ValueKind != JsonValueKind.Array);
         if (missing > 0)
@@ -338,309 +436,21 @@ public static class DiagnosticQuizQualityGate
         {
             throw new InvalidOperationException($"Diagnostic quiz metadata validation failed: cognitive skill spread {cognitiveSpread}/3.");
         }
+
+        var misconceptionProbeCount = questions.Count(q =>
+            NormalizeTag(GetString(q, "questionType") ?? GetString(q, "cognitiveSkill") ?? string.Empty)
+                .Contains("misconception", StringComparison.OrdinalIgnoreCase));
+        var minimumMisconceptionProbes = Math.Max(3, (int)Math.Ceiling(expectedQuestionCount * 0.30m));
+        if (misconceptionProbeCount < minimumMisconceptionProbes)
+        {
+            throw new InvalidOperationException($"Diagnostic quiz metadata validation failed: misconception probes {misconceptionProbeCount}/{minimumMisconceptionProbes}.");
+        }
     }
 
-    private static List<AssessmentItemSpecDto> BuildLegacyAdapterSpecs(
-        string topicTitle,
-        LearningBlueprintDto? blueprint,
-        DiagnosticFallbackProfile profile,
-        int count)
-    {
-        var seeds = (blueprint?.Concepts.Count > 0 ? blueprint.Concepts : [])
-            .Concat(blueprint?.AssessmentAxes ?? [])
-            .Concat(blueprint?.SubConcepts ?? [])
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(12)
-            .ToList();
-
-        if (seeds.Count == 0)
-        {
-            seeds = Enumerable.Range(1, Math.Max(8, Math.Min(12, count)))
-                .Select(i => $"{profile.SkillPrefix}-concept-{i:00}")
-                .ToList();
-        }
-
-        return Enumerable.Range(0, count).Select(i =>
-        {
-            var label = CleanLabel(seeds[i % seeds.Count], topicTitle, i);
-            var key = StableKey(label, i);
-            var cognitive = RequiredQuestionTypes[i % RequiredQuestionTypes.Length];
-            return new AssessmentItemSpecDto
-            {
-                AssessmentItemId = Guid.NewGuid(),
-                AssessmentItemKey = $"legacy-adapter:{StableKey(topicTitle, 0)}:{key}:{i + 1:00}",
-                ConceptKey = key,
-                ConceptLabel = label,
-                CognitiveSkill = cognitive,
-                Difficulty = BuildDifficulty(i, count),
-                MisconceptionTarget = cognitive == "misconception_probe"
-                    ? "conceptual confusion or nearby distractor"
-                    : string.Empty,
-                EvidenceExpected = BuildSafeLearningObjective(profile, i),
-                LearningOutcomeKeys = [$"{key}-outcome"],
-                OptionQualityRules =
-                [
-                    "one clearly correct option",
-                    "three plausible distractors",
-                    "no correctness labels",
-                    "no Orka UI wording"
-                ],
-                ScoringRule = "selected_option_exact_match",
-                Order = i
-            };
-        }).ToList();
-    }
-
-    private static string BuildFallbackQuestionText(
-        string topicTitle,
-        int index,
-        DiagnosticFallbackProfile profile,
-        AssessmentItemSpecDto spec,
-        string codeSnippet)
-    {
-        var concept = string.IsNullOrWhiteSpace(spec.ConceptLabel) ? spec.ConceptKey : spec.ConceptLabel;
-        var skill = string.IsNullOrWhiteSpace(spec.CognitiveSkill)
-            ? RequiredQuestionTypes[index % RequiredQuestionTypes.Length]
-            : spec.CognitiveSkill;
-        var stem = skill switch
-        {
-            "procedural" => $"{concept} icin dogru adim sirasi hangisidir?",
-            "application" => $"{concept} bilgisini verilen durumda uygularken hangi karar daha saglamdir?",
-            "analysis" => $"{concept} ile ilgili kaniti yorumlarken once neye bakilmalidir?",
-            "misconception_probe" => $"{concept} konusunda en olasi kavram yanilgisini ayirmak icin hangi ipucu kullanilir?",
-            _ => $"{concept} kavramini anlamak icin en guvenilir kontrol hangisidir?"
-        };
-
-        if (!string.IsNullOrWhiteSpace(codeSnippet))
-        {
-            stem = skill switch
-            {
-                "analysis" => $"{concept} için aşağıdaki örnekte sonuç veya risk nasıl okunmalıdır?",
-                "misconception_probe" => $"{concept} için aşağıdaki örnekte hangi yanılgıya dikkat edilmelidir?",
-                _ => $"{concept} için aşağıdaki örnek hangi akıl yürütmeyi gerektirir?"
-            };
-        }
-
-        return $"{topicTitle}: Soru {index + 1} - {stem}{codeSnippet}";
-    }
-
-    private static string BuildFallbackExplanation(
-        DiagnosticFallbackProfile profile,
-        string topicTitle,
-        int index,
-        AssessmentItemSpecDto spec)
-    {
-        var concept = string.IsNullOrWhiteSpace(spec.ConceptLabel) ? spec.ConceptKey : spec.ConceptLabel;
-        var evidence = string.IsNullOrWhiteSpace(spec.EvidenceExpected)
-            ? BuildSafeLearningObjective(profile, index)
-            : spec.EvidenceExpected;
-        return $"{topicTitle} icin {concept} cevabi, ezberden degil verilen kosul ve beklenen kanit uzerinden degerlendirilir: {evidence}.";
-    }
-
-    private static string BuildSafeLearningObjective(DiagnosticFallbackProfile profile, int index)
-    {
-        if (profile.IsTechnical)
-        {
-            return (index % 5) switch
-            {
-                0 => "Kod okuma ve veri akisini yorumlama",
-                1 => "Kavrami senaryo kisitlarina gore uygulama",
-                2 => "Hata belirtisi ile kok nedeni ayirma",
-                3 => "Dogru uygulama adimini secme",
-                _ => "Kavram yanilgisini fark etme"
-            };
-        }
-
-        return (index % 5) switch
-        {
-            0 => "Soru kosulunu dogru okuma",
-            1 => "Kavrami senaryoya uygulama",
-            2 => "Distractor veya yanilgi ayirma",
-            3 => "Cozum adimini siralama",
-            _ => "Sonucu gerekceyle kontrol etme"
-        };
-    }
-
-    private static List<DiagnosticOption> BuildNeutralDiagnosticOptions(
-        int index,
-        DiagnosticFallbackProfile profile,
-        AssessmentItemSpecDto spec)
-    {
-        var concept = string.IsNullOrWhiteSpace(spec.ConceptLabel) ? "hedef kavram" : spec.ConceptLabel;
-        var evidence = string.IsNullOrWhiteSpace(spec.EvidenceExpected)
-            ? "verilen kosulu kavramla eslestirmek"
-            : spec.EvidenceExpected;
-
-        List<DiagnosticOption> options;
-        if (index % 4 == 0)
-        {
-            options = new List<DiagnosticOption>
-            {
-                new DiagnosticOption($"{concept} icin verilen kosulu okuyup {evidence} kanitini aramak.", true),
-                new DiagnosticOption($"{concept} basligini gorunce ayrinti okumadan ezber cevap vermek.", false),
-                new DiagnosticOption("Benzer gorunen ama hedef kavrama ait olmayan ipucunu secmek.", false),
-                new DiagnosticOption("Kaynak veya soru kosulu olmadan tahmini kesin bilgi saymak.", false)
-            };
-        }
-        else if (index % 4 == 1)
-        {
-            options = new List<DiagnosticOption>
-            {
-                new DiagnosticOption("Once on kosulu, sonra uygulama adimini kontrol etmek.", true),
-                new DiagnosticOption("On kosullari atlayip sonuca dogrudan atlamak.", false),
-                new DiagnosticOption("Yan kavrami asil kavramin yerine kullanmak.", false),
-                new DiagnosticOption("Sadece en uzun secenegi guvenilir kabul etmek.", false)
-            };
-        }
-        else if (index % 4 == 2)
-        {
-            options = new List<DiagnosticOption>
-            {
-                new DiagnosticOption("Kucuk ornekte kavram, kanit ve sonucu birlikte eslestirmek.", true),
-                new DiagnosticOption("Ornekteki kisitlari gereksiz ayrinti saymak.", false),
-                new DiagnosticOption("Belirti ile kok nedeni ayni sey gibi yorumlamak.", false),
-                new DiagnosticOption("Ilk tanidik kelimeyi dogru cevap saymak.", false)
-            };
-        }
-        else
-        {
-            options = new List<DiagnosticOption>
-            {
-                new DiagnosticOption("Kaniti, kavrami ve sonucu ayni anda kontrol etmek.", true),
-                new DiagnosticOption("Sadece basliga bakarak cevap secmek.", false),
-                new DiagnosticOption("Benzer terimleri kanitsiz ayni kabul etmek.", false),
-                new DiagnosticOption("Aciklamayi okumadan tahmin yapmak.", false)
-            };
-        }
-
-        // Shuffling using a deterministic seed based on index & concept hash to avoid static random lock/contention
-        var seed = Math.Abs(index + concept.GetHashCode());
-        var rng = new Random(seed);
-        int n = options.Count;
-        while (n > 1)
-        {
-            n--;
-            int k = rng.Next(n + 1);
-            var value = options[k];
-            options[k] = options[n];
-            options[n] = value;
-        }
-
-        return options;
-    }
-
-    private static DiagnosticFallbackProfile DetectFallbackProfile(string topicTitle)
-    {
-        var normalized = topicTitle.ToLowerInvariant();
-
-        if (normalized.Contains("c#", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains("csharp", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Contains(".net", StringComparison.OrdinalIgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "csharp",
-                "csharp",
-                "var user = users.First(u => u.Id == selectedId);\nConsole.WriteLine(user.Name.ToUpper());");
-        }
-
-        if (Regex.IsMatch(normalized, @"\bpython|py\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "python",
-                "python",
-                "items = [1, 2, 3]\nprint(items[3])");
-        }
-
-        if (Regex.IsMatch(normalized, @"\bjava\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "java",
-                "java",
-                "int[] numbers = {4, 1, 3};\nArrays.sort(numbers);\nSystem.out.println(numbers[0]);");
-        }
-
-        if (Regex.IsMatch(normalized, @"\b(javascript|typescript|react|node|js|ts)\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "javascript",
-                "javascript",
-                "const data = fetch('/api/items');\nconsole.log(data.length);");
-        }
-
-        if (Regex.IsMatch(normalized, @"\bsql|database|postgres|veritabani|veri tabani\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "sql",
-                "sql",
-                "SELECT name FROM users WHERE created_at > NOW();");
-        }
-
-        if (IsTechnicalTopic(topicTitle))
-        {
-            return new DiagnosticFallbackProfile(
-                true,
-                "technical",
-                "text",
-                "read input\napply selected concept\ncompare observed output with expected result");
-        }
-
-        if (Regex.IsMatch(normalized, @"\bkpss|yks|tyt|ayt|sinav|exam\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(false, "exam", "text", string.Empty);
-        }
-
-        if (Regex.IsMatch(normalized, @"\bmatematik|math|geometri|olasilik|kombinasyon\b", RegexOptions.IgnoreCase))
-        {
-            return new DiagnosticFallbackProfile(false, "math", "text", string.Empty);
-        }
-
-        return new DiagnosticFallbackProfile(false, "general", "text", string.Empty);
-    }
-
-    private static string BuildGenericCodeSnippet(DiagnosticFallbackProfile profile, AssessmentItemSpecDto spec)
-    {
-        if (!string.IsNullOrWhiteSpace(profile.CodeSnippet))
-        {
-            return profile.CodeSnippet;
-        }
-
-        var concept = string.IsNullOrWhiteSpace(spec.ConceptKey)
-            ? "concept"
-            : spec.ConceptKey.Replace("-", "_", StringComparison.Ordinal);
-        return $"input = [1, 2, 3]\nresult = apply_{concept}(input)\nprint(result)";
-    }
-
-    private static string BuildDifficulty(int index, int count) =>
-        index < count * 0.3 ? "kolay" : index < count * 0.75 ? "orta" : "zor";
-
-    private static string CleanLabel(string value, string topicTitle, int index)
-    {
-        var cleaned = Regex.Replace(value ?? string.Empty, @"[_\-]+", " ").Trim();
-        if (string.IsNullOrWhiteSpace(cleaned))
-        {
-            cleaned = $"{topicTitle} kavram {index + 1}";
-        }
-
-        return cleaned.Length <= 80 ? cleaned : cleaned[..80];
-    }
-
-    private static string StableKey(string value, int index)
-    {
-        var normalized = NormalizeOptionText(value ?? string.Empty);
-        normalized = Regex.Replace(normalized, @"[^a-z0-9]+", "-", RegexOptions.IgnoreCase).Trim('-');
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            normalized = $"concept-{index + 1:00}";
-        }
-
-        return normalized.Length <= 48 ? normalized : normalized[..48].Trim('-');
-    }
+    private static bool HasAtLeastOptions(JsonElement question, int minimum) =>
+        question.TryGetProperty("options", out var options) &&
+        options.ValueKind == JsonValueKind.Array &&
+        options.GetArrayLength() >= minimum;
 
     private static List<DiagnosticQuestion> ParseQuestions(string rawJson, List<string> failures)
     {
@@ -668,6 +478,8 @@ public static class DiagnosticQuizQualityGate
     private static DiagnosticQuestion ParseQuestion(JsonElement element)
     {
         var options = new List<string>();
+        var distractorRationaleCount = 0;
+        var correctOptionIndex = -1;
         if (element.TryGetProperty("options", out var optionsElement) &&
             optionsElement.ValueKind == JsonValueKind.Array)
         {
@@ -675,16 +487,40 @@ public static class DiagnosticQuizQualityGate
             {
                 if (option.ValueKind == JsonValueKind.String)
                 {
+                    if (MatchesCorrectAnswer(option.GetString(), GetString(element, "correctAnswer")))
+                    {
+                        correctOptionIndex = options.Count;
+                    }
+
                     options.Add(option.GetString() ?? string.Empty);
                 }
                 else if (option.ValueKind == JsonValueKind.Object)
                 {
-                    options.Add(
+                    var isCorrect = option.TryGetProperty("isCorrect", out var correctProp) &&
+                                    correctProp.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+                                    correctProp.GetBoolean();
+                    var rationale = GetString(option, "rationale") ??
+                                    GetString(option, "distractorRationale") ??
+                                    GetString(option, "diagnosticSignalIfChosen");
+                    var misconceptionKey = GetString(option, "misconceptionKey") ??
+                                           GetString(option, "distractorMisconceptionKey");
+                    if (!isCorrect && (!string.IsNullOrWhiteSpace(rationale) || !string.IsNullOrWhiteSpace(misconceptionKey)))
+                    {
+                        distractorRationaleCount++;
+                    }
+
+                    var text =
                         GetString(option, "text") ??
                         GetString(option, "value") ??
                         GetString(option, "label") ??
                         GetString(option, "id") ??
-                        string.Empty);
+                        string.Empty;
+                    if (isCorrect || MatchesCorrectAnswer(text, GetString(element, "correctAnswer")))
+                    {
+                        correctOptionIndex = options.Count;
+                    }
+
+                    options.Add(text);
                 }
             }
         }
@@ -696,10 +532,13 @@ public static class DiagnosticQuizQualityGate
             GetString(element, "explanation") ?? string.Empty,
             GetString(element, "skillTag") ?? string.Empty,
             GetString(element, "difficulty") ?? string.Empty,
-            GetString(element, "conceptTag") ?? string.Empty,
+            GetString(element, "conceptTag") ?? GetString(element, "conceptKey") ?? string.Empty,
             GetString(element, "learningObjective") ?? string.Empty,
             GetString(element, "questionType") ?? string.Empty,
-            GetString(element, "expectedMisconceptionCategory") ?? string.Empty);
+            GetString(element, "expectedMisconceptionCategory") ?? string.Empty,
+            GetString(element, "misconceptionTarget") ?? string.Empty,
+            distractorRationaleCount,
+            correctOptionIndex);
     }
 
     private static string? GetString(JsonElement element, string propertyName) =>
@@ -801,14 +640,17 @@ public static class DiagnosticQuizQualityGate
     }
 
     private static string NormalizeOptionText(string value) =>
-        value.Trim()
-            .ToLowerInvariant()
-            .Replace('ç', 'c')
-            .Replace('ğ', 'g')
-            .Replace('ı', 'i')
-            .Replace('ö', 'o')
-            .Replace('ş', 's')
-            .Replace('ü', 'u');
+        value.Trim().ToLowerInvariant().Transliterate();
+
+    private static bool MatchesCorrectAnswer(string? option, string? answer)
+    {
+        if (string.IsNullOrWhiteSpace(option) || string.IsNullOrWhiteSpace(answer))
+        {
+            return false;
+        }
+
+        return string.Equals(NormalizeOptionText(option), NormalizeOptionText(answer), StringComparison.OrdinalIgnoreCase);
+    }
 
     private sealed record DiagnosticQuestion(
         string Question,
@@ -820,39 +662,11 @@ public static class DiagnosticQuizQualityGate
         string ConceptTag,
         string LearningObjective,
         string QuestionType,
-        string ExpectedMisconceptionCategory);
+        string ExpectedMisconceptionCategory,
+        string MisconceptionTarget,
+        int DistractorRationaleCount,
+        int CorrectOptionIndex);
 
-    private sealed record DiagnosticFallbackProfile(
-        bool IsTechnical,
-        string SkillPrefix,
-        string CodeFenceLanguage,
-        string CodeSnippet);
-
-    private sealed class DiagnosticQuestionBlueprint
-    {
-        public string Type { get; set; } = "multiple_choice";
-        public Guid AssessmentItemId { get; set; }
-        public string AssessmentItemKey { get; set; } = string.Empty;
-        public string ConceptKey { get; set; } = string.Empty;
-        public string CognitiveSkill { get; set; } = string.Empty;
-        public string MisconceptionTarget { get; set; } = string.Empty;
-        public string EvidenceExpected { get; set; } = string.Empty;
-        public string ScoringRule { get; set; } = "selected_option_exact_match";
-        public List<string> LearningOutcomeIds { get; set; } = [];
-        public string Question { get; set; } = string.Empty;
-        public List<DiagnosticOption> Options { get; set; } = [];
-        public string CorrectAnswer { get; set; } = string.Empty;
-        public string Explanation { get; set; } = string.Empty;
-        public string SkillTag { get; set; } = string.Empty;
-        public string Difficulty { get; set; } = string.Empty;
-        public string ConceptTag { get; set; } = string.Empty;
-        public string LearningObjective { get; set; } = string.Empty;
-        public string QuestionType { get; set; } = string.Empty;
-        public string ExpectedMisconceptionCategory { get; set; } = string.Empty;
-        public string Topic { get; set; } = string.Empty;
-    }
-
-    private sealed record DiagnosticOption(string Text, bool IsCorrect);
 }
 
 public sealed record DiagnosticQuizQualityReport(

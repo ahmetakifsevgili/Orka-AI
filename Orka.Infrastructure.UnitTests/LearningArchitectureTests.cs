@@ -51,7 +51,15 @@ public sealed class LearningArchitectureTests
         await using var db = CreateDb();
         var (userId, topicId) = await SeedAsync(db);
         var graphBuilder = new ConceptGraphBuilder(db, null, NullLogger<ConceptGraphBuilder>.Instance);
-        var graph = await graphBuilder.BuildOrLoadAsync(userId, topicId, Guid.NewGuid(), "Java algorithms", "Java algorithms", "Java", "algorithms", ResearchContext());
+        var graph = await graphBuilder.BuildOrLoadAsync(
+            userId,
+            topicId,
+            Guid.NewGuid(),
+            "SQL query optimization indexes and execution plans",
+            "SQL optimization",
+            "SQL",
+            "index and execution plan",
+            ResearchContext());
         var grammarEngine = new AssessmentGrammarEngine(db, null, NullLogger<AssessmentGrammarEngine>.Instance);
         var draft = await grammarEngine.BuildOrLoadDraftAsync(userId, topicId, Guid.NewGuid(), Guid.NewGuid(), graph.Graph, 15);
 
@@ -75,12 +83,89 @@ public sealed class LearningArchitectureTests
             expectedMisconceptionCategory = "Conceptual"
         }));
 
-        var enriched = await grammarEngine.AttachQuestionMetadataAsync(rawQuiz, draft.Grammar);
+        var enriched = await grammarEngine.AttachQuestionMetadataWithOrderFallbackAsync(rawQuiz, draft.Grammar);
 
         DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(enriched, 15);
         Assert.Contains("assessmentItemId", enriched);
         Assert.Equal(15, await db.AssessmentItems.CountAsync());
         Assert.Equal(15, await db.AssessmentItems.CountAsync(i => i.GeneratedQuestionJson != null));
+    }
+
+    [Fact]
+    public async Task PlanSequencing_EarlyRepairPrerequisiteOrder_IsWarningNotBlocking()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var service = new PlanSequencingService(db, NullLogger<PlanSequencingService>.Instance);
+
+        var result = await service.EvaluatePlanSequenceAsync(userId, new PlanQualityEvaluationRequestDto
+        {
+            TopicId = topicId,
+            ProposedSteps =
+            [
+                new PlanStepContractDto
+                {
+                    StepId = "repair-async-result",
+                    Title = "Repair sync-over-async misconception",
+                    Objective = "Repair the misconception before continuing with the normal async sequence.",
+                    ConceptKey = "sync-over-async-deadlock",
+                    ConceptLabel = "Sync-over-async deadlock",
+                    PrerequisiteConceptKeys = ["event-loop"],
+                    TargetMisconceptions = ["blocking waits are always safe"],
+                    MasteryTarget = "distinguish",
+                    EstimatedMinutes = 20,
+                    LearnerState = "needs_remediation",
+                    RemediationNeed = "medium",
+                    DifficultyBand = "core",
+                    SequenceReason = "Diagnostic evidence requires an early misconception repair before the normal prerequisite lesson catches up.",
+                    QuizHook = new PlanStepAssessmentHookDto
+                    {
+                        HookType = "misconception_probe",
+                        ConceptKey = "sync-over-async-deadlock",
+                        TargetMisconceptions = ["blocking waits are always safe"],
+                        DifficultyBand = "core"
+                    },
+                    TutorHook = new PlanStepTutorHookDto
+                    {
+                        TutorMove = "misconception_repair",
+                        ActiveConceptKey = "sync-over-async-deadlock",
+                        TargetMisconception = "blocking waits are always safe"
+                    },
+                    SuccessCriteria = ["Learner can explain why blocking waits can deadlock."]
+                },
+                new PlanStepContractDto
+                {
+                    StepId = "event-loop",
+                    Title = "Event loop foundations",
+                    Objective = "Explain how the event loop schedules cooperative async work.",
+                    ConceptKey = "event-loop",
+                    ConceptLabel = "Event loop",
+                    MasteryTarget = "understand",
+                    EstimatedMinutes = 25,
+                    LearnerState = "unknown",
+                    RemediationNeed = "none",
+                    DifficultyBand = "foundation",
+                    SequenceReason = "This foundation supports later deadlock analysis after the urgent repair.",
+                    QuizHook = new PlanStepAssessmentHookDto
+                    {
+                        HookType = "checkpoint",
+                        ConceptKey = "event-loop",
+                        DifficultyBand = "foundation"
+                    },
+                    TutorHook = new PlanStepTutorHookDto
+                    {
+                        TutorMove = "explain",
+                        ActiveConceptKey = "event-loop"
+                    },
+                    SuccessCriteria = ["Learner can identify what blocks the event loop."]
+                }
+            ]
+        });
+
+        Assert.Equal("usable", result.QualityStatus);
+        Assert.Equal("needs_repair", result.PlanContract.AdaptiveDiagnostic.PlanReadiness);
+        Assert.DoesNotContain(result.BlockingIssues, issue => issue.Code == "prerequisite_order_violation");
+        Assert.Contains(result.WarningIssues, issue => issue.Code == "prerequisite_order_violation");
     }
 
     [Fact]
@@ -163,6 +248,134 @@ public sealed class LearningArchitectureTests
         Assert.True(quality.DuplicateRatio > 0);
         Assert.Contains("prerequisite_cycle", quality.Failures);
         Assert.Equal(1, await db.ConceptGraphQualityRuns.CountAsync());
+    }
+
+    [Fact]
+    public void ConceptScopePlanner_ExtractsMeasuredConceptsFromResearchWithoutTopicHardcodes()
+    {
+        var planner = new ConceptScopePlanner();
+        var context = new CompressedPlanResearchContextDto
+        {
+            CurriculumMapHints =
+            [
+                "SubConcepts: limits and continuity -> derivative rules -> chain rule -> implicit differentiation -> optimization setup -> related rates",
+                "PracticeOrder: start from small examples, then mixed applications"
+            ],
+            PrerequisiteHints = ["Prerequisites: algebraic manipulation; function notation; graph reading"],
+            LikelyMisconceptions = ["confusing average rate with instantaneous rate"],
+            KeyFacts = ["Derivative rules are used to reason about rates of change and tangent slopes."]
+        };
+
+        var scope = planner.BuildScope(
+            "Derivative calculus fundamentals and applications learning path",
+            "Derivative calculus diagnostic",
+            "Derivative calculus",
+            "fundamentals and applications",
+            context);
+
+        Assert.Equal("math", scope.Domain);
+        Assert.True(scope.Seeds.Count >= 8);
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("chain rule", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("optimization", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.Contains("PracticeOrder", StringComparison.OrdinalIgnoreCase));
+        Assert.All(scope.Seeds, s => Assert.False(string.IsNullOrWhiteSpace(s.StableKey)));
+    }
+
+    [Fact]
+    public void ConceptScopePlanner_ExpandsResearchBackedSqlOptimizationBeyondFourConcepts()
+    {
+        var planner = new ConceptScopePlanner();
+        var context = new CompressedPlanResearchContextDto
+        {
+            GroundingMode = GroundingMode.PartialSourceGrounded,
+            SourceCount = 1,
+            CurriculumMapHints =
+            [
+                "SQL indexes -> Query optimization",
+                "Execution plan reading -> Index selectivity -> Join cardinality"
+            ],
+            KeyFacts =
+            [
+                "Optimizer statistics and cardinality estimates explain why one index plan is chosen over another.",
+                "Before-after validation should compare scan, seek, join, sort, and lookup costs."
+            ],
+            LikelyMisconceptions = ["creating too many indexes improves every query"],
+            TopSources =
+            [
+                new SourceEvidenceDto("Docs", "Search", "https://example.com/sql-indexes", "SQL query optimization guide", "Execution plans, selectivity, cardinality, and indexes.", null, DateTimeOffset.UtcNow, 1, "web", null, null)
+            ]
+        };
+
+        var scope = planner.BuildScope(
+            "SQL programming SQL Indexes and Query Optimization learning path",
+            "SQL Indexes and Query Optimization",
+            "SQL programming SQL Indexes and Query Optimization",
+            "SQL Indexes",
+            context);
+
+        Assert.Equal("sql", scope.Domain);
+        Assert.True(scope.Seeds.Count >= 5);
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("Query optimization", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("Execution plan", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("cardinality", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.Contains("map the focus", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ConceptScopePlanner_DoesNotInventGenericSpineWhenResearchSignalIsLow()
+    {
+        var planner = new ConceptScopePlanner();
+        var scope = planner.BuildScope(
+            "React state management learning path",
+            "React state management diagnostic",
+            "React state management",
+            "state, effects, forms and performance",
+            new CompressedPlanResearchContextDto
+            {
+                CurriculumMapHints = ["LearningRoute: map the focus area and start from prerequisites"],
+                ProviderWarnings = ["providers disabled"]
+            });
+
+        Assert.Equal("programming", scope.Domain);
+        Assert.True(scope.Seeds.Count < 8);
+        Assert.Contains("concept_scope_low_research_signal", scope.Warnings);
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.Contains("map the focus", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEqual("deterministic_curriculum_seed", scope.Seeds.FirstOrDefault()?.EvidenceBasis);
+        Assert.Contains(scope.ScopeStatus, new[] { "insufficient_research_signal", "research_scoped_degraded" });
+    }
+
+    [Fact]
+    public void ConceptScopePlanner_FiltersInstructionFragmentsAndBareAnchorEchoes()
+    {
+        var planner = new ConceptScopePlanner();
+        var scope = planner.BuildScope(
+            "I want to learn integrals from foundations to applications. Diagnose exactly which integral concepts I miss.",
+            "Calculus integrals",
+            "Integral",
+            "fundamentals, area interpretation and applications",
+            new CompressedPlanResearchContextDto
+            {
+                CurriculumMapHints =
+                [
+                    "Break \"Integral fundamentals\" into measurable concepts",
+                    "Area interpretation -> definite integrals -> substitution method",
+                    "Ensuring a solid grasp of integral fundamentals -> Understanding what integrals are -> Finding areas under curves",
+                    "Start with understanding the prerequisites for integral calculus -> Verify understanding of integral concepts -> Explore real-world applications of integrals in physics"
+                ],
+                KeyFacts = ["Integral reasoning connects signed area, accumulation, and antiderivatives."]
+            });
+
+        Assert.Equal("math", scope.Domain);
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.Equals("Integral Integral", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Break", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Ensuring", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Understanding", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Start", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Verify", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(scope.Seeds, s => s.Label.StartsWith("Explore", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("Area interpretation", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("definite integrals", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(scope.Seeds, s => s.Label.Contains("areas under curves", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -574,6 +787,39 @@ public sealed class LearningArchitectureTests
         Assert.NotNull(plan.LessonDelivery);
         Assert.Equal("source_grounded_explanation", plan.LessonDelivery!.DeliveryMode);
         Assert.True(plan.LessonDelivery.RubricSignals.UsesSourceEvidence);
+    }
+
+    [Fact]
+    public async Task TutorActionPlanner_VisualDiagramArtifactAddsGovernedMermaidTool()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var planner = new TutorActionPlanner(db, new TestTutorWorkingMemoryService());
+        var state = new TutorTurnStateDto
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            SessionId = Guid.NewGuid(),
+            UserMessage = "Explain binary search with a Mermaid flow diagram and a visual artifact idea.",
+            ActiveConceptKey = "binary_search",
+            ActiveConceptLabel = "Binary search",
+            LearnerState = "ready",
+            MasteryProbability = 0.62m,
+            Confidence = 0.58m,
+            StyleMode = "step_by_step"
+        };
+
+        var plan = await planner.PlanAsync(state);
+
+        Assert.Equal("visualize", plan.TeachingMode);
+        Assert.NotNull(plan.ToolDecision);
+        Assert.Equal("create_artifact", plan.ToolDecision!.SelectedAction);
+        Assert.Contains(plan.ArtifactPlans, artifact => artifact.ArtifactType == "mermaid_graph");
+        Assert.Contains(plan.ToolPlans, tool => tool.ToolId == "mermaid_graph");
+        Assert.Contains("mermaid_graph", plan.ToolDecision.AllowedTools);
+        Assert.Contains("selectedToolAction: create_artifact", plan.PromptBlock);
+        Assert.Contains("plannedTools:", plan.PromptBlock);
     }
 
     [Fact]

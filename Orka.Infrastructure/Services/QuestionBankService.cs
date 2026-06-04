@@ -3,11 +3,16 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Orka.Infrastructure.Services;
 
 public sealed class QuestionBankService : IQuestionBankService
 {
+    private static readonly JsonSerializerOptions BankJsonOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly HashSet<string> AllowedQuestionTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "multiple_choice",
@@ -31,6 +36,16 @@ public sealed class QuestionBankService : IQuestionBankService
         "needs_review",
         "approved",
         "published",
+        "rejected",
+        "diagnostic_ready"
+    };
+
+    private static readonly HashSet<string> AllowedVisualReadinessStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "not_required",
+        "needs_validation",
+        "ready",
+        "validated",
         "rejected"
     };
 
@@ -103,6 +118,12 @@ public sealed class QuestionBankService : IQuestionBankService
         CancellationToken ct = default)
     {
         var take = Math.Clamp(filters.Take <= 0 ? 50 : filters.Take, 1, 100);
+        var requestedQuestionType = !string.IsNullOrWhiteSpace(filters.QuestionType)
+            ? NormalizeBounded(filters.QuestionType, AllowedQuestionTypes, "multiple_choice")
+            : null;
+        var requestedDifficulty = !string.IsNullOrWhiteSpace(filters.Difficulty)
+            ? NormalizeBounded(filters.Difficulty, AllowedDifficulties, "medium")
+            : null;
         var query = VisibleQuestions(userId);
 
         if (filters.ExamDefinitionId is { } examDefinitionId)
@@ -141,16 +162,50 @@ public sealed class QuestionBankService : IQuestionBankService
             query = query.Where(q => q.QualityStatus == qualityStatus);
         }
 
+        if (filters.LearningTopicId is { } learningTopicId)
+        {
+            query = query.Where(q => q.LearningTopicId == learningTopicId);
+        }
+
+        if (filters.ConceptGraphSnapshotId is { } snapshotId)
+        {
+            query = query.Where(q => q.ConceptGraphSnapshotId == snapshotId);
+        }
+
+        if (filters.LearningConceptId is { } learningConceptId)
+        {
+            query = query.Where(q => q.LearningConceptId == learningConceptId);
+        }
+
+        if (filters.AssessmentItemId is { } assessmentItemId)
+        {
+            query = query.Where(q => q.AssessmentItemId == assessmentItemId);
+        }
+
+        if (filters.QuizRunId is { } quizRunId)
+        {
+            query = query.Where(q => q.QuizRunId == quizRunId);
+        }
+
+        if (filters.PlanRequestId is { } planRequestId)
+        {
+            query = query.Where(q => q.PlanRequestId == planRequestId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.ConceptKey))
+        {
+            var conceptKey = filters.ConceptKey.Trim();
+            query = query.Where(q => q.ConceptKey == conceptKey);
+        }
+
         if (!string.IsNullOrWhiteSpace(filters.QuestionType))
         {
-            var questionType = NormalizeBounded(filters.QuestionType, AllowedQuestionTypes, "multiple_choice");
-            query = query.Where(q => q.QuestionType == questionType);
+            query = query.Where(q => q.QuestionType == requestedQuestionType);
         }
 
         if (!string.IsNullOrWhiteSpace(filters.Difficulty))
         {
-            var difficulty = NormalizeBounded(filters.Difficulty, AllowedDifficulties, "medium");
-            query = query.Where(q => q.Difficulty == difficulty);
+            query = query.Where(q => q.Difficulty == requestedDifficulty);
         }
 
         var questions = await query
@@ -163,18 +218,52 @@ public sealed class QuestionBankService : IQuestionBankService
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         var isAdmin = user?.IsAdmin ?? false;
 
-        return questions.Select(q => ToDto(q, stripAnswerKey: !isAdmin && q.OwnerUserId == null)).ToList();
+        var dtos = questions
+            .Select(q => ToDto(q, stripAnswerKey: ShouldStripAnswerKey(q, userId, isAdmin)))
+            .ToList();
+
+        if (filters.IncludeDiagnosticItems && dtos.Count < take)
+        {
+            var diagnosticItems = await GetDiagnosticQuestionBankItemsAsync(
+                userId,
+                filters,
+                requestedQuestionType,
+                requestedDifficulty,
+                take - dtos.Count,
+                ct);
+            dtos.AddRange(diagnosticItems);
+        }
+
+        return dtos;
     }
 
     public async Task<QuestionItemDto?> GetQuestionAsync(Guid userId, Guid questionId, CancellationToken ct = default)
     {
         var question = await VisibleQuestions(userId).FirstOrDefaultAsync(q => q.Id == questionId, ct);
-        if (question is null) return null;
+        if (question is not null)
+        {
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+            var isAdmin = user?.IsAdmin ?? false;
+            return ToDto(question, stripAnswerKey: ShouldStripAnswerKey(question, userId, isAdmin));
+        }
 
-        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-        var isAdmin = user?.IsAdmin ?? false;
+        var diagnosticItem = await _db.AssessmentItems
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == questionId
+                                         && item.UserId == userId
+                                         && item.GeneratedQuestionJson != null
+                                         && item.GeneratedQuestionJson != string.Empty, ct);
 
-        return ToDto(question, stripAnswerKey: !isAdmin && question.OwnerUserId == null);
+        if (diagnosticItem is null)
+        {
+            return null;
+        }
+
+        var stat = await _db.AssessmentItemStats
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.UserId == userId && s.AssessmentItemId == questionId, ct);
+
+        return ToDiagnosticQuestionBankDto(diagnosticItem, stat);
     }
 
     public async Task<QuestionItemDto> CreateQuestionAsync(
@@ -192,6 +281,20 @@ public sealed class QuestionBankService : IQuestionBankService
             request.ExamOutcomeId,
             request.OutcomeLinks,
             ct);
+        var binding = await ResolveQuestionBindingAsync(
+            userId,
+            request.LearningTopicId,
+            request.ConceptGraphSnapshotId,
+            request.LearningConceptId,
+            request.AssessmentItemId,
+            request.ConceptKey,
+            request.ConceptLabel,
+            request.MisconceptionTarget,
+            request.EvidenceExpected,
+            request.ScoringRuleJson,
+            request.QuizRunId,
+            request.PlanRequestId,
+            ct);
 
         var now = DateTime.UtcNow;
         var question = new QuestionItem
@@ -203,6 +306,20 @@ public sealed class QuestionBankService : IQuestionBankService
             ExamSubjectId = links.ExamSubjectId,
             ExamTopicId = links.ExamTopicId,
             ExamOutcomeId = links.ExamOutcomeId,
+            LearningTopicId = binding.LearningTopicId,
+            ConceptGraphSnapshotId = binding.ConceptGraphSnapshotId,
+            LearningConceptId = binding.LearningConceptId,
+            AssessmentItemId = binding.AssessmentItemId,
+            QuizRunId = binding.QuizRunId,
+            PlanRequestId = binding.PlanRequestId,
+            QuestionBankSource = Clean(request.QuestionBankSource, binding.AssessmentItemId.HasValue ? "diagnostic_assessment_item" : "curated_question_item"),
+            ConceptKey = binding.ConceptKey,
+            ConceptLabel = binding.ConceptLabel,
+            MisconceptionTarget = binding.MisconceptionTarget,
+            EvidenceExpected = binding.EvidenceExpected,
+            ScoringRuleJson = binding.ScoringRuleJson,
+            CalibrationStatus = SafeOptional(request.CalibrationStatus),
+            VisualReadinessStatus = NormalizeBounded(request.VisualReadinessStatus, AllowedVisualReadinessStatuses, "not_required"),
             QuestionType = NormalizeBounded(request.QuestionType, AllowedQuestionTypes, "multiple_choice"),
             Stem = Clean(request.Stem),
             Difficulty = NormalizeBounded(request.Difficulty, AllowedDifficulties, "medium"),
@@ -258,12 +375,44 @@ public sealed class QuestionBankService : IQuestionBankService
                 LinkStrength = l.LinkStrength
             }).ToList(),
             ct);
+        var binding = await ResolveQuestionBindingAsync(
+            userId,
+            request.LearningTopicId ?? question.LearningTopicId,
+            request.ConceptGraphSnapshotId ?? question.ConceptGraphSnapshotId,
+            request.LearningConceptId ?? question.LearningConceptId,
+            request.AssessmentItemId ?? question.AssessmentItemId,
+            request.ConceptKey ?? question.ConceptKey,
+            request.ConceptLabel ?? question.ConceptLabel,
+            request.MisconceptionTarget ?? question.MisconceptionTarget,
+            request.EvidenceExpected ?? question.EvidenceExpected,
+            request.ScoringRuleJson ?? question.ScoringRuleJson,
+            request.QuizRunId ?? question.QuizRunId,
+            request.PlanRequestId ?? question.PlanRequestId,
+            ct);
 
         question.ExamVariantId = links.ExamVariantId;
         question.ExamSectionId = links.ExamSectionId;
         question.ExamSubjectId = links.ExamSubjectId;
         question.ExamTopicId = links.ExamTopicId;
         question.ExamOutcomeId = links.ExamOutcomeId;
+        question.LearningTopicId = binding.LearningTopicId;
+        question.ConceptGraphSnapshotId = binding.ConceptGraphSnapshotId;
+        question.LearningConceptId = binding.LearningConceptId;
+        question.AssessmentItemId = binding.AssessmentItemId;
+        question.QuizRunId = binding.QuizRunId;
+        question.PlanRequestId = binding.PlanRequestId;
+        question.QuestionBankSource = request.QuestionBankSource is null
+            ? question.QuestionBankSource
+            : Clean(request.QuestionBankSource, binding.AssessmentItemId.HasValue ? "diagnostic_assessment_item" : "curated_question_item");
+        question.ConceptKey = binding.ConceptKey;
+        question.ConceptLabel = binding.ConceptLabel;
+        question.MisconceptionTarget = binding.MisconceptionTarget;
+        question.EvidenceExpected = binding.EvidenceExpected;
+        question.ScoringRuleJson = binding.ScoringRuleJson;
+        question.CalibrationStatus = request.CalibrationStatus is null ? question.CalibrationStatus : SafeOptional(request.CalibrationStatus);
+        question.VisualReadinessStatus = request.VisualReadinessStatus is null
+            ? question.VisualReadinessStatus
+            : NormalizeBounded(request.VisualReadinessStatus, AllowedVisualReadinessStatuses, "not_required");
         question.QuestionType = NormalizeBounded(request.QuestionType ?? question.QuestionType, AllowedQuestionTypes, "multiple_choice");
         question.Stem = request.Stem is null ? question.Stem : Clean(request.Stem);
         question.Difficulty = NormalizeBounded(request.Difficulty ?? question.Difficulty, AllowedDifficulties, "medium");
@@ -423,6 +572,12 @@ public sealed class QuestionBankService : IQuestionBankService
             AltText = SafeOptional(request.AltText),
             Caption = SafeOptional(request.Caption),
             LongDescription = SafeOptional(request.LongDescription),
+            GenerationProvider = SafeOptional(request.GenerationProvider),
+            GenerationModel = SafeOptional(request.GenerationModel),
+            RenderStrategy = SafeOptional(request.RenderStrategy),
+            GenerationPromptHash = SafeOptional(request.GenerationPromptHash),
+            ValidationReportJson = SafeContentJson(request.ValidationReportJson),
+            VisualReadinessStatus = Clean(request.VisualReadinessStatus, "needs_validation"),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -458,7 +613,7 @@ public sealed class QuestionBankService : IQuestionBankService
             Title = Clean(request.Title),
             StimulusType = NormalizeBounded(request.StimulusType, AllowedStimulusTypes, "passage"),
             ContentText = SafeOptional(request.ContentText),
-            ContentJson = SafeOptional(request.ContentJson),
+            ContentJson = SafeContentJson(request.ContentJson),
             SourceRegistryItemId = request.SourceRegistryItemId,
             CurriculumNodeId = request.CurriculumNodeId,
             VerificationStatus = Clean(request.VerificationStatus, "unverified"),
@@ -550,6 +705,106 @@ public sealed class QuestionBankService : IQuestionBankService
         return await GetQuestionAsync(userId, option.QuestionItemId, ct);
     }
 
+    private async Task<IReadOnlyList<QuestionItemDto>> GetDiagnosticQuestionBankItemsAsync(
+        Guid userId,
+        QuestionBankFilterDto filters,
+        string? requestedQuestionType,
+        string? requestedDifficulty,
+        int take,
+        CancellationToken ct)
+    {
+        if (take <= 0 || HasExamTreeFilter(filters) || HasCuratedOnlyQualityFilter(filters))
+        {
+            return [];
+        }
+
+        var query = _db.AssessmentItems
+            .AsNoTracking()
+            .Where(item => item.UserId == userId
+                           && item.GeneratedQuestionJson != null
+                           && item.GeneratedQuestionJson != string.Empty
+                           && !_db.QuestionItems.Any(q => !q.IsDeleted && q.AssessmentItemId == item.Id));
+
+        if (filters.AssessmentItemId is { } assessmentItemId)
+        {
+            query = query.Where(item => item.Id == assessmentItemId);
+        }
+
+        if (filters.LearningTopicId is { } learningTopicId)
+        {
+            query = query.Where(item => item.TopicId == learningTopicId);
+        }
+
+        if (filters.ConceptGraphSnapshotId is { } snapshotId)
+        {
+            query = query.Where(item => item.ConceptGraphSnapshotId == snapshotId);
+        }
+
+        if (filters.LearningConceptId is { } learningConceptId)
+        {
+            query = query.Where(item => item.LearningConceptId == learningConceptId);
+        }
+
+        if (filters.QuizRunId is { } quizRunId)
+        {
+            query = query.Where(item => item.QuizRunId == quizRunId);
+        }
+
+        if (filters.PlanRequestId is { } planRequestId)
+        {
+            query = query.Where(item => item.PlanRequestId == planRequestId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.ConceptKey))
+        {
+            var conceptKey = filters.ConceptKey.Trim();
+            query = query.Where(item => item.ConceptKey == conceptKey);
+        }
+
+        var candidates = await query
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenBy(item => item.Order)
+            .ThenBy(item => item.Id)
+            .Take(Math.Min(take * 4, 100))
+            .ToListAsync(ct);
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var candidateIds = candidates.Select(item => item.Id).ToList();
+        var stats = await _db.AssessmentItemStats
+            .AsNoTracking()
+            .Where(stat => stat.UserId == userId && candidateIds.Contains(stat.AssessmentItemId))
+            .ToDictionaryAsync(stat => stat.AssessmentItemId, ct);
+
+        return candidates
+            .Select(item => ToDiagnosticQuestionBankDto(item, stats.GetValueOrDefault(item.Id)))
+            .Where(dto => requestedQuestionType is null || dto.QuestionType == requestedQuestionType)
+            .Where(dto => requestedDifficulty is null || dto.Difficulty == requestedDifficulty)
+            .Take(take)
+            .ToList();
+    }
+
+    private static bool HasExamTreeFilter(QuestionBankFilterDto filters) =>
+        filters.ExamDefinitionId is not null ||
+        filters.ExamVariantId is not null ||
+        filters.ExamSectionId is not null ||
+        filters.ExamSubjectId is not null ||
+        filters.ExamTopicId is not null ||
+        filters.ExamOutcomeId is not null;
+
+    private static bool HasCuratedOnlyQualityFilter(QuestionBankFilterDto filters)
+    {
+        if (string.IsNullOrWhiteSpace(filters.QualityStatus))
+        {
+            return false;
+        }
+
+        return !filters.QualityStatus.Equals("diagnostic_ready", StringComparison.OrdinalIgnoreCase);
+    }
+
     private IQueryable<QuestionItem> VisibleQuestions(Guid userId) =>
         _db.QuestionItems
             .AsNoTracking()
@@ -576,7 +831,10 @@ public sealed class QuestionBankService : IQuestionBankService
             .Include(q => q.Explanations)
             .Include(q => q.Tags)
             .Include(q => q.OutcomeLinks)
-            .Where(q => q.Id == questionId && !q.IsDeleted && q.OwnerUserId == userId);
+            .Where(q => q.Id == questionId
+                        && !q.IsDeleted
+                        && q.OwnerUserId == userId
+                        && q.QuestionBankSource != "diagnostic_assessment_item");
 
     private async Task<ResolvedExamLinks> ResolveVisibleExamLinksAsync(
         Guid userId,
@@ -734,6 +992,9 @@ public sealed class QuestionBankService : IQuestionBankService
                 OptionKey = Clean(option.OptionKey),
                 Text = Clean(option.Text),
                 IsCorrect = option.IsCorrect,
+                Rationale = SafeOptional(option.Rationale),
+                MisconceptionKey = SafeOptional(option.MisconceptionKey),
+                DiagnosticSignalJson = SafeAssessmentMetadataJson(option.DiagnosticSignalJson),
                 SortOrder = option.SortOrder
             });
         }
@@ -803,7 +1064,7 @@ public sealed class QuestionBankService : IQuestionBankService
             QuestionItemId = questionId,
             BlockType = NormalizeBounded(request.BlockType, AllowedQuestionBlockTypes, "text"),
             Text = SafeOptional(request.Text),
-            ContentJson = SafeOptional(request.ContentJson),
+            ContentJson = SafeContentJson(request.ContentJson),
             AssetId = request.AssetId,
             SortOrder = request.SortOrder,
             AltText = SafeOptional(request.AltText),
@@ -827,7 +1088,7 @@ public sealed class QuestionBankService : IQuestionBankService
             QuestionOptionId = optionId,
             BlockType = NormalizeBounded(request.BlockType, AllowedOptionBlockTypes, "text"),
             Text = SafeOptional(request.Text),
-            ContentJson = SafeOptional(request.ContentJson),
+            ContentJson = SafeContentJson(request.ContentJson),
             AssetId = request.AssetId,
             SortOrder = request.SortOrder,
             AltText = SafeOptional(request.AltText),
@@ -981,6 +1242,8 @@ public sealed class QuestionBankService : IQuestionBankService
                 result.Accessibility.Add(issue);
                 result.Errors.Add(issue.Code);
             }
+
+            AddProfessionalPracticePublishErrors(question, activeQuestionBlocks, result.Errors);
         }
         else
         {
@@ -994,6 +1257,63 @@ public sealed class QuestionBankService : IQuestionBankService
         result.IsValid = result.Errors.Count == 0;
         return result;
     }
+
+    private static void AddProfessionalPracticePublishErrors(
+        QuestionItem question,
+        IReadOnlyCollection<QuestionContentBlock> activeQuestionBlocks,
+        List<string> errors)
+    {
+        if (!IsProfessionalPracticeQuestion(question))
+        {
+            return;
+        }
+
+        AddIfMissing(question.AssessmentItemId.HasValue, "assessment_item_binding_required", errors);
+        AddIfMissing(question.ConceptGraphSnapshotId.HasValue, "concept_graph_binding_required", errors);
+        AddIfMissing(question.LearningConceptId.HasValue, "learning_concept_binding_required", errors);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.ConceptKey), "concept_key_required", errors);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.EvidenceExpected), "evidence_expected_required", errors);
+        AddIfMissing(!string.IsNullOrWhiteSpace(question.ScoringRuleJson), "scoring_rule_required", errors);
+        AddIfMissing(
+            question.VisualReadinessStatus is "not_required" or "ready" or "validated",
+            "visual_readiness_required",
+            errors);
+
+        if (question.QuestionType == "multiple_choice")
+        {
+            var incorrectOptions = question.Options.Where(o => !o.IsCorrect).ToList();
+            AddIfMissing(
+                incorrectOptions.Count > 0 && incorrectOptions.All(o => !string.IsNullOrWhiteSpace(o.Rationale)),
+                "distractor_rationale_required",
+                errors);
+            AddIfMissing(
+                incorrectOptions.Count > 0 && incorrectOptions.All(o =>
+                    !string.IsNullOrWhiteSpace(o.MisconceptionKey) ||
+                    !string.IsNullOrWhiteSpace(o.DiagnosticSignalJson)),
+                "distractor_diagnostic_signal_required",
+                errors);
+        }
+
+        if (activeQuestionBlocks.Any(block => block.BlockType is "image" or "chart" or "table" or "formula"))
+        {
+            AddIfMissing(
+                question.VisualReadinessStatus is "ready" or "validated",
+                "visual_readiness_required",
+                errors);
+        }
+    }
+
+    private static void AddIfMissing(bool condition, string code, List<string> errors)
+    {
+        if (!condition && !errors.Contains(code, StringComparer.OrdinalIgnoreCase))
+        {
+            errors.Add(code);
+        }
+    }
+
+    private static bool IsProfessionalPracticeQuestion(QuestionItem question) =>
+        string.Equals(question.QuestionBankSource, "diagnostic_assessment_item", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(question.QualityStatus, "diagnostic_ready", StringComparison.OrdinalIgnoreCase);
 
     private static bool HasRenderableOptionBlock(QuestionOptionContentBlock block)
     {
@@ -1129,16 +1449,89 @@ public sealed class QuestionBankService : IQuestionBankService
         }
     }
 
+    private static bool ShouldStripAnswerKey(QuestionItem question, Guid userId, bool isAdmin) =>
+        !isAdmin && (question.OwnerUserId is null ||
+                     string.Equals(question.QuestionBankSource, "diagnostic_assessment_item", StringComparison.OrdinalIgnoreCase));
+
+    private static QuestionItemDto ToDiagnosticQuestionBankDto(AssessmentItem item, AssessmentItemStat? stat)
+    {
+        var projection = ParseGeneratedDiagnosticQuestion(item);
+        var tags = new List<QuestionTagDto>();
+        if (!string.IsNullOrWhiteSpace(item.ConceptKey))
+        {
+            tags.Add(new QuestionTagDto { Tag = $"concept:{item.ConceptKey}" });
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.CognitiveSkill))
+        {
+            tags.Add(new QuestionTagDto { Tag = $"skill:{item.CognitiveSkill}" });
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.MisconceptionTarget))
+        {
+            tags.Add(new QuestionTagDto { Tag = $"misconception:{item.MisconceptionTarget}" });
+        }
+
+        return new QuestionItemDto
+        {
+            Id = item.Id,
+            OwnershipState = "user",
+            QuestionBankSource = "diagnostic_assessment_item",
+            ExamDefinitionId = Guid.Empty,
+            LearningTopicId = item.TopicId,
+            ConceptGraphSnapshotId = item.ConceptGraphSnapshotId,
+            LearningConceptId = item.LearningConceptId,
+            AssessmentItemId = item.Id,
+            QuizRunId = item.QuizRunId,
+            PlanRequestId = item.PlanRequestId,
+            ConceptKey = string.IsNullOrWhiteSpace(item.ConceptKey) ? null : item.ConceptKey,
+            ConceptLabel = string.IsNullOrWhiteSpace(item.ConceptLabel) ? null : item.ConceptLabel,
+            MisconceptionTarget = string.IsNullOrWhiteSpace(item.MisconceptionTarget) ? null : item.MisconceptionTarget,
+            EvidenceExpected = string.IsNullOrWhiteSpace(item.EvidenceExpected) ? null : item.EvidenceExpected,
+            ScoringRuleJson = string.IsNullOrWhiteSpace(item.ScoringRuleJson) ? null : item.ScoringRuleJson,
+            CalibrationStatus = stat?.CalibrationStatus ?? "uncalibrated",
+            VisualReadinessStatus = "not_required",
+            QuestionType = NormalizeDiagnosticQuestionType(item.QuestionType, projection.Options.Count),
+            Stem = projection.Stem,
+            Difficulty = NormalizeDiagnosticDifficulty(item.Difficulty),
+            CognitiveSkill = Clean(item.CognitiveSkill, "conceptual"),
+            QualityStatus = "diagnostic_ready",
+            LicenseStatus = "user_provided",
+            SourceOrigin = "diagnostic_engine",
+            SourceTitle = "Orka diagnostic assessment item",
+            Explanation = string.Empty,
+            CreatedAt = item.CreatedAt,
+            UpdatedAt = item.CreatedAt,
+            Options = projection.Options.ToList(),
+            Tags = tags,
+            Validation = new QuestionValidationResultDto()
+        };
+    }
+
     private static QuestionItemDto ToDto(QuestionItem question, bool stripAnswerKey = false) => new()
     {
         Id = question.Id,
         OwnershipState = question.OwnerUserId is null ? "system" : "user",
+        QuestionBankSource = string.IsNullOrWhiteSpace(question.QuestionBankSource) ? "curated_question_item" : question.QuestionBankSource,
         ExamDefinitionId = question.ExamDefinitionId,
         ExamVariantId = question.ExamVariantId,
         ExamSectionId = question.ExamSectionId,
         ExamSubjectId = question.ExamSubjectId,
         ExamTopicId = question.ExamTopicId,
         ExamOutcomeId = question.ExamOutcomeId,
+        LearningTopicId = question.LearningTopicId,
+        ConceptGraphSnapshotId = question.ConceptGraphSnapshotId,
+        LearningConceptId = question.LearningConceptId,
+        AssessmentItemId = question.AssessmentItemId,
+        QuizRunId = question.QuizRunId,
+        PlanRequestId = question.PlanRequestId,
+        ConceptKey = question.ConceptKey,
+        ConceptLabel = question.ConceptLabel,
+        MisconceptionTarget = question.MisconceptionTarget,
+        EvidenceExpected = question.EvidenceExpected,
+        ScoringRuleJson = question.ScoringRuleJson,
+        CalibrationStatus = question.CalibrationStatus,
+        VisualReadinessStatus = question.VisualReadinessStatus,
         QuestionType = question.QuestionType,
         Stem = question.Stem,
         Difficulty = question.Difficulty,
@@ -1148,7 +1541,7 @@ public sealed class QuestionBankService : IQuestionBankService
         SourceOrigin = question.SourceOrigin,
         SourceTitle = question.SourceTitle,
         SourceUrl = question.SourceUrl,
-        Explanation = stripAnswerKey ? null : question.Explanation,
+        Explanation = stripAnswerKey ? string.Empty : question.Explanation ?? string.Empty,
         CreatedAt = question.CreatedAt,
         UpdatedAt = question.UpdatedAt,
         Options = question.Options
@@ -1160,11 +1553,14 @@ public sealed class QuestionBankService : IQuestionBankService
                 OptionKey = o.OptionKey,
                 Text = o.Text,
                 IsCorrect = stripAnswerKey ? false : o.IsCorrect,
+                Rationale = stripAnswerKey ? null : o.Rationale,
+                MisconceptionKey = stripAnswerKey ? null : o.MisconceptionKey,
+                DiagnosticSignalJson = stripAnswerKey ? null : LearnerSafeContentJson.SanitizeAssessmentMetadata(o.DiagnosticSignalJson),
                 SortOrder = o.SortOrder,
                 ContentBlocks = o.ContentBlocks
                     .Where(b => !b.IsDeleted)
                     .OrderBy(b => b.SortOrder)
-                    .Select(ToDto)
+                    .Select(block => ToDto(block, stripAnswerKey))
                     .ToList()
             })
             .ToList(),
@@ -1201,22 +1597,24 @@ public sealed class QuestionBankService : IQuestionBankService
         ContentBlocks = question.ContentBlocks
             .Where(b => !b.IsDeleted)
             .OrderBy(b => b.SortOrder)
-            .Select(ToDto)
+            .Select(block => ToDto(block, stripAnswerKey))
             .ToList(),
         Stimuli = question.StimulusLinks
             .Where(l => !l.QuestionStimulus.IsDeleted)
             .OrderBy(l => l.SortOrder)
-            .Select(l => ToDto(l.QuestionStimulus, l.SortOrder))
+            .Select(l => ToDto(l.QuestionStimulus, l.SortOrder, stripAnswerKey))
             .ToList(),
-        Validation = stripAnswerKey ? null : ValidateQuestion(question, forPublish: question.QualityStatus == "approved")
+        Validation = stripAnswerKey
+            ? new QuestionValidationResultDto()
+            : ValidateQuestion(question, forPublish: question.QualityStatus == "approved")
     };
 
-    private static QuestionContentBlockDto ToDto(QuestionContentBlock block) => new()
+    private static QuestionContentBlockDto ToDto(QuestionContentBlock block, bool stripAnswerKey = false) => new()
     {
         Id = block.Id,
         BlockType = block.BlockType,
         Text = block.Text,
-        ContentJson = block.ContentJson,
+        ContentJson = stripAnswerKey ? LearnerSafeContentJson.Sanitize(block.ContentJson) : block.ContentJson,
         AssetId = block.AssetId,
         Asset = block.Asset is null || block.Asset.IsDeleted ? null : ToDto(block.Asset),
         SortOrder = block.SortOrder,
@@ -1225,12 +1623,12 @@ public sealed class QuestionBankService : IQuestionBankService
         LongDescription = block.LongDescription
     };
 
-    private static QuestionOptionContentBlockDto ToDto(QuestionOptionContentBlock block) => new()
+    private static QuestionOptionContentBlockDto ToDto(QuestionOptionContentBlock block, bool stripAnswerKey = false) => new()
     {
         Id = block.Id,
         BlockType = block.BlockType,
         Text = block.Text,
-        ContentJson = block.ContentJson,
+        ContentJson = stripAnswerKey ? LearnerSafeContentJson.Sanitize(block.ContentJson) : block.ContentJson,
         AssetId = block.AssetId,
         Asset = block.Asset is null || block.Asset.IsDeleted ? null : ToDto(block.Asset),
         SortOrder = block.SortOrder,
@@ -1256,18 +1654,24 @@ public sealed class QuestionBankService : IQuestionBankService
         AltText = asset.AltText,
         Caption = asset.Caption,
         LongDescription = asset.LongDescription,
+        GenerationProvider = asset.GenerationProvider,
+        GenerationModel = asset.GenerationModel,
+        RenderStrategy = asset.RenderStrategy,
+        GenerationPromptHash = asset.GenerationPromptHash,
+        ValidationReportJson = LearnerSafeContentJson.Sanitize(asset.ValidationReportJson),
+        VisualReadinessStatus = asset.VisualReadinessStatus,
         CreatedAt = asset.CreatedAt,
         UpdatedAt = asset.UpdatedAt
     };
 
-    private static QuestionStimulusDto ToDto(QuestionStimulus stimulus, int sortOrder) => new()
+    private static QuestionStimulusDto ToDto(QuestionStimulus stimulus, int sortOrder, bool stripAnswerKey = false) => new()
     {
         Id = stimulus.Id,
         OwnershipState = stimulus.OwnerUserId is null ? "system" : "user",
         Title = stimulus.Title,
         StimulusType = stimulus.StimulusType,
         ContentText = stimulus.ContentText,
-        ContentJson = stimulus.ContentJson,
+        ContentJson = stripAnswerKey ? LearnerSafeContentJson.Sanitize(stimulus.ContentJson) : stimulus.ContentJson,
         SourceRegistryItemId = stimulus.SourceRegistryItemId,
         CurriculumNodeId = stimulus.CurriculumNodeId,
         VerificationStatus = stimulus.VerificationStatus,
@@ -1276,6 +1680,162 @@ public sealed class QuestionBankService : IQuestionBankService
         CreatedAt = stimulus.CreatedAt,
         UpdatedAt = stimulus.UpdatedAt
     };
+
+    private static DiagnosticQuestionProjection ParseGeneratedDiagnosticQuestion(AssessmentItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.GeneratedQuestionJson))
+        {
+            return new DiagnosticQuestionProjection(FallbackDiagnosticStem(item), []);
+        }
+
+        try
+        {
+            var node = JsonNode.Parse(item.GeneratedQuestionJson);
+            PublicTextNormalizer.RepairJsonStrings(node);
+
+            var question = node switch
+            {
+                JsonObject obj => obj,
+                JsonArray array => array.OfType<JsonObject>().FirstOrDefault(),
+                _ => null
+            };
+
+            if (question is null)
+            {
+                return new DiagnosticQuestionProjection(FallbackDiagnosticStem(item), []);
+            }
+
+            var stem = FirstJsonString(question, "question", "stem", "prompt", "title");
+            var options = ParseDiagnosticOptions(question["options"] as JsonArray);
+            return new DiagnosticQuestionProjection(Clean(stem, FallbackDiagnosticStem(item)), options);
+        }
+        catch
+        {
+            return new DiagnosticQuestionProjection(FallbackDiagnosticStem(item), []);
+        }
+    }
+
+    private static List<QuestionOptionDto> ParseDiagnosticOptions(JsonArray? options)
+    {
+        if (options is null || options.Count == 0)
+        {
+            return [];
+        }
+
+        var parsed = new List<QuestionOptionDto>();
+        for (var index = 0; index < options.Count; index++)
+        {
+            var option = options[index];
+            var fallbackKey = ((char)('A' + Math.Min(parsed.Count, 25))).ToString();
+            var key = fallbackKey;
+            var text = string.Empty;
+
+            if (option is JsonValue)
+            {
+                text = option.GetValue<string?>() ?? string.Empty;
+            }
+            else if (option is JsonObject obj)
+            {
+                key = FirstJsonString(obj, "id", "optionId", "key", "label", "value") ?? fallbackKey;
+                text = FirstJsonString(obj, "text", "value", "label", "option", "id") ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            parsed.Add(new QuestionOptionDto
+            {
+                OptionKey = Clean(key, fallbackKey),
+                Text = Clean(text),
+                IsCorrect = false,
+                SortOrder = parsed.Count
+            });
+        }
+
+        return parsed;
+    }
+
+    private static string? FirstJsonString(JsonObject obj, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+            {
+                continue;
+            }
+
+            if (node is JsonValue value)
+            {
+                try
+                {
+                    var text = value.GetValue<string?>();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text.Trim();
+                    }
+                }
+                catch
+                {
+                    var text = value.ToJsonString(BankJsonOptions).Trim('"');
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+            }
+
+            var serialized = node.ToJsonString(BankJsonOptions);
+            if (!string.IsNullOrWhiteSpace(serialized) && serialized != "null")
+            {
+                return serialized;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FallbackDiagnosticStem(AssessmentItem item)
+    {
+        var concept = !string.IsNullOrWhiteSpace(item.ConceptLabel)
+            ? item.ConceptLabel
+            : !string.IsNullOrWhiteSpace(item.ConceptKey)
+                ? item.ConceptKey
+                : "this concept";
+
+        return $"Diagnostic check for {concept}.";
+    }
+
+    private static string NormalizeDiagnosticQuestionType(string? value, int optionCount)
+    {
+        if (optionCount >= 2)
+        {
+            return "multiple_choice";
+        }
+
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant()
+            .Replace("-", "_")
+            .Replace(" ", "_");
+
+        return AllowedQuestionTypes.Contains(normalized) ? normalized : "paragraph";
+    }
+
+    private static string NormalizeDiagnosticDifficulty(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized is "easy" or "kolay" or "foundation" or "foundational" or "beginner" or "baseline" or "intro")
+        {
+            return "easy";
+        }
+
+        if (normalized is "hard" or "zor" or "advanced" or "challenge" or "challenging" or "expert")
+        {
+            return "hard";
+        }
+
+        return "medium";
+    }
 
     private static string NormalizeBounded(string? value, HashSet<string> allowed, string fallback)
     {
@@ -1291,6 +1851,12 @@ public sealed class QuestionBankService : IQuestionBankService
 
     private static string? SafeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? SafeContentJson(string? value) =>
+        LearnerSafeContentJson.Sanitize(value);
+
+    private static string? SafeAssessmentMetadataJson(string? value) =>
+        LearnerSafeContentJson.SanitizeAssessmentMetadata(value);
 
     private static bool IsValidOptionalUrl(string? value)
     {
@@ -1309,6 +1875,135 @@ public sealed class QuestionBankService : IQuestionBankService
                && !cleaned.StartsWith("/", StringComparison.Ordinal);
     }
 
+    private async Task<QuestionProfessionalBinding> ResolveQuestionBindingAsync(
+        Guid userId,
+        Guid? learningTopicId,
+        Guid? conceptGraphSnapshotId,
+        Guid? learningConceptId,
+        Guid? assessmentItemId,
+        string? conceptKey,
+        string? conceptLabel,
+        string? misconceptionTarget,
+        string? evidenceExpected,
+        string? scoringRuleJson,
+        Guid? quizRunId,
+        Guid? planRequestId,
+        CancellationToken ct)
+    {
+        if (learningTopicId.HasValue)
+        {
+            var topicExists = await _db.Topics
+                .AsNoTracking()
+                .AnyAsync(t => t.Id == learningTopicId.Value && t.UserId == userId, ct);
+            if (!topicExists)
+            {
+                throw new ArgumentException("Learning topic is not visible for this user.");
+            }
+        }
+
+        AssessmentItem? assessmentItem = null;
+        if (assessmentItemId.HasValue)
+        {
+            assessmentItem = await _db.AssessmentItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == assessmentItemId.Value && item.UserId == userId, ct);
+            if (assessmentItem is null)
+            {
+                throw new ArgumentException("Assessment item is not visible for this user.");
+            }
+
+            learningTopicId = EnsureSameGuid(learningTopicId, assessmentItem.TopicId, "learningTopicId");
+            conceptGraphSnapshotId = EnsureSameGuid(conceptGraphSnapshotId, assessmentItem.ConceptGraphSnapshotId, "conceptGraphSnapshotId");
+            learningConceptId = EnsureSameGuid(learningConceptId, assessmentItem.LearningConceptId, "learningConceptId");
+            quizRunId = EnsureSameGuid(quizRunId, assessmentItem.QuizRunId, "quizRunId");
+            planRequestId = EnsureSameGuid(planRequestId, assessmentItem.PlanRequestId, "planRequestId");
+            conceptKey = FirstNonEmpty(conceptKey, assessmentItem.ConceptKey);
+            conceptLabel = FirstNonEmpty(conceptLabel, assessmentItem.ConceptLabel);
+            misconceptionTarget = FirstNonEmpty(misconceptionTarget, assessmentItem.MisconceptionTarget);
+            evidenceExpected = FirstNonEmpty(evidenceExpected, assessmentItem.EvidenceExpected);
+            scoringRuleJson = FirstNonEmpty(scoringRuleJson, assessmentItem.ScoringRuleJson);
+        }
+
+        if (conceptGraphSnapshotId.HasValue)
+        {
+            var snapshot = await _db.ConceptGraphSnapshots
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == conceptGraphSnapshotId.Value && s.UserId == userId, ct);
+            if (snapshot is null)
+            {
+                throw new ArgumentException("Concept graph snapshot is not visible for this user.");
+            }
+
+            learningTopicId = EnsureSameGuid(learningTopicId, snapshot.TopicId, "learningTopicId");
+        }
+
+        if (learningConceptId.HasValue)
+        {
+            var concept = await _db.LearningConcepts
+                .AsNoTracking()
+                .Where(c => c.Id == learningConceptId.Value)
+                .Join(
+                    _db.ConceptGraphSnapshots.AsNoTracking().Where(s => s.UserId == userId),
+                    concept => concept.ConceptGraphSnapshotId,
+                    snapshot => snapshot.Id,
+                    (concept, snapshot) => new { Concept = concept, Snapshot = snapshot })
+                .FirstOrDefaultAsync(ct);
+            if (concept is null)
+            {
+                throw new ArgumentException("Learning concept is not visible for this user.");
+            }
+
+            conceptGraphSnapshotId = EnsureSameGuid(conceptGraphSnapshotId, concept.Concept.ConceptGraphSnapshotId, "conceptGraphSnapshotId");
+            learningTopicId = EnsureSameGuid(learningTopicId, concept.Snapshot.TopicId, "learningTopicId");
+            conceptKey = FirstNonEmpty(conceptKey, concept.Concept.StableKey);
+            conceptLabel = FirstNonEmpty(conceptLabel, concept.Concept.Label);
+        }
+
+        return new QuestionProfessionalBinding(
+            learningTopicId,
+            conceptGraphSnapshotId,
+            learningConceptId,
+            assessmentItemId,
+            quizRunId,
+            planRequestId,
+            SafeOptional(conceptKey),
+            SafeOptional(conceptLabel),
+            SafeOptional(misconceptionTarget),
+            SafeOptional(evidenceExpected),
+            SafeAssessmentMetadataJson(scoringRuleJson));
+    }
+
+    private static Guid? EnsureSameGuid(Guid? existing, Guid? candidate, string fieldName)
+    {
+        if (!candidate.HasValue)
+        {
+            return existing;
+        }
+
+        if (existing.HasValue && existing.Value != candidate.Value)
+        {
+            throw new ArgumentException($"Question professional binding has conflicting {fieldName}.");
+        }
+
+        return candidate;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private sealed record QuestionProfessionalBinding(
+        Guid? LearningTopicId,
+        Guid? ConceptGraphSnapshotId,
+        Guid? LearningConceptId,
+        Guid? AssessmentItemId,
+        Guid? QuizRunId,
+        Guid? PlanRequestId,
+        string? ConceptKey,
+        string? ConceptLabel,
+        string? MisconceptionTarget,
+        string? EvidenceExpected,
+        string? ScoringRuleJson);
+
     private sealed record ResolvedExamLinks(
         Guid ExamDefinitionId,
         Guid? ExamVariantId,
@@ -1317,4 +2012,6 @@ public sealed class QuestionBankService : IQuestionBankService
         Guid? ExamTopicId,
         Guid? ExamOutcomeId,
         IReadOnlyList<QuestionOutcomeLinkDto> OutcomeLinks);
+
+    private sealed record DiagnosticQuestionProjection(string Stem, IReadOnlyList<QuestionOptionDto> Options);
 }

@@ -304,7 +304,10 @@ public sealed class SourceEvidenceLifecycleService : ISourceEvidenceLifecycleSer
                 b.WikiPage.UserId == userId &&
                 b.WikiPage.TopicId == topicId &&
                 !b.IsDeleted &&
-                !b.WikiPage.IsDeleted)
+                !b.WikiPage.IsDeleted &&
+                b.WikiPage.PageType != "orkalm_source" &&
+                b.WikiPage.PageType != "source_note" &&
+                b.WikiPage.PageType != "source_notebook")
             .OrderBy(b => b.WikiPage.OrderIndex)
             .ThenBy(b => b.OrderIndex)
             .Take(80)
@@ -383,6 +386,7 @@ public sealed class SourceEvidenceLifecycleService : ISourceEvidenceLifecycleSer
             ConceptCoverage = concepts.Count == 0 ? "concept_graph_missing" : "concept_seeded",
             Sections = sections,
             SourceWarnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            NextActions = BuildWikiNotebookActions(concepts.Count, bundle.EvidenceStatus),
             LastUpdatedAt = DateTime.UtcNow
         };
 
@@ -436,8 +440,47 @@ public sealed class SourceEvidenceLifecycleService : ISourceEvidenceLifecycleSer
             ConceptCoverage = entity.ConceptCoverage,
             Sections = Parse(entity.SectionsJson, Array.Empty<WikiNotebookSectionDto>()),
             SourceWarnings = Parse(entity.SourceWarningsJson, Array.Empty<string>()),
+            NextActions = BuildWikiNotebookActions(Parse(entity.SectionsJson, Array.Empty<WikiNotebookSectionDto>()).Count(s => !string.IsNullOrWhiteSpace(s.ConceptKey)), entity.EvidenceStatus),
             LastUpdatedAt = entity.UpdatedAt
         };
+    }
+
+    private static IReadOnlyList<NotebookStudioNextActionDto> BuildWikiNotebookActions(int conceptCount, string? evidenceStatus)
+    {
+        var actions = new List<NotebookStudioNextActionDto>
+        {
+            new() { ActionType = "briefing_doc", UserSafeLabel = "Create a Wiki briefing.", Priority = "high" },
+            new() { ActionType = "study_guide", UserSafeLabel = "Turn this Wiki context into a study guide.", Priority = "high" },
+            new() { ActionType = "glossary", UserSafeLabel = "Extract a Wiki-scoped glossary.", Priority = "normal" },
+            new() { ActionType = "timeline", UserSafeLabel = "Create a Wiki-scoped timeline.", Priority = "normal" },
+            new() { ActionType = "flashcard_set", UserSafeLabel = "Create Wiki-scoped flashcards.", Priority = "normal" },
+            new() { ActionType = "review_quiz", UserSafeLabel = "Start a Wiki-scoped review quiz.", Priority = "normal" },
+            new() { ActionType = "mind_map", UserSafeLabel = "Build a Wiki mind map.", Priority = "normal" },
+            new() { ActionType = "uml_diagram", UserSafeLabel = "Create a Mermaid/UML diagram for this Wiki context.", Priority = "normal" },
+            new() { ActionType = "slide_deck_outline", UserSafeLabel = "Build a Wiki slide outline.", Priority = "normal" },
+            new() { ActionType = "search_filter", UserSafeLabel = "Search and filter Wiki notes.", Priority = "normal" },
+            new() { ActionType = "templates", UserSafeLabel = "Use Wiki note templates.", Priority = "normal" }
+        };
+        if (conceptCount <= 0)
+        {
+            actions.Insert(0, new NotebookStudioNextActionDto
+            {
+                ActionType = "sync_wiki_graph",
+                UserSafeLabel = "Build the Wiki graph before relying on concept coverage.",
+                Priority = "high"
+            });
+        }
+        if (string.Equals(evidenceStatus, "stale", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(evidenceStatus, "degraded", StringComparison.OrdinalIgnoreCase))
+        {
+            actions.Insert(0, new NotebookStudioNextActionDto
+            {
+                ActionType = "review_wiki_evidence",
+                UserSafeLabel = "Review Wiki evidence status before exporting.",
+                Priority = "high"
+            });
+        }
+        return actions;
     }
 
     private async Task<Topic> EnsureTopicAsync(Guid userId, Guid topicId, CancellationToken ct)

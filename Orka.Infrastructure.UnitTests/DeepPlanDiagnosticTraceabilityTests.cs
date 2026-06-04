@@ -68,41 +68,48 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
     }
 
     [Fact]
-    public async Task DeepPlan_RejectsThinGeneratedPlanAndUsesConceptGraphQualityFallback()
+    public async Task DeepPlan_RejectsThinGeneratedPlanWithoutFallbackMaterialization()
     {
-        var harness = await CreateHarnessAsync();
+        var harness = await CreateHarnessAsync(new GenericModuleFactory());
 
-        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            harness.TopicId,
-            "C# Calismak",
-            harness.UserId,
-            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
-            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
-            "beginner");
-
-        Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Baslangic kavramlari", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.Topics, t => t.Title.Contains("Kavram bazli final kontrol", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Tanisal Iyilestirme", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "C# Calismak",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
     }
 
     [Fact]
-    public async Task DeepPlan_GeneralFallbackMeetsQualityFloorWhenModelReturnsThinPlan()
+    public async Task DeepPlan_RejectsThinHistoryPlanWithoutFallbackMaterialization()
     {
-        var harness = await CreateHarnessAsync();
+        var harness = await CreateHarnessAsync(new GenericModuleFactory());
 
-        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            harness.TopicId,
-            "Roma tarihi",
-            harness.UserId,
-            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
-            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
-            "beginner");
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "Roma tarihi",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
+    }
 
-        Assert.True(result.Topics.Count >= 15);
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Generic Lesson", StringComparison.OrdinalIgnoreCase));
+    [Fact]
+    public async Task DeepPlan_ProviderFailureDoesNotFallbackToSavedQualityPlan()
+    {
+        var harness = await CreateHarnessAsync(new ThrowingModuleFactory());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "Java algoritmalar ve veri yapilari",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
     }
 
     [Fact]
@@ -126,64 +133,46 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
     [Fact]
     public async Task DeepPlan_GenericFallbackDoesNotForceCSharpForPythonTopic()
     {
-        var harness = await CreateHarnessAsync();
+        var harness = await CreateHarnessAsync(new GenericModuleFactory());
 
-        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            harness.TopicId,
-            "Python calismak",
-            harness.UserId,
-            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
-            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
-            "beginner");
-
-        Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Baslangic kavramlari", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.Topics, t => t.Title.Contains("Kavram bazli final kontrol", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("C# programi", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("LINQ", StringComparison.OrdinalIgnoreCase));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "Python calismak",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
     }
 
     [Fact]
-    public async Task DeepPlan_GenericFallbackMeetsQualityFloorForAlgorithmTopic()
+    public async Task DeepPlan_GenericFallbackDoesNotMaterializeAlgorithmTopic()
     {
-        var harness = await CreateHarnessAsync();
+        var harness = await CreateHarnessAsync(new GenericModuleFactory());
 
-        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            harness.TopicId,
-            "Algoritmalar ve veri yapilari",
-            harness.UserId,
-            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
-            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
-            "beginner");
-
-        Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Adim adim uygulama", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(result.Topics, t => t.Title.Contains("Sik karistirilan nokta", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics.Take(4), t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "Algoritmalar ve veri yapilari",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nsame stored context",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
     }
 
     [Fact]
     public async Task DeepPlan_GenericFallbackDoesNotUseHistoryHardCodedAxis()
     {
-        var harness = await CreateHarnessAsync();
+        var harness = await CreateHarnessAsync(new GenericModuleFactory());
 
-        var result = await harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
-            harness.TopicId,
-            "Selcuklu tarihi: tarih",
-            harness.UserId,
-            "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nstored context\n[LEARNING BLUEPRINT]\nBlueprintDomain: history\nBlueprintPlanModules:\n- Koken ve Ilk Yukselis: Oghuz/Kinik | Khorasan\n- Devletlesme ve Mesruiyet: Dandanakan | Baghdad",
-            "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
-            "beginner");
-
-        Assert.True(result.Topics.Count >= 24);
-        Assert.Contains(result.Topics, t => t.Title.Contains("Ana kavrami sade tanimlama", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Dandanakan", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Malazgirt", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Nizam", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Proje / Uygulama Kapanisi", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Birinci temel kavram", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(result.Topics, t => t.Title.Contains("Orka IDE", StringComparison.OrdinalIgnoreCase));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Agent.GenerateAndSaveDeepPlanFromDiagnosticAsync(
+                harness.TopicId,
+                "Selcuklu tarihi: tarih",
+                harness.UserId,
+                "[SIKISTIRILMIS PLAN ARASTIRMA BAGLAMI]\nstored context\n[LEARNING BLUEPRINT]\nBlueprintDomain: history\nBlueprintPlanModules:\n- Koken ve Ilk Yukselis: Oghuz/Kinik | Khorasan\n- Devletlesme ve Mesruiyet: Dandanakan | Baghdad",
+                "[PLAN DIAGNOSTIC QUIZ SUMMARY]\nAnswered: 0\nCorrect: 0\nWrong: 0\nWeakConcepts: none\nMistakePatterns: none",
+                "beginner"));
     }
 
     private static async Task<TraceProfile> RunProfileAsync(string[] concepts, string[] mistakes)
@@ -246,7 +235,7 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
         var korteks = new FakeKorteksAgent();
         var agent = new DeepPlanAgent(
-            agentFactory ?? new GenericModuleFactory(),
+            agentFactory ?? new RichProgrammingModuleFactory(),
             scopeFactory,
             new FakeSupervisor(),
             new FakeGrader(),
@@ -380,6 +369,21 @@ public sealed class DeepPlanDiagnosticTraceabilityTests
         }
         public Task<string> CompleteChatWithHistoryAsync(AgentRole role, string systemPrompt, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default) =>
             Task.FromResult("fake");
+    }
+
+    private sealed class ThrowingModuleFactory : IAIAgentFactory
+    {
+        public string GetModel(AgentRole role) => "throwing";
+        public string GetProvider(AgentRole role) => "throwing";
+        public Task<string> CompleteChatAsync(AgentRole role, string systemPrompt, string userMessage, CancellationToken ct = default) =>
+            throw new InvalidOperationException("Plan provider unavailable.");
+        public async IAsyncEnumerable<string> StreamChatAsync(AgentRole role, string systemPrompt, string userMessage, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+        public Task<string> CompleteChatWithHistoryAsync(AgentRole role, string systemPrompt, IEnumerable<(string Role, string Content)> messages, CancellationToken ct = default) =>
+            throw new InvalidOperationException("Plan provider unavailable.");
     }
 
     private sealed class FakeSupervisor : ISupervisorAgent

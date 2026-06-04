@@ -26,6 +26,7 @@ public sealed class LearningArtifactDto
     public string SourceBasis { get; set; } = "evidence_insufficient";
     public IReadOnlyList<string> CitationIds { get; set; } = Array.Empty<string>();
     public IReadOnlyList<Guid> ToolTraceIds { get; set; } = Array.Empty<Guid>();
+    public IReadOnlyList<string> PhaseScope { get; set; } = Array.Empty<string>();
     public LearningArtifactAccessibilityDto Accessibility { get; set; } = new();
     public LearningArtifactSafetyDto Safety { get; set; } = new();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

@@ -4,7 +4,7 @@ namespace Orka.Infrastructure.Services;
 
 public static class PlanIntelligenceBriefBuilder
 {
-    private const int MaxBriefLength = 5200;
+    private const int MaxBriefLength = 16000;
 
     public static string BuildForPlan(
         string topicTitle,
@@ -83,7 +83,7 @@ public static class PlanIntelligenceBriefBuilder
         AppendSection(sb, "MustUseFromBlueprint.Timeline", parsed, "BlueprintTimeline", 8);
         AppendSection(sb, "MustUseFromBlueprint.CauseEffect", parsed, "BlueprintCauseEffectPairs", 6);
         AppendSection(sb, "MustUseFromConceptGraph.Concepts", parsed, "Concepts", 12);
-        AppendSection(sb, "MustUseFromAssessmentGrammar.ItemSpecs", parsed, "ItemSpecs", 8);
+        AppendSection(sb, "MustUseFromAssessmentGrammar.ItemSpecs", parsed, "ItemSpecs", 25);
         AppendKeyFactsOnlyIfUseful(sb, parsed, topic);
 
         sb.AppendLine("MustIgnore:");
@@ -196,9 +196,10 @@ public static class PlanIntelligenceBriefBuilder
         }
 
         sb.AppendLine($"{outputName}:");
+        var itemMaxLength = sectionName.Equals("ItemSpecs", StringComparison.OrdinalIgnoreCase) ? 620 : 190;
         foreach (var item in items.Where(ShouldKeepItem).Distinct(StringComparer.OrdinalIgnoreCase).Take(maxItems))
         {
-            sb.AppendLine($"- {Trim(RemoveUrlTail(item), 190)}");
+            sb.AppendLine($"- {Trim(RemoveUrlTail(item), itemMaxLength)}");
         }
     }
 

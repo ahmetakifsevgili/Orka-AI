@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,6 +12,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System;
 using System.Globalization;
+using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
 using Orka.Infrastructure.SemanticKernel.Plugins;
 
@@ -98,7 +99,8 @@ public class DeepPlanAgent : IDeepPlanAgent
             failedTopics: null,
             setGrounding: g => grounding = g,
             precompressedResearchPromptBlock: compressedResearchPromptBlock,
-            diagnosticQuizSummary: diagnosticQuizSummary);
+            diagnosticQuizSummary: diagnosticQuizSummary,
+            allowConceptGraphFallback: false);
         var diagnostic = DiagnosticWeaknessSummary.Parse(diagnosticQuizSummary);
         modules = EnsureBasePlanQualityBeforeSave(modules, topicTitle, diagnostic);
         modules = ApplyDiagnosticTraceability(modules, diagnostic);
@@ -106,7 +108,7 @@ public class DeepPlanAgent : IDeepPlanAgent
         return new DeepPlanGenerationWithGroundingResultDto { Topics = topics, Grounding = grounding };
     }
 
-    private async Task<List<ModuleDefinition>> GenerateModulesAsync(Guid parentTopicId, string topicTitle, Guid userId, string userLevel, string? researchContext = null, string? failedTopics = null, Action<DeepPlanGroundingMetadataDto?>? setGrounding = null, string? precompressedResearchPromptBlock = null, string? diagnosticQuizSummary = null)
+    private async Task<List<ModuleDefinition>> GenerateModulesAsync(Guid parentTopicId, string topicTitle, Guid userId, string userLevel, string? researchContext = null, string? failedTopics = null, Action<DeepPlanGroundingMetadataDto?>? setGrounding = null, string? precompressedResearchPromptBlock = null, string? diagnosticQuizSummary = null, bool allowConceptGraphFallback = true)
     {
         _logger.LogInformation("[DeepPlan] Multi-Agent RAG dngs balyor. Konu: {Topic}", topicTitle);
 
@@ -228,13 +230,13 @@ public class DeepPlanAgent : IDeepPlanAgent
         var graphPlanningGuidance = BuildConceptGraphPlanningGuidance();
 
         var systemPrompt = $$"""
-            Sen akademik seviyede bir 'Mfredat Mimar (Curriculum Architect)' botusun.
-            Grev: Verilen konuyu profesyonel, kapsaml ve konunun doasna uygun bir mfredata dntrmek.
-            Mevcut kullancnn bilgi seviyesi: {{userLevel}}
+            Sen akademik seviyede bir Curriculum Architect botusun.
+            Gorev: Verilen konuyu profesyonel, kapsamli ve konunun dogasina uygun bir mufredata donusturmek.
+            Mevcut kullanicinin bilgi seviyesi: {{userLevel}}
             Konunun Alan / Kategorisi: {{intentCategory}}
             {{contextInfo}}
 
-            [MKRO-TEHS RAPORU - RENCNN ZAYIFLIKLARI]:
+            [MIKRO-TESHIS RAPORU - OGRENCININ ZAYIFLIKLARI]:
             {{baselineDiagnostic}}
 
             {{adaptivePromptSection}}
@@ -243,69 +245,231 @@ public class DeepPlanAgent : IDeepPlanAgent
             {{youtubeReference}}
             {{graphPlanningGuidance}}
 
-            ORGANZASYON KURALI (TEHS ODAKLI MMAR):
-            - [PLAN INTELLIGENCE BRIEF - LEARNING RESEARCH FILTERED] icindeki arastirma bulgularini yalnizca konu kapsami/guncellik/onkosul destegi olarak kullan; plan omurgasini concept graph sinyali, [MIKRO-TESHIS RAPORU] ve [ADAPTIF OGRENME BAGLAMI] belirler.
+            ORGANIZASYON KURALI (TESHIS ODAKLI MIMAR):
+            - [PLAN INTELLIGENCE BRIEF - LEARNING RESEARCH FILTERED] icindeki arastirma bulgularini yalnizca konu kapsami, guncellik ve onkosul destegi olarak kullan; plan omurgasini concept graph sinyali, [MIKRO-TESHIS RAPORU] ve [ADAPTIF OGRENME BAGLAMI] belirler.
             - Korteks kaynak basliklarini, haber/SEO cumlelerini veya video basliklarini modul/ders basligi olarak kopyalama.
-            - [MKRO-TEHS RAPORU] ve [ADAPTIF RENME BALAMI] iindeki zayf noktalar plana "Derinlemesine yiletirme" veya "Pratik Lab" dersleri olarak ekle.
-            - Tekrar eden hata paternlerine (Mistake Patterns) ynelik ekstra pekitirme modlleri ner.
-            - SRS / Gzden Geirme basks olan becerileri mfredatn bana veya ilgili modllere 'Hzl Tekrar' olarak serpitir.
-            - rencinin zaten bildii (baarl olduu) ksmlar mfredatta 'Hzl zet' veya 'Hatrlatma' olarak daralt.
-            - Kullanc cmlesinden (rn: "C# almak istiyorum") ASIL KONUYU kar ("C# Programlama"). Kesinlikle "Selamlama", "stek", "Giri" gibi konulardan bahsetme!
+            - Zayif noktalar varsa plana erken repair/review dersleri olarak yerlestir.
+            - Her konuda ayni generic mimariyi kullanma; modul basliklari konuya ozel concept cluster, prerequisite iliskisi ve teshis sinyalinden turemelidir.
+            - Onkosul, uygulama, pratik ve mastery kontrolu ogrenme islevleridir; bunlari tek basina sabit modul basligi olarak kullanma.
             - KALITE TABANI: En az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
-            - Programlama/teknoloji konularinda kalite tabani daha yuksektir: en az 6 modul, her modulde en az 4 ders ve toplam en az 24 ders uret.
-            - Programlama planinda ilk modul konu mantigi ve on kosullarla baslamali; Orka IDE/sandbox yalnizca uygun pratik derslerinde destekleyici ortam olarak gecmelidir.
-            - Plan cok kisa, jenerik veya iki-uc baslikli olursa sistem tarafindan reddedilecektir.
-            - Her konuda ayni generic mimariyi kullan: onkosul -> ana kavram -> uygulama -> yanilgi onarimi -> pratik -> mastery kontrolu.
-            - Konuya ozel sabit modul listesi uydurma; basliklari brief, teshis ve concept sinyallerinden turet.
-            - Her ders iin o derste llecek ana beceriyi `skillTag` olarak belirle.
-            - Her ders iin bir `intent` belirle:
-              * "Core": Standart mfredat ak.
-              * "DeepDive": [ADAPTIF RENME BALAMI] iindeki bir 'WeakConcept' (Zayf Kavram) iin derinlemesine teorik anlatm.
-              * "PracticeLab": Procedural/lemsel hata paternlerine ynelik adm adm uygulama veya kodlama laboratuvar.
-              * "QuickReview": SRS basks olan veya daha nce baarsz olunan konularn hzl tekrar.
-              * "Remediation": Kavram yanlglarn (Conceptual) dzeltmek iin zel olarak tasarlanm telafi dersi.
-              * "Assessment": Modl sonu veya kritik kavram sonras lme-deerlendirme (kk bir snav gibi).
+            - Orka IDE/sandbox yalnizca uygun pratik derslerinde destek ortami olarak kullanilir; plan omurgasi concept graph ve prerequisite iliskisinden turemelidir.
+            - Her ders icin konuya ozel, olculebilir `skillTag` ve `learningObjective` yaz. `genel-kavram`, `intro`, `basics` gibi bos/generic degerler kullanma.
+            - Her ders icin `prerequisiteConceptKeys`, `quizHook`, `tutorHook` ve `successCriteria` alanlarini doldur.
+            - Her ders icin bir `intent` belirle: Core, DeepDive, PracticeLab, QuickReview, Remediation veya Assessment.
 
-            IKTI KURALI (KESNLKLE UYULACAK):
-            SADECE aadaki JSON formatn dndr. Markdown veya aklama EKLEME.
+            CIKTI KURALI (KESINLIKLE UYULACAK):
+            SADECE asagidaki JSON formatini dondur. Markdown veya aciklama EKLEME.
             {
               "modules": [
                 {
-                  "title": "Modl Bal",
+                  "title": "Modul Basligi",
                   "emoji": "",
                   "lessons": [
-                    { "title": "Ders Bal 1", "skillTag": "beceri-etiketi-1", "intent": "Core" },
-                    { "title": "Ders Bal 2", "skillTag": "beceri-etiketi-2", "intent": "DeepDive" },
-                    { "title": "Ders Bal 3", "skillTag": "beceri-etiketi-3", "intent": "PracticeLab" }
+                    {
+                      "title": "Ders Basligi 1",
+                      "skillTag": "konuya-ozel-concept-key",
+                      "learningObjective": "Olculebilir ders hedefi",
+                      "prerequisiteConceptKeys": ["gerekirse-onkosul-key"],
+                      "intent": "Core",
+                      "quizHook": "diagnostic_check|retrieval_practice|misconception_probe|micro_quiz",
+                      "tutorHook": "explain_then_check|worked_example_then_micro_check|misconception_repair",
+                      "successCriteria": ["Ogrenci bu kavrami ... ile kanitlar."]
+                    }
                   ]
                 }
               ]
             }
-            DL: Trke.
+            DIL: Turkce.
             """;
 
         _logger.LogInformation("[DeepPlan] AIAgentFactory tetikleniyor. Model: {Model}, Seviye: {Level}",
             _factory.GetModel(AgentRole.DeepPlan), userLevel);
 
-        for (int attempt = 1; attempt <= 2; attempt++)
+        var lastRejectionReason = "not_attempted";
+        var lastRawPreview = string.Empty;
+        for (int attempt = 1; attempt <= 3; attempt++)
         {
-            var raw = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\"");
-            var parsedModules = ParseModuleStructure(raw);
-            if (TryAcceptPlanModules(parsedModules, topicTitle, out var acceptedModules, out var rejectionReason))
+            try
             {
-                setGrounding?.Invoke(groundingMetadata);
-                return acceptedModules;
+                var raw = await _factory.CompleteChatAsync(
+                    AgentRole.DeepPlan,
+                    systemPrompt,
+                    BuildPlanGenerationUserPrompt(topicTitle, attempt, lastRejectionReason, lastRawPreview));
+                var parsedModules = ParseModuleStructure(raw);
+                if (TryAcceptPlanModules(parsedModules, topicTitle, out var acceptedModules, out var rejectionReason))
+                {
+                    setGrounding?.Invoke(groundingMetadata);
+                    return acceptedModules;
+                }
+                lastRejectionReason = rejectionReason;
+                lastRawPreview = BuildSafeRawPreview(raw);
+                _logger.LogWarning(
+                    "[DeepPlan] Plan kalite/parse reddi (Deneme {Attempt}/3). Reason={Reason}. Raw={Raw}",
+                    attempt,
+                    rejectionReason,
+                    raw.Length > 200 ? raw[..200] + "..." : raw);
             }
-            _logger.LogWarning(
-                "[DeepPlan] Plan kalite/parse reddi (Deneme {Attempt}/2). Reason={Reason}. Raw={Raw}",
-                attempt,
-                rejectionReason,
-                raw.Length > 200 ? raw[..200] + "..." : raw);
+            catch (Exception ex)
+            {
+                lastRejectionReason = $"provider_exception:{LogPrivacyGuard.SafeExceptionType(ex)}";
+                lastRawPreview = string.Empty;
+                _logger.LogWarning(
+                    "[DeepPlan] Plan üretimi sırasında sağlayıcı hatası (Deneme {Attempt}/3). Hata={Error}",
+                    attempt,
+                    ex.Message);
+            }
         }
 
-        _logger.LogError("[DeepPlan] Plan kalite kapisi tum denemelerde basarisiz. Kapsamli fallback uygulanyor.");
+        if (!allowConceptGraphFallback)
+        {
+            setGrounding?.Invoke(groundingMetadata);
+            throw new InvalidOperationException($"DeepPlan provider did not produce a valid professional plan contract. Last rejection: {lastRejectionReason}");
+        }
+
+        _logger.LogWarning("[DeepPlan] Plan kalite kapisi tum provider denemelerinde basarisiz. Concept-graph fallback deneniyor.");
+        var fallbackModules = BuildQualityFallbackModules(topicTitle);
+        if (TryAcceptPlanModules(fallbackModules, topicTitle, out var acceptedFallback, out var fallbackRejection))
+        {
+            setGrounding?.Invoke(groundingMetadata);
+            return acceptedFallback;
+        }
+
+        _logger.LogError("[DeepPlan] Plan kalite kapisi tum denemelerde basarisiz. Fallback de reddedildi. Reason={Reason}", fallbackRejection);
         setGrounding?.Invoke(groundingMetadata);
-        return BuildQualityFallbackModules(topicTitle);
+        throw new InvalidOperationException($"DeepPlan provider did not produce a valid professional plan contract. Last rejection: {lastRejectionReason}");
+    }
+
+    private static string BuildPlanGenerationUserPrompt(
+        string topicTitle,
+        int attempt,
+        string lastRejectionReason,
+        string lastRawPreview)
+    {
+        if (attempt <= 1)
+        {
+            return $"Konu: \"{topicTitle}\"";
+        }
+
+        var previousOutput = string.IsNullOrWhiteSpace(lastRawPreview)
+            ? "Onceki cikti kullanilabilir degil veya provider hatasi olustu."
+            : lastRawPreview;
+
+        return $$"""
+            Konu: "{{topicTitle}}"
+
+            Onceki plan contract kalite kapisindan gecmedi.
+            Red sebebi: {{lastRejectionReason}}
+
+            Onceki cikti ozeti:
+            {{previousOutput}}
+
+            Simdi ayni konu icin sadece gecerli JSON dondur:
+            - root property `modules` olacak.
+            - en az 6 module olacak.
+            - her module en az 4 lesson tasiyacak.
+            - toplam en az 24 lesson olacak.
+            - her lesson icin title, skillTag, learningObjective, prerequisiteConceptKeys, intent, quizHook, tutorHook, successCriteria dolu olacak.
+            - skillTag ve module basliklari konuya ozel olacak; generic placeholder kullanma.
+            - zayif concept varsa ilk 12 lesson icinde repair/review veya misconception_repair olarak yer alacak.
+            - Markdown, aciklama veya ekstra metin yazma.
+            """;
+    }
+
+    private static List<ModuleDefinition> BuildConceptGraphFallbackModules(string topicTitle)
+    {
+        var subject = string.IsNullOrWhiteSpace(topicTitle) ? "konu" : topicTitle.Trim();
+        var subjectKey = NormalizePlanKey(subject);
+        if (string.IsNullOrWhiteSpace(subjectKey)) subjectKey = "konu";
+
+        var moduleSpecs = new[]
+        {
+            ("Onkosul Haritasi", "map", "prerequisite"),
+            ("Ana Kavram Omurgasi", "network", "core"),
+            ("Ornekleme ve Uygulama", "lab", "practice"),
+            ("Yanilgi Onarimi", "repair", "remediation"),
+            ("Karma Pratik ve Transfer", "target", "transfer"),
+            ("Mastery Kontrolu", "check", "assessment")
+        };
+
+        var lessonSpecs = new[]
+        {
+            ("Kavrami tanimla", "Core", "retrieval_practice", "explain_then_check"),
+            ("Ornek uzerinde ayirt et", "DeepDive", "misconception_probe", "worked_example_then_micro_check"),
+            ("Mikro pratik yap", "PracticeLab", "micro_quiz", "guided_practice_then_feedback"),
+            ("Kaniti ve sonraki adimi yaz", "Assessment", "diagnostic_check", "mastery_check_then_next_step")
+        };
+
+        return moduleSpecs
+            .Select((module, moduleIndex) =>
+            {
+                var moduleKey = $"{subjectKey}-{module.Item3}";
+                var lessons = lessonSpecs
+                    .Select((lesson, lessonIndex) =>
+                    {
+                        var lessonKey = $"{moduleKey}-{lessonIndex + 1}";
+                        return new LessonDefinition(
+                            $"{subject} - {module.Item1}: {lesson.Item1}",
+                            lessonKey,
+                            lesson.Item2,
+                            PhaseMetadata: SerializePlanPhaseMetadata(
+                                moduleIndex + 1,
+                                lessonIndex + 1,
+                                module.Item3,
+                                lesson.Item2,
+                                new[] { moduleKey }),
+                            LearningObjective: $"{subject} icin {module.Item1} kapsaminda {lesson.Item1.ToLowerInvariant()} becerisini kanitlar.",
+                            PrerequisiteConceptKeys: lessonIndex == 0 ? [] : new[] { $"{moduleKey}-1" },
+                            QuizHook: lesson.Item3,
+                            TutorHook: lesson.Item4,
+                            SuccessCriteria:
+                            [
+                                $"{subject} baglaminda {module.Item1} kavramini kendi cumleleriyle aciklar.",
+                                $"{subject} icin {lesson.Item1.ToLowerInvariant()} adimini kisa bir kontrolle kanitlar."
+                            ]);
+                    })
+                    .ToList();
+
+                return new ModuleDefinition($"{subject} {module.Item1}", module.Item2, lessons);
+            })
+            .ToList();
+    }
+
+    private static List<ModuleDefinition> BuildQualityFallbackModules(string topicTitle) =>
+        BuildConceptGraphFallbackModules(topicTitle);
+
+    private static string SerializePlanPhaseMetadata(
+        int moduleOrder,
+        int lessonOrder,
+        string conceptCluster,
+        string intent,
+        IReadOnlyList<string> prerequisiteConceptKeys) =>
+        JsonSerializer.Serialize(new
+        {
+            moduleOrder,
+            lessonOrder,
+            conceptCluster,
+            intent,
+            sequenceReason = "concept_graph_fallback",
+            quizHook = "diagnostic_check",
+            tutorHook = "explain_then_check",
+            prerequisiteConceptKeys
+        });
+
+    private static string BuildSafeRawPreview(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        var compact = raw.Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
+        while (compact.Contains("  ", StringComparison.Ordinal))
+        {
+            compact = compact.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        return compact.Length <= 1600 ? compact : compact[..1600];
     }
 
     private static string BuildConceptGraphPlanningGuidance() => """
@@ -316,62 +480,6 @@ public class DeepPlanAgent : IDeepPlanAgent
             - Zayif kavramlar remediation/practice olarak derinlestirilir; bilinen kavramlar hizli tekrar olur.
             - Basliklari kaynak basliklarindan kopyalama; concept graph, teshis ve learner state sinyallerinden turet.
             """;
-
-    private static List<ModuleDefinition> BuildQualityFallbackModules(string topicTitle)
-    {
-        var title = string.IsNullOrWhiteSpace(topicTitle) ? "Konu" : topicTitle.Trim();
-        return BuildConceptGraphFallbackModules(title);
-    }
-
-    private static List<ModuleDefinition> BuildConceptGraphFallbackModules(string title)
-    {
-        var normalizedTitle = string.IsNullOrWhiteSpace(title) ? "Konu" : title.Trim();
-        return
-        [
-            new($"{normalizedTitle} Onkosul Haritasi", "", new List<LessonDefinition>
-            {
-                new("Baslangic kavramlari ve kelime haritasi", "prerequisite", "Core"),
-                new("Once bilinmesi gereken ayrimlar", "prerequisite-check", "Core"),
-                new("Ilk kavram iliskileri", "concept-link", "Core"),
-                new("Kisa on bilgi kontrolu", "readiness-check", "Assessment")
-            }),
-            new("Ana Kavram Omurgasi", "", new List<LessonDefinition>
-            {
-                new("Ana kavrami sade tanimlama", "core-concept", "Core"),
-                new("Kavramin neden gerekli oldugu", "concept-reasoning", "Core"),
-                new("Benzer kavramlardan ayirma", "contrast", "Core"),
-                new("Mikro kontrol sorusu", "micro-check", "Assessment")
-            }),
-            new("Uygulama ve Ornekleme", "", new List<LessonDefinition>
-            {
-                new("Cozumlu mini ornek", "worked-example", "PracticeLab"),
-                new("Adim adim uygulama", "guided-practice", "PracticeLab"),
-                new("Kisit ve ipucu okuma", "evidence-reading", "PracticeLab"),
-                new("Geri bildirimli deneme", "feedback-loop", "PracticeLab")
-            }),
-            new("Yanilgi Onarimi", "", new List<LessonDefinition>
-            {
-                new("Sik karistirilan nokta", "misconception", "Remediation"),
-                new("Yanlis ornek uzerinden duzeltme", "error-repair", "Remediation"),
-                new("Karsilastirma tablosu", "comparison", "Remediation"),
-                new("Telafi mini quiz", "remediation-check", "Assessment")
-            }),
-            new("Karma Pratik", "", new List<LessonDefinition>
-            {
-                new("Kolaydan ortaya uygulama", "mixed-practice-easy", "PracticeLab"),
-                new("Orta seviye karar sorulari", "mixed-practice-core", "PracticeLab"),
-                new("Zorlayici senaryo", "challenge", "DeepDive"),
-                new("Hata gunlugu ve tekrar", "review", "QuickReview")
-            }),
-            new("Mastery Kontrolu ve Sonraki Rota", "", new List<LessonDefinition>
-            {
-                new("Kavram bazli final kontrol", "mastery-check", "Assessment"),
-                new("Eksik kalan kavramlar", "weakness-review", "QuickReview"),
-                new("Kişisel pratik planı", "adaptive-plan", "Core"),
-                new("Sonraki konu baglantisi", "next-step", "Core")
-            })
-        ];
-    }
 
     private static bool ContainsAny(string text, params string[] keywords)
     {
@@ -454,40 +562,66 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         try
         {
-            var s = raw.IndexOf('{');
-            var e = raw.LastIndexOf('}');
-            if (s >= 0 && e > s)
+            var cleaned = ExtractJsonPayload(raw);
+            if (!string.IsNullOrWhiteSpace(cleaned))
             {
-                var cleaned = raw[s..(e + 1)];
                 using var doc = JsonDocument.Parse(cleaned);
-                var modulesArray = doc.RootElement.GetProperty("modules").EnumerateArray();
+                if (!TryGetModuleArray(doc.RootElement, out var modulesArray))
+                {
+                    return null;
+                }
 
                 var modules = new List<ModuleDefinition>();
-                foreach (var mod in modulesArray)
+                foreach (var mod in modulesArray.EnumerateArray())
                 {
-                    var title = mod.GetProperty("title").GetString() ?? "Modl";
+                    if (mod.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var title = FirstJsonString(mod, "title", "moduleTitle", "name", "heading") ?? "Modul";
                     var emoji = mod.TryGetProperty("emoji", out var emojiProp) ? emojiProp.GetString() ?? "" : "";
 
                     var lessons = new List<LessonDefinition>();
-                    if (mod.TryGetProperty("lessons", out var lessonsProp))
+                    if (FirstJsonArray(mod, out var lessonsProp, "lessons", "lessonSteps", "steps", "items", "subtopics", "topics"))
                     {
                         foreach (var l in lessonsProp.EnumerateArray())
                         {
-                            var lTitle = l.GetProperty("title").GetString();
-                            var lSkill = l.TryGetProperty("skillTag", out var sProp) ? sProp.GetString() : "genel-kavram";
-                            var lIntent = l.TryGetProperty("intent", out var iProp) ? iProp.GetString() : "Core";
+                            if (l.ValueKind == JsonValueKind.String)
+                            {
+                                var titleText = l.GetString();
+                                if (!string.IsNullOrWhiteSpace(titleText))
+                                {
+                                    lessons.Add(new LessonDefinition(titleText, NormalizePlanKey(titleText), "Core"));
+                                }
+                                continue;
+                            }
+
+                            if (l.ValueKind != JsonValueKind.Object)
+                            {
+                                continue;
+                            }
+
+                            var lTitle = FirstJsonString(l, "title", "lessonTitle", "name", "heading");
+                            var lSkill = FirstJsonString(l, "skillTag", "conceptKey", "conceptTag", "skill", "targetConceptKey");
+                            var lIntent = FirstJsonString(l, "intent", "lessonIntent", "type", "category") ?? "Core";
+                            var lObjective = FirstJsonString(l, "learningObjective", "objective", "measurableOutcome", "outcome");
+                            var lPrerequisites = ReadFirstJsonStringArray(l, "prerequisiteConceptKeys", "prerequisites", "requiredConcepts");
+                            var lQuizHook = FirstJsonString(l, "quizHook", "assessmentHook", "diagnosticHook");
+                            var lTutorHook = FirstJsonString(l, "tutorHook", "teachingHook", "tutorMove");
+                            var lSuccessCriteria = ReadFirstJsonStringArray(l, "successCriteria", "successCriteriaItems", "masteryCriteria");
 
                             if (!string.IsNullOrWhiteSpace(lTitle))
-                                lessons.Add(new LessonDefinition(lTitle, lSkill ?? "genel-kavram", lIntent ?? "Core"));
-                        }
-                    }
-                    else if (mod.TryGetProperty("topics", out var topicsProp)) // Geriye dnk uyumluluk
-                    {
-                        foreach (var t in topicsProp.EnumerateArray())
-                        {
-                            var tTitle = t.GetString();
-                            if (!string.IsNullOrWhiteSpace(tTitle))
-                                lessons.Add(new LessonDefinition(tTitle, "genel-kavram", "Core"));
+                                lessons.Add(new LessonDefinition(
+                                    lTitle,
+                                    lSkill ?? NormalizePlanKey(lTitle),
+                                    lIntent ?? "Core",
+                                    null,
+                                    lObjective,
+                                    lPrerequisites,
+                                    lQuizHook,
+                                    lTutorHook,
+                                    lSuccessCriteria));
                         }
                     }
 
@@ -501,6 +635,141 @@ public class DeepPlanAgent : IDeepPlanAgent
         catch { /* yoksay, null dnecek */ }
 
         return null;
+    }
+
+    private static string? FirstJsonString(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!element.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+
+            if (value.ValueKind == JsonValueKind.Object &&
+                value.TryGetProperty("hookType", out var hookType) &&
+                hookType.ValueKind == JsonValueKind.String)
+            {
+                return hookType.GetString();
+            }
+
+            if (value.ValueKind == JsonValueKind.Object &&
+                value.TryGetProperty("tutorMove", out var tutorMove) &&
+                tutorMove.ValueKind == JsonValueKind.String)
+            {
+                return tutorMove.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractJsonPayload(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var objectStart = raw.IndexOf('{');
+        var objectEnd = raw.LastIndexOf('}');
+        var arrayStart = raw.IndexOf('[');
+        var arrayEnd = raw.LastIndexOf(']');
+
+        if (objectStart >= 0 && objectEnd > objectStart &&
+            (arrayStart < 0 || objectStart < arrayStart))
+        {
+            return raw[objectStart..(objectEnd + 1)];
+        }
+
+        if (arrayStart >= 0 && arrayEnd > arrayStart)
+        {
+            return raw[arrayStart..(arrayEnd + 1)];
+        }
+
+        return null;
+    }
+
+    private static bool TryGetModuleArray(JsonElement root, out JsonElement modulesArray)
+    {
+        modulesArray = default;
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            modulesArray = root;
+            return true;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (FirstJsonArray(root, out modulesArray, "modules", "chapters", "units", "sections"))
+        {
+            return true;
+        }
+
+        foreach (var wrapperName in new[] { "plan", "curriculum", "coursePlan", "professionalPlan" })
+        {
+            if (root.TryGetProperty(wrapperName, out var wrapper) &&
+                wrapper.ValueKind == JsonValueKind.Object &&
+                FirstJsonArray(wrapper, out modulesArray, "modules", "chapters", "units", "sections"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool FirstJsonArray(JsonElement element, out JsonElement array, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (element.TryGetProperty(propertyName, out var value) &&
+                value.ValueKind == JsonValueKind.Array)
+            {
+                array = value;
+                return true;
+            }
+        }
+
+        array = default;
+        return false;
+    }
+
+    private static string[] ReadJsonStringArray(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+    }
+
+    private static string[] ReadFirstJsonStringArray(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            var values = ReadJsonStringArray(element, propertyName);
+            if (values.Length > 0)
+            {
+                return values;
+            }
+        }
+
+        return [];
     }
 
     private static bool TryAcceptPlanModules(
@@ -528,12 +797,29 @@ public class DeepPlanAgent : IDeepPlanAgent
                     {
                         Title = lesson.Title.Trim(),
                         SkillTag = string.IsNullOrWhiteSpace(lesson.SkillTag) ? "genel-kavram" : lesson.SkillTag.Trim(),
-                        Intent = string.IsNullOrWhiteSpace(lesson.Intent) ? "Core" : lesson.Intent.Trim()
+                        Intent = string.IsNullOrWhiteSpace(lesson.Intent) ? "Core" : lesson.Intent.Trim(),
+                        LearningObjective = string.IsNullOrWhiteSpace(lesson.LearningObjective) ? null : lesson.LearningObjective.Trim(),
+                        QuizHook = string.IsNullOrWhiteSpace(lesson.QuizHook) ? null : lesson.QuizHook.Trim(),
+                        TutorHook = string.IsNullOrWhiteSpace(lesson.TutorHook) ? null : lesson.TutorHook.Trim(),
+                        PrerequisiteConceptKeys = (lesson.PrerequisiteConceptKeys ?? [])
+                            .Where(item => !string.IsNullOrWhiteSpace(item))
+                            .Select(item => item.Trim())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Take(8)
+                            .ToArray(),
+                        SuccessCriteria = (lesson.SuccessCriteria ?? [])
+                            .Where(item => !string.IsNullOrWhiteSpace(item))
+                            .Select(item => item.Trim())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Take(6)
+                            .ToArray()
                     })
                     .ToList()
             })
             .Where(module => module.Lessons.Count > 0)
             .ToList();
+
+        cleaned = EnsureDistinctLessonSkillTags(cleaned);
 
         var isProgramming = IsProgrammingTopic(topicTitle);
         var minModules = isProgramming ? MinimumProgrammingModules : MinimumGeneralModules;
@@ -560,9 +846,133 @@ public class DeepPlanAgent : IDeepPlanAgent
             return false;
         }
 
+        var genericLesson = cleaned.SelectMany(module => module.Lessons).FirstOrDefault(lesson =>
+            LooksGenericPlanText(lesson.Title) ||
+            LooksGenericSkillTag(lesson.SkillTag));
+        if (genericLesson != null)
+        {
+            rejectionReason = $"generic_lesson_contract:{genericLesson.Title}:{genericLesson.SkillTag}";
+            return false;
+        }
+
+        var genericModules = cleaned.Count(module => LooksGenericModuleTitle(module.Title, topicTitle));
+        if (genericModules > Math.Max(1, cleaned.Count / 4))
+        {
+            rejectionReason = $"generic_module_titles:{genericModules}/{cleaned.Count}";
+            return false;
+        }
+
+        var conceptDiversity = cleaned
+            .SelectMany(module => module.Lessons)
+            .Select(lesson => NormalizePlanKey(lesson.SkillTag))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        var minimumConceptDiversity = Math.Min(12, Math.Max(8, minTotalLessons / 3));
+        if (conceptDiversity < minimumConceptDiversity)
+        {
+            rejectionReason = $"concept_diversity_low:{conceptDiversity}/{minimumConceptDiversity}";
+            return false;
+        }
+
         acceptedModules = cleaned;
         rejectionReason = "accepted";
         return true;
+    }
+
+    private static List<ModuleDefinition> EnsureDistinctLessonSkillTags(List<ModuleDefinition> modules)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        return modules.Select(module => module with
+        {
+            Lessons = module.Lessons.Select(lesson =>
+            {
+                var normalized = NormalizePlanKey(lesson.SkillTag);
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    normalized = NormalizePlanKey(lesson.Title);
+                }
+
+                var count = seen.GetValueOrDefault(normalized);
+                seen[normalized] = count + 1;
+                if (count == 0)
+                {
+                    return lesson with { SkillTag = normalized };
+                }
+
+                var titleKey = NormalizePlanKey(lesson.Title);
+                var refined = string.IsNullOrWhiteSpace(titleKey)
+                    ? $"{normalized}-{count + 1}"
+                    : $"{normalized}-{titleKey}";
+
+                var suffix = 2;
+                var unique = refined;
+                while (seen.ContainsKey(unique))
+                {
+                    unique = $"{refined}-{suffix++}";
+                }
+
+                seen[unique] = 1;
+                return lesson with { SkillTag = unique };
+            }).ToList()
+        }).ToList();
+    }
+
+    private static bool LooksGenericPlanText(string? value)
+    {
+        var text = NormalizePlanKey(value);
+        return string.IsNullOrWhiteSpace(text) ||
+               text is "giris" or "introduction" or "basics" or "temel-bilgiler" or "genel-tekrar" or "konuyu-calis" or "read-notes" ||
+               text.StartsWith("ders-basligi", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("lesson-title", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("modul-basligi", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksGenericModuleTitle(string? moduleTitle, string topicTitle)
+    {
+        var text = NormalizePlanKey(moduleTitle);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        var topicTokens = NormalizePlanKey(topicTitle)
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => token.Length >= 3)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var moduleTokens = text
+            .Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => token.Length >= 3)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var domainOverlap = topicTokens.Count > 0 && moduleTokens.Overlaps(topicTokens);
+
+        var genericOnly = text is
+            "fundamentals" or "core-concepts" or "practice" or "advanced" or
+            "ana-kavram-omurgasi" or "uygulama-ve-ornekleme" or "yanilgi-onarimi" or
+            "karma-pratik" or "mastery-kontrolu-ve-sonraki-rota" or "onkosul-haritasi" ||
+            text.StartsWith("module-", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("modul-", StringComparison.OrdinalIgnoreCase);
+
+        return genericOnly && !domainOverlap;
+    }
+
+    private static bool LooksGenericSkillTag(string? value)
+    {
+        var text = NormalizePlanKey(value);
+        return string.IsNullOrWhiteSpace(text) ||
+               text is "genel-kavram" or "general-concept" or "concept" or "skill" or "topic" or "core" or "default" ||
+               text.Contains("no-specific-video", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("video-metadata", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("source-metadata", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("transcript-available", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePlanKey(string? value)
+    {
+        var text = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+        var chars = text.Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray();
+        return string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static List<ModuleDefinition> EnsureBasePlanQualityBeforeSave(
@@ -575,7 +985,7 @@ public class DeepPlanAgent : IDeepPlanAgent
             return accepted;
         }
 
-        return BuildQualityFallbackModules(topicTitle);
+        throw new InvalidOperationException("Generated plan failed professional plan contract validation before save.");
     }
 
     private static bool IsProgrammingTopic(string? topicTitle)
@@ -623,7 +1033,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                 {
                     var label = HumanizeDiagnosticLabel(mistake.Value);
                     return new LessonDefinition(
-                        $"{label} Calisma Pratigi",
+                        $"{label} targeted practice",
                         $"diagnostic:mistake:{mistake.Value}",
                         IntentForMistake(mistake.Value),
                         BuildDiagnosticPhaseMetadata(diagnostic, null, mistake));
@@ -692,18 +1102,18 @@ public class DeepPlanAgent : IDeepPlanAgent
     {
         if (string.IsNullOrWhiteSpace(mistake))
         {
-            return "Calisma Pratigi";
+            return "targeted practice";
         }
 
         return mistake.Trim() switch
         {
-            "Procedural" => "Pratik Laboratuvari",
-            "Application" => "Uygulama Pratigi",
-            "Reading" => "Okuma Onarimi",
-            "MisreadQuestion" => "Soru Okuma Kontrolu",
-            "Conceptual" => "Kavram Onarimi",
-            "Careless" => "Dikkat Kontrolu",
-            _ => "Calisma Pratigi"
+            "Procedural" => "step-by-step practice lab",
+            "Application" => "scenario application practice",
+            "Reading" => "evidence-reading repair",
+            "MisreadQuestion" => "question-reading checkpoint",
+            "Conceptual" => "concept repair",
+            "Careless" => "attention checkpoint",
+            _ => "targeted practice"
         };
     }
 
@@ -726,6 +1136,12 @@ public class DeepPlanAgent : IDeepPlanAgent
             return "Eksik Kavram";
         }
 
+        if (normalized.Contains("task result is the safest way", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("Task Result", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Task.Result blocking misconception";
+        }
+
         var words = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Select(word => word.Equals("vs", StringComparison.OrdinalIgnoreCase)
                 ? "vs"
@@ -737,13 +1153,19 @@ public class DeepPlanAgent : IDeepPlanAgent
     private async Task<List<Topic>> SaveModularSubTopicsAsync(
         Guid parentTopicId, List<ModuleDefinition>? modules, Guid userId)
     {
-        if (modules == null || !modules.Any()) return new List<Topic>();
+        if (modules == null || !modules.Any())
+        {
+            throw new InvalidOperationException("deep_plan_modules_empty");
+        }
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
 
         var parent = await db.Topics.FindAsync(parentTopicId);
-        if (parent == null) return new List<Topic>();
+        if (parent == null)
+        {
+            throw new InvalidOperationException("deep_plan_parent_topic_missing");
+        }
 
         var allLessonTopics = new List<Topic>();
         var allWikiPages = new List<WikiPage>();
@@ -784,6 +1206,7 @@ public class DeepPlanAgent : IDeepPlanAgent
                     Emoji          = mod.Emoji,
                     Category       = $"Plan:{lessonDef.Intent}",
                     PlanIntent     = lessonDef.Intent,
+                    MetadataJson    = BuildLessonContractMetadata(mod.Title, mi, lessonDef, li),
                     PhaseMetadata  = lessonDef.PhaseMetadata,
                     CurrentPhase   = TopicPhase.Discovery,
                     Order          = li,
@@ -817,14 +1240,82 @@ public class DeepPlanAgent : IDeepPlanAgent
 
         await db.SaveChangesAsync();
 
+        if (allLessonTopics.Count == 0)
+        {
+            throw new InvalidOperationException("deep_plan_lessons_empty_after_save");
+        }
+
         _logger.LogInformation("[DeepPlan] {ModuleCount} modl, {LessonCount} ders oluturuldu.",
             modules.Count, totalLessons);
         return allLessonTopics;
     }
 
+    private static string BuildLessonContractMetadata(string moduleTitle, int moduleOrder, LessonDefinition lesson, int lessonOrder)
+    {
+        var conceptKey = NormalizePlanKey(lesson.SkillTag);
+        if (string.IsNullOrWhiteSpace(conceptKey))
+        {
+            conceptKey = NormalizePlanKey(lesson.Title);
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            contractVersion = "professional-plan-v1",
+            source = "deep_plan",
+            moduleTitle,
+            moduleOrder,
+            lessonOrder,
+            skillTag = lesson.SkillTag,
+            conceptKey,
+            learningObjective = string.IsNullOrWhiteSpace(lesson.LearningObjective)
+                ? $"{lesson.Title} hedefini aciklayip yeni bir mini senaryoda uygulamak."
+                : lesson.LearningObjective,
+            sequenceReason = $"{moduleTitle} modulu icinde {lesson.Title} adimi prerequisite, kavram, uygulama ve kontrol sirasina gore yerlestirildi.",
+            prerequisiteConceptKeys = lesson.PrerequisiteConceptKeys ?? [],
+            quizHook = new
+            {
+                hookType = string.IsNullOrWhiteSpace(lesson.QuizHook)
+                    ? lesson.Intent == "Assessment" ? "micro_quiz" : "retrieval_practice"
+                    : lesson.QuizHook,
+                conceptKey,
+                difficultyBand = lesson.Intent == "DeepDive" ? "advanced" : "core"
+            },
+            tutorHook = new
+            {
+                tutorMove = !string.IsNullOrWhiteSpace(lesson.TutorHook)
+                    ? lesson.TutorHook
+                    : lesson.Intent switch
+                {
+                    "Remediation" => "misconception_repair",
+                    "PracticeLab" => "worked_example_then_micro_check",
+                    "DeepDive" => "scaffolded_explanation",
+                    "Assessment" => "micro_check",
+                    _ => "explain_then_check"
+                },
+                activeConceptKey = conceptKey
+            },
+            successCriteria = (lesson.SuccessCriteria?.Length ?? 0) > 0
+                ? lesson.SuccessCriteria
+                : new[]
+            {
+                $"{lesson.Title} kavramini kendi cumleleriyle aciklar.",
+                $"{lesson.Title} icin bir mini uygulama veya kontrol sorusunu cevaplar."
+            }
+        });
+    }
+
     /// <summary>Modl tanm: balk, emoji ve altndaki dersler.</summary>
     private record ModuleDefinition(string Title, string Emoji, List<LessonDefinition> Lessons);
-    private record LessonDefinition(string Title, string SkillTag, string Intent = "Core", string? PhaseMetadata = null);
+    private record LessonDefinition(
+        string Title,
+        string SkillTag,
+        string Intent = "Core",
+        string? PhaseMetadata = null,
+        string? LearningObjective = null,
+        string[]? PrerequisiteConceptKeys = null,
+        string? QuizHook = null,
+        string? TutorHook = null,
+        string[]? SuccessCriteria = null);
 
     private sealed record DiagnosticWeaknessSummary(
         List<DiagnosticTraceEntry> WeakConcepts,
@@ -935,15 +1426,15 @@ public class DeepPlanAgent : IDeepPlanAgent
         }
     }
 
-    public async Task<string> GenerateBaselineQuizAsync(string topicTitle)
+    public async Task<string> GenerateBaselineQuizAsync(string topicTitle, Guid topicId, string language, int questionCount)
     {
-        _logger.LogInformation("[DeepPlan] Baseline Quiz iin Korteks kefi balatlyor: {Topic}", topicTitle);
+        _logger.LogInformation("[DeepPlan] Baseline Quiz iin Korteks kefi balatlyor: {Topic} TopicId={TopicId} Language={Language} Count={Count}", topicTitle, topicId, language, questionCount);
 
         // 1. Korteks Kefi (Quiz sorularnn gerek dnya verilerine dayanmas iin)
         string compressedResearchPromptBlock;
         try
         {
-            var korteksResult = await _korteks.RunResearchWithEvidenceAsync(topicTitle, Guid.Empty, null);
+            var korteksResult = await _korteks.RunResearchWithEvidenceAsync(topicTitle, topicId, null);
             var compressedResearch = _planResearchCompressor.Compress(korteksResult);
             compressedResearchPromptBlock = _planResearchCompressor.BuildPromptBlock(compressedResearch);
             _logger.LogInformation(
@@ -973,20 +1464,26 @@ public class DeepPlanAgent : IDeepPlanAgent
             topicTitle,
             compressedResearchPromptBlock);
 
+        var scale1 = (int)Math.Max(1, Math.Round(questionCount * 0.20));
+        var scale2 = (int)Math.Max(1, Math.Round(questionCount * 0.30));
+        var scale3 = (int)Math.Max(1, Math.Round(questionCount * 0.30));
+        var scale4 = Math.Max(1, questionCount - (scale1 + scale2 + scale3));
+        var totalScale = scale1 + scale2 + scale3 + scale4;
+
         var systemPrompt = $$"""
             Sen profesyonel bir 'Eitim Tanlama Uzman (Educational Diagnostician)' botusun.
-            Grevin: Kullancnn '{{topicTitle}}' konusundaki gerek bilgi seviyesini EN NCE AYRINTISINA KADAR tespit etmek iin 20 soru hazrlamak.
+            Grevin: Kullancnn '{{topicTitle}}' konusundaki gerek bilgi seviyesini EN NCE AYRINTISINA KADAR tespit etmek iin {{totalScale}} soru hazrlamak.
 
             {{quizIntelligenceBrief}}
 
             Eger GroundingMode FallbackInternalKnowledge veya BlockedProvider ise bu baglami guncel/kaynakli kanit gibi sunma.
             Bu durumda sorulari konu basligi, genel pedagojik tanilama kurallari ve temel mufredat kapsami ile uret.
 
-            SORU DAILIMI VE DERNLK (Toplam 20 Soru):
-            - 1-4: TEMEL KAVRAMLAR (Balang seviyesi, terminoloji kontrol)
-            - 5-10: UYGULAMA VE SENARYO (Orta seviye, "nasl yaplr?" ve kod okuma)
-            - 11-16: ANALZ VE PROBLEM ZME (leri seviye, hata ayklama ve mimari kararlar)
-            - 17-20: UZMANLIK VE DERN KONULAR (Zorlayc, u durumlar ve optimizasyon)
+            SORU DAILIMI VE DERNLK (Toplam {{totalScale}} Soru):
+            - 1-{{scale1}}: TEMEL KAVRAMLAR (Balang seviyesi, terminoloji kontrol)
+            - {{scale1 + 1}}-{{scale1 + scale2}}: UYGULAMA VE SENARYO (Orta seviye, "nasl yaplr?" ve kod okuma)
+            - {{scale1 + scale2 + 1}}-{{scale1 + scale2 + scale3}}: ANALZ VE PROBLEM ZME (leri seviye, hata ayklama ve mimari kararlar)
+            - {{scale1 + scale2 + scale3 + 1}}-{{totalScale}}: UZMANLIK VE DERN KONULAR (Zorlayc, u durumlar ve optimizasyon)
 
             KALTE KURALLARI:
             - Sorulari sadece yukaridaki sikistirilmis arastirma baglami ve konu basligiyla destekle; ham Korteks raporu varsayma.
@@ -994,8 +1491,8 @@ public class DeepPlanAgent : IDeepPlanAgent
             - Soru tipleri tekrarlamasin: conceptual, procedural, application, analysis ve misconception_probe karisik kullanilsin.
             - Zorluk dagilimi dengeli olsun: kolay, orta ve zor sorulari acikca karistir.
             - Soru metinleri birbirinin kopyasi veya yakin tekrari olmasin.
-            - En az 8 farkli conceptTag ve en az 4 farkli questionType kullan.
-            - En az 5 soru yaygin kavram yanilgisini veya beklenen hata kategorisini hedeflesin.
+            - En az {{Math.Max(3, (int)Math.Ceiling(totalScale * 0.40))}} farkli conceptTag ve en az {{Math.Max(2, (int)Math.Ceiling(totalScale * 0.20))}} farkli questionType kullan.
+            - En az {{Math.Max(2, (int)Math.Ceiling(totalScale * 0.25))}} soru yaygin kavram yanilgisini veya beklenen hata kategorisini hedeflesin.
             - Programlama/teknik konularda en az bir soru gercek kod parcasi, kod okuma veya hata ayiklama tarzi icersin.
             - Sadece "X nedir?" gibi ezber sorular YASAKTIR. Sorular gerek hayat problemlerini veya teknik senaryolar yanstmaldr.
             - Yanl seenekler (eldiriciler) mantkl ve kafa kartrc olmal.
@@ -1024,18 +1521,12 @@ public class DeepPlanAgent : IDeepPlanAgent
               }
             ]
 
-            DL: Trke.
+            DL: {{language}}.
+            Respond entirely in the requested language (DL). All questions, options, explanations, and tags should be generated using that language.
             """;
 
-        var rawQuiz = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\" iin 20 adet derinlikli baseline sorusu ret.");
-        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrFallback(rawQuiz, topicTitle, out var quality);
-        if (!quality.IsAcceptable)
-        {
-            _logger.LogWarning(
-                "[DeepPlan] Baseline quiz quality failed. TopicRef={TopicRef} FailureCount={FailureCount}",
-                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
-                quality.Failures.Count);
-        }
+        var rawQuiz = await _factory.CompleteChatAsync(AgentRole.DeepPlan, systemPrompt, $"Konu: \"{topicTitle}\" iin {totalScale} adet derinlikli baseline sorusu ret. Dil: {language}.");
+        var validatedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(rawQuiz, topicTitle, totalScale, out _, null);
 
         return validatedQuiz;
     }

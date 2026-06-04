@@ -50,7 +50,7 @@ public sealed class DataLifecycleService : IDataLifecycleService
             return false;
 
         var topicDepths = CollectTopicTree(topicRows, topicId);
-        var scope = await BuildTopicScopeAsync(userId, topicDepths.Keys.ToHashSet(), ct);
+        var scope = await BuildTopicScopeAsync(userId, topicDepths.Keys.ToHashSet(), false, ct);
 
         await using var tx = await BeginTransactionIfSupportedAsync(ct);
         await AnonymizeOperationalRecordsAsync(userId, scope, accountDelete: false, ct);
@@ -79,7 +79,7 @@ public sealed class DataLifecycleService : IDataLifecycleService
             .ToListAsync(ct);
 
         var topicDepths = CollectAllTopics(topicRows);
-        var scope = await BuildTopicScopeAsync(userId, topicDepths.Keys.ToHashSet(), ct);
+        var scope = await BuildTopicScopeAsync(userId, topicDepths.Keys.ToHashSet(), true, ct);
         scope.Add("UserId", userId);
 
         await using var tx = await BeginTransactionIfSupportedAsync(ct);
@@ -107,41 +107,31 @@ public sealed class DataLifecycleService : IDataLifecycleService
         return await _db.Database.BeginTransactionAsync(ct);
     }
 
-    private async Task<DataLifecycleScope> BuildTopicScopeAsync(Guid userId, HashSet<Guid> topicIds, CancellationToken ct)
+    private async Task<DataLifecycleScope> BuildTopicScopeAsync(Guid userId, HashSet<Guid> topicIds, bool accountDelete, CancellationToken ct)
     {
         var scope = new DataLifecycleScope();
         scope.Add(DataLifecycleScope.OwnerUserIdKey, userId);
         scope.Add("TopicId", topicIds);
         scope.Add("ParentTopicId", topicIds);
 
-        var sessionIds = await _db.Sessions
-            .AsNoTracking()
-            .Where(s => s.UserId == userId && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var sessionIds = accountDelete
+            ? await _db.Sessions.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.Sessions.AsNoTracking().Where(s => s.UserId == userId && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)).Select(s => s.Id).ToListAsync(ct);
         scope.Add("SessionId", sessionIds);
 
-        var messageIds = await _db.Messages
-            .AsNoTracking()
-            .Where(m => m.UserId == userId && sessionIds.Contains(m.SessionId))
-            .Select(m => m.Id)
-            .ToListAsync(ct);
+        var messageIds = accountDelete
+            ? await _db.Messages.AsNoTracking().Where(m => m.UserId == userId).Select(m => m.Id).ToListAsync(ct)
+            : await _db.Messages.AsNoTracking().Where(m => m.UserId == userId && sessionIds.Contains(m.SessionId)).Select(m => m.Id).ToListAsync(ct);
         scope.Add("MessageId", messageIds);
 
-        var wikiPageIds = await _db.WikiPages
-            .AsNoTracking()
-            .Where(w => w.UserId == userId && topicIds.Contains(w.TopicId))
-            .Select(w => w.Id)
-            .ToListAsync(ct);
+        var wikiPageIds = accountDelete
+            ? await _db.WikiPages.AsNoTracking().Where(w => w.UserId == userId).Select(w => w.Id).ToListAsync(ct)
+            : await _db.WikiPages.AsNoTracking().Where(w => w.UserId == userId && topicIds.Contains(w.TopicId)).Select(w => w.Id).ToListAsync(ct);
         scope.Add("WikiPageId", wikiPageIds);
 
-        var learningSourceIds = await _db.LearningSources
-            .AsNoTracking()
-            .Where(s => s.UserId == userId &&
-                ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) ||
-                 (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value))))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var learningSourceIds = accountDelete
+            ? await _db.LearningSources.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.LearningSources.AsNoTracking().Where(s => s.UserId == userId && ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) || (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)))).Select(s => s.Id).ToListAsync(ct);
         scope.Add("LearningSourceId", learningSourceIds);
         scope.Add("SourceId", learningSourceIds);
 
@@ -152,40 +142,24 @@ public sealed class DataLifecycleService : IDataLifecycleService
             .ToListAsync(ct);
         scope.Add("SourceChunkId", sourceChunkIds);
 
-        var quizRunIds = await _db.QuizRuns
-            .AsNoTracking()
-            .Where(q => q.UserId == userId &&
-                ((q.TopicId.HasValue && topicIds.Contains(q.TopicId.Value)) ||
-                 (q.SessionId.HasValue && sessionIds.Contains(q.SessionId.Value))))
-            .Select(q => q.Id)
-            .ToListAsync(ct);
+        var quizRunIds = accountDelete
+            ? await _db.QuizRuns.AsNoTracking().Where(q => q.UserId == userId).Select(q => q.Id).ToListAsync(ct)
+            : await _db.QuizRuns.AsNoTracking().Where(q => q.UserId == userId && ((q.TopicId.HasValue && topicIds.Contains(q.TopicId.Value)) || (q.SessionId.HasValue && sessionIds.Contains(q.SessionId.Value)))).Select(q => q.Id).ToListAsync(ct);
         scope.Add("QuizRunId", quizRunIds);
 
-        var quizAttemptIds = await _db.QuizAttempts
-            .AsNoTracking()
-            .Where(q => q.UserId == userId &&
-                ((q.TopicId.HasValue && topicIds.Contains(q.TopicId.Value)) ||
-                 (q.SessionId.HasValue && sessionIds.Contains(q.SessionId.Value)) ||
-                 (q.QuizRunId.HasValue && quizRunIds.Contains(q.QuizRunId.Value))))
-            .Select(q => q.Id)
-            .ToListAsync(ct);
+        var quizAttemptIds = accountDelete
+            ? await _db.QuizAttempts.AsNoTracking().Where(q => q.UserId == userId).Select(q => q.Id).ToListAsync(ct)
+            : await _db.QuizAttempts.AsNoTracking().Where(q => q.UserId == userId && ((q.TopicId.HasValue && topicIds.Contains(q.TopicId.Value)) || (q.SessionId.HasValue && sessionIds.Contains(q.SessionId.Value)) || (q.QuizRunId.HasValue && quizRunIds.Contains(q.QuizRunId.Value)))).Select(q => q.Id).ToListAsync(ct);
         scope.Add("QuizAttemptId", quizAttemptIds);
 
-        var learningSignalIds = await _db.LearningSignals
-            .AsNoTracking()
-            .Where(s => s.UserId == userId &&
-                ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) ||
-                 (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) ||
-                 (s.QuizAttemptId.HasValue && quizAttemptIds.Contains(s.QuizAttemptId.Value))))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var learningSignalIds = accountDelete
+            ? await _db.LearningSignals.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.LearningSignals.AsNoTracking().Where(s => s.UserId == userId && ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) || (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) || (s.QuizAttemptId.HasValue && quizAttemptIds.Contains(s.QuizAttemptId.Value)))).Select(s => s.Id).ToListAsync(ct);
         scope.Add("LearningSignalId", learningSignalIds);
 
-        var conceptGraphSnapshotIds = await _db.ConceptGraphSnapshots
-            .AsNoTracking()
-            .Where(s => s.UserId == userId && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var conceptGraphSnapshotIds = accountDelete
+            ? await _db.ConceptGraphSnapshots.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.ConceptGraphSnapshots.AsNoTracking().Where(s => s.UserId == userId && s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)).Select(s => s.Id).ToListAsync(ct);
         scope.Add("ConceptGraphSnapshotId", conceptGraphSnapshotIds);
 
         var learningConceptIds = await _db.LearningConcepts
@@ -202,56 +176,29 @@ public sealed class DataLifecycleService : IDataLifecycleService
             .ToListAsync(ct);
         scope.Add("LearningOutcomeId", learningOutcomeIds);
 
-        var assessmentItemIds = await _db.AssessmentItems
-            .AsNoTracking()
-            .Where(a => a.UserId == userId &&
-                ((a.TopicId.HasValue && topicIds.Contains(a.TopicId.Value)) ||
-                 (a.QuizRunId.HasValue && quizRunIds.Contains(a.QuizRunId.Value)) ||
-                 conceptGraphSnapshotIds.Contains(a.ConceptGraphSnapshotId) ||
-                 (a.LearningConceptId.HasValue && learningConceptIds.Contains(a.LearningConceptId.Value))))
-            .Select(a => a.Id)
-            .ToListAsync(ct);
+        var assessmentItemIds = accountDelete
+            ? await _db.AssessmentItems.AsNoTracking().Where(a => a.UserId == userId).Select(a => a.Id).ToListAsync(ct)
+            : await _db.AssessmentItems.AsNoTracking().Where(a => a.UserId == userId && ((a.TopicId.HasValue && topicIds.Contains(a.TopicId.Value)) || (a.QuizRunId.HasValue && quizRunIds.Contains(a.QuizRunId.Value)) || conceptGraphSnapshotIds.Contains(a.ConceptGraphSnapshotId) || (a.LearningConceptId.HasValue && learningConceptIds.Contains(a.LearningConceptId.Value)))).Select(a => a.Id).ToListAsync(ct);
         scope.Add("AssessmentItemId", assessmentItemIds);
 
-        var learningEventIds = await _db.LearningEvents
-            .AsNoTracking()
-            .Where(e => e.UserId == userId &&
-                ((e.TopicId.HasValue && topicIds.Contains(e.TopicId.Value)) ||
-                 (e.SessionId.HasValue && sessionIds.Contains(e.SessionId.Value)) ||
-                 (e.QuizAttemptId.HasValue && quizAttemptIds.Contains(e.QuizAttemptId.Value)) ||
-                 (e.AssessmentItemId.HasValue && assessmentItemIds.Contains(e.AssessmentItemId.Value))))
-            .Select(e => e.Id)
-            .ToListAsync(ct);
+        var learningEventIds = accountDelete
+            ? await _db.LearningEvents.AsNoTracking().Where(e => e.UserId == userId).Select(e => e.Id).ToListAsync(ct)
+            : await _db.LearningEvents.AsNoTracking().Where(e => e.UserId == userId && ((e.TopicId.HasValue && topicIds.Contains(e.TopicId.Value)) || (e.SessionId.HasValue && sessionIds.Contains(e.SessionId.Value)) || (e.QuizAttemptId.HasValue && quizAttemptIds.Contains(e.QuizAttemptId.Value)) || (e.AssessmentItemId.HasValue && assessmentItemIds.Contains(e.AssessmentItemId.Value)))).Select(e => e.Id).ToListAsync(ct);
         scope.Add("LearningEventId", learningEventIds);
 
-        var reviewItemIds = await _db.ReviewItems
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.QuizAttemptId.HasValue && quizAttemptIds.Contains(r.QuizAttemptId.Value)) ||
-                 (r.LearningSignalId.HasValue && learningSignalIds.Contains(r.LearningSignalId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var reviewItemIds = accountDelete
+            ? await _db.ReviewItems.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.ReviewItems.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.QuizAttemptId.HasValue && quizAttemptIds.Contains(r.QuizAttemptId.Value)) || (r.LearningSignalId.HasValue && learningSignalIds.Contains(r.LearningSignalId.Value)))).Select(r => r.Id).ToListAsync(ct);
         scope.Add("ReviewItemId", reviewItemIds);
 
-        var flashcardIds = await _db.Flashcards
-            .AsNoTracking()
-            .Where(f => f.UserId == userId &&
-                ((f.TopicId.HasValue && topicIds.Contains(f.TopicId.Value)) ||
-                 (f.LearningSourceId.HasValue && learningSourceIds.Contains(f.LearningSourceId.Value)) ||
-                 (f.WikiPageId.HasValue && wikiPageIds.Contains(f.WikiPageId.Value)) ||
-                 (f.QuizAttemptId.HasValue && quizAttemptIds.Contains(f.QuizAttemptId.Value))))
-            .Select(f => f.Id)
-            .ToListAsync(ct);
+        var flashcardIds = accountDelete
+            ? await _db.Flashcards.AsNoTracking().Where(f => f.UserId == userId).Select(f => f.Id).ToListAsync(ct)
+            : await _db.Flashcards.AsNoTracking().Where(f => f.UserId == userId && ((f.TopicId.HasValue && topicIds.Contains(f.TopicId.Value)) || (f.LearningSourceId.HasValue && learningSourceIds.Contains(f.LearningSourceId.Value)) || (f.WikiPageId.HasValue && wikiPageIds.Contains(f.WikiPageId.Value)) || (f.QuizAttemptId.HasValue && quizAttemptIds.Contains(f.QuizAttemptId.Value)))).Select(f => f.Id).ToListAsync(ct);
         scope.Add("FlashcardId", flashcardIds);
 
-        var dailyChallengeIds = await _db.DailyChallenges
-            .AsNoTracking()
-            .Where(d => d.UserId == userId &&
-                ((d.TopicId.HasValue && topicIds.Contains(d.TopicId.Value)) ||
-                 (d.ReviewItemId.HasValue && reviewItemIds.Contains(d.ReviewItemId.Value))))
-            .Select(d => d.Id)
-            .ToListAsync(ct);
+        var dailyChallengeIds = accountDelete
+            ? await _db.DailyChallenges.AsNoTracking().Where(d => d.UserId == userId).Select(d => d.Id).ToListAsync(ct)
+            : await _db.DailyChallenges.AsNoTracking().Where(d => d.UserId == userId && ((d.TopicId.HasValue && topicIds.Contains(d.TopicId.Value)) || (d.ReviewItemId.HasValue && reviewItemIds.Contains(d.ReviewItemId.Value)))).Select(d => d.Id).ToListAsync(ct);
         scope.Add("DailyChallengeId", dailyChallengeIds);
 
         var xpEventIds = await _db.DailyChallengeSubmissions
@@ -263,142 +210,74 @@ public sealed class DataLifecycleService : IDataLifecycleService
         scope.Add("SourceEventId", xpEventIds);
         scope.Add("RelatedEntityId", topicIds.Concat(sessionIds).Concat(messageIds).Concat(learningSourceIds).Concat(reviewItemIds).Concat(flashcardIds).Concat(dailyChallengeIds).Concat(xpEventIds));
 
-        var classroomSessionIds = await _db.ClassroomSessions
-            .AsNoTracking()
-            .Where(c => c.UserId == userId &&
-                ((c.TopicId.HasValue && topicIds.Contains(c.TopicId.Value)) ||
-                 (c.SessionId.HasValue && sessionIds.Contains(c.SessionId.Value))))
-            .Select(c => c.Id)
-            .ToListAsync(ct);
+        var classroomSessionIds = accountDelete
+            ? await _db.ClassroomSessions.AsNoTracking().Where(c => c.UserId == userId).Select(c => c.Id).ToListAsync(ct)
+            : await _db.ClassroomSessions.AsNoTracking().Where(c => c.UserId == userId && ((c.TopicId.HasValue && topicIds.Contains(c.TopicId.Value)) || (c.SessionId.HasValue && sessionIds.Contains(c.SessionId.Value)))).Select(c => c.Id).ToListAsync(ct);
         scope.Add("ClassroomSessionId", classroomSessionIds);
 
-        var audioOverviewJobIds = await _db.AudioOverviewJobs
-            .AsNoTracking()
-            .Where(a => a.UserId == userId &&
-                ((a.TopicId.HasValue && topicIds.Contains(a.TopicId.Value)) ||
-                 (a.SessionId.HasValue && sessionIds.Contains(a.SessionId.Value))))
-            .Select(a => a.Id)
-            .ToListAsync(ct);
+        var audioOverviewJobIds = accountDelete
+            ? await _db.AudioOverviewJobs.AsNoTracking().Where(a => a.UserId == userId).Select(a => a.Id).ToListAsync(ct)
+            : await _db.AudioOverviewJobs.AsNoTracking().Where(a => a.UserId == userId && ((a.TopicId.HasValue && topicIds.Contains(a.TopicId.Value)) || (a.SessionId.HasValue && sessionIds.Contains(a.SessionId.Value)))).Select(a => a.Id).ToListAsync(ct);
         scope.Add("AudioOverviewJobId", audioOverviewJobIds);
 
-        var workingMemorySnapshotIds = await _db.TutorWorkingMemorySnapshots
-            .AsNoTracking()
-            .Where(s => s.UserId == userId &&
-                ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) ||
-                 (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value))))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var workingMemorySnapshotIds = accountDelete
+            ? await _db.TutorWorkingMemorySnapshots.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.TutorWorkingMemorySnapshots.AsNoTracking().Where(s => s.UserId == userId && ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) || (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)))).Select(s => s.Id).ToListAsync(ct);
         scope.Add("WorkingMemorySnapshotId", workingMemorySnapshotIds);
 
-        var tutorTurnStateIds = await _db.TutorTurnStates
-            .AsNoTracking()
-            .Where(s => s.UserId == userId &&
-                ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) ||
-                 (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) ||
-                 (s.WorkingMemorySnapshotId.HasValue && workingMemorySnapshotIds.Contains(s.WorkingMemorySnapshotId.Value)) ||
-                 (s.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(s.ConceptGraphSnapshotId.Value))))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var tutorTurnStateIds = accountDelete
+            ? await _db.TutorTurnStates.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.TutorTurnStates.AsNoTracking().Where(s => s.UserId == userId && ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) || (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) || (s.WorkingMemorySnapshotId.HasValue && workingMemorySnapshotIds.Contains(s.WorkingMemorySnapshotId.Value)) || (s.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(s.ConceptGraphSnapshotId.Value)))).Select(s => s.Id).ToListAsync(ct);
         scope.Add("TutorTurnStateId", tutorTurnStateIds);
 
-        var tutorActionTraceIds = await _db.TutorActionTraces
-            .AsNoTracking()
-            .Where(t => t.UserId == userId &&
-                ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) ||
-                 (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) ||
-                 (t.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(t.TutorTurnStateId.Value))))
-            .Select(t => t.Id)
-            .ToListAsync(ct);
+        var tutorActionTraceIds = accountDelete
+            ? await _db.TutorActionTraces.AsNoTracking().Where(t => t.UserId == userId).Select(t => t.Id).ToListAsync(ct)
+            : await _db.TutorActionTraces.AsNoTracking().Where(t => t.UserId == userId && ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) || (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) || (t.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(t.TutorTurnStateId.Value)))).Select(t => t.Id).ToListAsync(ct);
         scope.Add("TutorActionTraceId", tutorActionTraceIds);
 
-        var tutorToolCallIds = await _db.TutorToolCalls
-            .AsNoTracking()
-            .Where(t => t.UserId == userId &&
-                ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) ||
-                 (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) ||
-                 (t.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(t.TutorActionTraceId.Value))))
-            .Select(t => t.Id)
-            .ToListAsync(ct);
+        var tutorToolCallIds = accountDelete
+            ? await _db.TutorToolCalls.AsNoTracking().Where(t => t.UserId == userId).Select(t => t.Id).ToListAsync(ct)
+            : await _db.TutorToolCalls.AsNoTracking().Where(t => t.UserId == userId && ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) || (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) || (t.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(t.TutorActionTraceId.Value)))).Select(t => t.Id).ToListAsync(ct);
         scope.Add("TutorToolCallId", tutorToolCallIds);
 
-        var tutorReflectionUpdateIds = await _db.TutorReflectionUpdates
-            .AsNoTracking()
-            .Where(t => t.UserId == userId &&
-                ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) ||
-                 (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) ||
-                 (t.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(t.TutorActionTraceId.Value)) ||
-                 (t.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(t.TutorTurnStateId.Value))))
-            .Select(t => t.Id)
-            .ToListAsync(ct);
+        var tutorReflectionUpdateIds = accountDelete
+            ? await _db.TutorReflectionUpdates.AsNoTracking().Where(t => t.UserId == userId).Select(t => t.Id).ToListAsync(ct)
+            : await _db.TutorReflectionUpdates.AsNoTracking().Where(t => t.UserId == userId && ((t.TopicId.HasValue && topicIds.Contains(t.TopicId.Value)) || (t.SessionId.HasValue && sessionIds.Contains(t.SessionId.Value)) || (t.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(t.TutorActionTraceId.Value)) || (t.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(t.TutorTurnStateId.Value)))).Select(t => t.Id).ToListAsync(ct);
         scope.Add("TutorReflectionUpdateId", tutorReflectionUpdateIds);
 
-        var ragEvaluationRunIds = await _db.RagEvaluationRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var ragEvaluationRunIds = accountDelete
+            ? await _db.RagEvaluationRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.RagEvaluationRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, ragEvaluationRunIds, "RagEvaluationRunId");
 
-        var sourceRetrievalRunIds = await _db.SourceRetrievalRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.SessionId.HasValue && sessionIds.Contains(r.SessionId.Value)) ||
-                 (r.SourceId.HasValue && learningSourceIds.Contains(r.SourceId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var sourceRetrievalRunIds = accountDelete
+            ? await _db.SourceRetrievalRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.SourceRetrievalRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.SessionId.HasValue && sessionIds.Contains(r.SessionId.Value)) || (r.SourceId.HasValue && learningSourceIds.Contains(r.SourceId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, sourceRetrievalRunIds, "SourceRetrievalRunId");
 
-        var tutorPedagogyEvaluationRunIds = await _db.TutorPedagogyEvaluationRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.SessionId.HasValue && sessionIds.Contains(r.SessionId.Value)) ||
-                 (r.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(r.TutorTurnStateId.Value)) ||
-                 (r.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(r.TutorActionTraceId.Value)) ||
-                 (r.TutorReflectionUpdateId.HasValue && tutorReflectionUpdateIds.Contains(r.TutorReflectionUpdateId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var tutorPedagogyEvaluationRunIds = accountDelete
+            ? await _db.TutorPedagogyEvaluationRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.TutorPedagogyEvaluationRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.SessionId.HasValue && sessionIds.Contains(r.SessionId.Value)) || (r.TutorTurnStateId.HasValue && tutorTurnStateIds.Contains(r.TutorTurnStateId.Value)) || (r.TutorActionTraceId.HasValue && tutorActionTraceIds.Contains(r.TutorActionTraceId.Value)) || (r.TutorReflectionUpdateId.HasValue && tutorReflectionUpdateIds.Contains(r.TutorReflectionUpdateId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, tutorPedagogyEvaluationRunIds, "EvaluationRunId", "TutorPedagogyEvaluationRunId");
 
-        var assessmentCalibrationRunIds = await _db.AssessmentCalibrationRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var assessmentCalibrationRunIds = accountDelete
+            ? await _db.AssessmentCalibrationRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.AssessmentCalibrationRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, assessmentCalibrationRunIds, "AssessmentCalibrationRunId");
 
-        var adaptiveAssessmentSessionIds = await _db.AdaptiveAssessmentSessions
-            .AsNoTracking()
-            .Where(s => s.UserId == userId &&
-                ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) ||
-                 (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) ||
-                 (s.QuizRunId.HasValue && quizRunIds.Contains(s.QuizRunId.Value)) ||
-                 (s.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(s.ConceptGraphSnapshotId.Value))))
-            .Select(s => s.Id)
-            .ToListAsync(ct);
+        var adaptiveAssessmentSessionIds = accountDelete
+            ? await _db.AdaptiveAssessmentSessions.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Id).ToListAsync(ct)
+            : await _db.AdaptiveAssessmentSessions.AsNoTracking().Where(s => s.UserId == userId && ((s.TopicId.HasValue && topicIds.Contains(s.TopicId.Value)) || (s.SessionId.HasValue && sessionIds.Contains(s.SessionId.Value)) || (s.QuizRunId.HasValue && quizRunIds.Contains(s.QuizRunId.Value)) || (s.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(s.ConceptGraphSnapshotId.Value)))).Select(s => s.Id).ToListAsync(ct);
         AddRunScopes(scope, adaptiveAssessmentSessionIds, "AdaptiveAssessmentSessionId");
 
-        var standardsExportRunIds = await _db.StandardsExportRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var standardsExportRunIds = accountDelete
+            ? await _db.StandardsExportRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.StandardsExportRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, standardsExportRunIds, "StandardsExportRunId");
 
-        var standardsValidationRunIds = await _db.StandardsValidationRuns
-            .AsNoTracking()
-            .Where(r => r.UserId == userId &&
-                ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) ||
-                 (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value))))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
+        var standardsValidationRunIds = accountDelete
+            ? await _db.StandardsValidationRuns.AsNoTracking().Where(r => r.UserId == userId).Select(r => r.Id).ToListAsync(ct)
+            : await _db.StandardsValidationRuns.AsNoTracking().Where(r => r.UserId == userId && ((r.TopicId.HasValue && topicIds.Contains(r.TopicId.Value)) || (r.ConceptGraphSnapshotId.HasValue && conceptGraphSnapshotIds.Contains(r.ConceptGraphSnapshotId.Value)))).Select(r => r.Id).ToListAsync(ct);
         AddRunScopes(scope, standardsValidationRunIds, "StandardsValidationRunId");
 
         scope.Add("EntityId", topicIds

@@ -246,6 +246,11 @@ public interface IAudioOverviewService
         Guid userId,
         Guid? topicId,
         Guid? sessionId,
+        string? surface = null,
+        Guid? wikiPageId = null,
+        Guid? sourceId = null,
+        string? audioMode = null,
+        string? ttsQuality = null,
         CancellationToken ct = default);
 
     Task<AudioOverviewJobDto?> GetOverviewAsync(
@@ -257,6 +262,8 @@ public interface IAudioOverviewService
         Guid userId,
         Guid jobId,
         CancellationToken ct = default);
+
+    Task ProcessOverviewJobAsync(Guid jobId, CancellationToken ct);
 }
 
 public interface IClassroomService
@@ -267,6 +274,10 @@ public interface IClassroomService
         Guid? sessionId,
         Guid? audioOverviewJobId,
         string transcript,
+        string? surface = null,
+        Guid? wikiPageId = null,
+        Guid? sourceId = null,
+        string? audioMode = null,
         CancellationToken ct = default);
 
     Task<ClassroomAskResultDto> AskAsync(

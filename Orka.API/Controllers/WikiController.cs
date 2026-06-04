@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orka.Core.DTOs;
+using Orka.Core.Entities;
+using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
@@ -22,6 +24,7 @@ public class WikiController : ControllerBase
     private readonly ISourceConceptLinkingService _sourceConceptLinks;
     private readonly IWikiAutoCurationService _wikiCuration;
     private readonly IWikiCopilotService _wikiCopilot;
+    private readonly IQuestionPracticeService _questionPractice;
     private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
 
     public WikiController(
@@ -31,7 +34,8 @@ public class WikiController : ControllerBase
         ISourceEvidenceLifecycleService sourceLifecycle,
         ISourceConceptLinkingService sourceConceptLinks,
         IWikiAutoCurationService wikiCuration,
-        IWikiCopilotService wikiCopilot)
+        IWikiCopilotService wikiCopilot,
+        IQuestionPracticeService questionPractice)
     {
         _wikiService = wikiService;
         _wikiLearningAssistant = wikiLearningAssistant;
@@ -40,6 +44,7 @@ public class WikiController : ControllerBase
         _sourceConceptLinks = sourceConceptLinks;
         _wikiCuration = wikiCuration;
         _wikiCopilot = wikiCopilot;
+        _questionPractice = questionPractice;
     }
 
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -49,23 +54,36 @@ public class WikiController : ControllerBase
     {
         var userId = GetUserId();
         var pages = await _wikiService.GetTopicWikiPagesAsync(topicId, userId);
-        var pageDtos = await Task.WhenAll(pages.Select(async p => new
+        var pageDtos = new List<object>();
+        foreach (var p in pages)
         {
-            id = p.Id,
-            title = p.Title,
-            status = p.Status,
-            pageKey = string.IsNullOrWhiteSpace(p.PageKey) ? p.Id.ToString("N") : p.PageKey,
-            pageType = string.IsNullOrWhiteSpace(p.PageType) ? "concept" : p.PageType,
-            conceptKey = p.ConceptKey,
-            parentConceptKey = p.ParentConceptKey,
-            parentWikiPageId = p.ParentWikiPageId,
-            sourceReadiness = p.SourceReadiness,
-            evidenceStatus = p.EvidenceStatus,
-            safeSummary = p.SafeSummary,
-            curation = await _wikiCuration.BuildPageSummaryAsync(userId, p.Id, HttpContext.RequestAborted),
-            orderIndex = p.OrderIndex,
-            blockCount = p.Blocks?.Count ?? 0
-        }));
+            var visibleBlocks = p.Blocks?.Where(b => !b.IsDeleted).ToArray() ?? [];
+            var requiredBlockTypesPresent = HasRequiredWikiBlockType(visibleBlocks);
+            var hasLearningContent = !string.IsNullOrWhiteSpace(p.SafeSummary) && visibleBlocks.Length > 0;
+            pageDtos.Add(new
+            {
+                id = p.Id,
+                title = p.Title,
+                status = p.Status,
+                pageKey = string.IsNullOrWhiteSpace(p.PageKey) ? p.Id.ToString("N") : p.PageKey,
+                pageType = string.IsNullOrWhiteSpace(p.PageType) ? "concept" : p.PageType,
+                planStepId = p.PlanStepId,
+                conceptKey = p.ConceptKey,
+                parentConceptKey = p.ParentConceptKey,
+                parentWikiPageId = p.ParentWikiPageId,
+                sourceReadiness = p.SourceReadiness,
+                evidenceStatus = p.EvidenceStatus,
+                safeSummary = p.SafeSummary,
+                curation = await _wikiCuration.BuildPageSummaryAsync(userId, p.Id, HttpContext.RequestAborted),
+                orderIndex = p.OrderIndex,
+                blockCount = visibleBlocks.Length,
+                visibleBlockCount = visibleBlocks.Length,
+                requiredBlockTypesPresent,
+                hasLearningContent,
+                contentReadiness = hasLearningContent && requiredBlockTypesPresent ? "ready" : visibleBlocks.Length == 0 ? "skeleton" : "degraded",
+                learningSystemBinding = WikiLearningSystemBindingFactory.From(p, visibleBlocks)
+            });
+        }
         return Ok(pageDtos);
     }
 
@@ -77,6 +95,10 @@ public class WikiController : ControllerBase
         var curation = await _wikiCuration.BuildPageSummaryAsync(userId, pageId, HttpContext.RequestAborted);
         if (page == null) return NotFound(new { message = "Sayfa bulunamadı." });
 
+        var visibleBlocks = page.Blocks?.Where(b => !b.IsDeleted).OrderBy(b => b.OrderIndex).ToArray() ?? [];
+        var requiredBlockTypesPresent = HasRequiredWikiBlockType(visibleBlocks);
+        var hasLearningContent = !string.IsNullOrWhiteSpace(page.SafeSummary) && visibleBlocks.Length > 0;
+
         return Ok(new
         {
             page = new
@@ -86,18 +108,24 @@ public class WikiController : ControllerBase
                 page.Status,
                 page.PageKey,
                 page.PageType,
+                page.PlanStepId,
                 page.ConceptKey,
                 page.ParentConceptKey,
                 page.ParentWikiPageId,
                 page.SourceReadiness,
                 page.EvidenceStatus,
                 page.SafeSummary,
+                contentReadiness = hasLearningContent && requiredBlockTypesPresent ? "ready" : visibleBlocks.Length == 0 ? "skeleton" : "degraded",
+                hasLearningContent,
+                visibleBlockCount = visibleBlocks.Length,
+                requiredBlockTypesPresent,
                 Curation = curation,
+                learningSystemBinding = WikiLearningSystemBindingFactory.From(page, visibleBlocks),
                 page.OrderIndex,
                 page.CreatedAt,
                 page.UpdatedAt
             },
-            blocks = page.Blocks?.Where(b => !b.IsDeleted).OrderBy(b => b.OrderIndex).Select(b => new
+            blocks = visibleBlocks.Select(b => new
             {
                 b.Id,
                 type = b.BlockType,
@@ -122,6 +150,25 @@ public class WikiController : ControllerBase
         });
     }
 
+    private static bool HasRequiredWikiBlockType(IReadOnlyCollection<WikiBlock> blocks) =>
+        blocks.Any(b => b.BlockType is WikiBlockType.Summary or WikiBlockType.Concept or WikiBlockType.SourceExcerptSummary or WikiBlockType.TutorExplanation or WikiBlockType.RepairNote or WikiBlockType.MisconceptionNote);
+
+    private static List<string> PageConceptKeys(WikiPage page) =>
+        string.IsNullOrWhiteSpace(page.ConceptKey) ? [] : [page.ConceptKey.Trim()];
+
+    private static WikiPageQuestionSetDto ToWikiPageQuestionSet(WikiPage page, QuestionPracticeSessionDto session) => new()
+    {
+        PageId = page.Id,
+        TopicId = page.TopicId,
+        ConceptKey = page.ConceptKey,
+        PracticeSetId = session.PracticeSetId,
+        Status = session.Status,
+        EmptyState = session.EmptyState,
+        Mode = session.Mode,
+        TotalQuestions = session.TotalQuestions,
+        Questions = session.Questions
+    };
+
     [HttpGet("page/{pageId}/curation")]
     public async Task<IActionResult> GetWikiPageCuration(Guid pageId)
     {
@@ -136,6 +183,53 @@ public class WikiController : ControllerBase
         var userId = GetUserId();
         var context = await _wikiCopilot.BuildPageContextAsync(userId, pageId, HttpContext.RequestAborted);
         return context == null ? NotFound(new { message = "Sayfa bulunamadi." }) : Ok(context);
+    }
+
+    [HttpGet("page/{pageId}/questions")]
+    public async Task<ActionResult<WikiPageQuestionSetDto>> GetWikiPageQuestions(
+        Guid pageId,
+        [FromQuery] int count = 8,
+        [FromQuery] string? questionBankSource = null,
+        CancellationToken ct = default)
+    {
+        var userId = GetUserId();
+        var page = await _wikiService.GetWikiPageAsync(pageId, userId);
+        if (page == null) return NotFound(new { message = "Sayfa bulunamadi." });
+
+        var session = await _questionPractice.StartAsync(userId, new QuestionPracticeStartRequestDto
+        {
+            TopicId = page.TopicId,
+            ConceptKeys = PageConceptKeys(page),
+            QuestionBankSource = questionBankSource,
+            Mode = "wiki_page_questions",
+            Count = count
+        }, ct);
+
+        return Ok(ToWikiPageQuestionSet(page, session));
+    }
+
+    [HttpPost("page/{pageId}/practice/start")]
+    public async Task<ActionResult<QuestionPracticeSessionDto>> StartWikiPagePractice(
+        Guid pageId,
+        [FromBody] WikiPagePracticeStartRequestDto? request,
+        CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var page = await _wikiService.GetWikiPageAsync(pageId, userId);
+        if (page == null) return NotFound(new { message = "Sayfa bulunamadi." });
+
+        request ??= new WikiPagePracticeStartRequestDto();
+        var startRequest = new QuestionPracticeStartRequestDto
+        {
+            TopicId = page.TopicId,
+            SessionId = request.SessionId,
+            ConceptKeys = PageConceptKeys(page),
+            QuestionBankSource = request.QuestionBankSource,
+            Mode = string.IsNullOrWhiteSpace(request.Mode) ? "wiki_page_practice" : request.Mode,
+            Count = request.Count <= 0 ? 8 : request.Count
+        };
+
+        return Ok(await _questionPractice.StartAsync(userId, startRequest, ct));
     }
 
     [HttpPost("page/{pageId}/blocks")]

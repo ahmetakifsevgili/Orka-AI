@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
@@ -87,9 +88,11 @@ public class ContextBuilder : IContextBuilder
                     "context-semantic-summary",
                     null,
                     null,
-                    async ct =>
+                    _ => Task.CompletedTask,
+                    ScopedWork: async (services, ct) =>
                     {
-                        var summary = await _groqService.SummarizeSessionAsync(oldMessages);
+                        var groq = services.GetRequiredService<IGroqService>();
+                        var summary = await groq.SummarizeSessionAsync(oldMessages);
                         _logger.LogInformation("[SEMANTIC TRUNCATION] Ozet olusturuldu: {Length} karakter", summary.Length);
                     },
                     MaxAttempts: 1,

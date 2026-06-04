@@ -5,8 +5,8 @@ namespace Orka.Core.Interfaces;
 /// </summary>
 public interface IAIService
 {
-    Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
-    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
+    Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null);
+    IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null);
 }
 
 /// <summary>
@@ -19,11 +19,11 @@ public interface IGeminiService
     Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
     
     /// <summary>Spesifik olarak belirli bir modeli (örn. gemma-4-26b-a4b-it) kullanarak içerik üretir.</summary>
-    Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default);
+    Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null);
 
     /// <summary>Gemini üzerinden streaming (akış) desteği sunar.</summary>
     IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default);
 
     /// <summary>Spesifik olarak belirli bir modeli kullanarak streaming (akış) desteği sunar.</summary>
-    IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default);
+    IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null);
 }

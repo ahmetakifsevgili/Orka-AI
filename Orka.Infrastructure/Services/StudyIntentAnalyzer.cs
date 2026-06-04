@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnyAscii;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Enums;
@@ -28,13 +29,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         var raw = Clean(request.Correction) ?? Clean(request.RawRequest);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            throw new InvalidOperationException("Study request is required before plan research.");
-        }
-
-        var deterministic = BuildFallback(raw);
-        if (ShouldPreferDeterministicPreview(raw, deterministic))
-        {
-            return deterministic;
+            throw new ArgumentException("Study request is required before plan research.");
         }
 
         try
@@ -51,6 +46,14 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
                   "researchIntent": "short English search/research intent suitable for a learning preparation research engine",
                   "confirmationText": "one short Turkish confirmation sentence",
                   "language": "tr or en",
+                  "intentKind": "learning_path | exam_prep | misconception_repair | project_practice",
+                  "goalType": "learn_and_practice | exam_readiness | repair_misconception | professional_mastery",
+                  "targetExamCode": "exam acronym if any, else null",
+                  "sourceMode": "source_aware_if_available | official_curriculum_required | internal_curriculum_ok",
+                  "timeHorizon": "explicit time window or unspecified",
+                  "learnerConstraints": ["known constraints, max 3"],
+                  "requiredClarifications": ["must-ask clarifications, max 3"],
+                  "confidence": 0.0,
                   "clarifyingNotes": ["short notes, max 3"]
                 }
 
@@ -103,7 +106,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             return true;
         }
 
-        if (ContainsAny(raw, "matematik", "olasilik", "kombinasyon", "permutasyon", "problem cozme", "problemler"))
+        if (ContainsAny(raw, "matematik", "olasilik", "kombinasyon", "permutasyon", "problem cozme", "problemler", "integral", "turev", "türev", "limit"))
         {
             return true;
         }
@@ -144,7 +147,15 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
                 ConfirmationText = GetString(root, "confirmationText"),
                 Language = GetString(root, "language"),
                 ClarifyingNotes = notes,
-                RequiresUserConfirmation = true
+                RequiresUserConfirmation = true,
+                IntentKind = GetString(root, "intentKind"),
+                GoalType = GetString(root, "goalType"),
+                TargetExamCode = GetString(root, "targetExamCode"),
+                SourceMode = GetString(root, "sourceMode"),
+                TimeHorizon = GetString(root, "timeHorizon"),
+                LearnerConstraints = GetStringArray(root, "learnerConstraints", 3),
+                RequiredClarifications = GetStringArray(root, "requiredClarifications", 3),
+                Confidence = GetDecimal(root, "confidence") ?? 0.70m
             };
         }
         catch
@@ -156,6 +167,11 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
     private static StudyIntentPreviewResponse Normalize(StudyIntentPreviewResponse value, string rawRequest)
     {
         var fallback = BuildFallback(rawRequest);
+        var language = LooksEnglish(NormalizeForMatch(rawRequest))
+            ? "en"
+            : (value.Language?.Trim().ToLowerInvariant() is "en" or "english")
+                ? "en"
+                : "tr";
         var mainTopic = Clean(value.MainTopic) ?? fallback.MainTopic;
         var focusArea = Clean(value.FocusArea) ?? fallback.FocusArea;
         var studyGoal = Clean(value.StudyGoal) ?? fallback.StudyGoal;
@@ -163,6 +179,16 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         mainTopic = PreferSpecificMainTopic(rawRequest, mainTopic, fallback.MainTopic);
         focusArea = PreferSpecificFocusArea(rawRequest, focusArea, fallback.FocusArea);
         researchIntent = PreferSpecificResearchIntent(rawRequest, researchIntent, fallback.ResearchIntent, mainTopic, focusArea);
+        if (language == "en")
+        {
+            mainTopic = TranslateTopic(mainTopic);
+            focusArea = TranslateTopic(focusArea);
+            if (!LooksEnglish(NormalizeForMatch(studyGoal)))
+            {
+                var wantsPractice = ContainsAny(NormalizeForMatch(rawRequest), "practice", "problem", "exercise");
+                studyGoal = wantsPractice ? "learning and practice" : "learning and foundational application";
+            }
+        }
 
         return new StudyIntentPreviewResponse
         {
@@ -172,12 +198,20 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             FocusArea = Limit(focusArea, 90),
             StudyGoal = Limit(studyGoal, 120),
             ResearchIntent = Limit(EnsureEnglishResearchIntent(researchIntent, mainTopic, focusArea), 160),
-            ConfirmationText = string.IsNullOrWhiteSpace(value.ConfirmationText)
-                ? BuildConfirmation(mainTopic, focusArea)
+            ConfirmationText = language == "en" || string.IsNullOrWhiteSpace(value.ConfirmationText)
+                ? BuildConfirmation(mainTopic, focusArea, language)
                 : Limit(value.ConfirmationText.Trim(), 180),
-            Language = value.Language.Equals("en", StringComparison.OrdinalIgnoreCase) ? "en" : "tr",
+            Language = language,
             ClarifyingNotes = value.ClarifyingNotes.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList(),
-            RequiresUserConfirmation = true
+            RequiresUserConfirmation = true,
+            IntentKind = NormalizeIntentKind(value.IntentKind, rawRequest),
+            GoalType = NormalizeGoalType(value.GoalType, rawRequest),
+            TargetExamCode = Clean(value.TargetExamCode),
+            SourceMode = NormalizeSourceMode(value.SourceMode, rawRequest),
+            TimeHorizon = Clean(value.TimeHorizon) ?? "unspecified",
+            LearnerConstraints = value.LearnerConstraints.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList(),
+            RequiredClarifications = value.RequiredClarifications.Where(s => !string.IsNullOrWhiteSpace(s)).Take(3).ToList(),
+            Confidence = Math.Clamp(value.Confidence <= 0 ? 0.70m : value.Confidence, 0.10m, 0.95m)
         };
     }
 
@@ -189,13 +223,27 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
 
         var detectedLanguage = DetectProgrammingLanguage(normalized);
         var focus = DetectFocus(raw, normalized, detectedLanguage);
+        if (language == "en")
+        {
+            focus = TranslateTopic(focus);
+        }
         var mainTopic = detectedLanguage is not null
             ? $"{detectedLanguage} programlama"
             : BuildMainTopic(raw, normalized, focus);
+        if (language == "en")
+        {
+            mainTopic = TranslateTopic(mainTopic);
+        }
 
         var studyGoal = ContainsAny(normalized, "pratik", "practice", "problem", "soru", "uygulama", "exercise")
             ? "öğrenme ve pratik"
             : "öğrenme ve temel uygulama";
+
+        if (language == "en")
+        {
+            var wantsPractice = ContainsAny(normalized, "practice", "problem", "exercise");
+            studyGoal = wantsPractice ? "learning and practice" : "learning and foundational application";
+        }
 
         var researchIntent = EnsureEnglishResearchIntent(string.Empty, mainTopic, focus);
         if (ContainsAny(normalized, "karistiriyorum", "karisiyor", "dikkat", "hata", "yanlis"))
@@ -211,10 +259,18 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             FocusArea = Limit(focus, 90),
             StudyGoal = studyGoal,
             ResearchIntent = Limit(researchIntent, 160),
-            ConfirmationText = BuildConfirmation(mainTopic, focus),
+            ConfirmationText = BuildConfirmation(mainTopic, focus, language),
             Language = language,
             ClarifyingNotes = ["Korteks arastirmasi baslamadan once bu niyeti onaylamalisin."],
-            RequiresUserConfirmation = true
+            RequiresUserConfirmation = true,
+            IntentKind = NormalizeIntentKind(null, raw),
+            GoalType = NormalizeGoalType(null, raw),
+            TargetExamCode = DetectExamCode(normalized),
+            SourceMode = NormalizeSourceMode(null, raw),
+            TimeHorizon = "unspecified",
+            LearnerConstraints = [],
+            RequiredClarifications = [],
+            Confidence = 0.70m
         };
     }
 
@@ -223,6 +279,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         if (Regex.IsMatch(normalized, @"((^|\s)c#($|\s)|csharp|c sharp|c sahrp|c shar?p|\.net|dotnet\b)", RegexOptions.IgnoreCase)) return "C#";
         if (Regex.IsMatch(normalized, @"\bjava|jva|jav\b", RegexOptions.IgnoreCase)) return "Java";
         if (Regex.IsMatch(normalized, @"\bpython\b", RegexOptions.IgnoreCase)) return "Python";
+        if (Regex.IsMatch(normalized, @"\breact\b", RegexOptions.IgnoreCase)) return "React";
         if (Regex.IsMatch(normalized, @"\bjavascript|node\.?js| js\b", RegexOptions.IgnoreCase)) return "JavaScript";
         if (Regex.IsMatch(normalized, @"\btypescript\b", RegexOptions.IgnoreCase)) return "TypeScript";
         if (Regex.IsMatch(normalized, @"\bsql|postgres|mssql|veritabani|veri tabani\b", RegexOptions.IgnoreCase)) return "SQL";
@@ -239,6 +296,7 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         }
 
         cleaned = Regex.Replace(cleaned, @"\b(programlama(?:da|de)?|programming|calismak|çalışmak|ogrenmek|öğrenmek|istiyorum|isterim|konusunda|hakkinda|hakkında|bana|anlat|ders|study|learn|learning|want|to)\b", " ", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"\b(master|diagnose|diagnostic|weak|concepts?|first|then|create|professional|plan)\b", " ", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"\b(kpss|yks|tyt|ayt)\b", " ", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '-');
         var normalizedCleaned = NormalizeForMatch(cleaned);
@@ -325,6 +383,28 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             return "olasilik ve kombinasyon";
         }
 
+        if (ContainsAny(normalizedRaw, "integral"))
+        {
+            var parts = new List<string>();
+            if (ContainsAny(normalizedRaw, "belirsiz")) parts.Add("belirsiz integral");
+            if (ContainsAny(normalizedRaw, "belirli", "alan")) parts.Add("belirli integral ve alan yorumu");
+            if (ContainsAny(normalizedRaw, "degisken", "substitution")) parts.Add("degisken degistirme");
+            if (ContainsAny(normalizedRaw, "parcali", "parts")) parts.Add("parcali integral");
+            if (parts.Count == 0) parts.Add("temel kavramlar, alan yorumu ve uygulamalar");
+            return string.Join(", ", parts);
+        }
+
+        if (ContainsAny(normalizedRaw, "turev", "türev", "derivative"))
+        {
+            var parts = new List<string>();
+            if (ContainsAny(normalizedRaw, "limit")) parts.Add("limit baglantisi");
+            if (ContainsAny(normalizedRaw, "kural")) parts.Add("turev kurallari");
+            if (ContainsAny(normalizedRaw, "grafik", "teget", "egim")) parts.Add("grafik yorumu ve teget egimi");
+            if (ContainsAny(normalizedRaw, "optimizasyon")) parts.Add("optimizasyon");
+            if (parts.Count == 0) parts.Add("temel kavramlar, kurallar ve uygulamalar");
+            return string.Join(", ", parts);
+        }
+
         if (ContainsAny(normalizedRaw, "permutasyon", "kombinasyon", "combination", "permutation"))
         {
             return "permutasyon ve kombinasyon";
@@ -365,6 +445,16 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             }
 
             return "YKS";
+        }
+
+        if (ContainsAny(normalizedRaw, "integral"))
+        {
+            return "Integral";
+        }
+
+        if (ContainsAny(normalizedRaw, "turev", "türev", "derivative"))
+        {
+            return "Turev";
         }
 
         if (ContainsAny(normalizedRaw, "olasilik", "kombinasyon", "permutasyon", "matematik"))
@@ -415,6 +505,10 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
 
         if (ContainsAny(raw, "kpss"))
         {
+            if (ContainsAny(model, "kpss"))
+            {
+                return modelMainTopic;
+            }
             return "KPSS";
         }
 
@@ -426,6 +520,10 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         if (ContainsAny(raw, "olasilik", "kombinasyon", "permutasyon", "matematik", "tyt") &&
             (IsGenericMainTopic(model) || !ContainsAny(model, "math", "matematik", "probability", "olasilik", "combinatorics")))
         {
+            if (!IsGenericMainTopic(model) && ContainsAny(model, "math", "matematik", "probability", "olasilik", "combinatorics"))
+            {
+                return modelMainTopic;
+            }
             return ContainsAny(raw, "tyt") ? "TYT Matematik" : "Matematik";
         }
 
@@ -449,23 +547,39 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         var raw = NormalizeForMatch(rawRequest);
         var model = NormalizeForMatch(modelFocusArea);
 
-        if (ContainsAny(raw, "dikkat", "hata") && !ContainsAny(model, "dikkat", "mistake", "attention"))
+        if (ContainsAny(raw, "dikkat", "hata") && !ContainsAny(model, "dikkat", "mistake", "attention", "error"))
         {
+            if (!string.IsNullOrWhiteSpace(modelFocusArea) && modelFocusArea.Length > 3)
+            {
+                return modelFocusArea;
+            }
             return fallbackFocusArea;
         }
 
         if (ContainsAny(raw, "hiz", "hizlan") && !ContainsAny(model, "hiz", "speed"))
         {
+            if (!string.IsNullOrWhiteSpace(modelFocusArea) && modelFocusArea.Length > 3)
+            {
+                return modelFocusArea;
+            }
             return fallbackFocusArea;
         }
 
         if (ContainsAny(raw, "join", "explain", "execution") && !ContainsAny(model, "join", "plan", "execution"))
         {
+            if (!string.IsNullOrWhiteSpace(modelFocusArea) && modelFocusArea.Length > 3)
+            {
+                return modelFocusArea;
+            }
             return fallbackFocusArea;
         }
 
         if (ContainsAny(raw, "groupby", "merge", "pivot") && !ContainsAny(model, "groupby", "merge", "pivot"))
         {
+            if (!string.IsNullOrWhiteSpace(modelFocusArea) && modelFocusArea.Length > 3)
+            {
+                return modelFocusArea;
+            }
             return fallbackFocusArea;
         }
 
@@ -474,6 +588,10 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             !ContainsAny(model, NormalizeForMatch(detectedLanguage)) &&
             ContainsAny(model, "javascript", "java script", "python", "java"))
         {
+            if (!string.IsNullOrWhiteSpace(modelFocusArea) && modelFocusArea.Length > 3)
+            {
+                return modelFocusArea;
+            }
             return fallbackFocusArea;
         }
 
@@ -514,11 +632,19 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
 
         if (ContainsAny(raw, "dikkat", "hata") && !ContainsAny(model, "mistake", "attention", "error"))
         {
+            if (!string.IsNullOrWhiteSpace(modelResearchIntent) && modelResearchIntent.Length > 5)
+            {
+                return modelResearchIntent;
+            }
             return fallbackResearchIntent;
         }
 
         if (ContainsAny(raw, "index", "indx", "sorgu", "query") && !ContainsAny(model, "index", "query"))
         {
+            if (!string.IsNullOrWhiteSpace(modelResearchIntent) && modelResearchIntent.Length > 5)
+            {
+                return modelResearchIntent;
+            }
             return fallbackResearchIntent;
         }
 
@@ -588,6 +714,19 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ["matematik"] = "math",
             ["olasilik"] = "probability",
             ["kombinasyon"] = "combinatorics",
+            ["integral"] = "integral calculus",
+            ["turev"] = "derivatives",
+            ["türev"] = "derivatives",
+            ["belirsiz"] = "indefinite",
+            ["belirli"] = "definite",
+            ["alan yorumu"] = "area interpretation",
+            ["degisken degistirme"] = "substitution",
+            ["parcali"] = "integration by parts",
+            ["limit baglantisi"] = "limit connection",
+            ["turev kurallari"] = "derivative rules",
+            ["grafik yorumu"] = "graph interpretation",
+            ["teget egimi"] = "tangent slope",
+            ["optimizasyon"] = "optimization",
             ["mulakat"] = "interview",
             ["yas problemleri"] = "age problems",
             ["hiz problemleri"] = "speed problems",
@@ -603,11 +742,18 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ["paragraf"] = "paragraph",
             ["sorularinda"] = "questions",
             ["sorular"] = "questions",
+            ["hatalarimi"] = "my mistakes",
+            ["hatalarımı"] = "my mistakes",
+            ["uygulamalar"] = "applications",
+            ["uygulama"] = "application",
+            ["kurallar"] = "rules",
+            ["kural"] = "rule",
             ["hizlanmak"] = "speed practice",
             ["hiz"] = "speed",
             ["dikkat"] = "attention",
             ["hatasi"] = "mistakes",
             ["hata"] = "mistake",
+            ["azaltmak"] = "reduce",
             ["taktikleri"] = "strategies",
             ["taktik"] = "strategy",
             ["yas"] = "age",
@@ -617,6 +763,8 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ["cevaplari"] = "answers",
             ["formulu"] = "formula",
             ["karistiriyorum"] = "confusion",
+            ["kullanimi"] = "usage",
+            ["kullanımı"] = "usage",
             ["permutasyon"] = "permutation",
             [" ve "] = " and "
         };
@@ -649,10 +797,14 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         return Regex.Replace(text, @"\s+", " ").Trim();
     }
 
-    private static string BuildConfirmation(string mainTopic, string focusArea) =>
-        string.IsNullOrWhiteSpace(focusArea)
-            ? $"Sunu calismak istedigini anladim: {mainTopic}."
-            : $"Sunu calismak istedigini anladim: {mainTopic} icinde {focusArea}.";
+    private static string BuildConfirmation(string mainTopic, string focusArea, string language = "tr") =>
+        language == "en"
+            ? string.IsNullOrWhiteSpace(focusArea)
+                ? $"I understood that you want to study: {mainTopic}."
+                : $"I understood that you want to study {focusArea} within {mainTopic}."
+            : string.IsNullOrWhiteSpace(focusArea)
+                ? $"Sunu calismak istedigini anladim: {mainTopic}."
+                : $"Sunu calismak istedigini anladim: {mainTopic} icinde {focusArea}.";
 
     private static bool IsUsable(StudyIntentPreviewResponse? value) =>
         value is not null &&
@@ -675,6 +827,90 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
             ? property.GetString() ?? string.Empty
             : string.Empty;
 
+    private static List<string> GetStringArray(JsonElement element, string propertyName, int maxItems) =>
+        element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Array
+            ? property.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString() ?? string.Empty)
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Take(maxItems)
+                .ToList()
+            : [];
+
+    private static decimal? GetDecimal(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var value))
+        {
+            return value;
+        }
+
+        return property.ValueKind == JsonValueKind.String && decimal.TryParse(property.GetString(), out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static string NormalizeIntentKind(string? value, string rawRequest)
+    {
+        var raw = NormalizeForMatch(rawRequest);
+        var normalized = Clean(value)?.ToLowerInvariant();
+        if (normalized is "learning_path" or "exam_prep" or "misconception_repair" or "project_practice")
+        {
+            return normalized;
+        }
+
+        if (ContainsAny(raw, "kpss", "yks", "tyt", "ayt", "ielts", "toefl")) return "exam_prep";
+        if (ContainsAny(raw, "karistiriyorum", "karisiyor", "hata", "yanlis", "misconception")) return "misconception_repair";
+        if (ContainsAny(raw, "proje", "project", "uygulama", "build")) return "project_practice";
+        return "learning_path";
+    }
+
+    private static string NormalizeGoalType(string? value, string rawRequest)
+    {
+        var raw = NormalizeForMatch(rawRequest);
+        var normalized = Clean(value)?.ToLowerInvariant();
+        if (normalized is "learn_and_practice" or "exam_readiness" or "repair_misconception" or "professional_mastery")
+        {
+            return normalized;
+        }
+
+        if (ContainsAny(raw, "profesyonel", "professional", "uzman", "mastery")) return "professional_mastery";
+        if (ContainsAny(raw, "kpss", "yks", "tyt", "ayt", "ielts", "toefl")) return "exam_readiness";
+        if (ContainsAny(raw, "karistiriyorum", "karisiyor", "hata", "yanlis")) return "repair_misconception";
+        return "learn_and_practice";
+    }
+
+    private static string NormalizeSourceMode(string? value, string rawRequest)
+    {
+        var raw = NormalizeForMatch(rawRequest);
+        var normalized = Clean(value)?.ToLowerInvariant();
+        if (normalized is "source_aware_if_available" or "official_curriculum_required" or "internal_curriculum_ok")
+        {
+            return normalized;
+        }
+
+        return ContainsAny(raw, "kpss", "yks", "tyt", "ayt", "meb", "osym", "official", "resmi")
+            ? "official_curriculum_required"
+            : "source_aware_if_available";
+    }
+
+    private static string? DetectExamCode(string normalizedRaw)
+    {
+        foreach (var code in new[] { "kpss", "yks", "tyt", "ayt", "ielts", "toefl" })
+        {
+            if (ContainsAny(normalizedRaw, code))
+            {
+                return code.ToUpperInvariant();
+            }
+        }
+
+        return null;
+    }
+
     private static string ExtractJsonObject(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
@@ -688,18 +924,11 @@ public sealed class StudyIntentAnalyzer : IStudyIntentAnalyzer
         needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
 
     private static bool LooksEnglish(string text) =>
-        !ContainsAny(NormalizeForMatch(text), "calismak", "ogren", "istiyorum", "konu", "hakkinda", "algoritmalar", "veri yapilari", "sinav");
+        !ContainsAny(NormalizeForMatch(text), "calismak", "ogren", "istiyorum", "konu", "hakkinda", "algoritmalar", "veri yapilari", "sinav", "kullanimi", "hatalarimi", "azaltmak", "turev", "belirli", "belirsiz", "degisken", "parcali", " ile ", "karisiyor", "karistiriyorum", "hata", "yapiyor", "calis", "istey", "istiy", "icin", "hazirla", "plan");
 
     private static string NormalizeForMatch(string value)
     {
-        var text = value.ToLowerInvariant()
-            .Replace('ç', 'c')
-            .Replace('ğ', 'g')
-            .Replace('ı', 'i')
-            .Replace('ö', 'o')
-            .Replace('ş', 's')
-            .Replace('ü', 'u');
-
+        var text = value.ToLowerInvariant().Transliterate();
         return Regex.Replace(text, @"\s+", " ").Trim();
     }
 }

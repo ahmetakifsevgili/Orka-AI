@@ -1,7 +1,9 @@
+using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Orka.API.Services;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.PlanDiagnostic;
@@ -24,6 +26,7 @@ public class QuizController : ControllerBase
     private readonly IQuizAttemptRecorder _quizRecorder;
     private readonly IDeepPlanAgent _deepPlan;
     private readonly IPlanDiagnosticService _planDiagnostic;
+    private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IStudyIntentAnalyzer _studyIntentAnalyzer;
     private readonly IAdaptiveAssessmentSessionService _adaptiveAssessment;
     private readonly ILogger<QuizController> _logger;
@@ -34,6 +37,7 @@ public class QuizController : ControllerBase
         IQuizAttemptRecorder quizRecorder,
         IDeepPlanAgent deepPlan,
         IPlanDiagnosticService planDiagnostic,
+        IBackgroundTaskQueue backgroundQueue,
         IStudyIntentAnalyzer studyIntentAnalyzer,
         IAdaptiveAssessmentSessionService adaptiveAssessment,
         ILogger<QuizController> logger,
@@ -43,6 +47,7 @@ public class QuizController : ControllerBase
         _quizRecorder = quizRecorder;
         _deepPlan = deepPlan;
         _planDiagnostic = planDiagnostic;
+        _backgroundQueue = backgroundQueue;
         _studyIntentAnalyzer = studyIntentAnalyzer;
         _adaptiveAssessment = adaptiveAssessment;
         _logger = logger;
@@ -65,7 +70,7 @@ public class QuizController : ControllerBase
 
         try
         {
-            var rawJson = await _deepPlan.GenerateBaselineQuizAsync(topic.Title);
+            var rawJson = await _deepPlan.GenerateBaselineQuizAsync(topic.Title, topicId.Value, "tr", 5);
 
             // LLM bazen JSON blokları (```json ... ```) içine sarar veya metin ekler, temizleyelim
             var cleaned = rawJson.Trim();
@@ -97,6 +102,23 @@ public class QuizController : ControllerBase
             };
             _db.QuizRuns.Add(quizRun);
 
+            var graphSnapshot = new ConceptGraphSnapshot
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TopicId = topicId,
+                IntentHash = $"legacy-quiz:{topicId.Value:N}",
+                ApprovedResearchIntent = $"Legacy quiz generation for {topic.Title}",
+                TopicTitle = topic.Title,
+                Domain = "legacy_quiz",
+                SourceConfidence = "low",
+                SourceBundleHash = string.Empty,
+                GraphJson = "{}",
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.ConceptGraphSnapshots.Add(graphSnapshot);
+            var conceptsByKey = new Dictionary<string, LearningConcept>(StringComparer.OrdinalIgnoreCase);
+
             var questionList = doc.RootElement.EnumerateArray().ToList();
             quizRun.TotalQuestions = questionList.Count;
 
@@ -107,11 +129,27 @@ public class QuizController : ControllerBase
             {
                 var assessmentItemId = Guid.NewGuid();
 
-                var conceptKey = q.TryGetProperty("conceptTag", out var ck) ? ck.GetString() ?? "" : "";
-                var conceptLabel = q.TryGetProperty("conceptTag", out var cl) ? cl.GetString() ?? "" : "";
+                var conceptKey = NormalizeLegacyConceptKey(q.TryGetProperty("conceptTag", out var ck) ? ck.GetString() : null, order);
+                var conceptLabel = q.TryGetProperty("conceptTag", out var cl) ? cl.GetString() ?? conceptKey : conceptKey;
                 var qType = q.TryGetProperty("questionType", out var qt) ? qt.GetString() ?? "conceptual" : "conceptual";
                 var diff = q.TryGetProperty("difficulty", out var df) ? df.GetString() ?? "orta" : "orta";
                 var cog = q.TryGetProperty("questionType", out var cg) ? cg.GetString() ?? "conceptual" : "conceptual";
+                if (!conceptsByKey.TryGetValue(conceptKey, out var learningConcept))
+                {
+                    learningConcept = new LearningConcept
+                    {
+                        Id = Guid.NewGuid(),
+                        ConceptGraphSnapshotId = graphSnapshot.Id,
+                        StableKey = conceptKey,
+                        Label = conceptLabel,
+                        Description = $"Legacy quiz concept for {topic.Title}",
+                        DifficultyBand = "core",
+                        Order = conceptsByKey.Count + 1,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    conceptsByKey[conceptKey] = learningConcept;
+                    _db.LearningConcepts.Add(learningConcept);
+                }
 
                 var assessmentItem = new AssessmentItem
                 {
@@ -119,7 +157,9 @@ public class QuizController : ControllerBase
                     UserId = userId,
                     TopicId = topicId,
                     QuizRunId = quizRun.Id,
-                    ConceptGraphSnapshotId = Guid.Empty,
+                    ConceptGraphSnapshotId = graphSnapshot.Id,
+                    LearningConceptId = learningConcept.Id,
+                    AssessmentItemKey = $"legacy-quiz:{quizRun.Id:N}:{order}",
                     ConceptKey = conceptKey,
                     ConceptLabel = conceptLabel,
                     QuestionType = qType,
@@ -144,13 +184,21 @@ public class QuizController : ControllerBase
                     foreach (var opt in optionsArray.EnumerateArray())
                     {
                         var optText = opt.TryGetProperty("text", out var otext) ? otext.GetString() ?? "" : "";
-                        sanitizedOptions.Add(new { text = optText });
+                        var optionId = opt.TryGetProperty("id", out var oid)
+                            ? oid.GetString()
+                            : opt.TryGetProperty("optionKey", out var ok)
+                                ? ok.GetString()
+                                : null;
+                        sanitizedOptions.Add(new { id = optionId, text = optText, isCorrect = false });
                     }
                 }
 
                 sanitizedQuestions.Add(new
                 {
                     id = assessmentItemId,
+                    assessmentItemId,
+                    conceptGraphSnapshotId = graphSnapshot.Id,
+                    learningConceptId = learningConcept.Id,
                     type = qTypeStr,
                     question = questionText,
                     options = sanitizedOptions,
@@ -161,6 +209,15 @@ public class QuizController : ControllerBase
                     topic = topic.Title
                 });
             }
+
+            graphSnapshot.GraphJson = JsonSerializer.Serialize(new
+            {
+                topicTitle = topic.Title,
+                source = "legacy_quiz_generate",
+                concepts = conceptsByKey.Values
+                    .OrderBy(c => c.Order)
+                    .Select(c => new { stableKey = c.StableKey, label = c.Label, order = c.Order })
+            });
 
             await _db.SaveChangesAsync(HttpContext.RequestAborted);
 
@@ -338,7 +395,11 @@ public class QuizController : ControllerBase
             _logger.LogWarning("[QuizController] Plan diagnostic start rejected. UserRef={UserRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeId(userId, "usr"),
                 LogPrivacyGuard.SafeExceptionType(ex));
-            return BadRequest(new { error = "Plan diagnostic request could not be accepted." });
+            return BadRequest(new
+            {
+                error = "Plan diagnostic request could not be accepted.",
+                message = "Study plan diagnostic request failed validation."
+            });
         }
         catch (Exception ex)
         {
@@ -346,6 +407,78 @@ public class QuizController : ControllerBase
                 LogPrivacyGuard.SafeId(userId, "usr"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             return StatusCode(500, new { error = "Plan diagnostic could not be started." });
+        }
+    }
+
+    [HttpPost("plan-diagnostic/start-async")]
+    public async Task<IActionResult> StartPlanDiagnosticAsync()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            using var requestDoc = await JsonDocument.ParseAsync(HttpContext.Request.Body, cancellationToken: HttpContext.RequestAborted);
+            var request = ParseStartPlanDiagnosticRequest(requestDoc.RootElement);
+            var accepted = await _planDiagnostic.StartQueuedAsync(userId, request, HttpContext.RequestAborted);
+
+            await _backgroundQueue.QueueAsync(new BackgroundTaskItem(
+                JobType: "plan-diagnostic-start",
+                UserId: userId,
+                CorrelationId: accepted.PlanRequestId.ToString("N"),
+                Work: _ => Task.CompletedTask,
+                MaxAttempts: 1,
+                Timeout: TimeSpan.FromMinutes(10),
+                ScopedWork: async (sp, ct) =>
+                {
+                    var service = sp.GetRequiredService<IPlanDiagnosticService>();
+                    await service.RunQueuedStartAsync(userId, accepted.PlanRequestId, ct);
+                }), HttpContext.RequestAborted);
+
+            return Accepted(accepted);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("[QuizController] Async plan diagnostic start rejected. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+            return BadRequest(new
+            {
+                error = "Plan diagnostic request could not be accepted.",
+                message = "Study plan diagnostic request failed validation."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[QuizController] Async plan diagnostic start failed. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+            return StatusCode(500, new { error = "Plan diagnostic could not be queued." });
+        }
+    }
+
+    [HttpGet("plan-diagnostic/{planRequestId:guid}/status")]
+    public async Task<IActionResult> GetPlanDiagnosticStatus(Guid planRequestId)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        try
+        {
+            var result = await _planDiagnostic.GetStartStatusAsync(userId, planRequestId, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("[QuizController] Plan diagnostic status failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(planRequestId, "plan"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+            return StatusCode(500, new { error = "Plan diagnostic status could not be loaded." });
         }
     }
 
@@ -359,6 +492,13 @@ public class QuizController : ControllerBase
         {
             var result = await _studyIntentAnalyzer.AnalyzeAsync(userId, request, HttpContext.RequestAborted);
             return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning("[QuizController] Study intent validation failed. UserRef={UserRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+            return BadRequest(new { error = "Study intent request is invalid." });
         }
         catch (InvalidOperationException ex)
         {
@@ -403,6 +543,15 @@ public class QuizController : ControllerBase
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
+
+        if (request.PlanRequestId == Guid.Empty)
+        {
+            return BadRequest(new
+            {
+                error = "Plan diagnostic could not be finalized.",
+                message = "planRequestId is required."
+            });
+        }
 
         try
         {
@@ -639,5 +788,27 @@ public class QuizController : ControllerBase
 
         value = default;
         return false;
+    }
+
+    private static string NormalizeLegacyConceptKey(string? value, int order)
+    {
+        var raw = string.IsNullOrWhiteSpace(value) ? $"legacy-concept-{order}" : value.Trim();
+        var chars = raw
+            .ToLowerInvariant()
+            .Select(ch => ch is >= 'a' and <= 'z' || ch is >= '0' and <= '9' ? ch : '-')
+            .ToArray();
+        var normalized = new string(chars);
+        while (normalized.Contains("--", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        normalized = normalized.Trim('-');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return $"legacy-concept-{order}";
+        }
+
+        return normalized.Length > 120 ? normalized[..120] : normalized;
     }
 }

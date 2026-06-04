@@ -6,7 +6,8 @@ public sealed record BackgroundTaskItem(
     string? CorrelationId,
     Func<CancellationToken, Task> Work,
     int MaxAttempts = 1,
-    TimeSpan? Timeout = null);
+    TimeSpan? Timeout = null,
+    Func<IServiceProvider, CancellationToken, Task>? ScopedWork = null);
 
 public interface IBackgroundTaskQueue
 {

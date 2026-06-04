@@ -61,27 +61,20 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
 
         await RecordTelemetryAsync(userId, source.TopicId, "source_concept_link_sync_requested", "started", null, ct);
         var latestBundle = await LoadLatestBundleAsync(userId, source.TopicId.Value, ct);
-        var sourcePage = await EnsureSourcePageAsync(userId, source, latestBundle, ct);
-        var candidates = await BuildCandidatesAsync(userId, source, latestBundle, sourcePage, includePersisted: false, ct);
-        var persisted = new List<SourceConceptLinkDto>();
-        var now = DateTime.UtcNow;
-
-        foreach (var candidate in candidates.Where(c => !c.IsSuggestion && c.WikiPageId.HasValue).Take(12))
-        {
-            var link = await UpsertWikiLinkAsync(userId, source, sourcePage, candidate, now, ct);
-            persisted.Add(link);
-        }
-
-        var confirmed = await LoadLinksFromSourcePageAsync(userId, source, sourcePage, latestBundle, ct);
-        var all = confirmed
-            .Concat(candidates.Where(c => c.IsSuggestion && confirmed.All(x => x.WikiPageId != c.WikiPageId)).Take(8))
-            .OrderBy(l => l.IsSuggestion)
-            .ThenByDescending(l => l.ConfidenceScore ?? 0m)
+        var candidates = (await BuildCandidatesAsync(userId, source, latestBundle, null, includePersisted: false, ct))
+            .Select(candidate =>
+            {
+                candidate.IsSuggestion = true;
+                candidate.SourcePageId = null;
+                candidate.LinkType = "source_mentions";
+                return candidate;
+            })
+            .OrderByDescending(candidate => candidate.ConfidenceScore ?? 0m)
             .Take(20)
             .ToList();
 
-        await RecordTelemetryAsync(userId, source.TopicId, "source_concept_link_created", "ok", persisted.Count, ct);
-        return BuildSummary(source.TopicId.Value, source, null, sourcePage.Id, all, latestBundle);
+        await RecordTelemetryAsync(userId, source.TopicId, "source_concept_link_suggested", "ok", candidates.Count, ct);
+        return BuildSummary(source.TopicId.Value, source, null, null, candidates, latestBundle);
     }
 
     public async Task<SourceConceptGraphDto?> GetTopicSourceConceptGraphAsync(
@@ -101,59 +94,60 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
             };
         }
 
-        var links = await _db.WikiLinks.AsNoTracking()
-            .Include(l => l.SourcePage)
-            .Include(l => l.TargetPage)
-            .Where(l => l.UserId == userId && l.TopicId == topicId && !l.IsDeleted)
-            .Where(l => l.LinkType == "source_supports" || l.LinkType == "source_mentions" || l.LinkType == "source_reviews" || l.LinkType == "source_remediates")
-            .OrderByDescending(l => l.UpdatedAt)
-            .Take(80)
+        var sources = await _db.LearningSources.AsNoTracking()
+            .Where(s => s.UserId == userId && s.TopicId == topicId && !s.IsDeleted)
+            .OrderByDescending(s => s.Status == "ready")
+            .ThenByDescending(s => s.UpdatedAt)
+            .Take(24)
             .ToListAsync(ct);
+        var latestBundle = await LoadLatestBundleAsync(userId, topicId, ct);
 
         var nodeMap = new Dictionary<string, SourceConceptGraphNodeDto>(StringComparer.OrdinalIgnoreCase);
         var edges = new List<SourceConceptGraphEdgeDto>();
-        foreach (var link in links)
+        foreach (var source in sources)
         {
-            var sourcePage = link.SourcePage;
-            var target = link.TargetPage;
-            if (sourcePage == null || target == null) continue;
-
-            var sourceId = TryReadGuid(link.MetadataJson, "sourceId");
-            var sourceNodeId = $"source-page:{sourcePage.Id:N}";
-            var targetNodeId = $"concept-page:{target.Id:N}";
+            var sourceNodeId = $"source:{source.Id:N}";
             nodeMap.TryAdd(sourceNodeId, new SourceConceptGraphNodeDto
             {
                 Id = sourceNodeId,
-                NodeType = "source_page",
-                Label = SafeDisplay(sourcePage.Title, 120),
-                SourceId = sourceId,
-                WikiPageId = sourcePage.Id,
-                Status = sourcePage.Status,
-                SourceReadiness = sourcePage.SourceReadiness,
-                EvidenceStatus = sourcePage.EvidenceStatus
+                NodeType = "source",
+                Label = SafeDisplay(source.Title, 120),
+                SourceId = source.Id,
+                WikiPageId = null,
+                Status = SafeDisplay(source.Status, 40),
+                SourceReadiness = ResolveSourceReadiness(source, latestBundle),
+                EvidenceStatus = ResolveEvidenceStatus(source, latestBundle)
             });
-            nodeMap.TryAdd(targetNodeId, new SourceConceptGraphNodeDto
+
+            var candidates = await BuildCandidatesAsync(userId, source, latestBundle, null, includePersisted: false, ct);
+            foreach (var candidate in candidates.Take(8))
             {
-                Id = targetNodeId,
-                NodeType = "concept_page",
-                Label = SafeDisplay(target.Title, 120),
-                WikiPageId = target.Id,
-                ConceptKey = target.ConceptKey,
-                Status = target.Status,
-                SourceReadiness = target.SourceReadiness,
-                EvidenceStatus = target.EvidenceStatus
-            });
-            edges.Add(new SourceConceptGraphEdgeDto
-            {
-                SourceNodeId = sourceNodeId,
-                TargetNodeId = targetNodeId,
-                LinkType = link.LinkType,
-                Confidence = TryReadString(link.MetadataJson, "confidence") ?? ConfidenceFromStrength(link.Strength),
-                ConfidenceScore = link.Strength,
-                Basis = TryReadString(link.MetadataJson, "basis") ?? "existing_wiki_link",
-                IsSuggestion = false,
-                Warnings = LinkWarnings(sourcePage.SourceReadiness, sourcePage.EvidenceStatus)
-            });
+                var targetNodeId = candidate.WikiPageId.HasValue
+                    ? $"concept:{candidate.WikiPageId.Value:N}"
+                    : $"concept:{NormalizeKey(candidate.ConceptKey)}";
+                nodeMap.TryAdd(targetNodeId, new SourceConceptGraphNodeDto
+                {
+                    Id = targetNodeId,
+                    NodeType = "concept",
+                    Label = SafeDisplay(candidate.ConceptTitle, 120),
+                    WikiPageId = candidate.WikiPageId,
+                    ConceptKey = candidate.ConceptKey,
+                    Status = "suggested",
+                    SourceReadiness = candidate.SourceReadiness,
+                    EvidenceStatus = candidate.EvidenceStatus
+                });
+                edges.Add(new SourceConceptGraphEdgeDto
+                {
+                    SourceNodeId = sourceNodeId,
+                    TargetNodeId = targetNodeId,
+                    LinkType = "source_mentions",
+                    Confidence = candidate.Confidence,
+                    ConfidenceScore = candidate.ConfidenceScore,
+                    Basis = candidate.Basis,
+                    IsSuggestion = true,
+                    Warnings = candidate.Warnings
+                });
+            }
         }
 
         await RecordTelemetryAsync(userId, topicId, "source_concept_graph_viewed", "ok", edges.Count, ct);
@@ -163,7 +157,9 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
             GraphStatus = edges.Count > 0 ? "ready" : "empty",
             Nodes = nodeMap.Values.OrderBy(n => n.NodeType).ThenBy(n => n.Label).ToList(),
             Edges = edges,
-            Warnings = edges.Count == 0 ? ["Kaynak-kavram linkleri henuz senkronize edilmemis."] : []
+            Warnings = edges.Count == 0
+                ? ["OrkaLM kaynak-kavram onerisi bulunamadi; Wiki graph ayridir ve otomatik yazilmaz."]
+                : ["OrkaLM source graph oneridir; WikiLink veya WikiPage otomatik olusturmaz."]
         };
     }
 
@@ -240,53 +236,6 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
                                       !p.IsDeleted &&
                                       (p.PageKey == pageKey || (p.PageType == "orkalm_source" && p.MetadataJson.Contains(source.Id.ToString()))),
                 ct);
-    }
-
-    private async Task<WikiPage> EnsureSourcePageAsync(Guid userId, LearningSource source, SourceEvidenceBundle? bundle, CancellationToken ct)
-    {
-        if (!source.TopicId.HasValue) throw new InvalidOperationException("Source topic is required.");
-        var page = await FindSourcePageAsync(userId, source, ct);
-        var now = DateTime.UtcNow;
-        var evidenceStatus = ResolveEvidenceStatus(source, bundle);
-        var sourceReadiness = ResolveSourceReadiness(source, bundle);
-        if (page == null)
-        {
-            page = new WikiPage
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                TopicId = source.TopicId.Value,
-                SessionId = source.SessionId,
-                PageKey = SourcePageKey(source.Id),
-                PageType = "orkalm_source",
-                Title = SafeDisplay(source.Title, 160),
-                SourceReadiness = sourceReadiness,
-                EvidenceStatus = evidenceStatus,
-                SafeSummary = $"OrkaLM source page for {SafeDisplay(source.Title, 120)}.",
-                MetadataJson = SerializeSafe(new
-                {
-                    sourceId = source.Id,
-                    sourceTitle = SafeDisplay(source.Title, 120),
-                    sourceStatus = SafeDisplay(source.Status, 40),
-                    sourceSurface = "orkalm_source"
-                }),
-                Status = StatusFor(evidenceStatus),
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.WikiPages.Add(page);
-        }
-        else
-        {
-            page.Title = SafeDisplay(source.Title, 160);
-            page.SourceReadiness = sourceReadiness;
-            page.EvidenceStatus = evidenceStatus;
-            page.Status = StatusFor(evidenceStatus);
-            page.UpdatedAt = now;
-        }
-
-        await _db.SaveChangesAsync(ct);
-        return page;
     }
 
     private async Task<IReadOnlyList<SourceConceptLinkDto>> BuildCandidatesAsync(
@@ -393,67 +342,6 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
         }).ToList();
     }
 
-    private async Task<SourceConceptLinkDto> UpsertWikiLinkAsync(
-        Guid userId,
-        LearningSource source,
-        WikiPage sourcePage,
-        SourceConceptLinkDto candidate,
-        DateTime now,
-        CancellationToken ct)
-    {
-        var targetId = candidate.WikiPageId!.Value;
-        var linkType = candidate.LinkType is "source_supports" or "source_mentions" or "source_reviews" or "source_remediates"
-            ? candidate.LinkType
-            : "source_mentions";
-        var existing = await _db.WikiLinks.FirstOrDefaultAsync(l =>
-            l.UserId == userId &&
-            l.SourcePageId == sourcePage.Id &&
-            l.TargetPageId == targetId &&
-            l.LinkType == linkType &&
-            !l.IsDeleted,
-            ct);
-        if (existing == null)
-        {
-            existing = new WikiLink
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                TopicId = source.TopicId,
-                SourcePageId = sourcePage.Id,
-                TargetPageId = targetId,
-                TargetPageKey = candidate.ConceptKey,
-                LinkType = linkType,
-                CreatedBy = "source_concept_linker",
-                CreatedAt = now
-            };
-            _db.WikiLinks.Add(existing);
-        }
-
-        existing.Strength = Math.Clamp(candidate.ConfidenceScore ?? 0.45m, 0.1m, 1m);
-        existing.SafeLabel = SafeDisplay($"{source.Title} -> {candidate.ConceptTitle}", 220);
-        existing.TargetPageKey = candidate.ConceptKey;
-        existing.MetadataJson = SerializeSafe(new
-        {
-            sourceId = source.Id,
-            sourceTitle = SafeDisplay(source.Title, 120),
-            conceptKey = candidate.ConceptKey,
-            conceptTitle = candidate.ConceptTitle,
-            confidence = candidate.Confidence,
-            confidenceScore = candidate.ConfidenceScore,
-            basis = candidate.Basis,
-            evidenceStatus = candidate.EvidenceStatus,
-            sourceReadiness = candidate.SourceReadiness
-        });
-        existing.UpdatedAt = now;
-        await _db.SaveChangesAsync(ct);
-
-        candidate.IsSuggestion = false;
-        candidate.SourcePageId = sourcePage.Id;
-        candidate.CreatedAt = new DateTimeOffset(existing.CreatedAt, TimeSpan.Zero);
-        candidate.UpdatedAt = new DateTimeOffset(existing.UpdatedAt, TimeSpan.Zero);
-        return candidate;
-    }
-
     private static SourceConceptLinkSummaryDto BuildSummary(
         Guid topicId,
         LearningSource? source,
@@ -549,7 +437,7 @@ public sealed class SourceConceptLinkingService : ISourceConceptLinkingService
         var warnings = LinkWarnings(sourceReadiness, evidenceStatus).ToList();
         if (linkCount == 0)
         {
-            warnings.Add("Kaynak-kavram linki bulunamadi; once Wiki graph/source sync gerekebilir.");
+            warnings.Add("Kaynak-kavram onerisi bulunamadi; OrkaLM grafi Wiki'ye otomatik yazmaz.");
         }
 
         return warnings;

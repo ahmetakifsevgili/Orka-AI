@@ -41,6 +41,7 @@ namespace Orka.API.Extensions
             services.AddScoped<IPlanDiagnosticStateStore, RedisPlanDiagnosticStateStore>();
             services.AddScoped<IPlanDiagnosticService, PlanDiagnosticService>();
             services.AddScoped<IStudyIntentAnalyzer, StudyIntentAnalyzer>();
+            services.AddScoped<IConceptScopePlanner, ConceptScopePlanner>();
             services.AddScoped<IConceptGraphBuilder, ConceptGraphBuilder>();
             services.AddScoped<IConceptGraphQualityService, ConceptGraphQualityService>();
             services.AddScoped<IAssessmentGrammarEngine, AssessmentGrammarEngine>();
@@ -72,6 +73,7 @@ namespace Orka.API.Extensions
             services.AddScoped<IPlanSequencingService, PlanSequencingService>();
             services.AddScoped<IExamFrameworkService, ExamFrameworkService>();
             services.AddScoped<IQuestionBankService, QuestionBankService>();
+            services.AddScoped<IQuestionPracticeService, QuestionPracticeService>();
             services.AddScoped<IQuestionImportService, QuestionImportService>();
             services.AddScoped<IQuestionDraftGenerationService, QuestionDraftGenerationService>();
             services.AddScoped<IContentOperationsService, ContentOperationsService>();

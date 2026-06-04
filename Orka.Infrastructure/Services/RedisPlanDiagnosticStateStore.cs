@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Interfaces;
@@ -10,6 +11,7 @@ public sealed class RedisPlanDiagnosticStateStore : IPlanDiagnosticStateStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan MinimumTtl = TimeSpan.FromMinutes(1);
+    private static readonly ConcurrentDictionary<Guid, PlanDiagnosticStateDto> InMemoryFallback = new();
 
     private readonly IRedisMemoryService _redis;
     private readonly ILogger<RedisPlanDiagnosticStateStore> _logger;
@@ -29,7 +31,7 @@ public sealed class RedisPlanDiagnosticStateStore : IPlanDiagnosticStateStore
         var payload = await _redis.GetJsonAsync(Key(planRequestId));
         if (string.IsNullOrWhiteSpace(payload))
         {
-            return null;
+            return GetFallback(planRequestId);
         }
 
         try
@@ -69,13 +71,31 @@ public sealed class RedisPlanDiagnosticStateStore : IPlanDiagnosticStateStore
         }
 
         var payload = JsonSerializer.Serialize(state, JsonOptions);
+        InMemoryFallback[state.PlanRequestId] = state;
         await _redis.SetJsonAsync(Key(state.PlanRequestId), payload, ttl);
     }
 
     public async Task DeleteAsync(Guid planRequestId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        InMemoryFallback.TryRemove(planRequestId, out _);
         await _redis.DeleteKeyAsync(Key(planRequestId));
+    }
+
+    private static PlanDiagnosticStateDto? GetFallback(Guid planRequestId)
+    {
+        if (!InMemoryFallback.TryGetValue(planRequestId, out var state))
+        {
+            return null;
+        }
+
+        if (state.ExpiresAt > DateTime.UtcNow)
+        {
+            return state;
+        }
+
+        InMemoryFallback.TryRemove(planRequestId, out _);
+        return null;
     }
 
     private static string Key(Guid planRequestId) =>

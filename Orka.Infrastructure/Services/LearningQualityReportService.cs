@@ -464,16 +464,21 @@ public sealed class LearningQualityReportService : ILearningQualityReportService
         if (statuses.Any(s => string.Equals(s, "critical", StringComparison.OrdinalIgnoreCase))) return "critical";
         if (statuses.Any(s =>
                 string.Equals(s, "degraded", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(s, "watch", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "weak", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "limited", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s, "not_ready", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "degraded";
+        }
+
+        if (statuses.Any(s => string.Equals(s, "watch", StringComparison.OrdinalIgnoreCase))) return "watch";
+        if (statuses.Any(s =>
                 string.Equals(s, "thin", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(s, "not_ready", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "unverified", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "empty", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s, "evidence_insufficient", StringComparison.OrdinalIgnoreCase)))
         {
-            return "degraded";
+            return "thin_evidence";
         }
 
         if (statuses.Any(s => string.Equals(s, "unknown", StringComparison.OrdinalIgnoreCase))) return "unknown";

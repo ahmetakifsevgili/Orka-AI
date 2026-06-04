@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +11,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Orka.API.Services;
+using Orka.Core.Constants;
+using Orka.Core.DTOs;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.Enums;
 using Orka.Core.Interfaces;
@@ -36,6 +40,8 @@ public class ChatController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ResourceOwnershipGuard _ownership;
+    private readonly IQuizAttemptRecorder _quizAttemptRecorder;
+    private readonly ILearningSignalService _learningSignals;
     private readonly ILogger<ChatController> _logger;
 
     public ChatController(
@@ -46,6 +52,8 @@ public class ChatController : ControllerBase
         IConfiguration configuration,
         IHostEnvironment environment,
         ResourceOwnershipGuard ownership,
+        IQuizAttemptRecorder quizAttemptRecorder,
+        ILearningSignalService learningSignals,
         ILogger<ChatController> logger)
     {
         _agentOrchestrator = agentOrchestrator;
@@ -55,10 +63,12 @@ public class ChatController : ControllerBase
         _configuration = configuration;
         _environment = environment;
         _ownership = ownership;
+        _quizAttemptRecorder = quizAttemptRecorder;
+        _learningSignals = learningSignals;
         _logger = logger;
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     [HttpGet("test-ai")]
     public async Task<IActionResult> TestAI()
     {
@@ -112,10 +122,13 @@ public class ChatController : ControllerBase
                 request.FocusTopicPath,
                 request.FocusSourceRef);
 
+            await TryRecordObservedChatQuizEvidenceAsync(userId, response, request.Content, HttpContext.RequestAborted);
+
             return Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Chat message processing failed for user {UserId}", userId);
             return BadRequest(new { message = "İstek işlenemedi." });
         }
     }
@@ -301,6 +314,140 @@ public class ChatController : ControllerBase
 
         await Response.WriteAsJsonAsync(value);
         return false;
+    }
+
+    private async Task TryRecordObservedChatQuizEvidenceAsync(
+        Guid userId,
+        ChatMessageResponse response,
+        string userContent,
+        CancellationToken ct)
+    {
+        if (!TryParseObservedQuizScore(userContent, out var correct, out var total))
+            return;
+
+        var sessionId = response.SessionId == Guid.Empty ? (Guid?)null : response.SessionId;
+        var topicId = response.TopicId == Guid.Empty ? (Guid?)null : response.TopicId;
+        if (!topicId.HasValue && sessionId.HasValue)
+        {
+            topicId = await _dbContext.Sessions
+                .AsNoTracking()
+                .Where(s => s.Id == sessionId.Value && s.UserId == userId)
+                .Select(s => s.TopicId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (!topicId.HasValue)
+            return;
+
+        var score = total <= 0 ? 0 : (int)Math.Round((double)correct / total * 100d);
+        var isPositive = correct > 0 && correct >= total;
+        var skillTag = "chat-quiz-evidence";
+        var topicPath = "chat/quiz-evidence";
+        var questionText = $"Chat observed quiz result {correct}/{total}";
+        var questionHash = RedisMemoryService.ComputeQuestionHash(questionText, skillTag, topicPath, "chat-observed", "observed");
+
+        try
+        {
+            var alreadyRecorded = await _dbContext.QuizAttempts
+                .AsNoTracking()
+                .AnyAsync(a =>
+                    a.UserId == userId &&
+                    a.TopicId == topicId.Value &&
+                    a.QuestionHash == questionHash,
+                    ct);
+
+            await _quizAttemptRecorder.RecordAsync(userId, new RecordQuizAttemptRequest
+            {
+                TopicId = topicId,
+                SessionId = sessionId,
+                QuestionId = "chat-observed-quiz-result",
+                Question = questionText,
+                SelectedOptionId = isPositive ? "observed_correct" : "observed_incomplete",
+                IsCorrect = isPositive,
+                SkillTag = skillTag,
+                ConceptTag = skillTag,
+                LearningObjective = "Chat icindeki quiz sonucunu dashboard coordination kaniti olarak kaydetmek.",
+                QuestionType = "observed_chat_quiz_result",
+                AssessmentMode = "chat_observed",
+                TopicPath = topicPath,
+                Difficulty = "observed",
+                QuestionHash = questionHash,
+                SourceRefsJson = JsonSerializer.Serialize(new
+                {
+                    origin = "chat_message",
+                    correctnessVerified = false,
+                    confidence = "observed_only",
+                    correct,
+                    total
+                })
+            }, ct);
+
+            if (!alreadyRecorded)
+            {
+                await _learningSignals.RecordSignalAsync(
+                    userId,
+                    topicId,
+                    sessionId,
+                    LearningSignalTypes.QuizAnswered,
+                    skillTag,
+                    topicPath,
+                    score,
+                    isPositive,
+                    JsonSerializer.Serialize(new
+                    {
+                        origin = "chat_message",
+                        confidence = "observed_only",
+                        correctnessVerified = false,
+                        correct,
+                        total
+                    }),
+                    ct);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "[Chat] Observed quiz evidence record failed. UserRef={UserRef} TopicRef={TopicRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(topicId, "topic"),
+                LogPrivacyGuard.SafeId(sessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+        }
+    }
+
+    private static bool TryParseObservedQuizScore(string content, out int correct, out int total)
+    {
+        correct = 0;
+        total = 0;
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        var normalized = content
+            .Replace("*", " ", StringComparison.Ordinal)
+            .Replace("_", " ", StringComparison.Ordinal)
+            .Trim()
+            .ToLowerInvariant();
+        if (!normalized.Contains("quiz", StringComparison.OrdinalIgnoreCase) ||
+            !(normalized.Contains("cevab", StringComparison.OrdinalIgnoreCase) ||
+              normalized.Contains("answer", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var match = Regex.Match(normalized, @"(?<correct>\d{1,3})\s*/\s*(?<total>\d{1,3})");
+        if (!match.Success ||
+            !int.TryParse(match.Groups["correct"].Value, out correct) ||
+            !int.TryParse(match.Groups["total"].Value, out total) ||
+            total <= 0 ||
+            correct < 0 ||
+            correct > total)
+        {
+            correct = 0;
+            total = 0;
+            return false;
+        }
+
+        return true;
     }
 
     private async Task<(bool Allowed, int Limit)> TryConsumeDailyMessageAsync(Guid userId)

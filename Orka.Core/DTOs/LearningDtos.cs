@@ -60,13 +60,28 @@ public record ClassroomSessionDto(
     string Transcript,
     string LastSegment,
     string Status,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Surface = "wiki",
+    string ContextType = "wiki_page",
+    Guid? WikiPageId = null,
+    Guid? SourceId = null,
+    Guid? AudioOverviewJobId = null,
+    string AudioMode = "brief",
+    bool CrossSurfaceSync = false,
+    IReadOnlyList<string>? InternalConnections = null);
 
 public record ClassroomAskResultDto(
     Guid ClassroomSessionId,
     Guid InteractionId,
     string Answer,
-    IReadOnlyList<string> Speakers)
+    IReadOnlyList<string> Speakers,
+    string Surface = "wiki",
+    string ContextType = "wiki_page",
+    Guid? WikiPageId = null,
+    Guid? SourceId = null,
+    string AudioMode = "brief",
+    bool AudioQueued = true,
+    bool BrowserTtsFallback = true)
 {
     public string AnswerScript => Answer;
 }

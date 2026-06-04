@@ -22,9 +22,9 @@ public class SambaNovaService : OpenAICompatibleService, ISambaNovaService
             logger     : logger)
     { }
 
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => CallChatAsync(systemPrompt, userMessage, ct: ct);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => CallChatAsync(systemPrompt, userMessage, maxTokens: maxOutputTokens ?? 2048, ct: ct);
 
-    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => CallChatStreamAsync(systemPrompt, userMessage, ct: ct);
+    public IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => CallChatStreamAsync(systemPrompt, userMessage, maxTokens: maxOutputTokens ?? 2048, ct: ct);
 }

@@ -109,6 +109,7 @@ public sealed class PlanSequencingService : IPlanSequencingService
                     remediationNeed))
                 .ToList()
             : BuildFallbackSteps(topic, korteks, sourceBundle, sourceReadiness, learnerState, remediationNeed);
+        steps = EnsureDistinctStepConceptKeys(steps).ToList();
 
         if (NoLearnerEvidence(tracing, masteries, studentSnapshot, activeSnapshot))
         {
@@ -241,11 +242,7 @@ public sealed class PlanSequencingService : IPlanSequencingService
         var korteks = _korteksSynthesis == null ? null : await _korteksSynthesis.GetLatestWorkflowAsync(userId, topicId, sessionId, ct);
         var source = _sourceLifecycle == null ? null : await _sourceLifecycle.GetLatestSourceEvidenceBundleAsync(userId, topicId, sessionId, ct);
         var student = _snapshots == null ? null : await _snapshots.GetStudentContextSnapshotAsync(userId, topicId, sessionId, ct);
-        var latest = await _db.LearningPlanQualitySnapshots
-            .AsNoTracking()
-            .Where(s => s.UserId == userId && !s.IsDeleted && s.TopicId == topicId && (!sessionId.HasValue || s.SessionId == sessionId))
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        var latest = await LoadLatestPlanQualityEntityAsync(userId, topicId, sessionId, ct);
         var warnings = new List<string>();
         if (graph == null) warnings.Add("Concept graph eksik; plan daha dusuk guvenle kurulur.");
         if (source == null || source.EvidenceStatus is "stale" or "degraded" or "evidence_insufficient") warnings.Add("Kaynak hazirligi sinirli; plan kaynak iddiasi tasimaz.");
@@ -263,6 +260,7 @@ public sealed class PlanSequencingService : IPlanSequencingService
                 masteries: Array.Empty<ConceptMastery>(),
                 steps: Array.Empty<PlanStepContractDto>(),
                 remediationNeed: student?.RemediationReady.Count > 0 ? "medium" : "evidence_insufficient");
+        ReconcileReadinessSignals(adaptiveDiagnostic, graph);
         var coursePlanQuality = latestDto?.PlanContract.CoursePlanQuality
             ?? BuildCoursePlanQuality(
                 new PlanCurriculumSequenceDto
@@ -283,6 +281,10 @@ public sealed class PlanSequencingService : IPlanSequencingService
                 Array.Empty<ConceptMastery>());
         warnings.AddRange(adaptiveDiagnostic.Warnings);
         warnings.AddRange(coursePlanQuality.Warnings);
+        var publicReadinessStatus = ResolvePublicPlanReadiness(latestDto, coursePlanQuality, adaptiveDiagnostic);
+        var recommendedFirstAction = publicReadinessStatus == "ready_for_learning"
+            ? "start_first_lesson_then_micro_check"
+            : coursePlanQuality.RecommendedNextAction;
 
         return new PlanReadinessDto
         {
@@ -293,13 +295,41 @@ public sealed class PlanSequencingService : IPlanSequencingService
             HasSourceEvidence = source?.EvidenceStatus is "source_grounded" or "wiki_backed" or "mixed",
             SourceReadiness = source?.EvidenceStatus ?? student?.SourceReadiness ?? "evidence_insufficient",
             LearnerEvidenceStatus = student?.ConfidenceStatus ?? "observed_only",
-            PlanReadinessStatus = coursePlanQuality.ReadinessStatus,
-            RecommendedFirstAction = coursePlanQuality.RecommendedNextAction,
+            PlanReadinessStatus = publicReadinessStatus,
+            RecommendedFirstAction = recommendedFirstAction,
             LatestQualitySnapshotId = latest?.Id,
             AdaptiveDiagnostic = adaptiveDiagnostic,
             CoursePlanQuality = coursePlanQuality,
-            Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToArray()
+            Warnings = warnings
+                .Where(warning => publicReadinessStatus != "ready_for_learning" ||
+                                  !string.Equals(warning, "needs_diagnostic", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(12)
+                .ToArray()
         };
+    }
+
+    private static void ReconcileReadinessSignals(AdaptiveDiagnosticDto diagnostic, ConceptGraphSnapshot? graph)
+    {
+        if (graph == null)
+        {
+            return;
+        }
+
+        diagnostic.PlacementBasis = diagnostic.PlacementBasis
+            .Select(signal => signal.SignalType == "concept_graph"
+                ? new AdaptiveDiagnosticSignalDto
+                {
+                    SignalType = signal.SignalType,
+                    Status = "usable",
+                    Confidence = Math.Max(signal.Confidence, 0.70m),
+                    UserSafeReason = "Concept graph plan siralamasini ve prerequisite iliskilerini destekler."
+                }
+                : signal)
+            .ToArray();
+        diagnostic.Warnings = diagnostic.Warnings
+            .Where(warning => !string.Equals(warning, "concept_graph_missing", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 
     public async Task<PlanStepContractDto> BuildPlanStepContractAsync(
@@ -337,19 +367,44 @@ public sealed class PlanSequencingService : IPlanSequencingService
         Guid? sessionId = null,
         CancellationToken ct = default)
     {
-        var entity = await _db.LearningPlanQualitySnapshots
+        var entity = await LoadLatestPlanQualityEntityAsync(userId, topicId, sessionId, ct);
+        return entity == null ? null : ToDto(entity);
+    }
+
+    private async Task<LearningPlanQualitySnapshot?> LoadLatestPlanQualityEntityAsync(
+        Guid userId,
+        Guid topicId,
+        Guid? sessionId,
+        CancellationToken ct)
+    {
+        var query = _db.LearningPlanQualitySnapshots
             .AsNoTracking()
-            .Where(s => s.UserId == userId && !s.IsDeleted && s.TopicId == topicId && (!sessionId.HasValue || s.SessionId == sessionId))
+            .Where(s => s.UserId == userId && !s.IsDeleted && s.TopicId == topicId);
+
+        if (sessionId.HasValue)
+        {
+            var exact = await query
+                .Where(s => s.SessionId == sessionId)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            if (exact != null)
+            {
+                return exact;
+            }
+        }
+
+        return await query
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync(ct);
-        return entity == null ? null : ToDto(entity);
     }
 
     private async Task<PlanCurriculumSequenceDto> BuildSequenceFromProposedAsync(Guid userId, PlanQualityEvaluationRequestDto request, CancellationToken ct)
     {
         var topic = await EnsureTopicAsync(userId, request.TopicId, ct);
         var source = _sourceLifecycle == null ? null : await _sourceLifecycle.GetLatestSourceEvidenceBundleAsync(userId, request.TopicId, request.SessionId, ct);
-        var steps = request.ProposedSteps.Select((step, index) => NormalizeProposedStep(step, topic, source, index)).ToArray();
+        var steps = EnsureDistinctStepConceptKeys(request.ProposedSteps
+            .Select((step, index) => NormalizeProposedStep(step, topic, source, index))
+            .ToArray());
         var sequence = new PlanCurriculumSequenceDto
         {
             TopicId = request.TopicId,
@@ -434,7 +489,7 @@ public sealed class PlanSequencingService : IPlanSequencingService
         var learnerEvidence = student?.ConfidenceStatus ?? (tracing.Count + masteries.Count > 0 ? "usable" : "observed_only");
         var intent = DetermineAdaptiveIntent(topic, request, source, active, remediationNeed);
         var placement = BuildLearnerPlacement(student, active, tracing, masteries, remediationNeed);
-        var readiness = DeterminePlanReadiness(graph, source, student, active, steps, remediationNeed);
+        var readiness = DeterminePlanReadiness(graph, source, student, active, steps, remediationNeed, learnerEvidence);
         var warnings = new List<string>();
         if (learnerEvidence is "none" or "observed_only") warnings.Add("learner_evidence_limited");
         if (graph == null) warnings.Add("concept_graph_missing");
@@ -521,6 +576,45 @@ public sealed class PlanSequencingService : IPlanSequencingService
             RepairLoops = repairLoops,
             Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToArray()
         };
+    }
+
+    private static string ResolvePublicPlanReadiness(
+        PlanQualityEvaluationDto? latest,
+        CoursePlanQualityDto coursePlanQuality,
+        AdaptiveDiagnosticDto adaptiveDiagnostic)
+    {
+        if (latest == null)
+        {
+            return coursePlanQuality.ReadinessStatus;
+        }
+
+        if (latest.BlockingIssues.Count > 0 ||
+            latest.QualityStatus is "needs_revision" or "insufficient" ||
+            coursePlanQuality.ReadinessStatus is "thin_plan" or "degraded")
+        {
+            return coursePlanQuality.ReadinessStatus;
+        }
+
+        var hasMaterializedContract = latest.PlanContract.Steps.Count > 0 ||
+                                      coursePlanQuality.MilestoneCount > 0 ||
+                                      coursePlanQuality.CheckpointCoverage >= 0.75m;
+        if (adaptiveDiagnostic.PlanReadiness is "needs_diagnostic" or "needs_repair" or "needs_prerequisite_check")
+        {
+            return adaptiveDiagnostic.PlanReadiness;
+        }
+
+        if (coursePlanQuality.ReadinessStatus is "needs_diagnostic" or "needs_repair" or "needs_prerequisite_check")
+        {
+            return coursePlanQuality.ReadinessStatus;
+        }
+
+        if (hasMaterializedContract &&
+            adaptiveDiagnostic.PlanReadiness == "ready")
+        {
+            return "ready_for_learning";
+        }
+
+        return coursePlanQuality.ReadinessStatus;
     }
 
     private static string DetermineAdaptiveIntent(
@@ -681,13 +775,23 @@ public sealed class PlanSequencingService : IPlanSequencingService
         StudentContextSnapshotDto? student,
         ActiveLessonSnapshotDto? active,
         IReadOnlyList<PlanStepContractDto> steps,
-        string remediationNeed)
+        string remediationNeed,
+        string learnerEvidence)
     {
         if (steps.Count == 0) return "degraded";
-        if (remediationNeed is "high" or "medium" || student?.RemediationReady.Count > 0 || active?.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase) == true)
+
+        var explicitRepairEvidence = remediationNeed is "high" or "medium" ||
+                                     steps.Any(s => s.RemediationNeed is "high" or "medium") ||
+                                     student?.RemediationReady.Count > 0 ||
+                                     active?.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase) == true;
+        var hasLearnerEvidence = explicitRepairEvidence ||
+                                 learnerEvidence is "usable" or "strong" or "healthy" ||
+                                 (student != null && student.ConfidenceStatus is not "none" and not "observed_only");
+        if (explicitRepairEvidence || (hasLearnerEvidence && steps.Any(s => s.TargetMisconceptions.Count > 0)))
             return "needs_repair";
         if (graph == null && steps.Count <= 2) return "thin_plan";
-        if (student == null || student.ConfidenceStatus is "none" or "observed_only") return "needs_diagnostic";
+        if (!hasLearnerEvidence)
+            return "needs_diagnostic";
         if (steps.Any(s => s.PrerequisiteConceptKeys.Count > 0 && s.LearnerState is "evidence_insufficient" or "unknown"))
             return "needs_prerequisite_check";
         if (source?.EvidenceStatus is "stale" or "degraded") return "source_limited";
@@ -825,6 +929,42 @@ public sealed class PlanSequencingService : IPlanSequencingService
             NextStepTrigger = Clean(step.NextStepTrigger, 120) ?? "micro_check_passed",
             FallbackIfEvidenceWeak = Clean(step.FallbackIfEvidenceWeak, 300) ?? "Run a short diagnostic check before claiming mastery."
         };
+    }
+
+    private static IReadOnlyList<PlanStepContractDto> EnsureDistinctStepConceptKeys(IReadOnlyList<PlanStepContractDto> steps)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var step in steps)
+        {
+            var original = string.IsNullOrWhiteSpace(step.ConceptKey)
+                ? StableKey(step.Title)
+                : step.ConceptKey;
+            var count = seen.TryGetValue(original, out var existing) ? existing + 1 : 1;
+            seen[original] = count;
+            if (count <= 1)
+            {
+                continue;
+            }
+
+            var refined = StableKey($"{original} {step.Title} {step.StepId}");
+            if (string.Equals(refined, original, StringComparison.OrdinalIgnoreCase))
+            {
+                refined = $"{original}-{count}";
+            }
+
+            step.ConceptKey = refined;
+            if (step.QuizHook != null)
+            {
+                step.QuizHook.ConceptKey = refined;
+            }
+
+            if (step.TutorHook != null)
+            {
+                step.TutorHook.ActiveConceptKey = refined;
+            }
+        }
+
+        return steps;
     }
 
     private async Task<Topic> EnsureTopicAsync(Guid userId, Guid topicId, CancellationToken ct)
@@ -1176,7 +1316,7 @@ public sealed class PlanSequencingService : IPlanSequencingService
     {
         var text = string.Join("\n", new[] { title, summary }.Where(v => !string.IsNullOrWhiteSpace(v)).Concat(steps.SelectMany(s => new[] { s.Title, s.Objective, s.SequenceReason })));
         var normalized = NormalizeText(text);
-        if (ContainsAny(normalized, "garanti", "kazanma garantisi", "basari garantisi", "success guarantee"))
+        if (ContainsUnsafeSuccessClaim(normalized))
         {
             blocking.Add(Issue("unsafe_success_claim", "Plan basari/kazanma garantisi veremez.", "blocking"));
         }
@@ -1195,6 +1335,31 @@ public sealed class PlanSequencingService : IPlanSequencingService
         {
             blocking.Add(Issue("internal_payload_leak", "Plan public sozlesmesi prompt/provider/debug verisi tasiyamaz.", "blocking"));
         }
+    }
+
+    private static bool ContainsUnsafeSuccessClaim(string normalized)
+    {
+        if (ContainsAny(normalized,
+                "does not guarantee success",
+                "doesn't guarantee success",
+                "not guarantee success",
+                "no success guarantee",
+                "not a success guarantee",
+                "basari garantisi vermez",
+                "basari garanti etmez",
+                "garanti degil"))
+        {
+            return false;
+        }
+
+        return ContainsAny(normalized,
+            "kazanma garantisi",
+            "basari garantisi",
+            "basari garanti",
+            "kesin basari",
+            "guaranteed success",
+            "success guarantee",
+            "guarantee success");
     }
 
     private static void EvaluateGenericAndThinPlan(PlanCurriculumSequenceDto sequence, List<PlanQualityIssueDto> blocking, List<PlanQualityIssueDto> warnings)
@@ -1250,9 +1415,19 @@ public sealed class PlanSequencingService : IPlanSequencingService
 
     private static void EvaluatePrerequisiteOrder(PlanCurriculumSequenceDto sequence, List<PlanQualityIssueDto> blocking, List<PlanQualityIssueDto> warnings)
     {
-        var positions = sequence.Steps
-            .Select((step, index) => new { step, index })
-            .ToDictionary(x => NormalizeKey(x.step.ConceptKey), x => x.index, StringComparer.OrdinalIgnoreCase);
+        var positions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in sequence.Steps.Select((step, index) => new { step, index }))
+        {
+            var key = NormalizeKey(item.step.ConceptKey);
+            if (positions.ContainsKey(key))
+            {
+                warnings.Add(Issue("duplicate_concept_key", "Plan ayni kavram anahtarini birden fazla adimda kullaniyor; adimlar ayrismali.", "warning", item.step.StepId));
+                continue;
+            }
+
+            positions[key] = item.index;
+        }
+
         foreach (var current in sequence.Steps)
         {
             var currentIndex = positions.GetValueOrDefault(NormalizeKey(current.ConceptKey), -1);
@@ -1265,10 +1440,36 @@ public sealed class PlanSequencingService : IPlanSequencingService
                 }
                 else if (prerequisiteIndex > currentIndex)
                 {
-                    blocking.Add(Issue("prerequisite_order_violation", "Onkosul kavram bagimli kavramdan sonra gelmis.", "blocking", current.StepId));
+                    var issue = Issue("prerequisite_order_violation", "Onkosul kavram bagimli kavramdan sonra gelmis.", "blocking", current.StepId);
+                    if (IsEarlyRepairOrAssessmentStep(current))
+                    {
+                        issue.Severity = "warning";
+                        issue.Message = "Telafi/olcum adimi onkosulden once konumlanmis; erken repair icin izinli ama plan ozeti bunu aciklamali.";
+                        warnings.Add(issue);
+                    }
+                    else
+                    {
+                        blocking.Add(issue);
+                    }
                 }
             }
         }
+    }
+
+    private static bool IsEarlyRepairOrAssessmentStep(PlanStepContractDto step)
+    {
+        if (step.RemediationNeed is "high" or "medium") return true;
+        if (step.TargetMisconceptions.Count > 0) return true;
+        if (step.TutorHook?.TutorMove?.Contains("repair", StringComparison.OrdinalIgnoreCase) == true ||
+            step.TutorHook?.TutorMove?.Contains("practice", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        var hook = step.QuizHook?.HookType ?? string.Empty;
+        return hook.Contains("misconception", StringComparison.OrdinalIgnoreCase) ||
+               hook.Contains("diagnostic", StringComparison.OrdinalIgnoreCase) ||
+               hook.Contains("checkpoint", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EvaluateSourceHumility(PlanCurriculumSequenceDto sequence, List<PlanQualityIssueDto> warnings)

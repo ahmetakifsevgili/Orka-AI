@@ -85,6 +85,36 @@ public sealed class ScheduledWorkersPushGroundingTests
     }
 
     [Fact]
+    public async Task SrsReminderWorker_WhenDistributedLockHeld_SkipsWithoutSending()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, Email = "srs-lock@example.com", CreatedAt = DateTime.UtcNow });
+        db.Topics.Add(new Topic { Id = topicId, UserId = userId, Title = "SRS Lock", CreatedAt = DateTime.UtcNow });
+        db.ReviewItems.Add(new ReviewItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ReviewKey = "concept:lock",
+            ConceptTag = "distributed lock",
+            DueAt = DateTime.UtcNow.AddMinutes(-5),
+            Status = "active",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var redis = new TestRedisMemoryService();
+        Assert.True(await redis.AcquireLockAsync("orka:lock:srs_reminder_worker", "other-worker", TimeSpan.FromMinutes(5)));
+        var service = CreateSrsWorker(db, Config(("Workers:SrsReminder:Enabled", "true")), redis);
+
+        Assert.Equal(0, await service.RunOnceAsync());
+        Assert.False(await db.Notifications.AnyAsync(n => n.Type == "srs-reminder"));
+    }
+
+    [Fact]
     public async Task DailyChallengeWorker_CreatesReminderAndPreventsDuplicate()
     {
         await using var db = CreateDb();
@@ -191,12 +221,12 @@ public sealed class ScheduledWorkersPushGroundingTests
             s.TopicId == topicId));
     }
 
-    private static SrsReminderWorkerService CreateSrsWorker(OrkaDbContext db, IConfiguration config)
+    private static SrsReminderWorkerService CreateSrsWorker(OrkaDbContext db, IConfiguration config, IRedisMemoryService? redis = null)
     {
         var telemetry = new RuntimeTelemetryService(db, NullLogger<RuntimeTelemetryService>.Instance);
         var notifications = new NotificationService(db);
         var push = new PushDeliveryService(EmptyConfig(), telemetry, NullLogger<PushDeliveryService>.Instance);
-        return new SrsReminderWorkerService(db, notifications, push, telemetry, config, NullLogger<SrsReminderWorkerService>.Instance);
+        return new SrsReminderWorkerService(db, notifications, push, telemetry, config, redis ?? new TestRedisMemoryService(), NullLogger<SrsReminderWorkerService>.Instance);
     }
 
     private static DailyChallengeWorkerService CreateDailyWorker(OrkaDbContext db, IConfiguration config)
@@ -204,7 +234,8 @@ public sealed class ScheduledWorkersPushGroundingTests
         var telemetry = new RuntimeTelemetryService(db, NullLogger<RuntimeTelemetryService>.Instance);
         var notifications = new NotificationService(db);
         var push = new PushDeliveryService(EmptyConfig(), telemetry, NullLogger<PushDeliveryService>.Instance);
-        return new DailyChallengeWorkerService(db, notifications, push, telemetry, config, NullLogger<DailyChallengeWorkerService>.Instance);
+        var redis = new TestRedisMemoryService();
+        return new DailyChallengeWorkerService(db, notifications, push, telemetry, config, redis, NullLogger<DailyChallengeWorkerService>.Instance);
     }
 
     private static EducatorCoreService CreateEducatorCore(OrkaDbContext db)
@@ -252,6 +283,7 @@ public sealed class ScheduledWorkersPushGroundingTests
     private sealed class TestRedisMemoryService : IRedisMemoryService
     {
         private readonly Dictionary<string, string> _json = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, (string Value, DateTime Expiry)> _locks = new(StringComparer.OrdinalIgnoreCase);
 
         public Task RecordEvaluationAsync(Guid sessionId, int score, string feedback) => Task.CompletedTask;
         public Task<IEnumerable<string>> GetRecentFeedbackAsync(Guid sessionId, int count = 5) => Task.FromResult<IEnumerable<string>>([]);
@@ -294,5 +326,38 @@ public sealed class ScheduledWorkersPushGroundingTests
         public Task<string?> GetKorteksResearchReportAsync(Guid topicId) => Task.FromResult<string?>(null);
         public Task SaveYouTubeContextAsync(Guid topicId, string payload) => Task.CompletedTask;
         public Task<string?> GetYouTubeContextAsync(Guid topicId) => Task.FromResult<string?>(null);
+        public Task<bool> AcquireLockAsync(string key, string value, TimeSpan expiry)
+        {
+            var now = DateTime.UtcNow;
+            if (_locks.TryGetValue(key, out var existing))
+            {
+                if (existing.Expiry > now)
+                {
+                    return Task.FromResult(false);
+                }
+            }
+            _locks[key] = (value, now.Add(expiry));
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry)
+        {
+            if (_locks.TryGetValue(key, out var existing) && existing.Value == value)
+            {
+                _locks[key] = (value, DateTime.UtcNow.Add(expiry));
+                return Task.FromResult(true);
+            }
+
+            return Task.FromResult(false);
+        }
+
+        public Task ReleaseLockAsync(string key, string value)
+        {
+            if (_locks.TryGetValue(key, out var existing) && existing.Value == value)
+            {
+                _locks.Remove(key);
+            }
+            return Task.CompletedTask;
+        }
     }
 }

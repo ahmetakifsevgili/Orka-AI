@@ -30,8 +30,8 @@ public class MistralService : IMistralService
     }
 
     // IAIService
-    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
-        => CallMistralApiAsync(userMessage, systemPrompt, ct);
+    public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        => CallMistralApiAsync(userMessage, systemPrompt, ct, maxOutputTokens);
 
     public async Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel öğrenme", string level = "orta")
     {
@@ -94,17 +94,17 @@ Ders İçeriği:
         return await CallMistralApiAsync(prompt, "Sen bir eğitim küratörüsün. Sadece pekiştirme soruları hazırlarsın.");
     }
 
-    private async Task<string> CallMistralApiAsync(string prompt, string systemRole, CancellationToken ct = default)
+    private async Task<string> CallMistralApiAsync(string prompt, string systemRole, CancellationToken ct = default, int? maxOutputTokens = null)
     {
         var messages = new List<object>
         {
             new { role = "system", content = string.IsNullOrWhiteSpace(systemRole) ? "Sen yardımcı bir asistansın." : systemRole },
             new { role = "user", content = prompt }
         };
-        return await CallMistralChatApiAsync(messages, ct);
+        return await CallMistralChatApiAsync(messages, ct, maxOutputTokens);
     }
 
-    private async Task<string> CallMistralChatApiAsync(object messages, CancellationToken ct = default)
+    private async Task<string> CallMistralChatApiAsync(object messages, CancellationToken ct = default, int? maxOutputTokens = null)
     {
         const string RequestUrl = "https://api.mistral.ai/v1/chat/completions";
 
@@ -113,7 +113,7 @@ Ders İçeriği:
             model = _model,
             messages,
             temperature = 0.5,
-            
+            max_tokens = maxOutputTokens ?? 2048
         };
 
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
@@ -157,7 +157,7 @@ Ders İçeriği:
         }
     }
 
-    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
     {
         const string RequestUrl = "https://api.mistral.ai/v1/chat/completions";
         var messages = new[]
@@ -166,7 +166,7 @@ Ders İçeriği:
             new { role = "user", content = userMessage }
         };
 
-        var requestBody = new { model = _model, messages, temperature = 0.5,  stream = true };
+        var requestBody = new { model = _model, messages, temperature = 0.5, max_tokens = maxOutputTokens ?? 2048, stream = true };
         var jsonBody = JsonSerializer.Serialize(requestBody, _jsonOptions);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, RequestUrl);

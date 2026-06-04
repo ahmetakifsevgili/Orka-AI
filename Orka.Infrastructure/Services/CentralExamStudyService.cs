@@ -5,6 +5,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Utilities;
 
 namespace Orka.Infrastructure.Services;
 
@@ -748,7 +749,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
                 Title = l.QuestionStimulus.Title,
                 StimulusType = l.QuestionStimulus.StimulusType,
                 ContentText = l.QuestionStimulus.ContentText,
-                ContentJson = l.QuestionStimulus.ContentJson,
+                ContentJson = LearnerSafeContentJson.Sanitize(l.QuestionStimulus.ContentJson),
                 SortOrder = l.SortOrder
             })
             .ToList();
@@ -761,7 +762,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
             {
                 BlockType = b.BlockType,
                 Text = b.Text,
-                ContentJson = b.ContentJson,
+                ContentJson = LearnerSafeContentJson.Sanitize(b.ContentJson),
                 AssetType = b.Asset?.AssetType,
                 FileName = b.Asset?.FileName,
                 MimeType = b.Asset?.MimeType,
@@ -780,7 +781,7 @@ public sealed class CentralExamStudyService : ICentralExamStudyService
             {
                 BlockType = b.BlockType,
                 Text = b.Text,
-                ContentJson = b.ContentJson,
+                ContentJson = LearnerSafeContentJson.Sanitize(b.ContentJson),
                 AssetType = b.Asset?.AssetType,
                 FileName = b.Asset?.FileName,
                 MimeType = b.Asset?.MimeType,

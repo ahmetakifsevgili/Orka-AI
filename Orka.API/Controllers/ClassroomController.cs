@@ -69,12 +69,27 @@ public class ClassroomController : ControllerBase
     [HttpPost("session")]
     public async Task<IActionResult> Start([FromBody] ClassroomStartRequest request)
     {
+        var surface = NormalizeSurface(request.Surface);
+        if (surface == "wiki" && request.SourceId.HasValue)
+        {
+            return BadRequest(new { message = "Wiki classroom sourceId ile baslatilamaz; kaynak canli sinifi OrkaLM yuzeyinde calisir." });
+        }
+
+        if (surface == "orkalm" && request.WikiPageId.HasValue)
+        {
+            return BadRequest(new { message = "OrkaLM classroom wikiPageId ile baslatilamaz; Wiki ders sinifi Wiki yuzeyinde calisir." });
+        }
+
         var session = await _classroom.StartSessionAsync(
             GetUserId(),
             request.TopicId,
             request.SessionId,
             request.AudioOverviewJobId,
             request.Transcript ?? string.Empty,
+            surface,
+            request.WikiPageId,
+            request.SourceId,
+            request.AudioMode,
             HttpContext.RequestAborted);
 
         return Ok(session);
@@ -101,6 +116,12 @@ public class ClassroomController : ControllerBase
 
         return File(audio.Value.Bytes, audio.Value.ContentType, $"interaction-{interactionId}.mp3");
     }
+
+    private static string NormalizeSurface(string? value)
+    {
+        var key = string.IsNullOrWhiteSpace(value) ? "wiki" : value.Trim().ToLowerInvariant();
+        return key is "orkalm" or "source" or "source_notebook" ? "orkalm" : "wiki";
+    }
 }
 
 public class ClassroomStartRequest
@@ -109,6 +130,10 @@ public class ClassroomStartRequest
     public Guid? SessionId { get; set; }
     public Guid? AudioOverviewJobId { get; set; }
     public string? Transcript { get; set; }
+    public string? Surface { get; set; }
+    public Guid? WikiPageId { get; set; }
+    public Guid? SourceId { get; set; }
+    public string? AudioMode { get; set; }
 }
 
 public class ClassroomAskRequest

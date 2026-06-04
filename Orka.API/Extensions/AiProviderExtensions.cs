@@ -9,6 +9,8 @@ using Orka.Core.Interfaces;
 using Orka.Infrastructure.Services;
 using System;
 using System.Net.Http;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Orka.API.Extensions
 {
@@ -22,7 +24,10 @@ namespace Orka.API.Extensions
             // Semantic Kernel Plugins
             services.AddScoped<WikiPlugin>();
             services.AddScoped<TopicPlugin>();
-            services.AddScoped<TavilySearchPlugin>();
+            if (configuration.GetValue("AI:Tavily:Enabled", true))
+            {
+                services.AddScoped<TavilySearchPlugin>();
+            }
             services.AddScoped<WikipediaPlugin>();
             services.AddScoped<AcademicSearchPlugin>();
             services.AddScoped<YouTubeTranscriptPlugin>();
@@ -45,16 +50,24 @@ namespace Orka.API.Extensions
             services.AddScoped<FileExtractionService>();
 
             // ── Named HttpClients + Microsoft.Extensions.Http.Resilience ──────────────────
-            services.AddHttpClient("GitHubModels", c => c.Timeout = TimeSpan.FromSeconds(20))
+            services.AddHttpClient("GitHubModels", c => c.Timeout = TimeSpan.FromSeconds(120))
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                    UseProxy = false,
+                    SslOptions =
+                    {
+                        EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                        ClientCertificates = new X509CertificateCollection()
+                    }
                 })
                 .AddStandardResilienceHandler(o =>
                 {
                     o.Retry.MaxRetryAttempts          = 1;
                     o.Retry.Delay                     = TimeSpan.FromMilliseconds(300);
-                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(20);
+                    o.AttemptTimeout.Timeout          = TimeSpan.FromSeconds(90);
+                    o.TotalRequestTimeout.Timeout     = TimeSpan.FromSeconds(120);
+                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
                     o.CircuitBreaker.MinimumThroughput = 2;
                 });
 
@@ -85,7 +98,7 @@ namespace Orka.API.Extensions
                 {
                     o.Retry.MaxRetryAttempts          = 1;
                     o.Retry.Delay                     = TimeSpan.FromMilliseconds(300);
-                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(20);
+                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
                 });
 
             services.AddHttpClient("OpenRouter", c => c.Timeout = TimeSpan.FromSeconds(20))
@@ -106,16 +119,24 @@ namespace Orka.API.Extensions
                     PooledConnectionLifetime = TimeSpan.FromMinutes(2)
                 });
 
-            services.AddHttpClient("Gemini", c => c.Timeout = TimeSpan.FromSeconds(12))
+            services.AddHttpClient("Gemini", c => c.Timeout = TimeSpan.FromSeconds(150))
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                    UseProxy = false,
+                    SslOptions =
+                    {
+                        EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                        ClientCertificates = new X509CertificateCollection()
+                    }
                 })
                 .AddStandardResilienceHandler(o =>
                 {
                     o.Retry.MaxRetryAttempts          = 1;
                     o.Retry.Delay                     = TimeSpan.FromMilliseconds(200);
-                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(20);
+                    o.AttemptTimeout.Timeout          = TimeSpan.FromSeconds(120);
+                    o.TotalRequestTimeout.Timeout     = TimeSpan.FromSeconds(150);
+                    o.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
                 });
 
             services.AddHttpClient("Tavily", c => c.Timeout = TimeSpan.FromSeconds(20))
@@ -243,6 +264,9 @@ namespace Orka.API.Extensions
 
             services.AddScoped<IGroqService, GroqService>();
             services.AddScoped<IGeminiService, GeminiService>();
+            services.AddScoped<IGeminiToolCallingService, GeminiToolCallingService>();
+            services.AddScoped<IGeminiFunctionDeclarationCatalog, GeminiFunctionDeclarationCatalog>();
+            services.AddScoped<IGeminiTutorToolAdvisoryService, GeminiTutorToolAdvisoryService>();
             services.AddScoped<IMistralService, MistralService>();
             services.AddScoped<IOpenRouterService, OpenRouterService>();
             services.AddScoped<ICerebrasService, CerebrasService>();
@@ -267,7 +291,11 @@ namespace Orka.API.Extensions
 
                 kernel.Plugins.AddFromObject(sp.GetRequiredService<WikiPlugin>());
                 kernel.Plugins.AddFromObject(sp.GetRequiredService<TopicPlugin>());
-                kernel.Plugins.AddFromObject(sp.GetRequiredService<TavilySearchPlugin>());
+                if (config.GetValue("AI:Tavily:Enabled", true) &&
+                    sp.GetService<TavilySearchPlugin>() is { } tavilyPlugin)
+                {
+                    kernel.Plugins.AddFromObject(tavilyPlugin);
+                }
                 kernel.Plugins.AddFromObject(sp.GetRequiredService<WikipediaPlugin>());
                 kernel.Plugins.AddFromObject(sp.GetRequiredService<AcademicSearchPlugin>());
                 kernel.Plugins.AddFromObject(sp.GetRequiredService<YouTubeTranscriptPlugin>());
