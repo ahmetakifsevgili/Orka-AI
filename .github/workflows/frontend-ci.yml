@@ -31,5 +31,11 @@ jobs:
       - name: Run typecheck
         run: npm run typecheck
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        run: npm run quick:smoke
+
       - name: Run build
         run: npm run build

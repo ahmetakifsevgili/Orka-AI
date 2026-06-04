@@ -80,6 +80,7 @@ const CLAIM_MARKERS = [
 ].map(normalizeText);
 
 const results = [];
+const dependencySnapshots = [];
 const created = {
   users: [],
   topics: [],
@@ -383,16 +384,96 @@ async function preflight() {
   const live = await request("GET", "/health/live", { safety: true, area: "Preflight" });
   assertOk(live, "Preflight", "/health/live");
 
-  const ready = await request("GET", "/health/ready", { safety: true, area: "Preflight" });
+  const ready = await requestWithRetry("GET", "/health/ready", {
+    safety: true,
+    area: "Preflight",
+    name: "/health/ready SQL/Redis readiness",
+  }, {
+    attempts: 3,
+    delayMs: 1500,
+  });
   const readyOk = assertOk(ready, "Preflight", "/health/ready SQL/Redis readiness", { optional: ALLOW_UNREADY });
   if (!readyOk && !ALLOW_UNREADY) {
     fail("Preflight", "hard stop", "API dependencies are not ready. Start SQL/Redis/API, or pass --allow-unready for investigation only.");
     await writeReport();
-    process.exit(1);
+    process.exitCode = 1;
+    return false;
   }
 
   const aggregate = await request("GET", "/health", { safety: true, area: "Preflight" });
   assertOk(aggregate, "Preflight", "/health aggregate", { optional: true, statusCodes: [200, 503] });
+
+  await captureDependencySnapshot();
+  return true;
+}
+
+async function requestWithRetry(method, url, requestOptions = {}, retryOptions = {}) {
+  const attempts = Math.max(1, retryOptions.attempts ?? 1);
+  const delayMs = Math.max(0, retryOptions.delayMs ?? 0);
+  let last = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    last = await request(method, url, requestOptions);
+    if (last.ok) return last;
+    if (attempt < attempts && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return last;
+}
+
+async function captureDependencySnapshot() {
+  const diagnostics = await request("GET", "/api/dev/diagnostics/config", {
+    safety: false,
+    area: "Preflight",
+    name: "development diagnostics",
+  });
+
+  if (!diagnostics.ok || !diagnostics.data) {
+    warn("Preflight", "SQL/Redis diagnostics snapshot unavailable", `status=${diagnostics.status}; allowed outside Development`);
+    return;
+  }
+
+  const database = diagnostics.data.database ?? {};
+  const redis = diagnostics.data.redis ?? {};
+  const providers = firstArray(diagnostics.data.providers);
+  const configuredProviders = providers.filter((provider) => provider?.configured).map((provider) => provider.name);
+
+  dependencySnapshots.push({
+    environment: diagnostics.data.environment,
+    database: {
+      provider: database.provider,
+      canConnect: Boolean(database.canConnect),
+      autoMigrateOnStartup: Boolean(database.autoMigrateOnStartup),
+    },
+    redis: {
+      status: redis.status,
+      connected: Boolean(redis.connected ?? redis.isConnected),
+      latencyMs: redis.latencyMs ?? redis.pingMs,
+      endpointCount: redis.endpointCount,
+    },
+    providers: {
+      configuredCount: configuredProviders.length,
+      configuredNames: configuredProviders,
+    },
+  });
+
+  if (database.canConnect) {
+    pass("Preflight", "SQL connectivity diagnostic", database.provider ?? "provider unknown");
+  } else {
+    fail("Preflight", "SQL connectivity diagnostic", database.error ?? "database cannot connect");
+  }
+
+  if (redis.connected || redis.isConnected || redis.status === "online") {
+    pass("Preflight", "Redis connectivity diagnostic", `status=${redis.status ?? "unknown"}, latency=${redis.latencyMs ?? redis.pingMs ?? "n/a"}ms`);
+  } else {
+    fail("Preflight", "Redis connectivity diagnostic", redis.error ?? redis.lastError ?? `status=${redis.status ?? "unknown"}`);
+  }
+
+  if (configuredProviders.length > 0) {
+    pass("Preflight", "AI provider configuration visible", configuredProviders.join(", "));
+  } else {
+    warn("Preflight", "AI provider configuration not present", "provider-backed Tutor/Classroom checks remain skipped unless configured");
+  }
 }
 
 async function registerPersona(slug, firstName, topicTitle, category) {
@@ -924,6 +1005,8 @@ async function writeReport() {
     allowUnready: ALLOW_UNREADY,
     skipCodeRun: SKIP_CODE_RUN,
     summary: { pass: passCount, warn: warnCount, fail: failCount, skip: skipCount },
+    dependencySnapshots,
+    featureCoverage: buildFeatureCoverage(),
     created,
     results,
   };
@@ -937,6 +1020,47 @@ async function writeReport() {
   return report;
 }
 
+function buildFeatureCoverage() {
+  const expectedAreas = [
+    "Preflight",
+    "Auth",
+    "Topic",
+    "Dashboard",
+    "LearningOS",
+    "LearningSignal",
+    "Quiz",
+    "Review",
+    "StudyRoom",
+    "Wiki",
+    "Source",
+    "SourceWikiPro",
+    "Notebook",
+    "Exam",
+    "CodeIDE",
+    "Production",
+    "Isolation",
+    "Coherence",
+    "Safety",
+    "Provider",
+  ];
+
+  return expectedAreas.map((area) => {
+    const areaResults = results.filter((result) => result.area === area || result.area.startsWith(`${area}:`));
+    const hardFailures = areaResults.filter((result) => result.status === "fail").length;
+    const warnings = areaResults.filter((result) => result.status === "warn").length;
+    const passes = areaResults.filter((result) => result.status === "pass").length;
+    const skips = areaResults.filter((result) => result.status === "skip").length;
+    return {
+      area,
+      status: hardFailures > 0 ? "fail" : passes > 0 ? "covered" : skips > 0 ? "skipped" : warnings > 0 ? "warning" : "not_observed",
+      pass: passes,
+      warn: warnings,
+      fail: hardFailures,
+      skip: skips,
+    };
+  });
+}
+
 function renderMarkdown(report) {
   const lines = [
     `# Orka Real-User Lifetest ${report.runId}`,
@@ -946,6 +1070,23 @@ function renderMarkdown(report) {
     `- Provider calls: ${report.includeAiProvider ? "enabled" : "disabled"}`,
     `- SQL/Redis readiness was ${report.allowUnready ? "allowed to be warning" : "required"}`,
     `- Summary: ${report.summary.pass} pass, ${report.summary.warn} warn, ${report.summary.fail} fail, ${report.summary.skip} skip`,
+    "",
+    "## Dependency Snapshot",
+    "",
+    report.dependencySnapshots.length === 0
+      ? "- SQL/Redis diagnostic snapshot was not available."
+      : report.dependencySnapshots.map((snapshot) => [
+          `- Environment: ${snapshot.environment ?? "unknown"}`,
+          `- SQL: ${snapshot.database.canConnect ? "connected" : "not connected"} (${snapshot.database.provider ?? "provider unknown"})`,
+          `- Redis: ${snapshot.redis.connected ? "connected" : "not connected"} (${snapshot.redis.status ?? "unknown"}, latency ${snapshot.redis.latencyMs ?? "n/a"}ms, endpoints ${snapshot.redis.endpointCount ?? "n/a"})`,
+          `- Configured AI providers: ${snapshot.providers.configuredCount > 0 ? snapshot.providers.configuredNames.join(", ") : "none"}`,
+        ].join("\n")).join("\n"),
+    "",
+    "## Feature Coverage",
+    "",
+    "| Area | Status | Pass | Warn | Fail | Skip |",
+    "|---|---|---:|---:|---:|---:|",
+    ...report.featureCoverage.map((coverage) => `| ${escapeMd(coverage.area)} | ${coverage.status} | ${coverage.pass} | ${coverage.warn} | ${coverage.fail} | ${coverage.skip} |`),
     "",
     "## Created Test Data",
     "",
@@ -973,7 +1114,8 @@ function escapeMd(value) {
 }
 
 async function main() {
-  await preflight();
+  const ready = await preflight();
+  if (!ready) return;
 
   const personas = {};
   if (PERSONA_FILTER.includes("new")) {
@@ -997,7 +1139,8 @@ async function main() {
   const failCount = report.summary.fail;
   if (failCount > 0) {
     console.error(`\nReal-user lifetest failed with ${failCount} hard failure(s).`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   console.log("\nReal-user lifetest completed without hard failures.");
 }
@@ -1005,5 +1148,5 @@ async function main() {
 main().catch(async (error) => {
   fail("Fatal", "unhandled lifetest error", error instanceof Error ? error.message : String(error));
   await writeReport();
-  process.exit(2);
+  process.exitCode = 2;
 });

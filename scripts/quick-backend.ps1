@@ -9,6 +9,10 @@ try {
 } catch {}
 Write-Host "[quick-backend] Active Git Branch: $branch | Commit: $commit"
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
+$env:MSBUILDDISABLENODEREUSE = "1"
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+$resultsRoot = Join-Path $root ".test-results\quick-backend"
+New-Item -ItemType Directory -Path $resultsRoot -Force | Out-Null
 $lifeTestFilter = "BackendLifeTests|PedagogicalReleaseClosureTests"
 $productCoherenceFilter = "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests"
 $regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|ProductionSafetyLiteTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
@@ -58,25 +62,25 @@ Write-Host "[quick-backend] Running backend lifetest release proof..."
     -TimeoutSeconds 180 `
     -WorkingDirectory $root `
     -FilePath $dotnet `
-    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $lifeTestFilter, "--blame-hang", "--blame-hang-timeout", "45s")
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "lifetest"), "--filter", $lifeTestFilter, "--blame-hang", "--blame-hang-timeout", "45s")
 
 Write-Host "[quick-backend] Running product coherence release proof..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `
     -TimeoutSeconds 300 `
     -WorkingDirectory $root `
     -FilePath $dotnet `
-    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $productCoherenceFilter, "--blame-hang", "--blame-hang-timeout", "60s")
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "product-coherence"), "--filter", $productCoherenceFilter, "--blame-hang", "--blame-hang-timeout", "60s")
 
 Write-Host "[quick-backend] Running stabilization regression baseline..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `
     -TimeoutSeconds 120 `
     -WorkingDirectory $root `
     -FilePath $dotnet `
-    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $regressionFilter, "--blame-hang", "--blame-hang-timeout", "30s")
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "regression"), "--filter", $regressionFilter, "--blame-hang", "--blame-hang-timeout", "30s")
 
 Write-Host "[quick-backend] Running coordination regression baseline..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `
     -TimeoutSeconds 120 `
     -WorkingDirectory $root `
     -FilePath $dotnet `
-    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "--filter", $coordinationFilter, "--blame-hang", "--blame-hang-timeout", "30s")
+    -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "coordination"), "--filter", $coordinationFilter, "--blame-hang", "--blame-hang-timeout", "30s")

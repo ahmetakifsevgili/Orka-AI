@@ -32,7 +32,7 @@ Gamification exposes `id`, `code`, `name`, `description`, `iconKey`, `ruleType`,
 Fields: `id`, `type`, `title`, `body`, `status`, `severity`, `relatedEntityType`, `relatedEntityId`, `channel`, `pushStatus`, `errorMessage`, `createdAt`, `readAt`, `expiresAt`. In-app rows are authoritative; Firebase push is optional.
 
 ## AudioOverview DTO
-Fields: `jobId`, `status`, `script`, `speakers[]`, `contentType`, `fileName`, `downloadUrl`, `fallbackReason`, `errorMessage`, `createdAt`, `updatedAt`. Status: `pending`, `generating`, `ready`, `script-only`, `failed`.
+Fields: `id`, `status`, `script`, `speakers[]`, `contentType`, `fileName`, `downloadUrl`, `fallbackReason`, `errorMessage`, `createdAt`, `updatedAt`. Status: `pending`, `generating`, `ready`, `script-only`, `failed`.
 
 ## Classroom DTO
 Session start is stable. Ask returns `classroomSessionId`, `interactionId`, `answer`, `answerScript`, and `speakers[]`; `answerScript` is the frontend-facing alias for the same script content as `answer`. Ask/audio are provider/TTS-dependent. Frontend should treat classroom answer/audio availability as stateful, not guaranteed immediate media.

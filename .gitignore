@@ -76,3 +76,8 @@ coverage.json
 *.trx
 *.binlog
 *.coverage
+
+# Local generated/reference workspace noise
+artifacts/
+repo/
+life_tests/reports/

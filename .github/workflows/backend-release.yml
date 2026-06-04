@@ -85,6 +85,10 @@ jobs:
         shell: pwsh
         run: dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
 
+      - name: EF migration drift gate
+        shell: pwsh
+        run: dotnet ef migrations has-pending-model-changes --project .\Orka.Infrastructure --startup-project .\Orka.API
+
       - name: Diff hygiene
         shell: pwsh
         run: git diff --check
