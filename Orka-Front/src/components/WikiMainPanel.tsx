@@ -1341,6 +1341,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         ttsQuality,
       });
       setAudioJob(job);
+      if (job.status === "script-only") {
+        toast("Ses dosyasi uretilemedi; guvenli transcript ve browser TTS modu hazir.", { icon: "i" });
+        return;
+      }
       if (job.status === "ready" || job.status === "completed") {
         toast.success("Sesli özet hazırlandı.");
       } else if (job.status === "failed" || job.errorMessage) {
@@ -3641,6 +3645,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                             sourceId={(audioJob.surface ?? (isOrkaLm ? "orkalm" : "wiki")) === "orkalm" ? audioJob.sourceId ?? activeSource?.id : undefined}
                             audioMode={audioJob.audioMode ?? "brief"}
                             captionTrack={audioJob.captionTrack}
+                            initialAudioUrl={audioBlobUrl}
                             onClose={() => setAudioClassroomOpen(false)}
                           />
                         )}

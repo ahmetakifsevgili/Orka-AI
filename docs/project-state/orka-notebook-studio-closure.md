@@ -20,6 +20,14 @@ Final audit doc: `docs/project-state/orka-notebook-studio-final-audit.md`
 - Pack artifacts include study guides, source digests, repair packs, worked examples, retrieval cards, audio overview/transcript, mind map, flashcard set, review quiz blueprint, and slide outline.
 - Uploaded sources feed OrkaLM through `SourceEvidenceLifecycleService`; source-backed claims require ready/mixed evidence.
 
+## Wiki / OrkaLM Isolation Contract
+
+- Wiki and OrkaLM are separate surfaces with shared feature parity, not automatic sync.
+- Source upload belongs only to OrkaLM.
+- Wiki artifacts use `surface=wiki`, `contextType=wiki_page`, and `wikiPageId`; OrkaLM artifacts use `surface=orkalm`, `contextType=source_notebook`, and `sourceId`.
+- `crossSurfaceSync=false` is the release default for artifacts, audio, graph, export, and classroom flows.
+- Any future "send OrkaLM artifact to Wiki" or "attach Wiki page to OrkaLM" behavior must be a separate explicit user-controlled phase, not background write-through.
+
 ## Phase Matrix
 
 | Phase | Closure state | Evidence | Remaining non-blocking limits |

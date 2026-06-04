@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Korteks;
@@ -147,6 +148,27 @@ public sealed class PlanDiagnosticTests
             harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId)));
     }
 
+    [Theory]
+    [InlineData("C# programlama", "temel syntax", "C# syntax single topic intro", 15)]
+    [InlineData("KPSS", "paragraf sorularinda hizlanmak", "KPSS exam paragraph practice", 20)]
+    [InlineData("SQL programlama", "index ve sorgu optimizasyonu", "SQL index query optimization learning path", 24)]
+    [InlineData("Java programlama", "algoritmalar ve veri yapilari", "Java algorithms and data structures learning path", 25)]
+    public void DiagnosticQuestionCountPolicy_UsesProductHeuristic(
+        string mainTopic,
+        string focusArea,
+        string researchIntent,
+        int expectedQuestionCount)
+    {
+        var method = typeof(PlanDiagnosticService).GetMethod(
+            "DetermineDiagnosticQuestionCount",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+        var count = (int)method!.Invoke(null, [mainTopic, focusArea, researchIntent])!;
+
+        Assert.Equal(expectedQuestionCount, count);
+    }
+
 
     [Theory]
     [InlineData(
@@ -201,6 +223,7 @@ public sealed class PlanDiagnosticTests
         Assert.Equal(0, harness.Korteks.CallCount);
         Assert.Equal(intent.ResearchIntent, start.ApprovedResearchIntent);
         Assert.NotEqual(rawRequest, start.ApprovedResearchIntent);
+        Assert.Equal(expectedQuestionCount, start.QuizQuestionCount);
         Assert.InRange(start.QuizQuestionCount, 15, 25);
         Assert.Equal(start.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(start.QuestionsJson));
         Assert.DoesNotContain("Dogru secenek", start.QuestionsJson, StringComparison.OrdinalIgnoreCase);

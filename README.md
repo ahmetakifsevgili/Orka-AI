@@ -195,7 +195,8 @@ npm run smoke:contracts
 npm run smoke:security
 npm run build
 $env:PLAYWRIGHT_PORT='3108'; npx playwright test e2e/notebook-studio-contract.spec.ts --reporter=list
-$env:PLAYWRIGHT_PORT='3109'; npx playwright test --reporter=list
+$env:PLAYWRIGHT_PORT='3109'; npm run smoke:browser -- --reporter=list
+powershell -ExecutionPolicy Bypass -File ..\scripts\life-proof.ps1
 ```
 
 `scripts/quick-backend.ps1` includes the Product Coherence test group:
@@ -257,7 +258,16 @@ npm run typecheck
 npm run smoke:ui
 npm run smoke:contracts
 npm run smoke:security
+npm run smoke:browser
 npm run build
+```
+
+Authenticated browser life proof is intentionally separate because it requires a
+running API and real auth/app-shell setup:
+
+```powershell
+cd D:/Orka
+powershell -ExecutionPolicy Bypass -File scripts\life-proof.ps1
 ```
 
 ## Important Documentation

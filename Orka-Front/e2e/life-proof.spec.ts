@@ -1,11 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-const runBrowserLifeProof = process.env.ORKA_ENABLE_BROWSER_LIFEPROOF === "true";
 const apiUrl = (process.env.ORKA_API_URL ?? "http://localhost:5065").replace(/\/$/, "");
 
 test.describe("Authenticated Orka browser life proof", () => {
-  test.skip(!runBrowserLifeProof, "Set ORKA_ENABLE_BROWSER_LIFEPROOF=true to run the authenticated browser life proof.");
-
   test("opens the logged-in app shell and verifies core learning surfaces", async ({ page, request }) => {
     const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17);
     const randomSuffix = Math.random().toString(36).slice(2, 8);

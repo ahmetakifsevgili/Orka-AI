@@ -24,6 +24,7 @@ interface ClassroomAudioPlayerProps {
   sourceId?: string | null;
   audioMode?: "brief" | "deep_dive" | "critique" | "debate" | string;
   captionTrack?: string;
+  initialAudioUrl?: string | null;
   onClose: () => void;
 }
 
@@ -205,6 +206,8 @@ const pickVoice = (
   return pool[0] || voices[0];
 };
 
+const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
 export default function ClassroomAudioPlayer({
   text,
   topicId,
@@ -215,6 +218,7 @@ export default function ClassroomAudioPlayer({
   sourceId,
   audioMode = "brief",
   captionTrack,
+  initialAudioUrl,
   onClose,
 }: ClassroomAudioPlayerProps) {
   const { t } = useLanguage();
@@ -281,26 +285,22 @@ export default function ClassroomAudioPlayer({
     }
   };
 
-  const tryPlayBackendAudio = async (interactionId?: string): Promise<boolean> => {
-    if (!interactionId) return false;
+  const playAudioUrl = async (audioUrl: string, revokeOnStop = false): Promise<boolean> => {
+    const audio = new Audio(audioUrl);
+
+    stopBackendAudio();
+    backendAudioRef.current = audio;
+    backendAudioUrlRef.current = revokeOnStop ? audioUrl : null;
+
+    audio.onended = () => {
+      stopBackendAudio();
+      setStatus("done");
+    };
+    audio.onerror = () => {
+      stopBackendAudio();
+    };
 
     try {
-      const response = await ClassroomAPI.getInteractionAudio(interactionId);
-      const audioUrl = URL.createObjectURL(response);
-      const audio = new Audio(audioUrl);
-
-      stopBackendAudio();
-      backendAudioRef.current = audio;
-      backendAudioUrlRef.current = audioUrl;
-
-      audio.onended = () => {
-        stopBackendAudio();
-        setStatus("done");
-      };
-      audio.onerror = () => {
-        stopBackendAudio();
-      };
-
       await audio.play();
       setStatus("playing");
       return true;
@@ -308,6 +308,25 @@ export default function ClassroomAudioPlayer({
       stopBackendAudio();
       return false;
     }
+  };
+
+  const tryPlayBackendAudio = async (interactionId?: string, attempts = 1): Promise<boolean> => {
+    if (!interactionId) return false;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const response = await ClassroomAPI.getInteractionAudio(interactionId);
+        const audioUrl = URL.createObjectURL(response);
+        return await playAudioUrl(audioUrl, true);
+      } catch {
+        stopBackendAudio();
+        if (attempt < attempts) {
+          await delay(900);
+        }
+      }
+    }
+
+    return false;
   };
 
   const speakLine = (idx: number, queuedLines: DialogueLine[] = linesRef.current) => {
@@ -350,6 +369,16 @@ export default function ClassroomAudioPlayer({
       }
       window.speechSynthesis.resume();
       setStatus("playing");
+      return;
+    }
+    if (initialAudioUrl) {
+      void playAudioUrl(initialAudioUrl, false).then((played) => {
+        if (!played) {
+          setStatus("playing");
+          setCurrentIdx(0);
+          speakLine(0, linesRef.current);
+        }
+      });
       return;
     }
     setStatus("playing");
@@ -409,7 +438,10 @@ export default function ClassroomAudioPlayer({
       setQuestion("");
       setCurrentIdx(startIndex);
 
-      const backendPlayed = await tryPlayBackendAudio(answer.interactionId);
+      const backendPlayed = await tryPlayBackendAudio(
+        answer.interactionId,
+        answer.audioQueued === false ? 1 : 6,
+      );
 
       if (!backendPlayed && supports && answerLines.length > 0) {
         window.speechSynthesis.cancel();

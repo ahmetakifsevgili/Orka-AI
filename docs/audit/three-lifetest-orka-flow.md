@@ -72,7 +72,7 @@ Actual:
 - Main topic: `SQL programlama`
 - Focus: `veritabani indeksleri ve sorgu optimizasyonu`
 - Research intent: `SQL programming database indexes and query optimization learning path`
-- Quiz count: 22
+- Quiz count: 24
 - Diagnostic summary includes known/weak split.
 
 Status: PASS

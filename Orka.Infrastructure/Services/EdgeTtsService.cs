@@ -23,6 +23,7 @@ public class EdgeTtsService : IEdgeTtsService
         var segments = AudioDialogueFormatter.ParseSegments(script);
         var combined = new MemoryStream();
         var settings = PlaybackSettingsFor(ttsQuality);
+        var failedSegments = 0;
 
         foreach (var (speaker, text) in segments)
         {
@@ -47,8 +48,12 @@ public class EdgeTtsService : IEdgeTtsService
                     LogPrivacyGuard.SafeMessage(speaker, 32),
                     LogPrivacyGuard.SafeTextRef(voiceName, "voice"),
                     LogPrivacyGuard.SafeExceptionType(ex));
+                failedSegments++;
             }
         }
+
+        if (failedSegments > 0)
+            throw new InvalidOperationException($"Edge-TTS {failedSegments}/{segments.Count} segment icin ses uretemedi.");
 
         if (combined.Length == 0)
             throw new InvalidOperationException("Edge-TTS hicbir segment icin ses uretemedi.");

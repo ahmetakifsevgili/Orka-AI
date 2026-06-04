@@ -3,7 +3,7 @@ import { AudioOverviewAPI } from "@/services/api";
 
 export interface AudioJob {
   id: string;
-  status: string; // "pending" | "processing" | "ready" | "failed" etc.
+  status: string;
   script: string;
   speakers: string[];
   surface?: string;
@@ -31,6 +31,20 @@ export interface AudioJob {
   updatedAt?: string | null;
 }
 
+const normalizeAudioStatus = (status?: string | null) =>
+  (status ?? "").trim().toLowerCase().replace("_", "-");
+
+const isTerminalAudioStatus = (status?: string | null) => {
+  const normalized = normalizeAudioStatus(status);
+  return normalized === "ready" ||
+    normalized === "completed" ||
+    normalized === "script-only" ||
+    normalized === "failed";
+};
+
+const isFailedAudioStatus = (status?: string | null) =>
+  normalizeAudioStatus(status) === "failed";
+
 export function useAudioOverviewPolling(
   initialJob: AudioJob | null = null,
   pollIntervalMs = 3000
@@ -38,12 +52,11 @@ export function useAudioOverviewPolling(
   const [job, setJob] = useState<AudioJob | null>(initialJob);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const timerRef = useRef<number | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
   const isMountedRef = useRef<boolean>(true);
 
-  // Setup isMounted tracker
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -77,46 +90,50 @@ export function useAudioOverviewPolling(
 
         setJob(currentJob);
 
-        if (currentJob.status === "ready" || currentJob.status === "completed") {
+        if (isFailedAudioStatus(currentJob.status)) {
+          setError(currentJob.errorMessage || "Sesli ozet hazirlanamadi.");
           stopPolling();
-        } else if (currentJob.status === "failed" || currentJob.errorMessage) {
-          setError(currentJob.errorMessage || "Sesli özet hazırlanamadı.");
+        } else if (isTerminalAudioStatus(currentJob.status)) {
+          setError(null);
           stopPolling();
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!isMountedRef.current) return;
         if (activeJobIdRef.current !== jobId) return;
         console.error("Audio overview polling error:", err);
-        setError("Sesli özet durumu sorgulanamadı.");
+        setError("Sesli ozet durumu sorgulanamadi.");
         stopPolling();
       }
     };
 
-    // Poll immediately, then set interval
     void poll();
     timerRef.current = window.setInterval(poll, pollIntervalMs);
   }, [stopPolling, pollIntervalMs]);
 
-  // Sync with initialJob if it changes
   useEffect(() => {
     if (initialJob) {
       if (isMountedRef.current) {
         setJob(initialJob);
       }
-      if (initialJob.status !== "ready" && initialJob.status !== "completed" && initialJob.status !== "failed" && !initialJob.errorMessage) {
+      if (!isTerminalAudioStatus(initialJob.status)) {
         startPolling(initialJob.id);
       } else {
+        if (isFailedAudioStatus(initialJob.status)) {
+          setError(initialJob.errorMessage || "Sesli ozet hazirlanamadi.");
+        } else {
+          setError(null);
+        }
         stopPolling();
       }
     } else {
       if (isMountedRef.current) {
         setJob(null);
+        setError(null);
       }
       stopPolling();
     }
   }, [initialJob, startPolling, stopPolling]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopPolling();
