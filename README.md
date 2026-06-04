@@ -1,26 +1,35 @@
 # Orka AI Learning OS
 
 Orka is a personal AI learning operating system for students. It connects Tutor,
-Mission Control, Study Rhythm Coach, Exam War Room, Source / Wiki Pro, AI Study
-Room, Notebook Studio Pro, Code Learning IDE, quiz, review, mastery, memory,
-dashboard, and release evaluation into one coherent learning product.
+Mission Control, Study Rhythm Coach, Exam War Room, Wiki, OrkaLM source study,
+AI Study Room, Notebook Studio Pro, Code Learning IDE, quiz, review, mastery,
+memory, dashboard, and release evaluation into one coherent learning product.
 
-This repository is currently in **Product Coherence Phase 1-11 closure**. The
-backend is feature-rich and strongly connected; the frontend now exposes a beta
-Learning OS shell. The correct readiness label is **controlled beta ready**, not
-unrestricted production-ready.
+This repository is now in the **OrkaOS v1 professional closure** state. The
+current codebase separates Wiki and OrkaLM as independent learning surfaces,
+keeps source upload only inside OrkaLM, and provides feature-parity contracts for
+study artifacts, metadata, graph, slide, diagram, export, and audio study flows
+without cross-surface sync.
+
+The current readiness label is **professional controlled release ready**:
+security/privacy gates, strict AI fallback behavior, diagnostic quality gates,
+Notebook Studio parity, audio context isolation, frontend browser evidence, and
+OrkaOS v1 documentation are in place. Public production launch still requires
+deployment-specific operations, monitoring, backup, quota, and live provider
+quality review.
 
 ## Current Verdict
 
-After the Product Coherence scan:
+After the OrkaOS v1 closure:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Backend richness | Excellent | Phase 1-9 contracts exist and are registered in the API container. |
-| Cross-module coherence | High | Unified state, Mission Control, Study Coach, Exam War Room, Source/Wiki, Study Room, Notebook, Code IDE, Tutor, Dashboard, quiz/review/memory share deterministic contracts. |
-| Frontend beta shell | Mostly ready | Home / Mission Control is now the first logged-in surface and routes to the core work modes. Some deeper legacy surfaces still need UX polish. |
-| Safety/privacy | High | Public contracts are designed to avoid raw prompts, provider payloads, source chunks, tool payloads, stack traces, local paths, secrets, unsafe ids, raw transcripts, and pre-submit answer keys. |
-| Release confidence | High for controlled beta | Provider-free tests and quick scripts cover Product Coherence gates. Live provider checks remain explicit opt-in. |
+| Backend richness | Excellent | Learning contracts, Notebook Studio parity, diagnostic quality gates, source/Wiki isolation, audio context contracts, and release services are registered. |
+| Cross-module coherence | High | Tutor, Mission Control, Study Coach, Exam War Room, Wiki, OrkaLM, Study Room, Notebook, Code IDE, Dashboard, quiz/review/memory share deterministic contracts. |
+| Wiki / OrkaLM separation | Explicit | Wiki remains normal lesson flow; OrkaLM owns source upload and source notebook study. The two surfaces share feature contracts but do not sync or feed each other. |
+| Frontend professional shell | Ready for controlled release | Browser-backed flows cover Notebook Studio parity, slide/UML/export previews, audio card state, captions, and classroom ask payload isolation. |
+| Safety/privacy | High | Public contracts avoid raw prompts, provider payloads, source chunks, tool payloads, stack traces, local paths, secrets, unsafe ids, raw transcripts, refresh tokens, and pre-submit answer keys. |
+| Release confidence | High for professional controlled release | Full API, infrastructure unit, frontend typecheck/build/smoke, and Playwright release evidence passed locally. Live provider checks remain explicit opt-in. |
 
 No official exam success, score, percentile, placement, curriculum alignment, or
 guarantee claim is made by this README or by the Product Coherence contracts.
@@ -86,7 +95,7 @@ Orka is not just a chatbot. The intended product loop is:
 1. The student opens Home / Mission Control.
 2. Orka explains what to do today and why.
 3. Orka routes the student to the best work mode: Tutor, Study Room, Review,
-   Quiz, Exam War Room, Sources/Wiki, Notebook Studio, Code IDE, or Progress.
+   Quiz, Exam War Room, Wiki, OrkaLM, Notebook Studio, Code IDE, or Progress.
 4. The action writes safe learning evidence through existing learning signal,
    mastery, memory, review, Wiki, source, artifact, or runtime paths.
 5. The next Home state reflects the updated evidence.
@@ -103,6 +112,8 @@ misconceptions, source support, or exam readiness.
 | Home / Mission Control | `OrkaMissionControlDto` | `GET /api/learning/mission-control` | Daily cockpit: primary mission, secondary actions, warnings, module cards, sections. |
 | Study Rhythm Coach | `OrkaStudyCoachDto` | `GET /api/learning/study-coach` | Workload, pace, focus plan, comeback plan, rhythm status. |
 | Exam War Room | `OrkaExamWarRoomDto` | `GET /api/central-exams/{examCode}/war-room` | Weak outcomes, deneme clusters, practice queue, exam repair handoffs. |
+| Wiki | Wiki / Notebook feature contracts | Wiki APIs and frontend Wiki surface | Normal lesson flow, concept pages, graph, metadata, text artifacts, slides, diagrams, export previews, and Wiki-scoped audio study. |
+| OrkaLM | Source notebook feature contracts | Source and Notebook Studio APIs | Source upload, citations, source notebook study, graph, metadata, text artifacts, slides, diagrams, export previews, and source-scoped audio study. |
 | Source / Wiki Pro | `OrkaSourceWikiProDto` | `GET /api/sources/wiki-pro` | Evidence readiness, citation warnings, Wiki repair, source-backed vs source-limited state. |
 | AI Study Room | `OrkaStudyRoomDto` | `GET /api/classroom/study-room` | Personal AI study session plan, lesson mode, checkpoint plan, safe traces. |
 | Notebook Studio Pro | `OrkaNotebookStudioProDto` | `GET /api/notebook-studio/pro` | Repair/review/exam/source/wiki/study-room/code packs and export previews. |
@@ -126,7 +137,8 @@ page. The main beta surfaces are:
 - Study Room
 - Review / Quiz
 - Exam War Room
-- Sources / Wiki Pro
+- Wiki
+- OrkaLM
 - Notebook Studio
 - Code Learning IDE
 - Progress / Memory
@@ -170,21 +182,20 @@ default. The main local checks are:
 ```powershell
 cd D:/Orka
 
-dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
-dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests" --no-restore --verbosity minimal
-dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
-dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
-dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
-dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
+dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore -m:1 -v:minimal
+dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore -m:1 -v:minimal
 
 powershell -ExecutionPolicy Bypass -File scripts\quick-backend.ps1
 powershell -ExecutionPolicy Bypass -File scripts\quick-coordination.ps1
 
 cd Orka-Front
 npm run typecheck
+npm run smoke:ui
+npm run smoke:contracts
+npm run smoke:security
 npm run build
-npm run quick:smoke
-npm run quick:frontend
+$env:PLAYWRIGHT_PORT='3108'; npx playwright test e2e/notebook-studio-contract.spec.ts --reporter=list
+$env:PLAYWRIGHT_PORT='3109'; npx playwright test --reporter=list
 ```
 
 `scripts/quick-backend.ps1` includes the Product Coherence test group:
@@ -243,9 +254,10 @@ http://localhost:3000
 cd D:/Orka/Orka-Front
 npm run dev
 npm run typecheck
+npm run smoke:ui
+npm run smoke:contracts
+npm run smoke:security
 npm run build
-npm run quick:smoke
-npm run quick:frontend
 ```
 
 ## Important Documentation
@@ -262,21 +274,26 @@ npm run quick:frontend
 - `docs/product/phase-11-frontend-redesign-brief.md` - frontend beta implementation brief.
 - `docs/product/orka-product-readiness-scorecard.md` - readiness/risk scorecard.
 - `docs/product/orka-existing-frontend-audit.md` - frontend audit and Phase 11 update.
+- `OrkaOSv1/01-OrkaOSv1-Arastirma-Pazar-Konumlandirma.md` - market, audience, and positioning research.
+- `OrkaOSv1/02-OrkaOSv1-Sistem-Mimarisi-Calisma-Prensipleri.md` - system architecture and operating principles.
+- `OrkaOSv1/03-OrkaOSv1-Ozellik-Katalogu-Model-Sistem-Baglantilari.md` - feature catalog, model roles, and system links.
+- `OrkaOSv1/04-OrkaOSv1-UML-Diyagramlar-Roadmap.md` - detailed and aggregate Mermaid/UML diagrams plus roadmap.
+- `OrkaOSv1/05-Dirty-Worktree-Commit-PR-Ayrim-Plani.md` - commit/PR split plan for the closure worktree.
 
 ## Known Limits Before Wider Production
 
-Controlled beta is credible, but these remain important before broad production:
+Professional controlled release is credible, but these remain important before broad production:
 
-- Run fresh browser visual QA with representative seeded learner data and
-  screenshots across key breakpoints.
-- Polish deeper legacy Wiki, Review/Quiz, and Progress/Memory surfaces after
-  initial beta feedback.
-- Expand Study Room checkpoint/session interaction beyond the compact contract
-  once real users validate the workflow.
+- Run deployment-specific monitoring, backup/restore, provider quota, and secret
+  rotation checks.
+- Keep human-reviewed live Tutor/provider quality evaluation as an explicit
+  launch gate.
+- Continue browser visual QA with representative seeded learner data across key
+  breakpoints after every major frontend pass.
 - Keep live provider checks opt-in and separate from CI unless a release
   decision explicitly enables them.
-- Review operational deployment, monitoring, backups, provider quotas, and
-  production secret policy separately from Product Coherence.
+- Treat any future Wiki-OrkaLM sync/feed as a separate architecture phase; the
+  current system intentionally keeps those surfaces isolated.
 
 ## License
 
