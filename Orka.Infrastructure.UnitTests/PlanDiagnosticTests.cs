@@ -1186,6 +1186,7 @@ public sealed class PlanDiagnosticTests
             (Guid AssessmentItemId, string AssessmentItemKey, string ConceptKey, string CognitiveSkill, string Difficulty, string MisconceptionTarget, string EvidenceExpected)? spec =
                 specs.Count == 0 ? null : specs[(i - 1) % specs.Count];
             var conceptKey = spec?.ConceptKey ?? $"concept-{i}";
+            var globalIndex = ExtractTrailingNumber(conceptKey) ?? i;
             var cognitiveSkill = spec?.CognitiveSkill ?? types[(i - 1) % types.Length];
             var code = i % 4 == 0 ? $"\n{BuildCodeSnippet(topic)}" : "";
             var itemKey = (spec?.AssessmentItemId.ToString("N") ?? Guid.NewGuid().ToString("N"))[..8];
@@ -1201,7 +1202,7 @@ public sealed class PlanDiagnosticTests
                 scoringRule = "selected_option_exact_match",
                 learningOutcomeIds = new[] { $"{conceptKey}-outcome" },
                 question = $"item-{itemKey} {conceptKey} icin {topic} seviye sorusu {i}: hangi karar, kanit veya risk once incelenmelidir?{code}",
-                options = BuildOptions(i),
+                options = BuildOptions(i, globalIndex),
                 correctAnswer = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.",
                 explanation = $"Aciklama {i}",
                 skillTag = conceptKey,
@@ -1217,7 +1218,7 @@ public sealed class PlanDiagnosticTests
         return System.Text.Json.JsonSerializer.Serialize(questions, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
     }
 
-    private static object[] BuildOptions(int i)
+    private static object[] BuildOptions(int i, int globalIndex)
     {
         var correct = new { text = "Kavrami, senaryoyu ve beklenen sonucu birlikte kontrol etmek.", isCorrect = true, rationale = "Matches the target evidence.", misconceptionKey = "" };
         var distractors = new object[]
@@ -1228,8 +1229,14 @@ public sealed class PlanDiagnosticTests
         };
 
         var options = new List<object>(distractors);
-        options.Insert((i - 1) % 4, correct);
+        options.Insert((globalIndex - 1) % 4, correct);
         return options.ToArray();
+    }
+
+    private static int? ExtractTrailingNumber(string value)
+    {
+        var match = Regex.Match(value, @"(\d+)$");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var number) ? number : null;
     }
 
     private static IEnumerable<(Guid AssessmentItemId, string AssessmentItemKey, string ConceptKey, string CognitiveSkill, string Difficulty, string MisconceptionTarget, string EvidenceExpected)> ExtractAssessmentSpecs(string prompt)
