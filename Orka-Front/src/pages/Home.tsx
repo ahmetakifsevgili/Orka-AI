@@ -33,6 +33,7 @@ const InteractiveIDE = lazy(() => import("@/components/InteractiveIDE"));
 const LearningPanel = lazy(() => import("@/components/LearningPanel"));
 const SplitPane = lazy(() => import("@/components/SplitPane"));
 import OrkaLMDashboard from "@/components/OrkaLMDashboard";
+import AgentDashboard from "@/components/AgentDashboard";
 
 const LoadingFallback = () => (
   <div className="flex-1 flex items-center justify-center h-full">
@@ -426,7 +427,7 @@ export default function Home({ initialView }: { initialView?: string }) {
       case "practice":
         return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="practice" onOpenChat={() => setActiveView("tutor")} onOpenIDE={() => setActiveView("code")} />;
       case "home":
-        return <MissionControlHome activeTopic={activeTopic} sessionId={sessionId} topics={topics} onViewChange={handleViewChange} />;
+        return <AgentDashboard />;
       case "study-room":
         return <StudyRoomPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
       case "exams":
