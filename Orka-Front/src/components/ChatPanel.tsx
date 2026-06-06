@@ -907,13 +907,13 @@ export default function ChatPanel({
   // ── Session loading spinner ────────────────────────────────────────────
   if (sessionLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-[#f7f9fa] h-full">
-        <div className="flex items-center gap-2.5">
+      <div className="flex-1 flex items-center justify-center h-full" style={{ background: "var(--orka-bg)" }}>
+        <div className="flex items-center gap-1.5">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-pulse"
-              style={{ animationDelay: `${i * 0.15}s` }}
+              className="w-1 h-1 rounded-full animate-pulse"
+              style={{ background: "var(--orka-text-4)", animationDelay: `${i * 0.15}s` }}
             />
           ))}
         </div>
@@ -927,87 +927,74 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#f7f9fa] h-full overflow-hidden">
-      {/* Topic Header — topic varsa adını, yoksa AI assistant markasını göster */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#526d82]/10/50">
-        <div className="flex items-center gap-2.5">
+    <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: "var(--orka-bg)" }}>
+      {/* Topic Header */}
+      <div
+        className="flex-shrink-0 flex items-center justify-between px-5 py-2.5"
+        style={{ borderBottom: "1px solid var(--orka-border)" }}
+      >
+        <div className="flex items-center gap-2">
           {activeTopic ? (
             <>
-              <span className="text-base">{activeTopic.emoji}</span>
-              <span className="text-sm font-medium text-[#172033]">
+              <span className="text-sm leading-none">{activeTopic.emoji}</span>
+              <span className="text-[13px] font-medium" style={{ color: "var(--orka-text)" }}>
                 {activeTopic.title}
               </span>
               {currentSubtopic && (
-                <div className="flex items-center gap-2 ml-2 pl-2 border-l border-[#526d82]/10">
-                  <span className="text-[11px] text-[#667085]">{'>'}</span>
-                  <span className="text-xs text-[#344054]">{currentSubtopic.title}</span>
-                  <div className="flex items-center gap-1.5 ml-2">
-                    <div className="w-16 h-1 bg-[#eef1f3] rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500/60 transition-all duration-500" style={{ width: `${currentSubtopic.progress}%` }} />
+                <div
+                  className="flex items-center gap-1.5 ml-2 pl-2"
+                  style={{ borderLeft: "1px solid var(--orka-border)" }}
+                >
+                  <span className="text-[11px]" style={{ color: "var(--orka-text-4)" }}>›</span>
+                  <span className="text-[12px]" style={{ color: "var(--orka-text-3)" }}>{currentSubtopic.title}</span>
+                  <div className="flex items-center gap-1 ml-1">
+                    <div
+                      className="w-12 h-px rounded-full overflow-hidden"
+                      style={{ background: "var(--orka-surface-3)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${currentSubtopic.progress}%`, background: "var(--orka-teal)", opacity: 0.6 }}
+                      />
                     </div>
-                    <span className="text-[9px] text-[#8ba8b5]">{currentSubtopic.index}/{currentSubtopic.total}</span>
+                    <span className="text-[10px]" style={{ color: "var(--orka-text-5)" }}>{currentSubtopic.index}/{currentSubtopic.total}</span>
                   </div>
                 </div>
               )}
             </>
           ) : (
             <>
-              <OrcaLogo className="w-4 h-4 text-[#667085]" />
-              <span className="text-sm font-medium text-[#344054]">
+              <OrcaLogo className="w-3.5 h-3.5" style={{ color: "var(--orka-text-4)" }} />
+              <span className="text-[13px] font-medium" style={{ color: "var(--orka-text-2)" }}>
                 Orka AI
               </span>
             </>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="hidden lg:block">
             <ToolCapabilityStrip compact />
           </div>
           {activeTopic && (
             <button
               onClick={() => onOpenWiki(activeTopic.id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#344054] hover:text-[#172033] hover:bg-[#eef1f3] transition-colors duration-150"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors"
+              style={{ color: "var(--orka-text-3)" }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text)";
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-2)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-3)";
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+              }}
             >
               <BookOpen className="w-3.5 h-3.5" />
               Wiki
             </button>
           )}
-
         </div>
       </div>
-
-      {/* Aktif Konu Göstergesi (U1) */}
-      <AnimatePresence>
-        {currentSubtopic && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-0 inset-x-0 z-10 flex justify-center pt-4 pointer-events-none"
-          >
-            <div className="bg-[#f7f9fa]/95 backdrop-blur border border-[#526d82]/10 rounded-full px-5 py-2 shadow-lg shadow-sm flex items-center gap-3">
-              <BookOpen className="w-4 h-4 text-emerald-500" />
-              <div className="flex items-center gap-2 text-xs font-medium">
-                <span className="text-[#344054]">{activeTopic?.title}</span>
-                <span className="text-[#8ba8b5]">❯</span>
-                <span className="text-[#172033]">{currentSubtopic.title}</span>
-              </div>
-
-              <div className="flex items-center gap-2 ml-4 pl-4 border-l border-[#526d82]/10">
-                <div className="text-[10px] text-[#667085] font-mono">
-                  {currentSubtopic.index} / {currentSubtopic.total}
-                </div>
-                <div className="w-16 h-1.5 bg-[#eef1f3] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full"
-                    style={{ width: `${currentSubtopic.progress}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
@@ -1044,15 +1031,21 @@ export default function ChatPanel({
               <AnimatePresence>
                 {isThinking && (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
+                    initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     className="flex items-center gap-3 mt-4"
                   >
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#eef1f3] border border-[#526d82]/10 flex items-center justify-center">
-                      <OrcaLogo className="w-4 h-4 text-[#344054]" animated={true} />
+                    <div
+                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center"
+                      style={{
+                        background: "var(--orka-teal-bg)",
+                        border: "1px solid var(--orka-teal-border)",
+                      }}
+                    >
+                      <OrcaLogo className="w-3.5 h-3.5" style={{ color: "var(--orka-teal)" }} animated={true} />
                     </div>
-                    <div className="pt-0">
+                    <div>
                       {planFlowStage !== "idle" ? (
                         <PlanFlowIndicator stage={planFlowStage} detail={planFlowDetail} />
                       ) : (
@@ -1065,154 +1058,182 @@ export default function ChatPanel({
             </div>
           </div>
 
-          {/* Floating Input Frame — agent command bar */}
-          <div className="flex-shrink-0 relative pointer-events-none">
-            <div className="max-w-3xl mx-auto w-full px-6 pb-8 pt-2 pointer-events-auto">
-          <motion.div
-            layout
-            initial={false}
-            className={`
-              glass-panel rounded-2xl border transition-all duration-500 shadow-2xl
-              ${isThinking ? "opacity-90 grayscale-[0.2]" : "opacity-100"}
-              ${isPlanMode ? "glow-silver-active" : (input.length > 0 ? "glow-silver border-zinc-500/20" : "border-[#526d82]/10 shadow-sm")}
-              bg-[#f7f9fa]/90 backdrop-blur-xl overflow-hidden
-            `}
-          >
-            <div className="px-4 py-3 flex items-end gap-3 relative">
-              <div className="relative">
-                <button
-                  onClick={() => setShowAttachmentMenu((prev) => !prev)}
-                  className="flex items-center justify-center w-8 h-8 rounded-full text-[#667085] hover:bg-[#eef1f3] hover:text-[#172033] transition-colors"
-                  title="Dosya Ekle veya Mod Seç"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
-                <AnimatePresence>
-                  {showAttachmentMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-xl shadow-xl border border-[#526d82]/15 overflow-hidden z-50"
+          {/* Input Frame */}
+          <div className="flex-shrink-0 pointer-events-none">
+            <div className="max-w-3xl mx-auto w-full px-5 pb-6 pt-2 pointer-events-auto">
+              <motion.div
+                layout
+                initial={false}
+                className={`glass-panel rounded-xl overflow-hidden transition-all duration-300 ${isThinking ? "opacity-75" : "opacity-100"} ${isPlanMode ? "glow-silver-active" : input.length > 0 ? "glow-silver" : ""}`}
+              >
+                <div className="px-3.5 py-3 flex items-end gap-2.5">
+                  {/* Plus menu */}
+                  <div className="relative flex-none">
+                    <button
+                      onClick={() => setShowAttachmentMenu((prev) => !prev)}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+                      style={{ color: "var(--orka-text-4)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--orka-text-2)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--orka-text-4)")}
+                      title="Mod sec"
                     >
-                      <div className="p-1">
-                        <button
-                          onClick={() => {
-                            setShowAttachmentMenu(false);
-                            toast.success("Dosya ekleme dialogu yakında eklenecek.");
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <AnimatePresence>
+                      {showAttachmentMenu && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                          transition={{ duration: 0.12 }}
+                          className="absolute bottom-full left-0 mb-2 w-52 rounded-xl overflow-hidden z-50"
+                          style={{
+                            background: "var(--orka-surface-2)",
+                            border: "1px solid var(--orka-border-2)",
+                            boxShadow: "var(--orka-shadow-lg)",
                           }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#344054] hover:bg-[#f7f9fa] rounded-lg transition-colors text-left"
                         >
-                          <FileText className="w-4 h-4 text-[#667085]" />
-                          <span>Dosya Ekle</span>
-                        </button>
-                        <div className="h-px bg-[#526d82]/10 my-1 mx-2" />
-                        <button
-                          onClick={() => {
-                            setIsPlanMode((prev) => !prev);
-                            setIsKorteksMode(false);
-                            setShowAttachmentMenu(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${isPlanMode ? "bg-[#dcecf3] text-[#172033]" : "text-[#344054] hover:bg-[#f7f9fa]"}`}
-                        >
-                          <Sparkles className={`w-4 h-4 ${isPlanMode ? "text-emerald-500" : "text-[#667085]"}`} />
-                          <span className="flex-1">Planlama Modu</span>
-                          {isPlanMode && <Check className="w-4 h-4 text-emerald-500" />}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsKorteksMode((prev) => !prev);
-                            setIsPlanMode(false);
-                            setShowAttachmentMenu(false);
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${isKorteksMode ? "bg-emerald-50 text-emerald-700" : "text-[#344054] hover:bg-[#f7f9fa]"}`}
-                        >
-                          <Globe className={`w-4 h-4 ${isKorteksMode ? "text-emerald-500" : "text-[#667085]"}`} />
-                          <span className="flex-1">Derin Araştırma Modu</span>
-                          {isKorteksMode && <Check className="w-4 h-4 text-emerald-500" />}
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                          <div className="p-1">
+                            <button
+                              onClick={() => { setShowAttachmentMenu(false); toast.success("Dosya ekleme yakinda."); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg text-left transition-colors"
+                              style={{ color: "var(--orka-text-2)" }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--orka-surface-3)")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                            >
+                              <FileText className="w-3.5 h-3.5 flex-none" style={{ color: "var(--orka-text-4)" }} />
+                              Dosya Ekle
+                            </button>
+                            <div className="h-px mx-2 my-1" style={{ background: "var(--orka-border)" }} />
+                            <button
+                              onClick={() => { setIsPlanMode((p) => !p); setIsKorteksMode(false); setShowAttachmentMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg text-left transition-colors"
+                              style={{
+                                color: isPlanMode ? "var(--orka-teal)" : "var(--orka-text-2)",
+                                background: isPlanMode ? "var(--orka-teal-bg)" : "transparent",
+                              }}
+                              onMouseEnter={(e) => { if (!isPlanMode) (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-3)"; }}
+                              onMouseLeave={(e) => { if (!isPlanMode) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                            >
+                              <Sparkles className="w-3.5 h-3.5 flex-none" />
+                              <span className="flex-1">Planlama Modu</span>
+                              {isPlanMode && <Check className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              onClick={() => { setIsKorteksMode((p) => !p); setIsPlanMode(false); setShowAttachmentMenu(false); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg text-left transition-colors"
+                              style={{
+                                color: isKorteksMode ? "var(--orka-teal)" : "var(--orka-text-2)",
+                                background: isKorteksMode ? "var(--orka-teal-bg)" : "transparent",
+                              }}
+                              onMouseEnter={(e) => { if (!isKorteksMode) (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-3)"; }}
+                              onMouseLeave={(e) => { if (!isKorteksMode) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                            >
+                              <Globe className="w-3.5 h-3.5 flex-none" />
+                              <span className="flex-1">Derin Arastirma</span>
+                              {isKorteksMode && <Check className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
 
-              <div className="flex-1 flex flex-col justify-center min-h-[44px]">
-                {(isPlanMode || isKorteksMode) && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-1"
-                  >
-                    <span className={`inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full w-max ${isKorteksMode ? "bg-emerald-100 text-emerald-700" : "bg-[#dcecf3] text-[#172033]"}`}>
-                      {isKorteksMode ? "Korteks Derin Araştırma" : "Planlama Modu"}
-                    </span>
-                  </motion.div>
-                )}
-                <textarea
-                  id="tour-chat-input"
-                  ref={textareaRef}
-                  value={input}
-                  onChange={handleTextareaChange}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    isKorteksMode
-                      ? "Araştırmamı istediğin konuyu yaz..."
-                      : isPlanMode
-                      ? "Bana bir konu ver; önce niyeti netleştireyim..."
-                      : "Bir şey sor veya müfredat oluşturmak için Plan Modu'nu aç..."
-                  }
-                  rows={1}
-                  disabled={isThinking}
-                  className="w-full bg-transparent resize-none outline-none text-[14px] text-[#172033] placeholder-[#8ba8b5] leading-relaxed max-h-[200px]"
-                />
-              </div>
+                  {/* Textarea column */}
+                  <div className="flex-1 flex flex-col min-h-[36px]">
+                    <AnimatePresence>
+                      {(isPlanMode || isKorteksMode) && (
+                        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-1">
+                          <span
+                            className="inline-block text-[10px] font-medium tracking-wider uppercase px-2 py-0.5 rounded-full w-max"
+                            style={{
+                              background: "var(--orka-teal-bg)",
+                              color: "var(--orka-teal)",
+                              border: "1px solid var(--orka-teal-border)",
+                            }}
+                          >
+                            {isKorteksMode ? "Derin Arastirma" : "Planlama Modu"}
+                          </span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <textarea
+                      id="tour-chat-input"
+                      ref={textareaRef}
+                      value={input}
+                      onChange={handleTextareaChange}
+                      onKeyDown={handleKeyDown}
+                      placeholder={
+                        isKorteksMode
+                          ? "Arastirmami istedigin konuyu yaz..."
+                          : isPlanMode
+                          ? "Bir konu ver; niyeti netlestireyim..."
+                          : "Bir sey sor..."
+                      }
+                      rows={1}
+                      disabled={isThinking}
+                      className="w-full bg-transparent resize-none outline-none text-[13.5px] leading-relaxed max-h-[200px]"
+                      style={{
+                        color: "var(--orka-text)",
+                      }}
+                    />
+                  </div>
 
-              <div className="flex items-center gap-3">
-                 <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block mb-1">
-                   {input.length > 0 ? "Shift+Enter yeni satır" : ""}
-                 </span>
-                 <button
-                  onClick={() => handleSend()}
-                  disabled={!input.trim() || isThinking}
-                  className={`
-                    flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200
-                    ${!input.trim() || isThinking
-                      ? "bg-[#eef1f3] text-[#8ba8b5] opacity-50 cursor-not-allowed"
-                      : "bg-[#172033] hover:bg-black text-white shadow-md"}
-                  `}
-                >
-                  <ArrowUp className="w-4 h-4 stroke-[2.5px]" />
-                </button>
-              </div>
-              <div className="hidden flex-wrap gap-2 border-t border-[#526d82]/10 pb-3 pt-2 md:flex">
-                {[
-                  { label: "Kaynağa göre sor", prompt: "Bu konuyu kaynaklarıma dayanarak açıkla ve kaynakta yoksa net söyle." },
-                  { label: "Örnekle anlat", prompt: "Bunu gerçek hayattan bir örnekle, sonra kısa bir kontrol sorusuyla anlat." },
-                  { label: "Görselleştir", prompt: "Bunu bir diagram, tablo veya zaman çizelgesiyle görselleştir." },
-                  { label: "Pratik üret", prompt: "Bu kavram için seviyeme uygun kısa bir pratik sorusu üret." },
-                ].map((action) => (
+                  {/* Send button */}
                   <button
-                    key={action.label}
-                    type="button"
-                    onClick={() => setCommandPrompt(action.prompt)}
-                    className="rounded-full border border-[#526d82]/12 bg-white/72 px-3 py-1 text-[10px] font-black text-[#52768a] transition hover:border-[#9ec7d9] hover:text-[#172033]"
+                    onClick={() => handleSend()}
+                    disabled={!input.trim() || isThinking}
+                    className="flex-none flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-150"
+                    style={{
+                      background: !input.trim() || isThinking ? "var(--orka-surface-3)" : "var(--orka-teal)",
+                      color: !input.trim() || isThinking ? "var(--orka-text-5)" : "#041210",
+                      cursor: !input.trim() || isThinking ? "not-allowed" : "pointer",
+                    }}
                   >
-                    {action.label}
+                    <ArrowUp className="w-3.5 h-3.5" strokeWidth={2.5} />
                   </button>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-          <p className="text-[9px] text-[#8ba8b5] mt-3 text-center tracking-wide uppercase opacity-50 font-medium">
-            Orka AI · canlı öğrenme ajanı · kaynak, araç ve kanıt izlenir
-          </p>
+                </div>
+
+                {/* Quick actions */}
+                <div
+                  className="hidden md:flex flex-wrap gap-1.5 px-3.5 pb-3 pt-0"
+                  style={{ borderTop: "1px solid var(--orka-border-3)" }}
+                >
+                  {[
+                    { label: "Kaynaktan acikla", prompt: "Bu konuyu kaynaklarima dayanarak acikla." },
+                    { label: "Ornek ver", prompt: "Bunu gercek hayattan bir ornekle anlat." },
+                    { label: "Gorselleştir", prompt: "Bunu bir diagram veya tablo ile gostermeye calis." },
+                    { label: "Pratik soru", prompt: "Bu kavram icin kisa bir pratik soru uret." },
+                  ].map((action) => (
+                    <button
+                      key={action.label}
+                      type="button"
+                      onClick={() => setCommandPrompt(action.prompt)}
+                      className="rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        border: "1px solid var(--orka-border)",
+                        color: "var(--orka-text-3)",
+                        background: "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+                        (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-2)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-3)";
+                        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      }}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
             </div>
           </div>
         </div>
 
-        <aside className="hidden min-h-0 w-[360px] shrink-0 border-l border-[#526d82]/10 bg-[#fbfcfd] 2xl:flex">
+        <aside className="hidden min-h-0 w-[360px] shrink-0 2xl:flex" style={{ borderLeft: "1px solid var(--orka-border)", background: "var(--orka-surface)" }}>
           <ArtifactCanvas artifacts={canvasArtifacts} learningArtifacts={workspaceState.recentArtifacts} />
         </aside>
         <AgentStatusRail
@@ -1251,87 +1272,129 @@ function PlanIntentConfirmationCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="my-4 ml-12 rounded-3xl border border-[#9ec7d9]/40 bg-white/86 p-5 shadow-[0_18px_48px_rgba(66,91,112,0.14)]"
+      className="my-4 ml-10 rounded-xl p-4"
+      style={{
+        background: "var(--orka-surface)",
+        border: "1px solid var(--orka-border)",
+        boxShadow: "var(--orka-shadow-md)",
+      }}
     >
       <div className="mb-4 flex items-start gap-3">
-        <div className="mt-0.5 rounded-2xl bg-[#dcecf3] p-2 text-[#2d5870]">
-          <Sparkles className="h-4 w-4" />
+        <div
+          className="mt-0.5 rounded-lg p-1.5 flex-none"
+          style={{ background: "var(--orka-teal-bg)", color: "var(--orka-teal)" }}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
         </div>
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.18em] text-[#667085]">Niyet analizi</div>
-          <h3 className="mt-1 text-lg font-black text-[#172033]">Korteks'e gitmeden once bunu onayla</h3>
-          <p className="mt-1 text-sm leading-6 text-[#526d82]">
+          <div className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--orka-text-4)" }}>Niyet analizi</div>
+          <h3 className="mt-1 text-[15px] font-semibold" style={{ color: "var(--orka-text)" }}>Korteks&apos;e gitmeden once onayla</h3>
+          <p className="mt-1 text-[13px] leading-5" style={{ color: "var(--orka-text-3)" }}>
             {intent.confirmationText || "Calisma niyetini ayirdim. Onay verirsen Korteks arastirmasi baslayacak."}
           </p>
-          <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-800">
+          <div
+            className="mt-2 inline-flex rounded-md px-2.5 py-1 text-[11px] font-medium"
+            style={{
+              background: "var(--orka-amber-bg)",
+              color: "var(--orka-amber)",
+              border: "1px solid rgba(245,158,11,0.18)",
+            }}
+          >
             Onay yoksa arastirma, quiz ve plan baslamaz
           </div>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         <IntentField label="Ana alan" value={intent.mainTopic} />
         <IntentField label="Odak konu" value={intent.focusArea} />
         <IntentField label="Amac" value={intent.studyGoal} />
-        <IntentField label="Korteks arastirma niyeti" value={intent.researchIntent} mono />
+        <IntentField label="Korteks niyeti" value={intent.researchIntent} mono />
       </div>
 
       {intent.clarifyingNotes?.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-4 py-3 text-xs leading-5 text-[#667085]">
+        <div
+          className="mt-3 rounded-lg px-3 py-2.5 text-[12px] leading-5"
+          style={{
+            background: "var(--orka-surface-2)",
+            border: "1px solid var(--orka-border-3)",
+            color: "var(--orka-text-3)",
+          }}
+        >
           {intent.clarifyingNotes.slice(0, 3).map((note) => (
-            <div key={note}>• {note}</div>
+            <div key={note}>· {note}</div>
           ))}
         </div>
       )}
 
-      <div className="mt-4 grid gap-2 rounded-2xl border border-[#9ec7d9]/25 bg-[#f7fbfd] p-3 text-xs text-[#526d82] sm:grid-cols-4">
+      <div
+        className="mt-3 grid gap-1.5 rounded-lg p-2.5 text-[12px] sm:grid-cols-4"
+        style={{
+          background: "var(--orka-surface-2)",
+          border: "1px solid var(--orka-border-3)",
+        }}
+      >
         {[
           ["1", "Niyet onayi"],
-          ["2", "Korteks arastirmasi"],
-          ["3", "15-25 soru seviye testi"],
-          ["4", "Kişisel plan"],
+          ["2", "Korteks"],
+          ["3", "Seviye testi"],
+          ["4", "Kisisel plan"],
         ].map(([step, label]) => (
-          <div key={step} className="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dcecf3] text-[11px] font-black text-[#2d5870]">
+          <div key={step} className="flex items-center gap-2 rounded-md px-2.5 py-1.5" style={{ background: "var(--orka-surface-3)" }}>
+            <span
+              className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold flex-none"
+              style={{ background: "var(--orka-teal-bg)", color: "var(--orka-teal)" }}
+            >
               {step}
             </span>
-            <span className="font-bold">{label}</span>
+            <span style={{ color: "var(--orka-text-3)" }}>{label}</span>
           </div>
         ))}
       </div>
 
       {isEditing && (
-        <div className="mt-4">
-          <label className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#667085]">
+        <div className="mt-3">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--orka-text-4)" }}>
             Duzeltme
           </label>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="min-h-[86px] w-full rounded-2xl border border-[#526d82]/15 bg-[#f7f9fa] px-4 py-3 text-sm text-[#172033] outline-none focus:border-[#9ec7d9] focus:ring-2 focus:ring-[#9ec7d9]/25"
-            placeholder="Ornek: Java programlamada algoritmalar ve veri yapilari calismak istiyorum"
+            className="min-h-[80px] w-full rounded-lg px-3 py-2.5 text-[13px] outline-none"
+            style={{
+              background: "var(--orka-surface-2)",
+              border: "1px solid var(--orka-border)",
+              color: "var(--orka-text)",
+            }}
+            placeholder="Ornek: Java algoritmalar calismak istiyorum"
           />
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           onClick={() => onConfirm(intent)}
           disabled={isBusy}
-          className="inline-flex items-center gap-2 rounded-full bg-[#172033] px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-[#2d5870] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12.5px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: "var(--orka-teal)", color: "#041210" }}
         >
-          <CheckCircle2 className="h-4 w-4" />
-          Onayla ve araştır
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Onayla ve arastir
         </button>
         <button
           onClick={() => (isEditing ? onRevise(draft) : setIsEditing(true))}
           disabled={isBusy}
-          className="inline-flex items-center gap-2 rounded-full border border-[#526d82]/15 bg-[#f7f9fa] px-4 py-2 text-xs font-black text-[#344054] transition hover:border-[#9ec7d9] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12.5px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            background: "var(--orka-surface-2)",
+            border: "1px solid var(--orka-border)",
+            color: "var(--orka-text-2)",
+          }}
         >
-          <Edit3 className="h-4 w-4" />
-          {isEditing ? "Duzeltmeyi analiz et" : "Duzelt"}
+          <Edit3 className="h-3.5 w-3.5" />
+          {isEditing ? "Analiz et" : "Duzelt"}
         </button>
         <button
           onClick={onReset}

@@ -33,13 +33,6 @@ function topicProgress(topic: ApiTopic) {
   return p;
 }
 
-function topicMeta(topic: ApiTopic) {
-  const p = topicProgress(topic);
-  if (p >= 100) return "tamamlandı";
-  if (p > 0) return `%${Math.round(p)}`;
-  return topic.category || "";
-}
-
 function formatDate(value?: string | Date | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -47,7 +40,6 @@ function formatDate(value?: string | Date | null) {
   return new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short" }).format(date);
 }
 
-/* Primary nav — excludes settings (goes to bottom) */
 const PRIMARY_NAV = APP_NAV_ITEMS.filter((i) => i.key !== "settings");
 
 export default function LeftSidebar({
@@ -75,66 +67,62 @@ export default function LeftSidebar({
     let cancelled = false;
     setLoading(true);
     TopicsAPI.getAll()
-      .then((response) => {
-        if (!cancelled) setLocalTopics(response.data as ApiTopic[]);
-      })
-      .catch(() => {
-        if (!cancelled) setLocalTopics(topics);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .then((r) => { if (!cancelled) setLocalTopics(r.data as ApiTopic[]); })
+      .catch(() => { if (!cancelled) setLocalTopics(topics); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [refreshTrigger, topics]);
 
   const isExpanded = isPinned || isHovered;
   const activeKey = normalizeAppView(activeView);
+  const W = isExpanded ? 240 : 56;
 
   const recentTopics = useMemo(
     () =>
       localTopics
         .filter((t) => !t.parentTopicId)
         .sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() - new Date(a.updatedAt ?? a.createdAt ?? 0).getTime())
-        .slice(0, 10),
+        .slice(0, 12),
     [localTopics],
   );
-
-  const W = isExpanded ? 252 : 60;
 
   return (
     <motion.aside
       animate={{ width: W }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative z-20 flex h-screen shrink-0 flex-col bg-[#f7f9fa] border-r border-[#eef1f3]"
+      className="relative z-20 flex h-screen shrink-0 flex-col"
       style={{
-        boxShadow: "2px 0 12px rgba(0,0,0,0.02)",
+        background: "var(--orka-bg)",
+        borderRight: "1px solid var(--orka-border)",
       }}
     >
-      <div className="flex h-full min-h-0 flex-col py-4">
-        {/* Logo + pin toggle */}
-        <div className="mb-5 flex items-center justify-between px-3">
+      <div className="flex h-full min-h-0 flex-col py-3">
+
+        {/* Logo + pin */}
+        <div className="mb-4 flex items-center justify-between px-3">
           <button
             type="button"
             onClick={() => onViewChange("home")}
-            className="flex min-w-0 items-center gap-2.5 rounded-lg p-1 outline-none focus-visible:ring-2 focus-visible:ring-[#6ed7ce]/40"
+            className="flex min-w-0 items-center gap-2 rounded-lg p-1 outline-none focus-visible:ring-1 focus-visible:ring-[#6ed7ce]/40"
             aria-label="Orka home"
           >
             <span
-              className="grid h-7 w-7 flex-none place-items-center rounded-lg"
+              className="grid h-6 w-6 flex-none place-items-center rounded-md"
               style={{ background: "#6ed7ce" }}
             >
-              <OrcaLogo className="h-4 w-4" style={{ color: "#041210" }} />
+              <OrcaLogo className="h-3.5 w-3.5" style={{ color: "#041210" }} />
             </span>
             <AnimatePresence>
               {isExpanded && (
                 <motion.span
-                  initial={{ opacity: 0, x: -4 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -4 }}
-                  transition={{ duration: 0.15 }}
-                  className="text-[15px] font-bold tracking-tight text-[#172033]"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12 }}
+                  className="text-[14px] font-semibold tracking-tight"
+                  style={{ color: "var(--orka-text)" }}
                 >
                   Orka
                 </motion.span>
@@ -150,8 +138,9 @@ export default function LeftSidebar({
                 exit={{ opacity: 0 }}
                 type="button"
                 onClick={() => setIsPinned((v) => !v)}
-                className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[#667085] transition hover:bg-[#eef1f3] hover:text-[#344054]"
-                aria-label={isPinned ? "Sidebar'ı küçült" : "Sidebar'ı sabitle"}
+                className="grid h-6 w-6 flex-none place-items-center rounded-md transition"
+                style={{ color: "var(--orka-text-4)" }}
+                aria-label={isPinned ? "Daralt" : "Sabitle"}
               >
                 <PanelLeft className="h-3.5 w-3.5" />
               </motion.button>
@@ -159,19 +148,27 @@ export default function LeftSidebar({
           </AnimatePresence>
         </div>
 
-        {/* New topic button */}
-        <div className="mb-4 px-2">
+        {/* New chat button */}
+        <div className="mb-3 px-2">
           <button
             type="button"
             onClick={() => onTopicClick(null, "chat")}
-            className="flex h-9 w-full items-center gap-2.5 rounded-xl border px-3 text-[13px] font-medium transition"
+            className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium transition"
             style={{
-              border: "1px solid rgba(110,215,206,0.2)",
-              background: "rgba(110,215,206,0.06)",
-              color: "#6ed7ce",
+              border: "1px solid var(--orka-border)",
+              background: "var(--orka-surface-2)",
+              color: "var(--orka-text-2)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--orka-border-2)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--orka-border)";
             }}
           >
-            <Plus className="h-4 w-4 flex-none" />
+            <Plus className="h-3.5 w-3.5 flex-none" style={{ color: "var(--orka-text-3)" }} />
             <AnimatePresence>
               {isExpanded && (
                 <motion.span
@@ -188,7 +185,7 @@ export default function LeftSidebar({
           </button>
         </div>
 
-        {/* Primary nav */}
+        {/* Nav items */}
         <nav className="space-y-0.5 px-2" aria-label="Ana navigasyon">
           {PRIMARY_NAV.map((item) => {
             const Icon = item.icon;
@@ -199,27 +196,28 @@ export default function LeftSidebar({
                 type="button"
                 onClick={() => onViewChange(item.view)}
                 title={!isExpanded ? item.label : undefined}
-                className={[
-                  "group relative flex h-9 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium transition-all",
-                  active
-                    ? "text-[#172033]"
-                    : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
-                ].join(" ")}
-                style={active ? {
-                  background: `rgba(${item.accent === "#6ed7ce" ? "110,215,206" : item.accent === "#a7e879" ? "167,232,121" : item.accent === "#b4a0f0" ? "180,160,240" : item.accent === "#dac17a" ? "218,193,122" : "255,255,255"}, 0.09)`,
-                } : {}}
+                className="group relative flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-all"
+                style={{
+                  background: active ? "var(--orka-surface-3)" : "transparent",
+                  color: active ? "var(--orka-text)" : "var(--orka-text-3)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-2)";
+                    (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                    (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-3)";
+                  }
+                }}
                 aria-current={active ? "page" : undefined}
               >
-                {/* Active left bar */}
-                {active && (
-                  <span
-                    className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full"
-                    style={{ background: item.accent }}
-                  />
-                )}
                 <Icon
-                  className="h-4 w-4 flex-none"
-                  style={{ color: active ? item.accent : undefined }}
+                  className="h-3.5 w-3.5 flex-none shrink-0"
+                  style={{ color: active ? "var(--orka-teal)" : undefined }}
                 />
                 <AnimatePresence>
                   {isExpanded && (
@@ -227,7 +225,7 @@ export default function LeftSidebar({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.12 }}
+                      transition={{ duration: 0.1 }}
                       className="min-w-0 truncate"
                     >
                       {item.label}
@@ -239,28 +237,37 @@ export default function LeftSidebar({
           })}
         </nav>
 
+        {/* Divider */}
+        <div className="mx-3 my-3" style={{ height: "1px", background: "var(--orka-border-3)" }} />
+
         {/* Recent topics */}
-        <div className="mt-4 min-h-0 flex-1 overflow-hidden px-2">
+        <div className="min-h-0 flex-1 overflow-hidden px-2">
           <AnimatePresence>
             {isExpanded && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="mb-2 flex items-center justify-between px-1"
+                className="mb-1.5 flex items-center justify-between px-1"
               >
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#667085]">
-                  Geçmiş Sohbetler
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-widest"
+                  style={{ color: "var(--orka-text-4)" }}
+                >
+                  Geçmiş
                 </span>
-                {loading && <Loader2 className="h-3 w-3 animate-spin text-[#3a403d]" />}
+                {loading && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--orka-text-4)" }} />}
               </motion.div>
             )}
           </AnimatePresence>
 
-          <div className="sidebar-scrollbar h-full space-y-0.5 overflow-y-auto">
+          <div className="sidebar-scrollbar h-full space-y-0.5 overflow-y-auto pb-2">
             {recentTopics.length === 0 && !loading && isExpanded && (
-              <div className="rounded-xl px-3 py-3 text-[12px] leading-5 text-[#3a403d]">
-                İlk dersi başlat; Orka çalışma alanını hazırlar.
+              <div
+                className="rounded-lg px-2.5 py-2.5 text-[12px] leading-5"
+                style={{ color: "var(--orka-text-4)" }}
+              >
+                Henuz sohbet yok.
               </div>
             )}
 
@@ -275,22 +282,33 @@ export default function LeftSidebar({
                   type="button"
                   onClick={() => onTopicClick(topic, "chat")}
                   title={!isExpanded ? topic.title : undefined}
-                  className={[
-                    "group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition",
-                    selected
-                      ? "bg-[#6ed7ce]/8 text-[#172033] ring-1 ring-[#6ed7ce]/18"
-                      : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
-                  ].join(" ")}
+                  className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition"
+                  style={{
+                    background: selected ? "var(--orka-surface-3)" : "transparent",
+                    color: selected ? "var(--orka-text)" : "var(--orka-text-3)",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-2)";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!selected) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-3)";
+                    }
+                  }}
                 >
                   {/* Avatar */}
                   <span
-                    className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[11px] font-bold"
+                    className="grid h-5 w-5 flex-none place-items-center rounded text-[10px] font-bold shrink-0"
                     style={{
-                      background: selected ? "rgba(110,215,206,0.12)" : "rgba(255,255,255,0.04)",
-                      color: selected ? "#6ed7ce" : "#5a6360",
+                      background: selected ? "var(--orka-teal-bg)" : "var(--orka-surface-3)",
+                      color: selected ? "var(--orka-teal)" : "var(--orka-text-4)",
                     }}
                   >
-                    {emoji.slice(0, 2)}
+                    {emoji.slice(0, 1)}
                   </span>
 
                   <AnimatePresence>
@@ -299,29 +317,35 @@ export default function LeftSidebar({
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.12 }}
+                        transition={{ duration: 0.1 }}
                         className="min-w-0 flex-1"
                       >
-                        <span className="block truncate text-[13px] font-medium">
-                          {topic.title || "Başlıksız çalışma"}
+                        <span className="block truncate text-[12.5px] font-medium">
+                          {topic.title || "Basliksiz"}
                         </span>
-                        <span className="flex items-center gap-1.5 text-[11px] text-[#3a403d]">
-                          {topicMeta(topic) && <span>{topicMeta(topic)}</span>}
-                          {formatDate(topic.updatedAt ?? topic.createdAt) && (
+                        <span
+                          className="flex items-center gap-1 text-[11px]"
+                          style={{ color: "var(--orka-text-5)" }}
+                        >
+                          {formatDate(topic.updatedAt ?? topic.createdAt)}
+                          {progress > 0 && progress < 100 && (
                             <>
-                              <span className="h-0.5 w-0.5 rounded-full bg-[#3a403d]" />
-                              <span>{formatDate(topic.updatedAt ?? topic.createdAt)}</span>
+                              <span>·</span>
+                              <span>{Math.round(progress)}%</span>
                             </>
                           )}
                         </span>
-                        {/* Progress bar */}
                         {progress > 0 && progress < 100 && (
-                          <span className="mt-1.5 block h-0.5 w-full overflow-hidden rounded-full bg-white/6">
+                          <span
+                            className="mt-1 block h-px w-full overflow-hidden rounded-full"
+                            style={{ background: "var(--orka-surface-3)" }}
+                          >
                             <span
                               className="block h-full rounded-full"
                               style={{
                                 width: `${progress}%`,
-                                background: "linear-gradient(90deg, #6ed7ce, #a7e879)",
+                                background: "var(--orka-teal)",
+                                opacity: 0.6,
                               }}
                             />
                           </span>
@@ -331,7 +355,10 @@ export default function LeftSidebar({
                   </AnimatePresence>
 
                   {isExpanded && selected && (
-                    <ChevronRight className="h-3.5 w-3.5 flex-none text-[#6ed7ce]" />
+                    <ChevronRight
+                      className="h-3 w-3 flex-none shrink-0"
+                      style={{ color: "var(--orka-teal)" }}
+                    />
                   )}
                 </button>
               );
@@ -339,20 +366,34 @@ export default function LeftSidebar({
           </div>
         </div>
 
-        {/* Bottom — settings + user */}
-        <div className="mt-3 border-t px-2 pt-3" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        {/* Bottom — settings + logout */}
+        <div
+          className="mt-2 px-2 pt-2"
+          style={{ borderTop: "1px solid var(--orka-border-3)" }}
+        >
           <button
             type="button"
             onClick={() => onViewChange("settings")}
             title={!isExpanded ? "Ayarlar" : undefined}
-            className={[
-              "mb-2 flex h-9 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium transition",
-              activeView === "settings"
-                ? "bg-white/8 text-[#172033]"
-                : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
-            ].join(" ")}
+            className="mb-1 flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] font-medium transition"
+            style={{
+              background: activeView === "settings" ? "var(--orka-surface-3)" : "transparent",
+              color: activeView === "settings" ? "var(--orka-text)" : "var(--orka-text-3)",
+            }}
+            onMouseEnter={(e) => {
+              if (activeView !== "settings") {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--orka-surface-2)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeView !== "settings") {
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-3)";
+              }
+            }}
           >
-            <SettingsIcon className="h-4 w-4 flex-none" />
+            <SettingsIcon className="h-3.5 w-3.5 flex-none" />
             <AnimatePresence>
               {isExpanded && (
                 <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -364,12 +405,16 @@ export default function LeftSidebar({
 
           {/* User row */}
           <div
-            className="flex items-center gap-2.5 rounded-xl p-2"
-            style={{ background: "rgba(255,255,255,0.03)" }}
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5"
+            style={{ background: "var(--orka-surface-2)" }}
           >
             <div
-              className="grid h-8 w-8 flex-none place-items-center rounded-lg text-[12px] font-bold text-[#172033]"
-              style={{ background: "rgba(110,215,206,0.12)", border: "1px solid rgba(110,215,206,0.2)" }}
+              className="grid h-6 w-6 flex-none place-items-center rounded text-[11px] font-bold shrink-0"
+              style={{
+                background: "var(--orka-teal-bg)",
+                border: "1px solid var(--orka-teal-border)",
+                color: "var(--orka-teal)",
+              }}
             >
               A
             </div>
@@ -381,8 +426,12 @@ export default function LeftSidebar({
                   exit={{ opacity: 0 }}
                   className="min-w-0 flex-1"
                 >
-                  <p className="truncate text-[13px] font-medium text-[#172033]">Öğrenci</p>
-                  <p className="text-[11px] text-[#3a403d]">Ücretsiz plan</p>
+                  <p
+                    className="truncate text-[12.5px] font-medium"
+                    style={{ color: "var(--orka-text-2)" }}
+                  >
+                    Ogrenci
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -395,8 +444,9 @@ export default function LeftSidebar({
                   type="button"
                   onClick={onLogout}
                   disabled={logoutLoading}
-                  className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[#3a403d] transition hover:bg-white/6 hover:text-[#8f9894] disabled:opacity-40"
-                  aria-label="Çıkış yap"
+                  className="grid h-6 w-6 flex-none place-items-center rounded transition disabled:opacity-40"
+                  style={{ color: "var(--orka-text-4)" }}
+                  aria-label="Cikis yap"
                 >
                   {logoutLoading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

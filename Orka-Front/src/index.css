@@ -4,171 +4,153 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ─── Orka Design Tokens — Dark First ─────────────────────────────────────── */
+/* ─── Orka Design Tokens ─────────────────────────────────────────────────── */
 :root {
   color-scheme: dark;
 
-  /* Core palette */
-  --orka-bg:           #070809;
-  --orka-bg-2:         #0a0c0e;
-  --orka-surface:      #0d1014;
-  --orka-surface-2:    #111418;
-  --orka-surface-3:    #161b1f;
+  /* Core backgrounds */
+  --orka-bg:        #09090b;
+  --orka-bg-2:      #0c0c0f;
+  --orka-surface:   #111113;
+  --orka-surface-2: #161618;
+  --orka-surface-3: #1c1c1f;
 
   /* Borders */
-  --orka-border:       rgba(255, 255, 255, 0.08);
-  --orka-border-2:     rgba(255, 255, 255, 0.12);
-  --orka-border-3:     rgba(255, 255, 255, 0.06);
+  --orka-border:    rgba(255,255,255,0.07);
+  --orka-border-2:  rgba(255,255,255,0.11);
+  --orka-border-3:  rgba(255,255,255,0.04);
 
-  /* Text */
-  --orka-text:         #f4f6f3;
-  --orka-text-2:       #c8cfca;
-  --orka-text-3:       #8f9894;
-  --orka-text-4:       #5a6360;
-  --orka-text-5:       #3a403d;
+  /* Text hierarchy */
+  --orka-text:      #fafafa;
+  --orka-text-2:    #a1a1aa;
+  --orka-text-3:    #71717a;
+  --orka-text-4:    #52525b;
+  --orka-text-5:    #3f3f46;
 
-  /* Accent — Teal (primary action, tutor) */
+  /* Single accent — teal */
   --orka-teal:         #6ed7ce;
-  --orka-teal-2:       #8ce6df;
-  --orka-teal-bg:      rgba(110, 215, 206, 0.08);
-  --orka-teal-border:  rgba(110, 215, 206, 0.18);
+  --orka-teal-2:       #8ee6df;
+  --orka-teal-bg:      rgba(110,215,206,0.07);
+  --orka-teal-border:  rgba(110,215,206,0.16);
 
-  /* Accent — Green (progress, success) */
-  --orka-green:        #a7e879;
-  --orka-green-bg:     rgba(167, 232, 121, 0.08);
-  --orka-green-border: rgba(167, 232, 121, 0.18);
-
-  /* Accent — Gold (warning, source quality) */
-  --orka-gold:         #dac17a;
-  --orka-gold-bg:      rgba(218, 193, 122, 0.08);
-  --orka-gold-border:  rgba(218, 193, 122, 0.18);
-
-  /* Accent — Purple (quiz, assessment) */
-  --orka-purple:       #b4a0f0;
-  --orka-purple-bg:    rgba(180, 160, 240, 0.08);
-  --orka-purple-border:rgba(180, 160, 240, 0.18);
-
-  /* Accent — Red (error, blocked) */
-  --orka-red:          #ff7b7b;
-  --orka-red-bg:       rgba(255, 123, 123, 0.08);
-  --orka-red-border:   rgba(255, 123, 123, 0.18);
+  /* Status accents — used sparingly */
+  --orka-green:        #4ade80;
+  --orka-green-bg:     rgba(74,222,128,0.07);
+  --orka-amber:        #f59e0b;
+  --orka-amber-bg:     rgba(245,158,11,0.07);
+  --orka-red:          #f87171;
+  --orka-red-bg:       rgba(248,113,113,0.07);
 
   /* Shadows */
-  --orka-shadow-sm:    0 4px 16px rgba(0, 0, 0, 0.24);
-  --orka-shadow-md:    0 12px 40px rgba(0, 0, 0, 0.32);
-  --orka-shadow-lg:    0 24px 80px rgba(0, 0, 0, 0.44);
-  --orka-shadow-glow-teal: 0 0 32px rgba(110, 215, 206, 0.2);
+  --orka-shadow-sm:   0 2px 8px rgba(0,0,0,0.32);
+  --orka-shadow-md:   0 8px 24px rgba(0,0,0,0.44);
+  --orka-shadow-lg:   0 20px 60px rgba(0,0,0,0.56);
+  --orka-glow-teal:   0 0 24px rgba(110,215,206,0.14);
 
   /* Radius */
-  --radius: 0.75rem;
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
+  --radius:    0.625rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
 
-  /* Tailwind compat tokens */
-  --background:              var(--orka-bg);
-  --foreground:              var(--orka-text);
-  --card:                    var(--orka-surface);
-  --card-foreground:         var(--orka-text);
-  --popover:                 var(--orka-surface);
-  --popover-foreground:      var(--orka-text);
-  --primary:                 var(--orka-teal);
-  --primary-foreground:      #041210;
-  --secondary:               var(--orka-surface-2);
-  --secondary-foreground:    var(--orka-text-2);
-  --muted:                   var(--orka-surface-2);
-  --muted-foreground:        var(--orka-text-3);
-  --accent:                  var(--orka-teal);
-  --accent-foreground:       #041210;
-  --destructive:             var(--orka-red);
-  --destructive-foreground:  var(--orka-text);
-  --border:                  var(--orka-border);
-  --input:                   rgba(255, 255, 255, 0.08);
-  --ring:                    rgba(110, 215, 206, 0.32);
+  /* Tailwind compat */
+  --background:           var(--orka-bg);
+  --foreground:           var(--orka-text);
+  --card:                 var(--orka-surface);
+  --card-foreground:      var(--orka-text);
+  --popover:              var(--orka-surface);
+  --popover-foreground:   var(--orka-text);
+  --primary:              var(--orka-teal);
+  --primary-foreground:   #041210;
+  --secondary:            var(--orka-surface-2);
+  --secondary-foreground: var(--orka-text-2);
+  --muted:                var(--orka-surface-2);
+  --muted-foreground:     var(--orka-text-3);
+  --accent:               var(--orka-teal);
+  --accent-foreground:    #041210;
+  --destructive:          var(--orka-red);
+  --destructive-foreground: var(--orka-text);
+  --border:               var(--orka-border);
+  --input:                rgba(255,255,255,0.07);
+  --ring:                 rgba(110,215,206,0.28);
 
-  /* Chart */
   --chart-1: var(--orka-teal);
   --chart-2: var(--orka-green);
-  --chart-3: var(--orka-gold);
-  --chart-4: var(--orka-purple);
+  --chart-3: var(--orka-amber);
+  --chart-4: #a78bfa;
   --chart-5: var(--orka-red);
 
-  /* Sidebar */
-  --sidebar:                 #080a0b;
-  --sidebar-foreground:      var(--orka-text);
-  --sidebar-accent:          rgba(255, 255, 255, 0.05);
-  --sidebar-accent-foreground: var(--orka-text);
-  --sidebar-border:          var(--orka-border-3);
-  --sidebar-ring:            rgba(110, 215, 206, 0.32);
+  --sidebar:                  #08080a;
+  --sidebar-foreground:       var(--orka-text);
+  --sidebar-accent:           rgba(255,255,255,0.04);
+  --sidebar-accent-foreground:var(--orka-text);
+  --sidebar-border:           var(--orka-border-3);
+  --sidebar-ring:             rgba(110,215,206,0.28);
 
   /* Legacy compat */
-  --mist-bg:     var(--orka-bg);
-  --mist-bg-2:   var(--orka-bg-2);
-  --paper:       var(--orka-surface);
-  --ink:         var(--orka-text);
-  --ink-soft:    var(--orka-text-2);
-  --muted-text:  var(--orka-text-3);
-  --line:        var(--orka-border);
-  --line-strong: var(--orka-border-2);
-  --brand-blue:  var(--orka-teal);
-  --brand-green: var(--orka-green);
-  --brand-gold:  var(--orka-gold);
+  --mist-bg:    var(--orka-bg);
+  --mist-bg-2:  var(--orka-bg-2);
+  --paper:      var(--orka-surface);
+  --ink:        var(--orka-text);
+  --ink-soft:   var(--orka-text-2);
+  --muted-text: var(--orka-text-3);
+  --line:       var(--orka-border);
+  --line-strong:var(--orka-border-2);
+  --brand-blue: var(--orka-teal);
+  --brand-green:var(--orka-green);
+  --brand-gold: var(--orka-amber);
 
-  /* Font scale */
   --font-scale: 1;
 }
 
-/* ─── Animations ─────────────────────────────────────────────────────────── */
+/* ─── @theme ────────────────────────────────────────────────────────────── */
 @theme inline {
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+
+  --color-background:             var(--background);
+  --color-foreground:             var(--foreground);
+  --color-card:                   var(--card);
+  --color-card-foreground:        var(--card-foreground);
+  --color-popover:                var(--popover);
+  --color-popover-foreground:     var(--popover-foreground);
+  --color-primary:                var(--primary);
+  --color-primary-foreground:     var(--primary-foreground);
+  --color-secondary:              var(--secondary);
+  --color-secondary-foreground:   var(--secondary-foreground);
+  --color-muted:                  var(--muted);
+  --color-muted-foreground:       var(--muted-foreground);
+  --color-accent:                 var(--accent);
+  --color-accent-foreground:      var(--accent-foreground);
+  --color-destructive:            var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
+  --color-border:                 var(--border);
+  --color-input:                  var(--input);
+  --color-ring:                   var(--ring);
+  --color-sidebar:                var(--sidebar);
+  --color-sidebar-foreground:     var(--sidebar-foreground);
+  --color-sidebar-accent:         var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border:         var(--sidebar-border);
+  --color-sidebar-ring:           var(--sidebar-ring);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --animate-pulse-slow:  pulse 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-spin-slow:   spin 12s linear infinite;
-  --animate-fade-in:     fade-in 0.4s ease forwards;
-  --animate-slide-up:    slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-fade-in:  fade-in  0.3s ease forwards;
+  --animate-slide-up: slide-up 0.4s cubic-bezier(0.16,1,0.3,1) forwards;
 
   @keyframes fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
   }
-
   @keyframes slide-up {
-    from { opacity: 0; transform: translateY(16px); }
+    from { opacity: 0; transform: translateY(12px); }
     to   { opacity: 1; transform: translateY(0); }
   }
 }
@@ -178,26 +160,24 @@ html {
   scroll-behavior: smooth;
   scrollbar-gutter: stable;
   color-scheme: dark;
+  background: var(--orka-bg);
 }
 
-html[data-font-size="small"]  { font-size: calc(14px * 0.875); }
+html[data-font-size="small"]  { font-size: 13px; }
 html[data-font-size="medium"] { font-size: 14px; }
-html[data-font-size="large"]  { font-size: calc(14px * 1.125); }
+html[data-font-size="large"]  { font-size: 15px; }
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 18% 0%,   rgba(110, 215, 206, 0.07), transparent 28rem),
-    radial-gradient(circle at 100% 18%, rgba(167, 232, 121, 0.045), transparent 30rem),
-    linear-gradient(180deg, #0a0c0e 0%, #070809 58%, #050607 100%);
+  background: var(--orka-bg);
   color: var(--orka-text);
-  font-family: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Inter", "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: rgba(110, 215, 206, 0.22);
+  background: rgba(110,215,206,0.18);
   color: var(--orka-text);
 }
 
@@ -209,108 +189,112 @@ body {
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
   [type="submit"]:not(:disabled),
-  [type="reset"]:not(:disabled),
   a[href],
-  select:not(:disabled),
-  input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled) {
+  select:not(:disabled) {
     @apply cursor-pointer;
   }
 }
 
-/* ─── Orka Component Classes ─────────────────────────────────────────────── */
+/* ─── Component utilities ────────────────────────────────────────────────── */
 @layer components {
-  /* Backgrounds */
+  /* App shell */
   .orka-bg {
-    background:
-      radial-gradient(circle at 22% 0%,  rgba(110, 215, 206, 0.07), transparent 34rem),
-      radial-gradient(circle at 82% 10%, rgba(167, 232, 121, 0.05), transparent 30rem),
-      linear-gradient(180deg, #0a0c0e 0%, #070809 100%);
+    background: var(--orka-bg);
   }
 
-  /* Grid pattern */
+  /* Subtle grid overlay */
   .mist-grid {
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent);
+      linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 100% 70% at 50% 0%, black 40%, transparent 100%);
   }
 
-  /* Glass surfaces */
+  /* Glass surface */
   .orka-glass {
-    background: rgba(13, 16, 20, 0.72);
+    background: rgba(17,17,19,0.82);
     border: 1px solid var(--orka-border);
-    box-shadow: var(--orka-shadow-md), inset 0 1px 0 rgba(255,255,255,0.035);
-    backdrop-filter: blur(18px) saturate(120%);
-    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
   }
 
   .orka-card {
-    background: rgba(13, 16, 20, 0.88);
+    background: var(--orka-surface);
     border: 1px solid var(--orka-border);
-    box-shadow: var(--orka-shadow-sm);
     border-radius: var(--radius-lg);
   }
 
   .orka-surface {
-    background: rgba(17, 20, 24, 0.7);
+    background: var(--orka-surface-2);
     border: 1px solid var(--orka-border-3);
   }
 
-  .orka-panel {
-    background: rgba(13, 16, 20, 0.9);
+  /* Input bar glass */
+  .glass-panel {
+    background: rgba(17,17,19,0.88);
+    backdrop-filter: blur(20px) saturate(130%);
+    -webkit-backdrop-filter: blur(20px) saturate(130%);
     border: 1px solid var(--orka-border);
-    box-shadow: var(--orka-shadow-lg);
   }
 
-  .orka-muted-panel {
-    background: rgba(11, 13, 16, 0.6);
-    border: 1px solid var(--orka-border-3);
-  }
-
-  /* Button */
+  /* Primary button */
   .orka-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    height: 2.25rem;
-    padding: 0 1rem;
+    height: 2.125rem;
+    padding: 0 0.875rem;
     border-radius: var(--radius-md);
     font-size: 0.8125rem;
-    font-weight: 600;
+    font-weight: 500;
     background: var(--orka-teal);
     color: #041210;
-    border: none;
-    transition: background 150ms ease, transform 150ms ease;
+    transition: opacity 150ms ease, transform 100ms ease;
   }
-  .orka-button:hover {
-    background: var(--orka-teal-2);
-    transform: translateY(-1px);
-  }
+  .orka-button:hover { opacity: 0.88; transform: translateY(-1px); }
 
-  /* Glow effects */
-  .orka-glow-teal {
-    box-shadow: var(--orka-shadow-glow-teal);
-  }
-  .glow-silver {
-    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
-  }
-  .glow-silver-active {
-    border-color: rgba(110, 215, 206, 0.28) !important;
-    box-shadow: 0 20px 52px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(110, 215, 206, 0.12), 0 0 34px rgba(110, 215, 206, 0.06);
-  }
-  .orka-soft-shadow { box-shadow: var(--orka-shadow-sm); }
+  /* Glow helpers */
+  .orka-glow-teal    { box-shadow: var(--orka-glow-teal); }
+  .orka-soft-shadow  { box-shadow: var(--orka-shadow-sm); }
   .orka-float-shadow { box-shadow: var(--orka-shadow-md); }
 
-  /* Container */
+  /* Active input bar state */
+  .glow-silver-active {
+    border-color: rgba(110,215,206,0.22) !important;
+    box-shadow: 0 0 0 1px rgba(110,215,206,0.10), 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .glow-silver {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.44);
+  }
+
+  /* Prose overrides */
+  .orka-app-shell .prose,
+  .orka-app-shell .prose-invert,
+  .prose-orka {
+    --tw-prose-body:           #d4d4d8;
+    --tw-prose-headings:       #fafafa;
+    --tw-prose-links:          #8ee6df;
+    --tw-prose-bold:           #fafafa;
+    --tw-prose-counters:       #71717a;
+    --tw-prose-bullets:        #6ed7ce;
+    --tw-prose-hr:             rgba(255,255,255,0.08);
+    --tw-prose-quotes:         #a1a1aa;
+    --tw-prose-quote-borders:  rgba(110,215,206,0.36);
+    --tw-prose-code:           #fafafa;
+    --tw-prose-pre-code:       #e4e4e7;
+    --tw-prose-pre-bg:         #111113;
+    --tw-prose-th-borders:     rgba(255,255,255,0.12);
+    --tw-prose-td-borders:     rgba(255,255,255,0.07);
+  }
+
   .container {
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
   @media (min-width: 640px) {
     .container { padding-left: 1.5rem; padding-right: 1.5rem; }
@@ -318,89 +302,23 @@ body {
   @media (min-width: 1024px) {
     .container { padding-left: 2rem; padding-right: 2rem; max-width: 1280px; }
   }
-
-  /* Utility */
-  .orka-focus {
-    outline: 2px solid rgba(110, 215, 206, 0.4);
-    outline-offset: 2px;
-  }
-  .orka-reveal { will-change: transform, opacity; }
-}
-
-/* ─── App shell overrides ─────────────────────────────────────────────────── */
-.orka-app-shell {
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
-}
-
-.orka-app-shell .prose,
-.orka-app-shell .prose-invert {
-  --tw-prose-body:         #d7ddd8;
-  --tw-prose-headings:     #f4f6f3;
-  --tw-prose-links:        #8ce6df;
-  --tw-prose-bold:         #f4f6f3;
-  --tw-prose-counters:     #8f9894;
-  --tw-prose-bullets:      #6ed7ce;
-  --tw-prose-hr:           rgba(255, 255, 255, 0.1);
-  --tw-prose-quotes:       #c8cfca;
-  --tw-prose-quote-borders:rgba(110, 215, 206, 0.42);
-  --tw-prose-code:         #f4f6f3;
-  --tw-prose-pre-code:     #e7ebe5;
-  --tw-prose-pre-bg:       #0a0c0e;
-  --tw-prose-th-borders:   rgba(255, 255, 255, 0.14);
-  --tw-prose-td-borders:   rgba(255, 255, 255, 0.08);
-}
-
-/* prose-orka utility */
-.prose-orka {
-  --tw-prose-body:         #d7ddd8;
-  --tw-prose-headings:     #f4f6f3;
-  --tw-prose-links:        #8ce6df;
-  --tw-prose-bold:         #f4f6f3;
-  --tw-prose-counters:     #8f9894;
-  --tw-prose-bullets:      #6ed7ce;
-  --tw-prose-hr:           rgba(255, 255, 255, 0.1);
-  --tw-prose-quotes:       #c8cfca;
-  --tw-prose-quote-borders:rgba(110, 215, 206, 0.42);
-  --tw-prose-code:         #f4f6f3;
-  --tw-prose-pre-code:     #e7ebe5;
-  --tw-prose-pre-bg:       #0a0c0e;
-  --tw-prose-th-borders:   rgba(255, 255, 255, 0.14);
-  --tw-prose-td-borders:   rgba(255, 255, 255, 0.08);
-}
-
-/* glass-panel backward compat */
-.glass-panel {
-  background: rgba(13, 16, 20, 0.72);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
-  border: 1px solid var(--orka-border);
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+::-webkit-scrollbar              { width: 7px; height: 7px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: rgba(255,255,255,0.1); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover  { background: rgba(255,255,255,0.18); }
 
-.sidebar-scrollbar::-webkit-scrollbar { width: 4px; }
-.sidebar-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-}
-.sidebar-scrollbar {
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
-  scrollbar-width: thin;
-}
+.sidebar-scrollbar::-webkit-scrollbar       { width: 3px; }
+.sidebar-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
+.sidebar-scrollbar { scrollbar-color: rgba(255,255,255,0.08) transparent; scrollbar-width: thin; }
 
 /* ─── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
 }
