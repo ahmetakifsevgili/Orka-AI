@@ -65,7 +65,7 @@ test.describe("Authenticated Orka browser life proof", () => {
 
     await page.goto("/app");
     await expect(page).toHaveURL(/\/app/);
-    await expect(page.getByText("Home / Mission Control")).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText("Ana Kokpit")).toBeVisible({ timeout: 20000 });
     const introClose = page.getByRole("button", { name: "Close" });
     if (await introClose.isVisible().catch(() => false)) {
       await introClose.click();

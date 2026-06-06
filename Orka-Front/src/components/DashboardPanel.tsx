@@ -230,7 +230,7 @@ function planAction(action?: string | null): { label: string; view: GuidanceActi
     case "wiki_review":
       return { label: "Wiki’den tekrar et", view: "wiki" };
     case "practice_quiz":
-      return { label: "Pratik çöz", view: "practice" };
+      return { label: "Review / Quiz", view: "practice" };
     case "source_check":
       return { label: "Kaynakları kontrol et", view: "sources" };
     case "prerequisite_review":
@@ -263,7 +263,7 @@ function buildWeakConceptActionQueue(input: {
         ? `${concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor."} · ${signalLabel}`
         : concept.userSafeStatus || "Bu kavram daha fazla tekrar istiyor.",
       reason: concept.masteryProbability != null
-        ? `Mastery tahmini %${Math.round(concept.masteryProbability * 100)}.`
+        ? "Öğrenme sinyali güncellendi."
         : concept.remediationSeed?.reason ?? "Son öğrenme sinyallerinde telafi ihtiyacı görünüyor.",
       actionLabel: action.label,
       actionView: action.view,
@@ -422,8 +422,8 @@ function deriveGuidance(today: DashboardTodayDto | null, fallback: {
   if (fallback.weakSkill) {
     return {
       title: "Zayıf kavramı toparla",
-      reason: `${fallback.weakSkill} için son cevaplarda zayıf sinyal var. Tutor ile kısa telafi iyi olur.`,
-      actionLabel: "Tutor ile toparla",
+      reason: `${fallback.weakSkill} için son cevaplarda zayıf sinyal var. Kısa telafi iyi olur.`,
+      actionLabel: "Ask Tutor",
       actionView: "chat",
       evidence: "Quiz ve sinyal kanıtı",
     };
@@ -562,7 +562,7 @@ function WeakConceptActionQueue({
 
       {items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[#526d82]/16 bg-[#f7f9fa]/58 px-3 py-3 text-xs leading-6 text-[#667085]">
-          Henüz zayıf kavram tespit edilmedi. Biraz daha quiz/chat kullandıkça Orka çalışma kuyruğunu oluşturur.
+          Henuz zayif kavram tespit edilmedi. Quiz, Tutor ve Sources / Wiki sinyalleri geldikce Orka repair onerilerini olusturur.
         </p>
       ) : (
         <div className="space-y-2.5">
@@ -1126,6 +1126,136 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
     }
   };
 
+  if ((mode as string) === "progress") {
+    return (
+      <div className="flex h-full flex-col overflow-y-auto bg-[#090b0d] text-[#f4f6f3]">
+        <header className="border-b border-white/[0.08] bg-[#0d1012]/78 px-6 py-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6ed7ce]">
+                <Award className="h-4 w-4" />
+                Öğrenme karnesi
+              </div>
+              <h1 className="mt-2 text-[28px] font-semibold tracking-[-0.01em] text-[#f4f6f3]">İlerleme</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#9aa3a0]">
+                Sahte yüzde değil; konu sinyali, kaynak sağlığı ve sıradaki güvenli adım burada toplanır.
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8f9894]">Doğruluk</p>
+              <p className="mt-1 text-2xl font-semibold text-[#a7e879]">%{accuracy}</p>
+            </div>
+          </div>
+        </header>
+
+        <main className="grid gap-4 px-6 py-5">
+          <section className="grid min-h-[560px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0f10] shadow-[0_24px_80px_rgba(0,0,0,0.22)] xl:grid-cols-[270px_minmax(0,1fr)_300px]">
+            <aside className="border-b border-white/[0.08] bg-[#080a0b] p-4 xl:border-b-0 xl:border-r">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6ed7ce]">Öğrenme sinyali</p>
+              <h3 className="mt-1 text-sm font-semibold text-[#f4f6f3]">{weakSkills.length} zayıf sinyal</h3>
+              <div className="mt-4 grid gap-2">
+                {weakSkills.slice(0, 5).map((skill, index) => (
+                  <div key={`${skill.skillTag}-${index}`} className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                    <div className="truncate text-sm font-semibold text-[#f4f6f3]">{skill.skillTag}</div>
+                    <p className="mt-1 truncate text-xs text-[#9aa3a0]">{skill.topicPath || "Konu sinyali"}</p>
+                  </div>
+                ))}
+                {weakSkills.length === 0 && (
+                  <p className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3 text-sm leading-6 text-[#9aa3a0]">
+                    Zayıf kavram listesi henüz oluşmadı. İlk ders veya mini quizden sonra burası dolacak.
+                  </p>
+                )}
+              </div>
+            </aside>
+
+            <section className="min-w-0 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8f9894]">Bugünkü odak</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.01em] text-[#f4f6f3]">{todayFocusTitle}</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[#9aa3a0]">{todayFocusReason}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onViewChange(todayGuidance.actionView)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#e9f0ea] px-4 py-2.5 text-sm font-black text-[#0b0f0e] transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#6ed7ce]/45"
+                >
+                  <MessageSquareText className="h-4 w-4" />
+                  {todayGuidance.actionLabel}
+                </button>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-white/[0.08] bg-[#111517] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#f4f6f3]">{todayGuidance.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#9aa3a0]">{todayGuidance.reason}</p>
+                  </div>
+                  <span className="rounded-lg border border-white/[0.08] bg-white/[0.045] px-2 py-1 text-[11px] font-bold text-[#aeb6b2]">
+                    {todayGuidance.evidence}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                    <div className="text-xs text-[#8f9894]">Tamamlanan bölüm</div>
+                    <div className="mt-1 text-xl font-semibold text-[#f4f6f3]">{completedLessons}/{totalLessons || 0}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                    <div className="text-xs text-[#8f9894]">Quiz</div>
+                    <div className="mt-1 text-xl font-semibold text-[#f4f6f3]">{correctCount}/{totalQuizzes}</div>
+                  </div>
+                  <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                    <div className="text-xs text-[#8f9894]">Seri</div>
+                    <div className="mt-1 text-xl font-semibold text-[#f4f6f3]">{activeStreak} gün</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/[0.08] bg-[#111517] p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#f4f6f3]">
+                  <ShieldCheck className="h-4 w-4 text-[#6ed7ce]" />
+                  Kaynak sağlığı
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#9aa3a0]">{sourceHealthLabel}</p>
+                <p className="mt-1 text-xs leading-5 text-[#8f9894]">{sourceHealthDetail}</p>
+              </div>
+            </section>
+
+            <aside className="border-t border-white/[0.08] bg-[#080a0b] p-4 xl:border-l xl:border-t-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8f9894]">Bellek ve yol</p>
+              <div className="mt-3 grid gap-2">
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                  <div className="text-xs text-[#8f9894]">Aktif konu</div>
+                  <div className="mt-1 truncate text-sm font-semibold text-[#f4f6f3]">{activeLessonTitle ?? nextTopic?.title ?? "Henüz seçilmedi"}</div>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                  <div className="text-xs text-[#8f9894]">Sonraki küçük adım</div>
+                  <div className="mt-1 text-sm font-semibold leading-5 text-[#f4f6f3]">{nextSmallStep}</div>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                  <div className="text-xs text-[#8f9894]">Çalışma yolu</div>
+                  <div className="mt-1 text-sm font-semibold text-[#f4f6f3]">{topics.length}</div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-[#f4f6f3]">Son sinyaller</h3>
+                <div className="mt-3 grid gap-2">
+                  {recentSignals.slice(0, 4).map((signal, index) => (
+                    <div key={`${signal.signalType}-${index}`} className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
+                      <div className="truncate text-sm font-semibold text-[#f4f6f3]">{signal.signalType}</div>
+                      <p className="mt-1 truncate text-xs text-[#9aa3a0]">{signal.topicPath || "Öğrenme izi"}</p>
+                    </div>
+                  ))}
+                  {recentSignals.length === 0 && <p className="text-sm leading-6 text-[#9aa3a0]">Henüz kalıcı öğrenme izi yok.</p>}
+                </div>
+              </div>
+            </aside>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col bg-transparent h-full overflow-hidden">
 
@@ -1172,7 +1302,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
           {/* Header & Mastery Card */}
           <div className="mb-10 flex items-center justify-between gap-6">
             <WorkspaceHeader
-              eyebrow={mode === "progress" ? "Evidence & Progress Workspace" : "Agent Command Center"}
+              eyebrow="Agent Command Center"
               title={mode === "progress" ? "İlerleme" : "Bugün"}
               description={
                 mode === "progress"
@@ -1417,7 +1547,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                   </p>
                   <p className="mx-auto mt-2 max-w-sm text-xs leading-6 text-[#667085]">
                     {topics.length === 0
-                      ? "Tutor'a hedefini yaz; Orka ilk konu yolunu açsın. Kaynak, kod hatası, quiz ve tekrar sinyalleri geldikçe burası gerçek verilerle dolar."
+                      ? "Orka'ya hedefini yaz; ilk konu yolunu açsın. Kaynak, kod hatası, quiz ve tekrar sinyalleri geldikçe burası gerçek verilerle dolar."
                       : "Bu liste sahte %0 kartları basmaz. İlk ders, quiz, IDE sonucu veya tekrar aksiyonu geldikçe ilerleme burada gerçek veriye dönüşür."}
                   </p>
                   <button
@@ -1489,8 +1619,8 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                   className="p-5 rounded-2xl bg-[#f7f9fa]/66 border border-[#526d82]/12 backdrop-blur-xl hover:border-zinc-600/50 transition-all text-left flex items-center justify-between group"
                 >
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#172033]">Pratik yap</span>
-                    <span className="text-[10px] text-[#667085]">Quiz veya IDE sonucunu Tutor'a bağla</span>
+                    <span className="text-xs font-bold text-[#172033]">Review / Quiz</span>
+                    <span className="text-[10px] text-[#667085]">Connect quiz or IDE evidence to Tutor</span>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
                     <Code2 className="w-4 h-4 text-[#667085]" />
@@ -1504,7 +1634,7 @@ export default function DashboardPanel({ topics, onViewChange, mode = "today" }:
                 >
                    <div className="flex flex-col">
                     <span className="text-xs font-bold text-[#172033]">Kaynakları aç</span>
-                    <span className="text-[10px] text-[#667085]">Wiki ve OrkaLM kanıtlarını gör</span>
+                    <span className="text-[10px] text-[#667085]">Review Wiki and Notebook evidence</span>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-[#dcecf3]/70 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
                     <BookOpen className="w-4 h-4 text-[#667085]" />

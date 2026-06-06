@@ -3,7 +3,6 @@ import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, Refr
 import toast from "react-hot-toast";
 import type { AdaptiveAssessmentNextItem, ApiTopic, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto } from "@/lib/types";
 import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuestionPracticeAPI, QuizAPI, ReviewAPI } from "@/services/api";
-import ToolCapabilityStrip from "./ToolCapabilityStrip";
 import QuizCard from "./QuizCard";
 import { NextActionCard, WorkspaceHeader, WorkspaceMetric } from "./AgenticWorkspace";
 
@@ -105,7 +104,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
 
   const startAdaptivePractice = async () => {
     if (!topicId) {
-      toast.error("Adaptif pratik için önce bir konu seç.");
+      toast.error("Quiz loop için önce bir konu seç.");
       return;
     }
     setAdaptiveLoading(true);
@@ -118,7 +117,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
         toast("Bu konu için adaptif soru havuzu henüz hazır değil.");
       }
     } catch {
-      toast.error("Adaptif pratik başlatılamadı.");
+      toast.error("Quiz loop başlatılamadı.");
     } finally {
       setAdaptiveLoading(false);
     }
@@ -126,7 +125,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
 
   const startQuestionBankPractice = async () => {
     if (!topicId) {
-      toast.error("Pratik icin once bir konu sec.");
+      toast.error("Quiz loop icin once bir konu sec.");
       return;
     }
     setQuestionPracticeLoading(true);
@@ -144,7 +143,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
         toast("Bu konu icin practice-ready soru henuz yok.");
       }
     } catch {
-      toast.error("Soru bankasi pratigi baslatilamadi.");
+      toast.error("Quiz loop baslatilamadi.");
     } finally {
       setQuestionPracticeLoading(false);
     }
@@ -174,10 +173,10 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
         }),
       });
       setQuestionPracticeResult(result);
-      toast.success("Pratik kaniti kaydedildi.");
+      toast.success("Quiz evidence kaydedildi.");
       await refresh();
     } catch {
-      toast.error("Pratik sonucu kaydedilemedi.");
+      toast.error("Quiz result kaydedilemedi.");
     } finally {
       setQuestionPracticeSubmitting(false);
     }
@@ -188,23 +187,22 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       <div className="flex-shrink-0 border-b border-[#526d82]/10 px-6 py-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <WorkspaceHeader
-            eyebrow={isPractice ? "Adaptive Practice Workspace" : "Memory / Review Workspace"}
-            title={isPractice ? "Pratik" : "Tekrar"}
+            eyebrow="Review / Quiz"
+            title="Review / Quiz"
             description={
               isPractice
-                ? `${title} için sıradaki soru, kavram kanıtı ve IDE görevi aynı çalışma yüzeyinde tutulur.`
-                : `${title} için tekrar, flashcard, bookmark ve telafi hafızası tek akışta görünür.`
+                ? `${title} için sıradaki soru, kavram kanıtı ve Code IDE handoff'u aynı yüzeyde tutulur.`
+                : `${title} için due review, flashcard, bookmark ve repair memory tek akışta görünür.`
             }
           />
           <div className="flex flex-col items-start gap-2 lg:items-end">
-            <ToolCapabilityStrip />
             <button
               onClick={() => void refresh()}
               disabled={loading}
               className="inline-flex items-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/70 px-3 py-2 text-xs font-bold text-[#667085] transition hover:bg-[#eef1f3]"
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-              Yenile
+              Refresh
             </button>
           </div>
         </div>
@@ -213,30 +211,30 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <section className="mb-5">
           <NextActionCard
-            title={isPractice ? "Adaptif pratiği başlat ve kanıt topla" : reviews.length > 0 ? "Bekleyen tekrarları kapat" : "Hafızanı güçlendirecek bir kart ekle"}
+            title={isPractice ? "Start a quiz loop and collect evidence" : reviews.length > 0 ? "Clear due review" : "Add a memory card"}
             reason={
               isPractice
-                ? "Orka soru seçimini zayıf veya kararsız kavramlardan yapar; doğru/yanlış cevap mastery kanıtına dönüşür."
+                ? "Orka selects questions from weak or uncertain concepts; answers become mastery evidence."
                 : reviews.length > 0
-                  ? "Zamanı gelen tekrarlar unutmayı azaltır ve Tutor'un sonraki anlatımını daha iyi ayarlar."
-                  : "Henüz bekleyen tekrar yok; önemli bir notu flashcard veya bookmark olarak kaydetmek hafızayı besler."
+                  ? "Due review lowers forgetting risk and improves the next Tutor explanation."
+                  : "There is no due review yet; saving a flashcard or bookmark gives memory something real to use."
             }
-            primaryLabel={isPractice ? "Soru bankasi pratigini baslat" : reviews.length > 0 ? "Tekrarları göster" : "Flashcard ekle"}
+            primaryLabel={isPractice ? "Start quiz loop" : reviews.length > 0 ? "Show due review" : "Add flashcard"}
             onPrimary={isPractice ? () => void startQuestionBankPractice() : () => undefined}
             secondary={
               <button
                 onClick={isPractice ? onOpenIDE : onOpenChat}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#526d82]/14 bg-white/65 px-4 py-3 text-xs font-black text-[#172033] transition hover:bg-[#f7f9fa]"
               >
-                {isPractice ? "IDE laboratuvarı" : "Tutor'a sor"}
+                {isPractice ? "Code IDE" : "Ask Tutor"}
               </button>
             }
           />
         </section>
         <section className="mb-5 grid gap-3 md:grid-cols-4">
           <WorkspaceMetric label="Hafıza kartı" value={flashcards.length} detail="özet kanıt" />
-          <WorkspaceMetric label="Bekleyen tekrar" value={reviews.length} detail="SRS kuyruğu" />
-          <WorkspaceMetric label="Günlük görev" value={challenge ? "hazır" : "yok"} detail="mikro pratik" />
+          <WorkspaceMetric label="Due review" value={reviews.length} detail="SRS queue" />
+          <WorkspaceMetric label="Daily check" value={challenge ? "ready" : "none"} detail="micro quiz" />
           <WorkspaceMetric label="Kaydedilen not" value={bookmarks.length} detail="bookmark" />
         </section>
         <section className="mb-5 rounded-[1.5rem] border border-[#8fb7a2]/28 bg-[#f2faf5]/76 p-5 shadow-sm">
@@ -244,11 +242,11 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
             <div>
               <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#47725d]">
                 <Sparkles className="h-3.5 w-3.5" />
-                Soru bankasi pratigi
+                Quiz evidence loop
               </p>
-              <h2 className="mt-1 text-lg font-black text-[#172033]">Soru bankasi plan ve diagnostic kavramlarindan secilir.</h2>
+              <h2 className="mt-1 text-lg font-black text-[#172033]">Questions come from plan and diagnostic concepts.</h2>
               <p className="mt-2 text-sm leading-6 text-[#667085]">
-                Her cevap QuizAttempt hattina kaydolur; tutor, mastery ve tekrar sinyali ayni kanit uzerinden beslenir.
+                Every answer is recorded as quiz evidence; Tutor, mastery, and review signals use the same source of truth.
               </p>
             </div>
             <button
@@ -257,7 +255,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#243044] disabled:opacity-40"
             >
               {questionPracticeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Soru bankasi pratigini baslat
+              Start quiz loop
             </button>
           </div>
           {questionPracticeSession?.status === "empty" && (
@@ -359,7 +357,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
           )}
           {adaptiveNext?.isComplete && (
             <p className="mt-4 rounded-xl border border-[#8fb7a2]/35 bg-white/65 px-4 py-3 text-xs font-bold text-[#47725d]">
-              Adaptif pratik tamamlandı: {adaptiveNext.stopReason || "kanıt yeterli"}.
+              Quiz loop completed: {adaptiveNext.stopReason || "evidence enough"}.
             </p>
           )}
         </section>
@@ -395,7 +393,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
 
           <section className="rounded-[1.5rem] border border-[#526d82]/12 bg-white/66 p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-black text-[#172033]"><ClipboardCheck className="h-4 w-4" /> SRS Tekrar</h2>
+              <h2 className="flex items-center gap-2 text-sm font-black text-[#172033]"><ClipboardCheck className="h-4 w-4" /> Due review</h2>
               <span className="rounded-full bg-[#fff8ee] px-2.5 py-1 text-[10px] font-bold text-[#8a641f]">{reviews.length} due</span>
             </div>
             <div className="space-y-2">
@@ -457,7 +455,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
         </div>
 
         <button onClick={onOpenChat} className="mt-6 rounded-xl border border-[#526d82]/14 bg-[#eef1f3]/80 px-4 py-2 text-xs font-bold text-[#667085] hover:text-[#172033]">
-          Tutor'a dön
+          Back to Tutor
         </button>
       </div>
     </div>

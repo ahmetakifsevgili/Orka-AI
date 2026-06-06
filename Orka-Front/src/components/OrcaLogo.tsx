@@ -2,6 +2,7 @@ import React from "react";
 
 interface OrcaLogoProps {
   className?: string;
+  style?: React.CSSProperties;
   animated?: boolean;
 }
 

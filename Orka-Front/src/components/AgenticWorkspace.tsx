@@ -209,12 +209,6 @@ export function AgentStatusRail({
     metadata?.activeConceptKey ||
     topicTitle ||
     "Henuz kavram secilmedi";
-  const teachingMode =
-    workspaceState?.tutorPolicy?.teachingMove ||
-    metadata?.tutorTeachingMove ||
-    metadata?.teachingMode ||
-    currentPlanStep?.tutorMove ||
-    (isThinking ? "explain" : "unknown");
   const sourceReadiness =
     workspaceState?.sourceReadiness ||
     metadata?.sourceReadiness ||
@@ -229,107 +223,48 @@ export function AgentStatusRail({
     : 0;
 
   return (
-    <aside className="hidden min-h-0 w-[320px] flex-shrink-0 flex-col border-l border-[#526d82]/10 bg-[#eef1f3]/72 p-4 xl:flex">
+    <aside className="hidden min-h-0 w-[320px] flex-shrink-0 flex-col border-l border-white/[0.08] bg-[#0b0e10]/84 p-4 xl:flex">
       <div className="mb-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#52768a]">Orka neden böyle yaptı?</p>
-        <h2 className="mt-1 text-base font-black text-[#172033]">Canlı Tutor durumu</h2>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6ed7ce]">Bu turda Orka</p>
+        <h2 className="mt-1 text-base font-semibold text-[#f4f6f3]">Kısa çalışma özeti</h2>
       </div>
 
       <div className="space-y-3 overflow-y-auto pr-1">
-        <RailCard icon={<Target className="h-4 w-4" />} label="Aktif kavram" value={activeConcept} />
-        <RailCard icon={<BookOpen className="h-4 w-4" />} label="Öğretim modu" value={userSafeStatus(teachingMode)} />
-        <RailCard icon={<Activity className="h-4 w-4" />} label="Kanıt durumu" value={metadata?.evidenceSummary?.learnerEvidenceStatus ? userSafeStatus(metadata.evidenceSummary.learnerEvidenceStatus) : sourceCount > 0 ? "Kaynak sinyali var" : "Kanıt bekleniyor"} />
+        <RailCard icon={<Target className="h-4 w-4" />} label="Odak" value={activeConcept} />
+        <RailCard icon={<BookOpen className="h-4 w-4" />} label="Kaynaklı açıklama" value={sourceCount > 0 ? `${sourceCount} kaynak sinyali kullanıldı` : "Kaynak bekleniyor"} />
+        <RailCard icon={<Activity className="h-4 w-4" />} label="Kısa kontrol" value={metadata?.evidenceSummary?.learnerEvidenceStatus ? userSafeStatus(metadata.evidenceSummary.learnerEvidenceStatus) : "Bir mikro soru iyi olur"} />
         {currentPlanStep && (
           <RailCard
             icon={<ListChecks className="h-4 w-4" />}
-            label="Plan adimi"
-            value={currentPlanStep.title || currentPlanStep.objective || "Plan adimi hazirlaniyor"}
+            label="Sıradaki adım"
+            value={currentPlanStep.title || currentPlanStep.objective || "Plan adımı hazırlanıyor"}
           />
         )}
         {sourceReadiness && (
           <RailCard icon={<Network className="h-4 w-4" />} label="Kaynak durumu" value={userSafeStatus(sourceReadiness)} />
         )}
         {nextAction && (
-          <RailCard icon={<Sparkles className="h-4 w-4" />} label="Sonraki aksiyon" value={nextAction} />
+          <RailCard icon={<Sparkles className="h-4 w-4" />} label="Öneri" value={nextAction} />
         )}
         {(recentArtifacts.length > 0 || degradedToolCount > 0 || (workspaceState?.staleWarnings?.length ?? 0) > 0) && (
-          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-            <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+            <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8f9894]">
               <Layers3 className="h-3.5 w-3.5" />
-              Calisma yuzeyi
+              Oturum özeti
             </p>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-xl bg-[#f7f9fa]/75 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{recentArtifacts.length}</span>
-                <span className="text-[#667085]">artifact</span>
+              <div className="rounded-xl bg-white/[0.045] px-2 py-2 text-center">
+                <span className="block text-sm font-semibold text-[#f4f6f3]">{recentArtifacts.length}</span>
+                <span className="text-[#8f9894]">çıktı</span>
               </div>
-              <div className="rounded-xl bg-[#fff8ee]/82 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{workspaceState?.staleWarnings?.length ?? 0}</span>
-                <span className="text-[#667085]">uyari</span>
+              <div className="rounded-xl bg-white/[0.045] px-2 py-2 text-center">
+                <span className="block text-sm font-semibold text-[#f4f6f3]">{workspaceState?.staleWarnings?.length ?? 0}</span>
+                <span className="text-[#8f9894]">uyarı</span>
               </div>
-              <div className="rounded-xl bg-[#dcecf3]/58 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{degradedToolCount}</span>
-                <span className="text-[#667085]">arac</span>
+              <div className="rounded-xl bg-white/[0.045] px-2 py-2 text-center">
+                <span className="block text-sm font-semibold text-[#f4f6f3]">{degradedToolCount}</span>
+                <span className="text-[#8f9894]">kontrol</span>
               </div>
-            </div>
-          </div>
-        )}
-
-        {runtimeHealth && (
-          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-            <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
-              <Activity className="h-3.5 w-3.5" />
-              Runtime sagligi
-            </p>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <StatusPill value={runtimeHealth.status} />
-              <span className="text-[11px] font-bold text-[#667085]">{runtimeHealth.traceCount} iz</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-xl bg-[#f7f9fa]/75 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.correlatedTraceCount}</span>
-                <span className="text-[#667085]">corr</span>
-              </div>
-              <div className="rounded-xl bg-[#fff8ee]/82 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.fallbackCount}</span>
-                <span className="text-[#667085]">fallback</span>
-              </div>
-              <div className="rounded-xl bg-[#dcecf3]/58 px-2 py-2 text-center">
-                <span className="block text-sm font-black text-[#172033]">{runtimeHealth.services?.length ?? 0}</span>
-                <span className="text-[#667085]">servis</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {typeof metadata?.masteryProbability === "number" && (
-          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-            <div className="mb-2 flex items-center justify-between text-xs font-black text-[#172033]">
-              <span>Mastery kanıtı</span>
-              <span>%{Math.round(metadata.masteryProbability * 100)}</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-[#dcecf3]/70">
-              <div className="h-full rounded-full bg-[#47725d]" style={{ width: `${Math.round(metadata.masteryProbability * 100)}%` }} />
-            </div>
-            <p className="mt-2 text-[11px] leading-5 text-[#667085]">
-              {metadata.confidence && metadata.confidence < 0.6 ? "Kanıt düşük; Orka öğrenildi iddiası kurmaz." : "Bu değer son cevap ve pratik sinyallerinden gelir."}
-            </p>
-          </div>
-        )}
-
-        {tools.length > 0 && (
-          <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-            <p className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
-              <Wrench className="h-3.5 w-3.5" />
-              Araçlar
-            </p>
-            <div className="space-y-2">
-              {tools.slice(0, 5).map((tool) => (
-                <div key={tool.id} className="flex items-center justify-between gap-2 rounded-xl bg-[#f7f9fa]/75 px-3 py-2 text-xs">
-                  <span className="font-bold text-[#172033]">{tool.toolId.replace(/_/g, " ")}</span>
-                  <StatusPill value={tool.status} />
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -342,12 +277,12 @@ export function AgentStatusRail({
 
 function RailCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-      <p className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#667085]">
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+      <p className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8f9894]">
         {icon}
         {label}
       </p>
-      <p className="text-sm font-black text-[#172033]">{value}</p>
+      <p className="text-sm font-semibold leading-5 text-[#eef2ee]">{value}</p>
     </div>
   );
 }
@@ -355,30 +290,30 @@ function RailCard({ icon, label, value }: { icon: ReactNode; label: string; valu
 export function ReasoningTimeline({ events, isThinking }: { events?: TutorTraceTimelineEvent[]; isThinking?: boolean }) {
   const visible = events?.slice(-6) ?? [];
   return (
-    <div className="rounded-2xl border border-[#526d82]/12 bg-white/64 p-3">
-      <p className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#667085]">
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+      <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8f9894]">
         <Activity className="h-3.5 w-3.5" />
         Canlı iz
       </p>
       {isThinking && visible.length === 0 && (
-        <div className="flex items-center gap-2 rounded-xl bg-[#dcecf3]/60 px-3 py-2 text-xs font-bold text-[#2d5870]">
+        <div className="flex items-center gap-2 rounded-xl bg-[#6ed7ce]/10 px-3 py-2 text-xs font-semibold text-[#9adfd9]">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Tutor state hazırlanıyor
+          Orka hazırlanıyor
         </div>
       )}
       {!isThinking && visible.length === 0 && (
-        <p className="text-xs leading-5 text-[#667085]">Tutor araç, kaynak veya kalite olayı ürettiğinde burada sade iz görünür.</p>
+        <p className="text-xs leading-5 text-[#8f9894]">Kaynak veya kalite sinyali oluştuğunda burada sade iz görünür.</p>
       )}
       <div className="space-y-2">
         {visible.map((event) => (
-          <div key={`${event.streamId}-${event.id}`} className="rounded-xl bg-[#f7f9fa]/75 px-3 py-2 text-xs">
+          <div key={`${event.streamId}-${event.id}`} className="rounded-xl bg-white/[0.045] px-3 py-2 text-xs">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-black text-[#172033]">{event.userSafeLabel}</span>
-              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+              <span className="font-semibold text-[#eef2ee]">{event.userSafeLabel}</span>
+              <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-[#8f9894]">
                 {userSafeStatus(event.eventGroup)}
               </span>
             </div>
-            <p className="mt-1 leading-5 text-[#667085]">{event.userSafeDetail}</p>
+            <p className="mt-1 leading-5 text-[#9aa3a0]">{event.userSafeDetail}</p>
           </div>
         ))}
       </div>

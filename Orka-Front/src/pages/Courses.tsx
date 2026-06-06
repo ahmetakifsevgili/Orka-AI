@@ -1,8 +1,7 @@
 /*
- * Müfredatlarım — Kullanıcının kendi oluşturduğu konu listesi.
- * Statik courseData tamamen kaldırıldı; TopicsAPI.getAll() kullanılıyor.
- * Konu adı arama + kategori filtresi desteklenir.
- * Premium dark zinc design.
+ * Progress / Memory — user's durable topic list.
+ * Static course data is not rendered; TopicsAPI.getAll() is the source of truth.
+ * Topic search and category filters stay lightweight until Mission Control owns the workflow.
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -74,21 +73,16 @@ export default function Courses() {
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({"1": true});
   const [wikiTopicId, setWikiTopicId] = useState<string | null>(null);
 
-  // Mocking the detailed modules from Screenshot 4
-  const MOCK_MODULES = [
-    { id: "1", title: "Giriş ve Kurulum", desc: "Python'ı tanıyın, geliştirme ortamınızı kurun.", progress: 4, total: 4, duration: "1.5 saat", completed: true,
-      lessons: [
-        { id: "l1", title: "Python Nedir?", type: "Makale", duration: "10 dk", completed: true },
-        { id: "l2", title: "Kurulum ve IDE Seçimi", type: "Makale", duration: "15 dk", completed: true },
-        { id: "l3", title: "İlk Programınız", type: "Alıştırma", duration: "20 dk", completed: true },
-        { id: "l4", title: "Modül Sınavı", type: "Sınav", duration: "10 dk", completed: true }
-      ]
-    },
-    { id: "2", title: "Değişkenler ve Veri Tipleri", desc: "Temel veri tipleri, tip dönüşümleri ve string işlemleri.", progress: 5, total: 5, duration: "2 saat", completed: true, lessons: [] },
-    { id: "3", title: "Kontrol Akışı", desc: "If/else, döngüler, koşullu ifadeler ve hata yönetimi.", progress: 2, total: 5, duration: "2.5 saat", completed: false, lessons: [] },
-    { id: "4", title: "Fonksiyonlar", desc: "Fonksiyon tanımlama, parametreler, lambda ve dekoratörler.", progress: 0, total: 5, duration: "3 saat", completed: false, lessons: [] },
-    { id: "5", title: "Nesne Yönelimli Programlama", desc: "Sınıflar, kalıtım, polimorfizm ve soyut sınıflar.", progress: 0, total: 5, duration: "3 saat", completed: false, lessons: [] }
-  ];
+  const MODULES: Array<{
+    id: string;
+    title: string;
+    desc: string;
+    progress: number;
+    total: number;
+    duration: string;
+    completed: boolean;
+    lessons: Array<{ id: string; title: string; type: string; duration: string; completed: boolean }>;
+  }> = [];
 
   const toggleModule = (id: string) => {
     setExpandedModules(prev => ({ ...prev, [id]: !prev[id] }));
@@ -116,7 +110,7 @@ export default function Courses() {
                 className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 transition-colors text-sm"
               >
                 <ChevronLeft className="w-4 h-4" />
-                Kurslar
+                Progress / Memory
               </button>
               <div className="h-4 w-px bg-zinc-800" />
               <div className="flex items-center gap-2 text-sm text-zinc-400">
@@ -132,25 +126,24 @@ export default function Courses() {
                    <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
                          <h1 className="text-2xl font-bold text-zinc-100">{selectedCourse.title}</h1>
-                         <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] font-medium uppercase">Başlangıç</span>
+                         <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] font-medium uppercase">{PHASE_LABELS[selectedCourse.currentPhase ?? 0] ?? "Topic"}</span>
                       </div>
                       <p className="text-sm text-zinc-400 mb-4">{selectedCourse.category || "Sıfırdan Python programlama. Değişkenler, veri tipleri, kontrol akışı."}</p>
                       <div className="flex items-center gap-4 text-xs text-zinc-500">
-                         <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> 12 saat</span>
-                         <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> 5 Modül</span>
-                         <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> 2340 Öğrenci</span>
-                         <span className="flex items-center gap-1.5 text-amber-500"><Star className="w-3.5 h-3.5 fill-current" /> 4.8</span>
+                         <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> Real signals only</span>
+                         <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> {selectedCourse.completedSections ?? 0} completed sections</span>
+                         <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {selectedCourse.category || "topic"}</span>
                       </div>
                    </div>
                 </div>
 
                 <div className="space-y-2 mt-6">
                    <div className="flex items-center justify-between text-xs font-medium text-zinc-400">
-                      <span>Genel İlerleme</span>
-                      <span>46%</span>
+                      <span>Evidence progress</span>
+                      <span>{Math.max(0, Math.min(100, selectedCourse.progressPercentage ?? 0))}%</span>
                    </div>
                    <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-zinc-400 rounded-full" style={{ width: "46%" }} />
+                      <div className="h-full bg-zinc-400 rounded-full" style={{ width: `${Math.max(0, Math.min(100, selectedCourse.progressPercentage ?? 0))}%` }} />
                    </div>
                    <div className="flex gap-2 mt-4 pt-2">
                       <span className="px-2.5 py-1 rounded bg-zinc-800/80 text-zinc-400 text-[11px]">Python</span>
@@ -160,9 +153,14 @@ export default function Courses() {
                 </div>
              </div>
 
-             <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">MÜFREDAT</h3>
+             <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Topic Evidence</h3>
              <div className="space-y-3">
-                {MOCK_MODULES.map((mod) => (
+                {MODULES.length === 0 && (
+                  <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 p-5 text-sm leading-6 text-zinc-500">
+                    Orka has not produced a durable lesson outline for this topic yet. Use Tutor, Sources / Wiki, Review / Quiz, or Code IDE to create real learning evidence first.
+                  </div>
+                )}
+                {MODULES.map((mod) => (
                   <div key={mod.id} className="bg-zinc-900/30 border border-zinc-800/50 rounded-xl overflow-hidden">
                      <button 
                        onClick={() => toggleModule(mod.id)}
@@ -251,7 +249,7 @@ export default function Courses() {
           <div className="h-4 w-px bg-zinc-800" />
           <div className="flex items-center gap-2">
             <OrcaLogo className="w-4 h-4 text-zinc-500" />
-            <span className="text-sm text-zinc-400 font-medium">Müfredatlarım</span>
+            <span className="text-sm text-zinc-400 font-medium">Progress / Memory</span>
           </div>
         </div>
       </div>
@@ -327,19 +325,19 @@ export default function Courses() {
               <Inbox className="w-6 h-6 text-zinc-600" />
             </div>
             <h2 className="text-base font-medium text-zinc-300 mb-2">
-              Henüz müfredat yok
+              No learning memory yet
             </h2>
             <p className="text-sm text-zinc-600 mb-6 max-w-xs leading-relaxed">
-              Sohbet ekranında{" "}
+              Tutor ekranında{" "}
               <code className="bg-zinc-900 px-1 rounded text-xs">/plan</code>{" "}
-              yazarak veya yeni konu oluşturarak müfredatını başlat.
+              yazarak veya yeni konu oluşturarak ilk gerçek öğrenme sinyalini başlat.
             </p>
             <button
               onClick={() => navigate("/app")}
               className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-sm font-medium transition-colors"
             >
               <MessageSquare className="w-4 h-4" />
-              Sohbete Git
+              Tutor'a Git
             </button>
           </motion.div>
         ) : (

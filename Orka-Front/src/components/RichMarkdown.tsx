@@ -132,7 +132,7 @@ function CitationLink({ href, children, onSourceClick, onCitationClick }: Citati
           onCitationClick?.("doc", `${sourceId}:p${page}`);
           onSourceClick?.(sourceId, page);
         }}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-[11px] font-mono text-amber-300 hover:bg-amber-500/20 transition align-baseline"
+        className="inline cursor-pointer bg-emerald-500/15 text-inherit border-b border-emerald-500/30 hover:bg-emerald-500/25 hover:border-emerald-500/50 transition-colors px-1 rounded-sm"
         title={sourceId ? `Kaynak sayfa ${page}` : "Kaynak"}
       >
         {children}
@@ -146,10 +146,10 @@ function CitationLink({ href, children, onSourceClick, onCitationClick }: Citati
       <button
         type="button"
         onClick={() => onCitationClick?.(isWeb ? "web" : "wiki", isWeb ? "local-web" : "local-wiki")}
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] font-mono align-baseline ${
+        className={`inline cursor-pointer px-1 rounded-sm border-b transition-colors text-inherit ${
           isWeb
-            ? "bg-sky-500/10 border-sky-500/25 text-sky-300"
-            : "bg-emerald-500/10 border-emerald-500/25 text-emerald-300"
+            ? "bg-sky-500/15 border-sky-500/30 hover:bg-sky-500/25 hover:border-sky-500/50"
+            : "bg-amber-500/15 border-amber-500/30 hover:bg-amber-500/25 hover:border-amber-500/50"
         }`}
       >
         {children}

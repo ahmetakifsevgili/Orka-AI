@@ -17,6 +17,8 @@ function addCheck(name, pass, detail = "") {
 }
 
 const api = read("src/services/api.ts", frontRoot);
+const apiInventoryMd = read("docs/api-inventory.md");
+const apiInventoryJson = JSON.parse(read("docs/api-inventory.json"));
 
 const frontendContracts = [
   ["/auth/login", "Auth login"],
@@ -31,24 +33,24 @@ const frontendContracts = [
   ["/wiki/", "Wiki routes"],
   ["/sources/upload", "Sources upload"],
   ["/sources/topic/", "Sources topic quality"],
-  ["/sources/topic/", "OrkaLM source notebook topic"],
-  ["/sources/${sourceId}/notebook", "OrkaLM focused source notebook"],
-  ["/sources/ask", "OrkaLM source ask"],
-  ["/sources/${sourceId}/ask", "OrkaLM selected source ask"],
-  ["/sources/topic/${topicId}/ask", "OrkaLM source collection ask"],
-  ["/sources/compare", "OrkaLM multi-source compare"],
-  ["/sources/topic/${topicId}/compare", "OrkaLM topic source compare"],
-  ["/sources/${sourceId}/citation-review", "OrkaLM source citation review"],
-  ["/sources/topic/${topicId}/citation-review", "OrkaLM topic citation review"],
-  ["/sources/study-summary", "OrkaLM source study summary"],
-  ["/sources/question-threads", "OrkaLM source Q&A thread list/create"],
-  ["/sources/question-threads/${threadId}", "OrkaLM source Q&A thread detail"],
-  ["/sources/question-threads/${threadId}/ask", "OrkaLM source Q&A thread follow-up"],
-  ["/sources/question-threads/${threadId}/review", "OrkaLM source Q&A thread review"],
-  ["/sources/question-threads/${threadId}/wiki-trace", "OrkaLM source Q&A thread Wiki trace"],
-  ["/sources/${sourceId}/concept-links", "OrkaLM source concept links"],
-  ["/concept-links/sync", "OrkaLM source concept link sync"],
-  ["/sources/topic/${topicId}/concept-graph", "OrkaLM source concept graph"],
+  ["/sources/topic/", "Sources notebook topic"],
+  ["/sources/${sourceId}/notebook", "Focused source notebook"],
+  ["/sources/ask", "Source ask"],
+  ["/sources/${sourceId}/ask", "Selected source ask"],
+  ["/sources/topic/${topicId}/ask", "Source collection ask"],
+  ["/sources/compare", "Multi-source compare"],
+  ["/sources/topic/${topicId}/compare", "Topic source compare"],
+  ["/sources/${sourceId}/citation-review", "Source citation review"],
+  ["/sources/topic/${topicId}/citation-review", "Topic citation review"],
+  ["/sources/study-summary", "Source study summary"],
+  ["/sources/question-threads", "Source Q&A thread list/create"],
+  ["/sources/question-threads/${threadId}", "Source Q&A thread detail"],
+  ["/sources/question-threads/${threadId}/ask", "Source Q&A thread follow-up"],
+  ["/sources/question-threads/${threadId}/review", "Source Q&A thread review"],
+  ["/sources/question-threads/${threadId}/wiki-trace", "Source Q&A thread Wiki trace"],
+  ["/sources/${sourceId}/concept-links", "Source concept links"],
+  ["/concept-links/sync", "Source concept link sync"],
+  ["/sources/topic/${topicId}/concept-graph", "Source concept graph"],
   ["/wiki/pages/${pageId}/source-links", "Wiki concept supporting source links"],
   ["/wiki/page/${pageId}/copilot", "Wiki Copilot page context"],
   ["/evidence-bundle", "Source evidence lifecycle bundle"],
@@ -158,8 +160,34 @@ const frontendContracts = [
   ["/bookmarks", "Bookmarks"],
 ];
 
+const phase11Contracts = [
+  ["/api/dashboard/today", "DashboardAPI.getToday", "Mission Control"],
+  ["/api/learning/orka-state", "LearningAPI.getOrkaState", "Mission Control state"],
+  ["/api/learning/mission-control", "LearningAPI.getMissionControl", "Mission Control"],
+  ["/api/learning/study-coach", "LearningAPI.getStudyCoach", "Study Coach"],
+  ["/api/central-exams/{examCode}/war-room", "CentralExamsAPI.getWarRoom", "Exam War Room"],
+  ["/api/sources/wiki-pro", "SourcesAPI.getWikiPro", "Sources / Wiki"],
+  ["/api/classroom/study-room", "ClassroomAPI.getStudyRoom", "Study Room"],
+  ["/api/classroom/study-room/start", "ClassroomAPI.startStudyRoom", "Study Room start"],
+  ["/api/classroom/study-room/checkpoint", "ClassroomAPI.submitStudyRoomCheckpoint", "Study Room checkpoint"],
+  ["/api/notebook-studio/pro", "NotebookStudioAPI.getPro", "Notebook Studio"],
+  ["/api/code/learning-ide", "CodeAPI.getLearningIde", "Code IDE"],
+];
+
 for (const [needle, label] of frontendContracts) {
   addCheck(`Frontend API exposes ${label}`, api.includes(needle), needle);
+}
+
+const phase11Addendum = apiInventoryJson.phase11LearningOsFrontendAddendum;
+addCheck("API inventory has Phase 11 Learning OS addendum", Boolean(phase11Addendum), "phase11LearningOsFrontendAddendum");
+addCheck("API inventory records canonical app modes", ["Home / Mission Control", "Tutor", "Study Room", "Review / Quiz", "Exam War Room", "Sources / Wiki", "Notebook Studio", "Code IDE", "Progress / Memory", "Settings / Safety"].every((mode) => phase11Addendum?.canonicalModes?.includes(mode)));
+addCheck("API inventory records legacy view aliases", phase11Addendum?.legacyViewAliases?.chat === "tutor" && phase11Addendum?.legacyViewAliases?.orkalm === "notebook" && phase11Addendum?.legacyViewAliases?.["central-exams"] === "exams");
+
+for (const [pathNeedle, clientNeedle, label] of phase11Contracts) {
+  const jsonContract = phase11Addendum?.frontendContracts?.find((contract) => contract.path === pathNeedle && contract.client === clientNeedle);
+  const methodName = clientNeedle.split(".").at(-1);
+  addCheck(`Phase 11 inventory documents ${label}`, apiInventoryMd.includes(pathNeedle) && Boolean(jsonContract), pathNeedle);
+  addCheck(`Phase 11 frontend client exposes ${label}`, Boolean(methodName && api.includes(methodName)), clientNeedle);
 }
 
 const controllerContracts = [

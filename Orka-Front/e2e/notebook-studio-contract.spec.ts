@@ -93,7 +93,7 @@ function artifactJson(extra: Record<string, unknown>) {
     references: ["contract.pdf p.2", "SourceChunk:chunk-1"],
     terms: [
       { term: "Citation", description: "Kaynak chunk ile desteklenen iz." },
-      { term: "Notebook scope", description: "OrkaLM icinde kalan kaynak defteri." },
+      { term: "Notebook scope", description: "Notebook Studio source context." },
     ],
     properties: [
       { key: "surface", label: "Surface", value: "orkalm", status: "locked" },
@@ -102,14 +102,14 @@ function artifactJson(extra: Record<string, unknown>) {
       { key: "cross_surface_sync", label: "Cross-surface sync", value: "disabled", status: "locked" },
     ],
     timelineItems: [
-      "Phase 1 contract locks orkalm / source_notebook.",
+      "Phase 1 keeps the source notebook scoped.",
       "Phase 2 graph and metadata stay source scoped.",
       "Phase 3 text artifacts use source citations.",
       "Phase 4 slides and diagrams remain export-safe.",
       "Phase 7 audio, captions, fallback and classroom are active.",
     ],
     graphNodes: [
-      { id: "orkalm:root", label: "OrkaLM source notebook", nodeType: "root", surface: "orkalm", status: "active" },
+      { id: "orkalm:root", label: "Notebook Studio source notebook", nodeType: "root", surface: "orkalm", status: "active" },
       { id: "orkalm:context", label: "source_notebook", nodeType: "context", surface: "orkalm", status: "locked" },
       { id: "orkalm:ref:1", label: "contract.pdf p.2", nodeType: "citation", surface: "orkalm", status: "active" },
     ],
@@ -118,8 +118,8 @@ function artifactJson(extra: Record<string, unknown>) {
       { sourceId: "orkalm:root", targetId: "orkalm:ref:1", edgeType: "cites", scope: "source_notebook", crossSurface: false },
     ],
     backlinks: [
-      { source: "OrkaLM source notebook", target: "citations", linkType: "citation_backlink", surface: "orkalm", status: "scoped" },
-      { source: "OrkaLM source notebook", target: "cross-surface graph", linkType: "cross_surface_edge", surface: "orkalm", status: "disabled" },
+      { source: "Notebook Studio source notebook", target: "citations", linkType: "citation_backlink", surface: "orkalm", status: "scoped" },
+      { source: "Notebook Studio source notebook", target: "cross-surface graph", linkType: "cross_surface_edge", surface: "orkalm", status: "disabled" },
     ],
     linkedMentions: [
       { term: "Citation", mentionScope: "source_notebook", source: "source_notebook", status: "scoped" },
@@ -201,18 +201,18 @@ function wikiArtifactJson(extra: Record<string, unknown>) {
 const slideArtifact = baseArtifact({
   id: "artifact-slide",
   artifactType: "slide_deck_outline",
-  title: "OrkaLM slide outline",
-  safeContent: "## OrkaLM slide outline\n\n- Source-grounded slide draft",
+  title: "Notebook Studio deck outline",
+  safeContent: "## Notebook Studio deck outline\n\n- Source-grounded deck draft",
   contentJson: artifactJson({
-    title: "OrkaLM slide outline",
+    title: "Notebook Studio deck outline",
     slides: [
       {
         order: 1,
-        title: "Kaynak defteri akisi",
-        bullets: ["Upload OrkaLM icinde kalir", "Wiki context'e otomatik yazilmaz"],
+        title: "Source notebook flow",
+        bullets: ["Upload stays in Notebook Studio", "Wiki context is not updated automatically"],
         speakerNotes: "Kaynak kanitini once citation olarak goster.",
         sourceLabel: "contract.pdf p.2",
-        checkpointQuestion: "Bu slayt Wiki state'e yaziyor mu?",
+        checkpointQuestion: "Does this deck write into Wiki state?",
         visualSuggestion: "Two separated lanes",
       },
     ],
@@ -222,10 +222,10 @@ const slideArtifact = baseArtifact({
 const propertiesArtifact = baseArtifact({
   id: "artifact-properties",
   artifactType: "properties_panel",
-  title: "OrkaLM properties and graph contract",
-  safeContent: "Properties, tags, backlinks and graph stay scoped to OrkaLM.",
+  title: "Notebook Studio property and graph map",
+  safeContent: "Properties, tags, backlinks and graph stay scoped to Notebook Studio.",
   contentJson: artifactJson({
-    title: "OrkaLM properties and graph contract",
+    title: "Notebook Studio property and graph map",
   }),
 });
 
@@ -234,7 +234,7 @@ const umlArtifact = baseArtifact({
   artifactType: "uml_diagram",
   title: "Source notebook UML",
   renderFormat: "mermaid",
-  safeContent: "classDiagram\n  class OrkaLM\n  class SourceNotebook\n  OrkaLM --> SourceNotebook",
+  safeContent: "classDiagram\n  class NotebookStudio\n  class SourceNotebook\n  NotebookStudio --> SourceNotebook",
   contentJson: artifactJson({
     title: "Source notebook UML",
     diagramType: "classDiagram",
@@ -275,11 +275,11 @@ const wikiPropertiesArtifact = baseArtifact({
   id: "artifact-wiki-properties",
   topicId,
   artifactType: "properties_panel",
-  title: "Wiki properties and graph contract",
+  title: "Wiki property and graph map",
   safeContent: "Properties, tags, backlinks and graph stay scoped to Wiki.",
   sourceBasis: "wiki_grounded",
   contentJson: wikiArtifactJson({
-    title: "Wiki properties and graph contract",
+    title: "Wiki property and graph map",
   }),
 });
 
@@ -296,10 +296,10 @@ const wikiSlideArtifact = baseArtifact({
       {
         order: 1,
         title: "Wiki ders akisi",
-        bullets: ["Ders page context icinde kalir", "OrkaLM kaynak state'ine otomatik yazilmaz"],
+        bullets: ["Lesson page context stays scoped", "Notebook Studio source state is not updated automatically"],
         speakerNotes: "Dersi once kavram ve plan adimi olarak anlat.",
         sourceLabel: "WikiBlock:block-1",
-        checkpointQuestion: "Bu slayt OrkaLM source state'e yaziyor mu?",
+        checkpointQuestion: "Does this deck write into Notebook Studio source state?",
         visualSuggestion: "Wiki-only lesson lane",
       },
     ],
@@ -326,7 +326,7 @@ function buildAudioJob(mode: SurfaceMode, body: Record<string, unknown> = {}) {
   const surface = isOrkaLm ? "orkalm" : "wiki";
   const contextType = isOrkaLm ? "source_notebook" : "wiki_page";
   const script = isOrkaLm
-    ? "[HOCA]: OrkaLM source notebook audio is active.\n[ASISTAN]: Caption, transcript and source-scoped study room are ready."
+    ? "[HOCA]: Notebook Studio source notebook audio is active.\n[ASISTAN]: Caption, transcript and source-scoped study room are ready."
     : "[HOCA]: Wiki lesson audio is active.\n[ASISTAN]: Caption, transcript and wiki-scoped study room are ready.";
 
   return {
@@ -390,7 +390,7 @@ const notebookPack = {
   packType: "source_digest",
   packStatus: "ready",
   title: "Contract Source Notebook Pack",
-  summary: "Mock-backed OrkaLM pack proving source context parity without Wiki sync.",
+  summary: "Mock-backed Notebook Studio pack proving source context parity without Wiki sync.",
   sourceReadiness: "source_grounded",
   evidenceStatus: "source_grounded",
   completedConceptKeys: ["source_scope"],
@@ -428,7 +428,7 @@ const wikiNotebookPack = {
   packType: "wiki_page_review",
   packStatus: "ready",
   title: "Wiki Page Review Pack",
-  summary: "Mock-backed Wiki pack proving lesson context without OrkaLM source upload.",
+  summary: "Mock-backed Wiki pack proving lesson context without Notebook Studio source upload.",
   sourceReadiness: "wiki_grounded",
   evidenceStatus: "wiki_grounded",
   completedConceptKeys: ["wiki_scope"],
@@ -477,7 +477,7 @@ const wikiPage = {
       blockType: "summary",
       type: "summary",
       title: "Wiki Contract Summary",
-      content: "Wiki lesson content remains separate from OrkaLM sources.",
+      content: "Wiki lesson content remains separate from Notebook Studio source artifacts.",
       source: null,
       sourceBasis: "wiki_grounded",
       conceptKey: "wiki_contract",
@@ -935,10 +935,10 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
           {
             slideId: "slide-1",
             order: 1,
-            title: "Kaynak defteri akisi",
-            bullets: ["Upload OrkaLM icinde kalir"],
+            title: "Source notebook flow",
+            bullets: ["Upload stays in Notebook Studio"],
             sourceLabel: "contract.pdf p.2",
-            checkpointQuestion: "Bu slayt Wiki state'e yaziyor mu?",
+            checkpointQuestion: "Does this deck write into Wiki state?",
             hasSpeakerNotes: true,
           },
         ],
@@ -1100,8 +1100,8 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
     if (path === `/wiki/${topicId}/briefing`) {
       return fulfillJson(route, {
         topicId,
-        topicTitle: "Notebook Contract Topic",
-        tldr: "Contract briefing",
+        topicTitle: "Notebook Studio Topic",
+        tldr: "Quick source summary",
         keyTakeaways: [],
         suggestedQuestions: [],
         generatedAt: now,
@@ -1139,7 +1139,7 @@ async function bootAuthenticatedApp(page: Page, mode: SurfaceMode) {
       localStorage.setItem("orka_user", JSON.stringify(activeUser));
       localStorage.setItem("orka_active_topic_id", activeTopicId);
       localStorage.setItem("orka_wiki_topic_id", activeTopicId);
-      localStorage.setItem("orka_active_view", activeMode === "orkalm" ? "sources" : "wiki");
+      localStorage.setItem("orka_active_view", activeMode === "orkalm" ? "notebook" : "sources-wiki");
       localStorage.setItem(`orka_premium_tour_seen_v3_${activeUser.id}`, "true");
       const voice = {
         default: true,
@@ -1172,7 +1172,7 @@ async function exerciseAudioStudyRoom(
   mode: SurfaceMode,
 ) {
   const expectedAudioJobId = mode === "orkalm" ? orkalmAudioJobId : wikiAudioJobId;
-  const expectedContextType = mode === "orkalm" ? "source_notebook" : "wiki_page";
+  const expectedContextType = mode === "orkalm" ? "Source notebook" : "Wiki page";
 
   await page.getByTestId("audio-overview-create").click();
   await expect.poll(() => apiCalls.some((call) => call.method === "POST" && call.path === "/audio/overview")).toBe(true);
@@ -1207,8 +1207,8 @@ async function exerciseAudioStudyRoom(
   expect(String(askPayload.activeSegment ?? "")).toContain("[HOCA]");
 }
 
-test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
-  test("renders OrkaLM source notebook features, upload, and active audio without Wiki sync", async ({ page }) => {
+test.describe("Notebook Studio and Sources / Wiki contract", () => {
+  test("renders Notebook Studio source notebook features, upload, and active audio without Wiki sync", async ({ page }) => {
     const apiCalls = await installApiMocks(page, "orkalm");
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
@@ -1218,29 +1218,29 @@ test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
     await bootAuthenticatedApp(page, "orkalm");
     await page.goto("/app");
 
-    await expect(page.getByText("OrkaLM kaynak defteri")).toBeVisible({ timeout: 20000 });
-    await expect(page.getByRole("button", { name: /PDF \/ Kaynak/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Source Pack" })).toBeVisible();
+    await expect(page.getByText("Source notebook", { exact: true }).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: /Upload source/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Build source set" })).toBeVisible();
 
-    const artifactPreview = page.locator("article").filter({ hasText: "OrkaLM slide outline" });
-    await expect(artifactPreview.getByText("Surface", { exact: true })).toBeVisible();
-    await expect(artifactPreview).toContainText("orkalm");
-    await expect(artifactPreview.getByText("Context", { exact: true })).toBeVisible();
-    await expect(artifactPreview).toContainText("source_notebook");
-    await expect(artifactPreview).toContainText("cross-surface sync kapali");
-    await expect(artifactPreview).toContainText("phase 7 audio active");
-    await expect(artifactPreview.getByText("Slide preview", { exact: true })).toBeVisible();
+    const artifactPreview = page.locator("article").filter({ hasText: "Notebook Studio deck outline" });
+    await expect(artifactPreview.getByText("Yüzey", { exact: true })).toBeVisible();
+    await expect(artifactPreview).toContainText("Source notebook");
+    await expect(artifactPreview.getByText("Bağlam", { exact: true })).toBeVisible();
+    await expect(artifactPreview).toContainText("Source notebook");
+    await expect(artifactPreview).toContainText("Yüzeyler ayrı tutuluyor");
+    await expect(artifactPreview).toContainText("Sesli anlatım hazır");
+    await expect(artifactPreview.getByText("Deck preview", { exact: true })).toBeVisible();
     await expect(artifactPreview.getByText("speaker notes", { exact: true })).toBeVisible();
     await expect(artifactPreview.getByText("checkpoint", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: /OrkaLM properties and graph contract/i }).click();
-    await expect(page.getByText("Properties contract", { exact: true })).toBeVisible();
-    await expect(page.getByText("Scoped graph contract", { exact: true })).toBeVisible();
-    await expect(page.getByText(/cross-surface 0/).first()).toBeVisible();
+    await page.getByRole("button", { name: /Notebook Studio property and graph map/i }).click();
+    await expect(page.getByText("Property map", { exact: true })).toBeVisible();
+    await expect(page.getByText("Graph scope", { exact: true })).toBeVisible();
+    await expect(page.getByText(/outside links 0/).first()).toBeVisible();
     await expect(page.getByText("Export readiness", { exact: true }).first()).toBeVisible();
 
     await page.getByRole("button", { name: /Active audio overview/i }).click();
-    await expect(page.getByText(/Sesli ders paketi aktif/i).first()).toBeVisible();
+    await expect(page.getByText(/Audio overview is active/i).first()).toBeVisible();
     await expect(page.getByText(/caption ready/i).first()).toBeVisible();
 
     await exerciseAudioStudyRoom(page, apiCalls, "orkalm");
@@ -1248,7 +1248,7 @@ test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
     await expect(page.getByText("Write to Wiki")).toHaveCount(0);
 
     const fileChooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: /PDF \/ Kaynak/i }).click();
+    await page.getByRole("button", { name: /Upload source/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles({
       name: "contract-upload.pdf",
@@ -1280,7 +1280,7 @@ test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
 
     await page.goto("/app");
 
-    await expect(page.locator("body")).toContainText(/Aktif Wiki sayfasi|Beklenmeyen bir hata/, { timeout: 20000 });
+    await expect(page.locator("body")).toContainText(/Active Wiki page|Beklenmeyen bir hata/, { timeout: 20000 });
     if (await page.getByText("Beklenmeyen bir hata").isVisible().catch(() => false)) {
       throw new Error(
         [
@@ -1292,7 +1292,7 @@ test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
     }
 
     try {
-      await expect(page.getByText("Aktif Wiki sayfasi").first()).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText("Active Wiki page").first()).toBeVisible({ timeout: 20000 });
     } catch (error) {
       throw new Error(
         [
@@ -1304,35 +1304,35 @@ test.describe("Notebook Studio Wiki/OrkaLM contract", () => {
         ].filter(Boolean).join("\n"),
       );
     }
-    await expect(page.getByRole("button", { name: /PDF \/ Kaynak/i })).toHaveCount(0);
-    await expect(page.getByText("OrkaLM kaynak defteri")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Upload source/i })).toHaveCount(0);
+    await expect(page.getByText("Source notebook", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Wiki burada kaynak yukletmez")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Calisma rehberi", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Study guide", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Glossary" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Timeline" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Slayt taslagi", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Deck outline", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "UML / Mermaid", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sesli anlatim", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Audio overview", exact: true })).toBeVisible();
 
     const wikiArtifactPreview = page.locator("article").filter({ hasText: "Wiki Study Guide" });
-    await expect(wikiArtifactPreview.getByText("Surface", { exact: true })).toBeVisible();
-    await expect(wikiArtifactPreview).toContainText("wiki");
-    await expect(wikiArtifactPreview.getByText("Context", { exact: true })).toBeVisible();
-    await expect(wikiArtifactPreview).toContainText("wiki_page");
-    await expect(wikiArtifactPreview).toContainText("cross-surface sync kapali");
-    await expect(wikiArtifactPreview).toContainText("phase 7 audio active");
+    await expect(wikiArtifactPreview.getByText("Yüzey", { exact: true })).toBeVisible();
+    await expect(wikiArtifactPreview).toContainText("Wiki page");
+    await expect(wikiArtifactPreview.getByText("Bağlam", { exact: true })).toBeVisible();
+    await expect(wikiArtifactPreview).toContainText("Wiki page");
+    await expect(wikiArtifactPreview).toContainText("Yüzeyler ayrı tutuluyor");
+    await expect(wikiArtifactPreview).toContainText("Sesli anlatım hazır");
 
     await page.getByRole("button", { name: "Preview" }).click();
-    await expect(page.getByText("wiki_lesson_export_scope").first()).toBeVisible();
-    await expect(page.getByText("wiki_preview_ready").first()).toBeVisible();
+    await expect(page.getByText("wiki lesson export scope").first()).toBeVisible();
+    await expect(page.getByText(/Haz.r/i).first()).toBeVisible();
 
-    await page.getByRole("button", { name: /Wiki properties and graph contract/i }).click();
-    await expect(page.getByText("Properties contract", { exact: true })).toBeVisible();
-    await expect(page.getByText("Scoped graph contract", { exact: true })).toBeVisible();
-    await expect(page.getByText(/cross-surface 0/).first()).toBeVisible();
+    await page.getByRole("button", { name: /Wiki property and graph map/i }).click();
+    await expect(page.getByText("Property map", { exact: true })).toBeVisible();
+    await expect(page.getByText("Graph scope", { exact: true })).toBeVisible();
+    await expect(page.getByText(/outside links 0/).first()).toBeVisible();
 
     await page.getByRole("button", { name: /Wiki slide outline/i }).click();
-    await expect(page.getByText("Slide preview", { exact: true })).toBeVisible();
+    await expect(page.getByText("Deck preview", { exact: true })).toBeVisible();
     await expect(page.getByText("speaker notes", { exact: true })).toBeVisible();
     await expect(page.getByText("checkpoint", { exact: true })).toBeVisible();
 

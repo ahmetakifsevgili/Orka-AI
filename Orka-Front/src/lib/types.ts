@@ -2205,6 +2205,7 @@ export interface ApiSession {
 export interface ApiChatResponse {
   sessionId: string;
   messageId: string;
+  topicId: string;
   content: string;
   modelUsed?: string;
   messageType?: "text" | "quiz" | "plan";
@@ -2213,6 +2214,7 @@ export interface ApiChatResponse {
   planCreated?: boolean;
   isNewTopic?: boolean;
   topicTitle?: string;
+  createdAt?: string;
   tokensUsed?: number;
   totalCostUSD?: number;
   metadata?: ChatResponseMetadata | null;

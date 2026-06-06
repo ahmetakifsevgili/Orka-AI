@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { FontSizeProvider } from "./contexts/FontSizeContext";
 import { ToolCapabilitiesProvider } from "./contexts/ToolCapabilitiesContext";
 import { AuthAPI } from "./services/api";
+import OrcaLogo from "./components/OrcaLogo";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
@@ -15,6 +16,40 @@ const Home = lazy(() => import("./pages/Home"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Courses = lazy(() => import("./pages/Courses"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+
+function OrkaLoadingScreen({ label = "Yükleniyor" }: { label?: string }) {
+  return (
+    <div className="flex h-screen w-screen flex-col items-center justify-center gap-4" style={{ background: "#070809" }}>
+      <div className="relative">
+        <div
+          className="absolute inset-0 rounded-2xl blur-xl"
+          style={{ background: "rgba(110, 215, 206, 0.18)" }}
+        />
+        <div
+          className="relative grid h-12 w-12 place-items-center rounded-2xl"
+          style={{ background: "#6ed7ce" }}
+        >
+          <OrcaLogo className="h-6 w-6" style={{ color: "#041210" }} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2" style={{ color: "#5a6360", fontSize: "12px", fontWeight: 500 }}>
+        <span
+          className="inline-block h-1 w-1 rounded-full animate-bounce"
+          style={{ background: "#6ed7ce", animationDelay: "0ms" }}
+        />
+        <span
+          className="inline-block h-1 w-1 rounded-full animate-bounce"
+          style={{ background: "#6ed7ce", animationDelay: "150ms" }}
+        />
+        <span
+          className="inline-block h-1 w-1 rounded-full animate-bounce"
+          style={{ background: "#6ed7ce", animationDelay: "300ms" }}
+        />
+        <span className="ml-2">{label}</span>
+      </div>
+    </div>
+  );
+}
 
 // ── ProtectedRoute ─────────────────────────────────────────────────────────
 // Token yoksa /login'e yönlendirir. Refresh token varsa sessizce yenilemeyi dener.
@@ -48,17 +83,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }, []);
 
   if (isBootstrapping) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-zinc-950 text-zinc-400">
-        <div className="flex flex-col items-center gap-3">
-          <svg className="h-8 w-8 animate-spin text-sky-500" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="text-xs font-semibold tracking-wider">Oturum doğrulanıyor...</span>
-        </div>
-      </div>
-    );
+    return <OrkaLoadingScreen label="Oturum doğrulanıyor" />;
   }
 
   if (!isAuthenticated) {
@@ -72,23 +97,20 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 function AppRouter() {
   return (
-    <Suspense fallback={
-      <div className="flex h-screen w-screen items-center justify-center bg-zinc-950 text-zinc-400">
-        <div className="flex flex-col items-center gap-3">
-          <svg className="h-8 w-8 animate-spin text-sky-500" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="text-xs font-semibold tracking-wider">Yükleniyor...</span>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<OrkaLoadingScreen />}>
       <Switch>
         {/* Public */}
         <Route path="/" component={Landing} />
         <Route path="/login" component={Login} />
 
         {/* Protected */}
+        <Route path="/app/:view">
+          {(params) => (
+            <ProtectedRoute>
+              <Home initialView={params.view} />
+            </ProtectedRoute>
+          )}
+        </Route>
         <Route path="/app">
           <ProtectedRoute>
             <Home />

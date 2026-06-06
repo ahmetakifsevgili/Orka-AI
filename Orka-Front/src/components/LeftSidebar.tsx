@@ -1,44 +1,17 @@
-﻿/*
- * LeftSidebar — ChatGPT tarzı, topic-centric.
- * Her topic = bir müfredat oturumu. Seçince ChatPanel o topic'i yükler.
- *
- * Düzeltmeler:
- *  - topicsLoading artık initialLoading değişince sync ediliyor (sonsuz spinner bug'ı giderildi)
- *  - "Yeni Konu" (+) butonu + inline form eklendi
- *  - onTopicCreated prop'u destructuring'e eklendi
- */
-
-import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Plus,
-  Home,
-  GraduationCap,
-  BookMarked,
-  Settings,
-  PanelLeftClose,
-  PanelLeft,
-  MessageSquare,
-  Loader2,
-  X,
-  Check,
   ChevronRight,
-  ChevronDown,
-  FlaskConical,
-  Code2,
-  Trash2,
-  ClipboardCheck,
-  Globe2,
-  Network,
+  Loader2,
   LogOut,
+  PanelLeft,
+  Plus,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import toast from "react-hot-toast";
 import OrcaLogo from "./OrcaLogo";
 import type { ApiTopic } from "@/lib/types";
+import { APP_NAV_ITEMS, normalizeAppView } from "@/lib/appNavigation";
 import { TopicsAPI } from "@/services/api";
-import { useLanguage } from "@/contexts/LanguageContext";
-import { useToolCapabilities } from "@/contexts/ToolCapabilitiesContext";
 
 interface LeftSidebarProps {
   topics: ApiTopic[];
@@ -49,603 +22,393 @@ interface LeftSidebarProps {
   onTopicCreated: (topic: ApiTopic) => void;
   activeView: string;
   onViewChange: (view: string) => void;
-  /** ChatPanel'dan AI yanıtı geldiğinde artar; topic listesini yeniden çeker. */
   refreshTrigger: number;
   onLogout: () => void | Promise<void>;
   logoutLoading?: boolean;
 }
 
-// NAV_ITEMS: label artık t() ile çevriliyor, statik label kaldırıldı
-const NAV_ITEMS = [
-  { id: "dashboard", icon: Home, labelKey: "today", route: null },
-  { id: "chat", icon: MessageSquare, labelKey: "learn", route: null },
-  { id: "sources", icon: Network, labelKey: "sources", route: null },
-  { id: "central-exams", icon: GraduationCap, labelKey: "Merkezi Sınavlar", route: null },
-  { id: "practice", icon: Code2, labelKey: "practice", route: null },
-  { id: "learning", icon: ClipboardCheck, labelKey: "review", route: null },
-  { id: "progress", icon: BookMarked, labelKey: "progress", route: null },
-];
-
-const EMOJI_SUGGESTIONS = ["📚", "🧠", "💻", "🔬", "🎨", "🗣️", "🏛️", "⚡", "🌍", "🎯"];
-
-type TopicReadinessTone = "ready" | "watch" | "new";
-
-function getTopicReadinessBadge(topic: ApiTopic): { label: string; title: string; tone: TopicReadinessTone } {
-  const progress = Math.min(100, Math.max(0, topic.progressPercentage ?? 0));
-  if (topic.isMastered || progress >= 100) {
-    return {
-      label: "Hazır",
-      title: "Bu konu tamamlanmış görünüyor.",
-      tone: "ready",
-    };
-  }
-
-  if (progress > 0) {
-    return {
-      label: "Dikkat",
-      title: "Bu konuda ilerleme var; tamamlanması gereken adımlar olabilir.",
-      tone: "watch",
-    };
-  }
-
-  return {
-    label: "Yeni",
-    title: "Bu konu için henüz yeterli çalışma kanıtı yok.",
-    tone: "new",
-  };
+function topicProgress(topic: ApiTopic) {
+  const p = Math.max(0, Math.min(100, topic.progressPercentage ?? 0));
+  if (topic.isMastered || p >= 100) return 100;
+  return p;
 }
 
-function TopicReadinessBadge({ topic, compact = false }: { topic: ApiTopic; compact?: boolean }) {
-  const badge = getTopicReadinessBadge(topic);
-  const toneClass = {
-    ready: "border-[#8fb7a2]/24 bg-[#f2faf5]/85 text-[#47725d]",
-    watch: "border-[#e8c46f]/28 bg-[#fff8ee]/85 text-[#8a641f]",
-    new: "border-[#526d82]/12 bg-white/54 text-[#667085]",
-  } satisfies Record<TopicReadinessTone, string>;
-
-  return (
-    <span
-      title={badge.title}
-      className={`inline-flex shrink-0 items-center rounded-full border font-black ${toneClass[badge.tone]} ${
-        compact ? "px-1.5 py-0.5 text-[8px]" : "px-2 py-0.5 text-[9px]"
-      }`}
-    >
-      {badge.label}
-    </span>
-  );
+function topicMeta(topic: ApiTopic) {
+  const p = topicProgress(topic);
+  if (p >= 100) return "tamamlandı";
+  if (p > 0) return `%${Math.round(p)}`;
+  return topic.category || "";
 }
+
+function formatDate(value?: string | Date | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short" }).format(date);
+}
+
+/* Primary nav — excludes settings (goes to bottom) */
+const PRIMARY_NAV = APP_NAV_ITEMS.filter((i) => i.key !== "settings");
 
 export default function LeftSidebar({
-  topics: initialTopics,
-  topicsLoading: initialLoading,
+  topics,
+  topicsLoading,
   activeTopic,
   onTopicClick,
-  onEnterChat,
-  onTopicCreated,
   activeView,
   onViewChange,
   refreshTrigger,
   onLogout,
   logoutLoading = false,
 }: LeftSidebarProps) {
-  const [, navigate] = useLocation();
-  const { t, language, setLanguage, languages } = useLanguage();
-  const { isEnabled, isVisibleForUser } = useToolCapabilities();
   const [isPinned, setIsPinned] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
-  const [isNarrowViewport, setIsNarrowViewport] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia("(max-width: 640px)").matches : false
-  );
-  const isExpanded = !isNarrowViewport && (isPinned || isHovered);
-  const [topics, setTopics] = useState<ApiTopic[]>(initialTopics);
-  const [topicsLoading, setTopicsLoading] = useState(initialLoading);
-
-  // Yeni Konu formu state'leri
-  const [showNewTopicForm, setShowNewTopicForm] = useState(false);
-  const [newTopicTitle, setNewTopicTitle] = useState("");
-  const [newTopicEmoji, setNewTopicEmoji] = useState("📚");
-  const [creating, setCreating] = useState(false);
-  const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
-
-  // Accordion state for modules inside a generic plan
-  const [expandedModuleIds, setExpandedModuleIds] = useState<Set<string>>(new Set());
-
-  const toggleModule = (modId: string) => {
-    setExpandedModuleIds(prev => {
-      const next = new Set(prev);
-      if (next.has(modId)) next.delete(modId);
-      else next.add(modId);
-      return next;
-    });
-  };
-
-  // initialTopics VE initialLoading değişince local state'i sync et
-  useEffect(() => {
-    setTopics(initialTopics);
-  }, [initialTopics]);
+  const [localTopics, setLocalTopics] = useState<ApiTopic[]>(topics);
+  const [loading, setLoading] = useState(topicsLoading);
 
   useEffect(() => {
-    setTopicsLoading(initialLoading);
-  }, [initialLoading]);
+    setLocalTopics(topics);
+    setLoading(topicsLoading);
+  }, [topics, topicsLoading]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const query = window.matchMedia("(max-width: 640px)");
-    const sync = () => setIsNarrowViewport(query.matches);
-    sync();
-    query.addEventListener("change", sync);
-    return () => query.removeEventListener("change", sync);
-  }, []);
-
-  // refreshTrigger her değiştiğinde topic listesini yenile
-  useEffect(() => {
-    if (refreshTrigger === 0) return;
-    setTopicsLoading(true);
+    let cancelled = false;
+    setLoading(true);
     TopicsAPI.getAll()
-      .then((r) => {
-        const loaded = r.data as ApiTopic[];
-        setTopics(loaded);
+      .then((response) => {
+        if (!cancelled) setLocalTopics(response.data as ApiTopic[]);
       })
-      .finally(() => setTopicsLoading(false));
-  }, [refreshTrigger]);
-
-  // Yeni konu oluştur (Optimistic UI)
-  const handleCreateTopic = async () => {
-    const title = newTopicTitle.trim();
-    if (!title) return;
-
-    const tempId = `temp-${Date.now()}`;
-    const newTopic: ApiTopic = {
-      id: tempId,
-      title,
-      emoji: newTopicEmoji,
-      category: "Genel",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Optimistic update
-    setTopics(prev => [newTopic, ...prev]);
-    setShowNewTopicForm(false);
-    setNewTopicTitle("");
-    setCreating(true);
-
-    try {
-      const { data } = await TopicsAPI.create({
-        title,
-        emoji: newTopicEmoji,
-        category: "Genel",
+      .catch(() => {
+        if (!cancelled) setLocalTopics(topics);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+    return () => { cancelled = true; };
+  }, [refreshTrigger, topics]);
 
-      // Update topics list with real data from server
-      setTopics(prev => prev.map(t => t.id === data.id ? { ...t, title: data.title, emoji: data.emoji } : t));
-      onTopicCreated(data as ApiTopic);
-    } catch {
-      // Rollback on fail
-      setTopics(prev => prev.filter(t => t.id !== tempId));
-      toast.error("Konu oluşturulamadı. Lütfen tekrar deneyin.");
-      setShowNewTopicForm(true); // Re-open form
-      setNewTopicTitle(title);
-    } finally {
-      setCreating(false);
-    }
-  };
+  const isExpanded = isPinned || isHovered;
+  const activeKey = normalizeAppView(activeView);
 
-  const handleNewTopicKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleCreateTopic();
-    }
-    if (e.key === "Escape") {
-      setShowNewTopicForm(false);
-      setNewTopicTitle("");
-    }
-  };
+  const recentTopics = useMemo(
+    () =>
+      localTopics
+        .filter((t) => !t.parentTopicId)
+        .sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() - new Date(a.updatedAt ?? a.createdAt ?? 0).getTime())
+        .slice(0, 10),
+    [localTopics],
+  );
 
-
-  // Flyout panel: hangi müfredat genişletilmiş
-  const expandedPlan = topics.find(t => t.id === expandedPlanId);
-  const expandedModules = expandedPlan
-    ? topics.filter(t => t.parentTopicId === expandedPlan.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0))
-    : [];
-  const expandedPlanProgress = typeof expandedPlan?.progressPercentage === "number" && expandedPlan.progressPercentage > 0
-    ? Math.min(100, Math.max(0, expandedPlan.progressPercentage))
-    : null;
-  const expandedPlanLessonCount = expandedModules.reduce((count, mod) => {
-    const lessons = topics.filter(t => t.parentTopicId === mod.id);
-    return count + (lessons.length > 0 ? lessons.length : 1);
-  }, 0);
-
-  const renderLesson = (topicToRender: ApiTopic) => {
-    const isActive = activeTopic?.id === topicToRender.id;
-    const isCompleted = topicToRender.isMastered || topicToRender.progressPercentage === 100;
-    return (
-      <div
-        key={topicToRender.id}
-        onClick={() => onTopicClick(topicToRender)}
-        role="button"
-        tabIndex={0}
-        className={`flex flex-col items-stretch w-full px-3 py-1.5 rounded-md text-left transition-all duration-150 relative group cursor-pointer ${
-          isActive
-            ? "text-[#172033] font-medium bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 border border-[#526d82]/5 shadow-sm"
-            : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/30"
-        } ${isCompleted ? 'border-l-2 border-[#547c61]/30 bg-[#eef1f3]/50' : ''}`}
-      >
-        <div className="flex items-center gap-2.5 w-full relative">
-          {isCompleted ? (
-            <div className="w-4 h-4 rounded-full bg-[#d9e7de] border border-[#547c61]/20 flex items-center justify-center">
-              <Check className="w-2.5 h-2.5 text-[#547c61] stroke-[2.5]" />
-            </div>
-          ) : isActive ? (
-            <div className="w-4 h-4 rounded-full bg-[#f7f9fa] shadow-sm border border-[#526d82]/10 flex items-center justify-center shadow-sm shadow-white/10 flex-shrink-0">
-              <ChevronRight className="w-2.5 h-2.5 text-[#172033]" />
-            </div>
-          ) : (
-            <div className="w-1.5 h-1.5 rounded-full bg-[#b8d4df] flex-shrink-0 ml-1" />
-          )}
-          <span className={`text-[12px] truncate flex-1 ${isCompleted ? 'text-[#5f6f7b] font-medium' : isActive ? 'text-[#172033] font-medium' : 'text-[#667085]'}`}>
-            {topicToRender.title}
-          </span>
-          <div className="flex items-center gap-1">
-            <TopicReadinessBadge topic={topicToRender} compact />
-            <button
-              onClick={(e) => { e.stopPropagation(); onViewChange(`wiki:${topicToRender.id}`); }}
-              title="Ders Wiki'si"
-              className="opacity-0 group-hover:opacity-100 p-1 rounded text-[#667085] hover:text-[#906c36] hover:bg-[#d9bd79]/20 transition-all duration-200"
-            >
-              <BookMarked className="w-3 h-3" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onEnterChat(topicToRender); }}
-              title="Derse Başla"
-              className={`opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[9px] font-medium transition-all duration-200 ${
-                isActive ? "bg-[#f7f9fa] text-zinc-900" : "bg-[#d9e7de]/60 text-[#547c61] hover:bg-[#d9e7de] border border-[#547c61]/10"
-              }`}
-            >
-              {isActive ? "Derse Git" : "Devam Et"}
-            </button>
-          </div>
-        </div>
-        {!isCompleted && (topicToRender.progressPercentage ?? 0) > 0 && (
-          <div className="mt-1 ml-6 w-full h-0.5 bg-[#eef1f3] rounded-full overflow-hidden">
-            <div className="h-full bg-zinc-400 transition-all duration-500" style={{ width: `${topicToRender.progressPercentage}%` }} />
-          </div>
-        )}
-      </div>
-    );
-  };
+  const W = isExpanded ? 252 : 60;
 
   return (
-    <div
-      className="flex flex-row h-full flex-shrink-0 relative z-20"
+    <motion.aside
+      animate={{ width: W }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      className="relative z-20 flex h-screen shrink-0 flex-col bg-[#f7f9fa] border-r border-[#eef1f3]"
+      style={{
+        boxShadow: "2px 0 12px rgba(0,0,0,0.02)",
+      }}
     >
-      {/* ══════════ ANA SIDEBAR (Expandable) ══════════ */}
-      <motion.div
-        initial={{ width: 64 }}
-        animate={{ width: isExpanded ? 260 : 64 }}
-        transition={{ duration: 0.2, ease: "easeInOut" }}
-        className="bg-[#f7f9fa]/90 backdrop-blur-2xl border-r border-[#526d82]/10 flex flex-col h-full flex-shrink-0 overflow-hidden shadow-sm"
-      >
-        {/* Header */}
-        <div className="px-3 py-3 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <OrcaLogo className="w-5 h-5 text-[#172033]" />
-            {isExpanded && (
-              <motion.span
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="text-sm font-semibold text-[#172033] tracking-tight whitespace-nowrap"
-              >
-                Orka AI
-              </motion.span>
-            )}
-          </div>
+      <div className="flex h-full min-h-0 flex-col py-4">
+        {/* Logo + pin toggle */}
+        <div className="mb-5 flex items-center justify-between px-3">
           <button
-            onClick={() => setIsPinned(!isPinned)}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors duration-150"
-            title={isPinned ? "Daralt" : "Sabitle"}
+            type="button"
+            onClick={() => onViewChange("home")}
+            className="flex min-w-0 items-center gap-2.5 rounded-lg p-1 outline-none focus-visible:ring-2 focus-visible:ring-[#6ed7ce]/40"
+            aria-label="Orka home"
           >
-            <PanelLeftClose className={`w-4 h-4 transition-transform duration-300 ${!isPinned ? "rotate-180" : ""}`} />
+            <span
+              className="grid h-7 w-7 flex-none place-items-center rounded-lg"
+              style={{ background: "#6ed7ce" }}
+            >
+              <OrcaLogo className="h-4 w-4" style={{ color: "#041210" }} />
+            </span>
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.span
+                  initial={{ opacity: 0, x: -4 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="text-[15px] font-bold tracking-tight text-[#172033]"
+                >
+                  Orka
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </button>
+
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                type="button"
+                onClick={() => setIsPinned((v) => !v)}
+                className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[#667085] transition hover:bg-[#eef1f3] hover:text-[#344054]"
+                aria-label={isPinned ? "Sidebar'ı küçült" : "Sidebar'ı sabitle"}
+              >
+                <PanelLeft className="h-3.5 w-3.5" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* New topic button */}
+        <div className="mb-4 px-2">
+          <button
+            type="button"
+            onClick={() => onTopicClick(null, "chat")}
+            className="flex h-9 w-full items-center gap-2.5 rounded-xl border px-3 text-[13px] font-medium transition"
+            style={{
+              border: "1px solid rgba(110,215,206,0.2)",
+              background: "rgba(110,215,206,0.06)",
+              color: "#6ed7ce",
+            }}
+          >
+            <Plus className="h-4 w-4 flex-none" />
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.1 }}
+                  className="truncate"
+                >
+                  Yeni Sohbet
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
 
-        {/* Nav */}
-        <div className="px-2 pb-2 flex-shrink-0">
-          {NAV_ITEMS.filter((item) => item.id !== "ide" || (isVisibleForUser("ide_execution") && isEnabled("ide_execution"))).map((item) => {
-            const isActive = activeView === item.id;
-            const label = (() => {
-              if (item.labelKey === "today") return t("today");
-              if (item.labelKey === "tutor") return t("tutor");
-              if (item.labelKey === "learning") return t("learning");
-              if (item.labelKey === "courses") return t("courses") || "Kurslar";
-              if (item.labelKey === "wiki") return t("wiki") || "Wiki";
-              if (item.labelKey === "orkalm") return t("orkalm") || "OrkaLM";
-              if (item.labelKey === "ide") return t("ide");
-              return item.labelKey;
-            })();
+        {/* Primary nav */}
+        <nav className="space-y-0.5 px-2" aria-label="Ana navigasyon">
+          {PRIMARY_NAV.map((item) => {
+            const Icon = item.icon;
+            const active = activeKey === item.key;
             return (
               <button
-                key={item.id}
-                id={`tour-nav-${item.id}`}
-                onClick={() => item.route ? navigate(item.route) : onViewChange(item.id)}
-                className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13px] transition-colors duration-150 mb-0.5 ${
-                  isActive
-                    ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
-                    : "text-[#5f6f7b] hover:text-[#172033] hover:bg-[#f7f9fa]/40"
-                }`}
+                key={item.key}
+                type="button"
+                onClick={() => onViewChange(item.view)}
+                title={!isExpanded ? item.label : undefined}
+                className={[
+                  "group relative flex h-9 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium transition-all",
+                  active
+                    ? "text-[#172033]"
+                    : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
+                ].join(" ")}
+                style={active ? {
+                  background: `rgba(${item.accent === "#6ed7ce" ? "110,215,206" : item.accent === "#a7e879" ? "167,232,121" : item.accent === "#b4a0f0" ? "180,160,240" : item.accent === "#dac17a" ? "218,193,122" : "255,255,255"}, 0.09)`,
+                } : {}}
+                aria-current={active ? "page" : undefined}
               >
-                <item.icon className="w-4 h-4 flex-shrink-0" />
-                {isExpanded && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="truncate">{label}</motion.span>}
+                {/* Active left bar */}
+                {active && (
+                  <span
+                    className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full"
+                    style={{ background: item.accent }}
+                  />
+                )}
+                <Icon
+                  className="h-4 w-4 flex-none"
+                  style={{ color: active ? item.accent : undefined }}
+                />
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12 }}
+                      className="min-w-0 truncate"
+                    >
+                      {item.label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </button>
             );
           })}
-        </div>
+        </nav>
 
-        <div className="mx-3 border-t border-[#526d82]/10" />
-
-        {/* Ana Scroll View */}
-        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden min-h-0 custom-scrollbar-hide">
-
-          {/* 💬 SOHBET GEÇMİŞİ */}
-          <div className="px-3 pt-3 flex-shrink-0 mb-3">
-            <div className="flex items-center justify-between pl-2 mb-2">
-              <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
-                {t("chat_history")}
-              </span>
-              <button
-                id="tour-new-topic"
-                onClick={() => onTopicClick(null, "chat")}
-                title="Yeni Sohbet Başlat"
-                className="w-6 h-6 flex items-center justify-center rounded-md text-zinc-600 hover:text-[#172033] hover:bg-[#eef1f3] transition-all duration-200"
+        {/* Recent topics */}
+        <div className="mt-4 min-h-0 flex-1 overflow-hidden px-2">
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="mb-2 flex items-center justify-between px-1"
               >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="space-y-0.5">
-              {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').length === 0 && (
-                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">{t("no_chat")}</p>
-              )}
-              {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() !== 'plan').map((chatTopic) => (
-                <div
-                  key={chatTopic.id}
-                  className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-left transition-colors duration-150 group cursor-pointer ${
-                    activeTopic?.id === chatTopic.id
-                      ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
-                      : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/40"
-                  }`}
-                  onClick={() => onTopicClick(chatTopic, "chat")}
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#667085]">
+                  Geçmiş Sohbetler
+                </span>
+                {loading && <Loader2 className="h-3 w-3 animate-spin text-[#3a403d]" />}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="sidebar-scrollbar h-full space-y-0.5 overflow-y-auto">
+            {recentTopics.length === 0 && !loading && isExpanded && (
+              <div className="rounded-xl px-3 py-3 text-[12px] leading-5 text-[#3a403d]">
+                İlk dersi başlat; Orka çalışma alanını hazırlar.
+              </div>
+            )}
+
+            {recentTopics.map((topic) => {
+              const selected = activeTopic?.id === topic.id;
+              const progress = topicProgress(topic);
+              const emoji = topic.emoji || topic.title?.charAt(0)?.toUpperCase() || "O";
+
+              return (
+                <button
+                  key={topic.id}
+                  type="button"
+                  onClick={() => onTopicClick(topic, "chat")}
+                  title={!isExpanded ? topic.title : undefined}
+                  className={[
+                    "group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition",
+                    selected
+                      ? "bg-[#6ed7ce]/8 text-[#172033] ring-1 ring-[#6ed7ce]/18"
+                      : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
+                  ].join(" ")}
                 >
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <MessageSquare className="w-3 h-3 flex-shrink-0" />
-                    <span className="text-xs truncate">{chatTopic.title}</span>
-                  </div>
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (!window.confirm("Bu sohbeti silmek istediğinizden emin misiniz?")) return;
-                      try {
-                        await TopicsAPI.delete(chatTopic.id);
-                        setTopics(prev => prev.filter(t => t.id !== chatTopic.id && t.parentTopicId !== chatTopic.id));
-                        if (activeTopic?.id === chatTopic.id) onTopicClick(null, "chat");
-                        toast.success("Sohbet silindi");
-                      } catch { toast.error("Silinemedi"); }
-                    }}
-                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-                    title="Sohbeti Sil"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mx-3 mt-1 mb-2 border-t border-[#526d82]/10 opacity-50" />
-
-          {/* 📚 ÖĞRENME MÜFREDATLARI — sadece başlıklar, tıklayınca sağa panel açılır */}
-          <div className="px-3 pt-1 pb-2 flex-shrink-0">
-            <div className="flex items-center justify-between pl-2 mb-2">
-              <span className="text-[10px] font-bold text-[#667085] uppercase tracking-widest block">
-                {t("curriculum")}
-              </span>
-            </div>
-            <div className="space-y-0.5">
-              {topics.filter(t => t.parentTopicId === null && (t.category || '').toLowerCase() === 'plan').length === 0 && (
-                <p className="text-[11px] text-zinc-600 px-2 py-3 italic">{t("no_curriculum")}</p>
-              )}
-              {topics.filter(t =>
-                t.parentTopicId === null &&
-                (t.category || '').toLowerCase() === 'plan'
-              ).map((planTopic) => {
-                const hasModules = topics.some(t => t.parentTopicId === planTopic.id);
-                const isOpen = expandedPlanId === planTopic.id;
-                return (
-                  <div
-                    key={planTopic.id}
-                    className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-left transition-all duration-200 group cursor-pointer ${
-                      isOpen
-                        ? "bg-violet-900/30 text-violet-200 border border-violet-700/30 font-medium"
-                        : activeTopic?.id === planTopic.id
-                          ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
-                          : "text-[#5f6f7b] hover:text-[#172033] hover:bg-[#f7f9fa]/40"
-                    }`}
-                    onClick={() => {
-                      onTopicClick(planTopic, "chat");
-                      if (hasModules) {
-                        setExpandedPlanId(isOpen ? null : planTopic.id);
-                      }
+                  {/* Avatar */}
+                  <span
+                    className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[11px] font-bold"
+                    style={{
+                      background: selected ? "rgba(110,215,206,0.12)" : "rgba(255,255,255,0.04)",
+                      color: selected ? "#6ed7ce" : "#5a6360",
                     }}
                   >
-                    <div className="flex items-center gap-2 overflow-hidden flex-1">
-                      <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90 text-violet-400" : ""}`} />
-                      <span className="text-xs truncate">{planTopic.title}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <TopicReadinessBadge topic={planTopic} compact />
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!window.confirm("Bu müfredatı (ve tüm alt derslerini) silmek istediğinizden emin misiniz?")) return;
-                          try {
-                            await TopicsAPI.delete(planTopic.id);
-                            setTopics(prev => prev.filter(t => t.id !== planTopic.id && t.parentTopicId !== planTopic.id));
-                            if (expandedPlanId === planTopic.id) setExpandedPlanId(null);
-                            if (activeTopic?.id === planTopic.id || activeTopic?.parentTopicId === planTopic.id) {
-                              onTopicClick(null, "plan");
-                            }
-                            toast.success("Müfredat silindi");
-                          } catch { toast.error("Silinemedi"); }
-                        }}
-                        className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[#667085] hover:text-red-400 hover:bg-red-500/10 rounded transition-all"
-                        title="Müfredatı Sil"
+                    {emoji.slice(0, 2)}
+                  </span>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.12 }}
+                        className="min-w-0 flex-1"
                       >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        <span className="block truncate text-[13px] font-medium">
+                          {topic.title || "Başlıksız çalışma"}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-[11px] text-[#3a403d]">
+                          {topicMeta(topic) && <span>{topicMeta(topic)}</span>}
+                          {formatDate(topic.updatedAt ?? topic.createdAt) && (
+                            <>
+                              <span className="h-0.5 w-0.5 rounded-full bg-[#3a403d]" />
+                              <span>{formatDate(topic.updatedAt ?? topic.createdAt)}</span>
+                            </>
+                          )}
+                        </span>
+                        {/* Progress bar */}
+                        {progress > 0 && progress < 100 && (
+                          <span className="mt-1.5 block h-0.5 w-full overflow-hidden rounded-full bg-white/6">
+                            <span
+                              className="block h-full rounded-full"
+                              style={{
+                                width: `${progress}%`,
+                                background: "linear-gradient(90deg, #6ed7ce, #a7e879)",
+                              }}
+                            />
+                          </span>
+                        )}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+
+                  {isExpanded && selected && (
+                    <ChevronRight className="h-3.5 w-3.5 flex-none text-[#6ed7ce]" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-auto border-t border-[#526d82]/10 px-3 py-3 flex-shrink-0 bg-[#f7f9fa]/40 backdrop-blur-md">
-          {isExpanded && (
-            <label className="mb-2 flex items-center gap-2 rounded-lg border border-[#526d82]/10 bg-white/42 px-2 py-2 text-[11px] font-semibold text-[#667085]">
-              <Globe2 className="h-3.5 w-3.5" />
-              <select
-                value={language}
-                onChange={(event) => setLanguage(event.target.value as typeof language)}
-                className="min-w-0 flex-1 bg-transparent text-[11px] font-bold text-[#344054] outline-none"
-                aria-label={t("interface_language")}
-              >
-                {languages.map((item) => (
-                  <option key={item.code} value={item.code}>
-                    {item.nativeName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <button
-            onClick={() => onViewChange("settings")}
-            className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-lg text-[13px] transition-colors duration-150 ${
-              activeView === "settings"
-                ? "bg-[#f7f9fa] shadow-sm border border-[#526d82]/5 text-[#172033] font-medium"
-                : "text-[#667085] hover:text-[#344054] hover:bg-[#f7f9fa]/40"
-            }`}
-          >
-            <Settings className="w-4 h-4 flex-shrink-0" />
-            <span>{t("settings") || "Ayarlar"}</span>
-          </button>
+        {/* Bottom — settings + user */}
+        <div className="mt-3 border-t px-2 pt-3" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
           <button
             type="button"
-            onClick={() => void onLogout()}
-            disabled={logoutLoading}
-            title="Çıkış yap"
-            aria-label="Çıkış yap"
-            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-[#8a3f3f] transition-colors duration-150 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-wait disabled:opacity-60"
+            onClick={() => onViewChange("settings")}
+            title={!isExpanded ? "Ayarlar" : undefined}
+            className={[
+              "mb-2 flex h-9 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium transition",
+              activeView === "settings"
+                ? "bg-white/8 text-[#172033]"
+                : "text-[#667085] hover:bg-white/4 hover:text-[#344054]",
+            ].join(" ")}
           >
-            {logoutLoading ? (
-              <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" />
-            ) : (
-              <LogOut className="h-4 w-4 flex-shrink-0" />
-            )}
-            {isExpanded && <span>Çıkış yap</span>}
-          </button>
-        </div>
-      </motion.div>
-
-      {/* ══════════ FLYOUT PANEL — Müfredat Detayı (yana açılır) ══════════ */}
-      <AnimatePresence>
-        {expandedPlan && (
-          <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 280, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="bg-[#f7f9fa]/40 backdrop-blur-md/95 border-r border-[#526d82]/10 flex flex-col h-full overflow-hidden flex-shrink-0 backdrop-blur-sm"
-          >
-            {/* Panel Header */}
-            <div className="px-4 py-3 border-b border-[#526d82]/10 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2 overflow-hidden flex-1">
-                <GraduationCap className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                <span className="text-sm font-semibold text-[#172033] truncate">{expandedPlan.title}</span>
-              </div>
-              <button
-                onClick={() => setExpandedPlanId(null)}
-                className="w-6 h-6 rounded-md flex items-center justify-center text-[#667085] hover:text-[#344054] hover:bg-[#eef1f3] transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="px-4 py-2 border-b border-zinc-800/30 flex-shrink-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-[#667085]">İlerleme</span>
-                <span className="text-[10px] text-[#5f6f7b] font-medium">
-                  {expandedPlanProgress != null ? `${Math.round(expandedPlanProgress)}%` : `${expandedModules.length} modul / ${expandedPlanLessonCount} ders`}
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-[#eef1f3] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-violet-500 to-emerald-500 transition-all duration-700"
-                  style={{ width: `${expandedPlanProgress ?? 100}%`, opacity: expandedPlanProgress == null ? 0.18 : 1 }}
-                />
-              </div>
-            </div>
-
-            {/* Module/Lesson Tree */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 custom-scrollbar-hide">
-              {expandedModules.length === 0 && (
-                <p className="text-[11px] text-zinc-600 italic px-2">Modül bulunamadı</p>
+            <SettingsIcon className="h-4 w-4 flex-none" />
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  Ayarlar
+                </motion.span>
               )}
-              {expandedModules.map((mod) => {
-                const lessons = topics.filter(t => t.parentTopicId === mod.id).sort((a,b) => ((a as any).order || 0) - ((b as any).order || 0));
-                const isLegacyLesson = lessons.length === 0;
+            </AnimatePresence>
+          </button>
 
-                if (isLegacyLesson) {
-                  return <div key={mod.id}>{renderLesson(mod)}</div>;
-                }
-
-                return (
-                  <div key={mod.id}>
-                    {/* Modül Başlığı */}
-                    <div
-                      className="flex items-center justify-between mb-1.5 px-1 py-1 rounded cursor-pointer hover:bg-[#eef1f3]/40 transition-colors"
-                      onClick={() => toggleModule(mod.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-[#f7f9fa]/80 border border-zinc-800/80 text-[10px]">
-                          {mod.emoji || "📦"}
-                        </div>
-                        <span className="text-[11px] font-semibold text-[#5f6f7b] tracking-wide truncate uppercase">
-                          {mod.title}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <TopicReadinessBadge topic={mod} compact />
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 text-[#667085] transition-transform duration-200 ${expandedModuleIds.has(mod.id) ? "rotate-180" : ""}`}
-                        />
-                      </div>
-                    </div>
-                    {/* Dersler - AnimatePresence can be added later, basic conditional rendering for now */}
-                    {expandedModuleIds.has(mod.id) && (
-                      <div className="space-y-0.5 ml-2 pl-2 border-l border-[#526d82]/10">
-                        {lessons.map((lesson) => renderLesson(lesson))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+          {/* User row */}
+          <div
+            className="flex items-center gap-2.5 rounded-xl p-2"
+            style={{ background: "rgba(255,255,255,0.03)" }}
+          >
+            <div
+              className="grid h-8 w-8 flex-none place-items-center rounded-lg text-[12px] font-bold text-[#172033]"
+              style={{ background: "rgba(110,215,206,0.12)", border: "1px solid rgba(110,215,206,0.2)" }}
+            >
+              A
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="min-w-0 flex-1"
+                >
+                  <p className="truncate text-[13px] font-medium text-[#172033]">Öğrenci</p>
+                  <p className="text-[11px] text-[#3a403d]">Ücretsiz plan</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {isExpanded && (
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  type="button"
+                  onClick={onLogout}
+                  disabled={logoutLoading}
+                  className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[#3a403d] transition hover:bg-white/6 hover:text-[#8f9894] disabled:opacity-40"
+                  aria-label="Çıkış yap"
+                >
+                  {logoutLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <LogOut className="h-3.5 w-3.5" />
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    </motion.aside>
   );
 }

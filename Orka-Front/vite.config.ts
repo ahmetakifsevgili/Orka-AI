@@ -22,6 +22,18 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 3000,
+    chunkSizeWarningLimit: 2300,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("mermaid")) return "vendor-mermaid";
+          if (id.includes("cytoscape")) return "vendor-graph";
+          if (id.includes("monaco-editor") || id.includes("@monaco-editor")) return "vendor-code-editor";
+          if (id.includes("framer-motion")) return "vendor-motion";
+          return undefined;
+        },
+      },
+    },
   },
 });

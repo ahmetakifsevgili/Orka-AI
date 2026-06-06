@@ -1,8 +1,8 @@
 /*
- * Home — uygulamanın ana kabuğu.
- * - Topics yüklenince varsa ilk topic otomatik seçilir → chat direkt açılır.
- * - Topic olmasa bile ChatPanel açık kalır (null-topic modunda backend yeni topic oluşturur).
- * - onTopicAutoCreated: mesaj sonrası backend yeni topic oluşturduysa sidebar güncellenir.
+ * Home — protected Learning OS shell.
+ * - Default screen is Mission Control.
+ * - Tutor stays usable without a selected topic; the backend may create the topic after the first message.
+ * - Legacy view ids are accepted as compatibility aliases but the sidebar exposes only canonical modes.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from "react";
@@ -11,6 +11,7 @@ import { AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import type { ChatMessage, ApiTopic, ApiSession } from "@/lib/types";
 import { AuthAPI, TopicsAPI, storage } from "@/services/api";
+import { appViewPath, isKnownAppView, normalizeAppView } from "@/lib/appNavigation";
 import { useQuizHistory } from "@/contexts/QuizHistoryContext";
 import LeftSidebar from "@/components/LeftSidebar";
 import { usePremiumOnboarding } from "@/components/PremiumOnboardingTour";
@@ -31,6 +32,7 @@ const CentralExamsPanel = lazy(() => import("@/components/CentralExamsPanel"));
 const InteractiveIDE = lazy(() => import("@/components/InteractiveIDE"));
 const LearningPanel = lazy(() => import("@/components/LearningPanel"));
 const SplitPane = lazy(() => import("@/components/SplitPane"));
+import OrkaLMDashboard from "@/components/OrkaLMDashboard";
 
 const LoadingFallback = () => (
   <div className="flex-1 flex items-center justify-center h-full">
@@ -48,11 +50,6 @@ const LS_ACTIVE_TOPIC_ID = "orka_active_topic_id";
 const LS_ACTIVE_VIEW = "orka_active_view";
 const LS_WIKI_TOPIC_ID = "orka_wiki_topic_id";
 
-const VALID_VIEWS = new Set([
-  "chat", "dashboard", "settings", "wiki", "orkalm", "ide", "learning", "sources", "practice", "progress", "central-exams",
-  "home", "study-room", "exams", "sources-wiki", "notebook", "code", "review", "tutor"
-]);
-
 function mapRole(r: string): "user" | "ai" {
   return r.toLowerCase() === "user" ? "user" : "ai";
 }
@@ -62,16 +59,16 @@ function mapApiMessages(session: ApiSession | null): ChatMessage[] {
   return session.messages.map((m) => ({
     id: m.id,
     role: mapRole(m.role || "ai"),
-    type: (m.messageType as ChatMessage["type"]) ?? "text",
+    type: m.messageType === "general" ? "text" : ((m.messageType as ChatMessage["type"]) ?? "text"),
     content: m.content || "",
     metadata: m.metadata ?? null,
     timestamp: m.createdAt ? new Date(m.createdAt) : new Date(),
   }));
 }
 
-export default function Home() {
+export default function Home({ initialView }: { initialView?: string }) {
   usePremiumOnboarding();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { loadHistoryForTopic } = useQuizHistory();
   const [topics, setTopics] = useState<ApiTopic[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
@@ -85,9 +82,9 @@ export default function Home() {
 
   // Initial view — localStorage'da geçerli bir kayıt varsa onu yükle
   const [activeView, setActiveView] = useState<string>(() => {
+    if (isKnownAppView(initialView)) return normalizeAppView(initialView);
     const saved = localStorage.getItem(LS_ACTIVE_VIEW);
-    if (saved === "dashboard") return "home";
-    return saved && VALID_VIEWS.has(saved) ? saved : "home";
+    return isKnownAppView(saved) ? normalizeAppView(saved) : "home";
   });
   const [wikiTopicId, setWikiTopicId] = useState<string | null>(
     () => localStorage.getItem(LS_WIKI_TOPIC_ID)
@@ -117,8 +114,7 @@ export default function Home() {
           localStorage.removeItem(LS_ACTIVE_TOPIC_ID);
         }
 
-        // Fallback: ilk topic
-        if (!activeTopic) setActiveTopic(loaded[0]);
+        // Do not auto-select the first topic; late topic loading can erase a null-topic first chat.
       })
       .catch((err) => {
         console.error("Topics load failed:", err);
@@ -142,6 +138,19 @@ export default function Home() {
   }, [activeView]);
 
   useEffect(() => {
+    if (!initialView) return;
+    const normalized = normalizeAppView(initialView);
+    setActiveView((current) => (current === normalized ? current : normalized));
+  }, [initialView]);
+
+  useEffect(() => {
+    const targetPath = appViewPath(activeView);
+    if (location !== targetPath) {
+      navigate(targetPath, { replace: true });
+    }
+  }, [activeView, location, navigate]);
+
+  useEffect(() => {
     if (wikiTopicId) {
       localStorage.setItem(LS_WIKI_TOPIC_ID, wikiTopicId);
     } else {
@@ -151,10 +160,15 @@ export default function Home() {
 
   const [creating, setCreating] = useState(false);
   const ignoreTopicChangeRef = useRef(false);
+  const sessionRequestRef = useRef(0);
 
   // ── Load session when active topic changes ─────────────────────────────
   useEffect(() => {
-    if (!activeTopic) return;
+    const requestId = ++sessionRequestRef.current;
+    if (!activeTopic) {
+      setSessionLoading(false);
+      return;
+    }
     
     if (ignoreTopicChangeRef.current) {
         ignoreTopicChangeRef.current = false;
@@ -167,6 +181,7 @@ export default function Home() {
 
     TopicsAPI.getLatestSession(activeTopic.id)
       .then((r) => {
+        if (requestId !== sessionRequestRef.current) return;
         const session = r.data as ApiSession;
         setSessionId(session.sessionId);
         setMessages(mapApiMessages(session));
@@ -174,19 +189,21 @@ export default function Home() {
       .catch(() => {
         // 404 = no session yet; ChatPanel will create one on first message
       })
-      .finally(() => setSessionLoading(false));
+      .finally(() => {
+        if (requestId === sessionRequestRef.current) setSessionLoading(false);
+      });
 
     loadHistoryForTopic(activeTopic.id);
   }, [activeTopic, loadHistoryForTopic]);
 
   // ── Topic selection from sidebar ──────────────────────────────────────
   const handleTopicClick = useCallback((topic: ApiTopic | null, defaultMode: "plan" | "chat" = "chat") => {
-    // null = Yeni Sohbet Başlat (+ butonundan)
+    // null = New Tutor Thread (+ button)
     if (!topic) {
       setActiveTopic(null);
       setSessionId(null);
       setMessages([]);
-      setActiveView("chat");
+      setActiveView("tutor");
       setWikiTopicId(null);
       setDefaultChatMode(defaultMode);
       return;
@@ -200,12 +217,12 @@ export default function Home() {
         ignoreTopicChangeRef.current = true; // chat mesajlarını sıfırlama
         setActiveTopic(parent);
       }
-      // IDE açıksa IDE kalsın, değilse chat'e geç
+      // Code IDE açıksa açık kalsın, değilse Tutor'a geç
       if (activeView === "wiki" || activeView === "orkalm") {
         setWikiTopicId(topic.id);
         return;
       }
-      if (activeView !== "ide") setActiveView("chat");
+      if (normalizeAppView(activeView) !== "code") setActiveView("tutor");
       setWikiTopicId(null);
       return;
     }
@@ -215,7 +232,7 @@ export default function Home() {
     if (activeView === "wiki" || activeView === "orkalm") {
       setWikiTopicId(topic.id);
     } else {
-      if (activeView !== "ide") setActiveView("chat");
+      if (normalizeAppView(activeView) !== "code") setActiveView("tutor");
       setWikiTopicId(null);
     }
   }, [topics, activeTopic]);
@@ -233,10 +250,6 @@ export default function Home() {
     } else {
       setActiveTopic(topic);
     }
-    // IDE açıksa açık kalsın, değilse chat'e geç
-    if (activeView !== "ide") {
-      setActiveView("chat");
-    }
     setWikiTopicId(null);
   }, [topics, activeView]);
 
@@ -246,7 +259,7 @@ export default function Home() {
     setActiveTopic(topic);
     setSessionId(null);
     setMessages([]);
-    setActiveView("chat");
+      setActiveView("tutor");
     toast.success(`"${topic.title}" oluşturuldu`);
   }, []);
 
@@ -257,16 +270,26 @@ export default function Home() {
 
   // ── Backend yeni topic oluşturduysa (null-topic modu) sidebar'ı kur ───
   const handleTopicAutoCreated = useCallback((newTopicId: string) => {
-    ignoreTopicChangeRef.current = true;
-    setSessionId(null);
-    setMessages([]);
     setRefreshTrigger((n) => n + 1);
     TopicsAPI.getAll()
       .then((r) => {
         const loaded: ApiTopic[] = r.data ?? [];
         setTopics(loaded);
         const found = loaded.find((t) => t.id === newTopicId);
-        if (found) setActiveTopic(found);
+        if (!found) {
+          ignoreTopicChangeRef.current = false;
+          return;
+        }
+
+        setActiveTopic((current) => {
+          if (current?.id === found.id) {
+            ignoreTopicChangeRef.current = false;
+            return current;
+          }
+
+          ignoreTopicChangeRef.current = true;
+          return found;
+        });
       })
       .catch(() => {
         ignoreTopicChangeRef.current = false;
@@ -276,7 +299,7 @@ export default function Home() {
   // ── Wiki panel ────────────────────────────────────────────────────────
   const handleOpenWiki = useCallback((topicId: string) => {
     setWikiTopicId(topicId);
-    setActiveView("wiki");
+    setActiveView("sources-wiki");
   }, []);
 
   const handleCloseWiki = useCallback(() => setWikiTopicId(null), []);
@@ -299,7 +322,7 @@ export default function Home() {
       setWikiTopicId(null);
       setPendingIDEMessage(null);
       setActiveQuizQuestion(null);
-      setActiveView("dashboard");
+      setActiveView("home");
 
       if (revokeFailed) {
         toast.error("Çıkış yapılamadı. Lütfen tekrar deneyin.");
@@ -317,47 +340,47 @@ export default function Home() {
       const subtopicId = view.split(":")[1];
       if (subtopicId) {
         setWikiTopicId(subtopicId);
-        setActiveView("wiki");
+        setActiveView("sources-wiki");
         return;
       }
     }
-    
-    if (view === "sources") {
+
+    if (["sources-wiki", "sources", "wiki"].includes(view)) {
       if (activeTopic) {
         setWikiTopicId(activeTopic.id);
-        setActiveView("sources");
+        setActiveView("sources-wiki");
       } else {
-        toast.error("Kaynakları görmek için önce bir konu seçmelisin.");
+        setWikiTopicId(null);
+        setActiveView("sources-wiki");
+        toast.error("Sources / Wiki için önce bir konu seçmelisin.");
       }
       return;
     }
-    if (view === "practice") {
-      setActiveView("practice");
-      return;
-    }
-    if (view === "progress") {
-      setActiveView("progress");
-      return;
-    }
-    if (view === "wiki") {
+
+    if (["notebook", "orkalm"].includes(view)) {
       if (activeTopic) {
         setWikiTopicId(activeTopic.id);
-        setActiveView("wiki");
       } else {
-        toast.error("Wiki'yi görüntülemek için önce bir konu seçmelisiniz.");
+        setWikiTopicId(null);
+          // toast.error removed because OrkaLM is now standalone
       }
+      setActiveView("notebook");
       return;
     }
-    if (view === "orkalm") {
-      if (activeTopic) {
-        setWikiTopicId(activeTopic.id);
-        setActiveView("orkalm");
-      } else {
-        toast.error("OrkaLM için önce bir konu seçmelisin.");
-      }
+
+    if (["practice", "learning"].includes(view)) {
+      setActiveView("review");
       return;
     }
-    setActiveView(view);
+    if (view === "central-exams") {
+      setActiveView("exams");
+      return;
+    }
+    if (view === "ide") {
+      setActiveView("code");
+      return;
+    }
+    setActiveView(normalizeAppView(view));
   }, [activeTopic]);
 
   // ── Main content renderer ──────────────────────────────────────────────
@@ -384,7 +407,7 @@ export default function Home() {
   const handleIDEClose = useCallback(() => {
     // Quiz bittikten sonra IDE kapanır, chat'e geri döner
     setActiveQuizQuestion(null);
-    setActiveView("chat");
+    setActiveView("tutor");
   }, []);
 
   const renderMain = () => {
@@ -398,9 +421,10 @@ export default function Home() {
       case "settings":
         return <SettingsPanel />;
       case "learning":
-        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="review" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
+      case "review":
+        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="review" onOpenChat={() => setActiveView("tutor")} onOpenIDE={() => setActiveView("code")} />;
       case "practice":
-        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="practice" onOpenChat={() => setActiveView("chat")} onOpenIDE={() => setActiveView("ide")} />;
+        return <LearningPanel topic={activeTopic} sessionId={sessionId ?? undefined} mode="practice" onOpenChat={() => setActiveView("tutor")} onOpenIDE={() => setActiveView("code")} />;
       case "home":
         return <MissionControlHome activeTopic={activeTopic} sessionId={sessionId} topics={topics} onViewChange={handleViewChange} />;
       case "study-room":
@@ -408,117 +432,66 @@ export default function Home() {
       case "exams":
         return <ExamWarRoomPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
       case "sources-wiki":
-        return <SourceWikiProPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
-      case "notebook":
-        return <NotebookStudioProPanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} />;
-      case "code":
-        return (
-          <CodeLearningIdePanel
-            activeTopic={activeTopic}
-            sessionId={sessionId}
-            onViewChange={handleViewChange}
-            onSendToTutor={handleIDESendToChat}
-            onCloseQuiz={handleIDEClose}
-          />
-        );
       case "wiki":
-        return wikiTopicId ? (
-          <WikiMainPanel topicId={wikiTopicId} onClose={() => handleViewChange("chat")} />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-zinc-500">
-            Bir ders seçilmedi.
-          </div>
-        );
-      case "orkalm":
-      case "sources":
-        return wikiTopicId ? (
-          <WikiMainPanel topicId={wikiTopicId} mode="orkalm" onClose={() => handleViewChange("chat")} />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-zinc-500">
-            Kaynaklar için önce bir konu seç.
-          </div>
-        );
-      case "tutor":
-      case "chat":
-        return (
-          <ChatPanel
-            activeTopic={activeTopic}
-            sessionId={sessionId}
-            onSessionStart={setSessionId}
-            messages={messages}
-            setMessages={setMessages}
-            sessionLoading={sessionLoading}
-            onOpenWiki={handleOpenWiki}
-            onTopicsRefresh={handleTopicsRefresh}
-            onTopicAutoCreated={handleTopicAutoCreated}
-            currentSubtopic={currentSubtopic}
-            defaultMode={defaultChatMode}
-            pendingMessage={pendingIDEMessage}
-            onPendingMessageConsumed={() => setPendingIDEMessage(null)}
-            onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
-          />
-        );
-      case "ide": {
         return (
           <SplitPane
             left={
-              <ChatPanel
-                activeTopic={activeTopic}
-                sessionId={sessionId}
-                onSessionStart={setSessionId}
-                messages={messages}
-                setMessages={setMessages}
-                sessionLoading={sessionLoading}
-                onOpenWiki={handleOpenWiki}
-                onTopicsRefresh={handleTopicsRefresh}
-                onTopicAutoCreated={handleTopicAutoCreated}
-                currentSubtopic={currentSubtopic}
-                defaultMode={defaultChatMode}
-                pendingMessage={pendingIDEMessage}
-                onPendingMessageConsumed={() => setPendingIDEMessage(null)}
-                onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
-              />
+              <ChatPanel activeTopic={activeTopic} sessionId={sessionId} onSessionStart={setSessionId} messages={messages} setMessages={setMessages} sessionLoading={sessionLoading} onOpenWiki={handleOpenWiki} onTopicsRefresh={handleTopicsRefresh} onTopicAutoCreated={handleTopicAutoCreated} currentSubtopic={currentSubtopic} defaultMode={defaultChatMode} pendingMessage={pendingIDEMessage} onPendingMessageConsumed={() => setPendingIDEMessage(null)} onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("code"); }} />
             }
             right={
-              <InteractiveIDE
-                topicTitle={activeTopic?.title}
-                topicId={activeTopic?.id}
-                sessionId={sessionId ?? undefined}
-                quizQuestion={activeQuizQuestion ?? undefined}
-                onSendToChat={handleIDESendToChat}
-                onClose={handleIDEClose}
-              />
+              (wikiTopicId ?? activeTopic?.id) ? (
+                <WikiMainPanel topicId={(wikiTopicId ?? activeTopic?.id) as string} onClose={() => handleViewChange("tutor")} />
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-[#5a6360]">
+                  <p className="text-sm font-medium">Wiki i�in �nce bir sohbet veya konu se�.</p>
+                </div>
+              )
             }
           />
         );
-      }
+      case "notebook":
+        case "orkalm":
+        case "sources":
+          return (wikiTopicId ?? activeTopic?.id) ? (
+            <WikiMainPanel 
+              topicId={(wikiTopicId ?? activeTopic?.id) as string} 
+              mode="orkalm" 
+              onClose={() => { setActiveTopic(null); setWikiTopicId(null); handleViewChange("orkalm"); }} 
+            />
+          ) : (
+            <OrkaLMDashboard 
+              topics={topics} 
+              onSelectTopic={(topic) => { setActiveTopic(topic); handleViewChange("orkalm"); }} 
+              onTopicCreated={(topic) => { setTopics((prev) => [topic, ...prev]); setActiveTopic(topic); handleViewChange("orkalm"); }} 
+            />
+          );
+      case "code":
+        return (
+          <CodeLearningIdePanel activeTopic={activeTopic} sessionId={sessionId} onViewChange={handleViewChange} onSendToTutor={handleIDESendToChat} onCloseQuiz={handleIDEClose} />
+        );
+      case "ide":
+        return (
+          <SplitPane
+            left={
+              <ChatPanel activeTopic={activeTopic} sessionId={sessionId} onSessionStart={setSessionId} messages={messages} setMessages={setMessages} sessionLoading={sessionLoading} onOpenWiki={handleOpenWiki} onTopicsRefresh={handleTopicsRefresh} onTopicAutoCreated={handleTopicAutoCreated} currentSubtopic={currentSubtopic} defaultMode={defaultChatMode} pendingMessage={pendingIDEMessage} onPendingMessageConsumed={() => setPendingIDEMessage(null)} onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("code"); }} />
+            }
+            right={
+              <InteractiveIDE topicTitle={activeTopic?.title} topicId={activeTopic?.id} sessionId={sessionId ?? undefined} quizQuestion={activeQuizQuestion ?? undefined} onSendToChat={handleIDESendToChat} onClose={handleIDEClose} />
+            }
+          />
+        );
+      case "tutor":
+      case "chat":
       default:
         return (
-          <ChatPanel
-            activeTopic={activeTopic}
-            sessionId={sessionId}
-            onSessionStart={setSessionId}
-            messages={messages}
-            setMessages={setMessages}
-            sessionLoading={sessionLoading}
-            onOpenWiki={handleOpenWiki}
-            onTopicsRefresh={handleTopicsRefresh}
-            onTopicAutoCreated={handleTopicAutoCreated}
-            currentSubtopic={currentSubtopic}
-            defaultMode={defaultChatMode}
-            pendingMessage={pendingIDEMessage}
-            onPendingMessageConsumed={() => setPendingIDEMessage(null)}
-            onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("ide"); }}
-          />
+          <ChatPanel activeTopic={activeTopic} sessionId={sessionId} onSessionStart={setSessionId} messages={messages} setMessages={setMessages} sessionLoading={sessionLoading} onOpenWiki={handleOpenWiki} onTopicsRefresh={handleTopicsRefresh} onTopicAutoCreated={handleTopicAutoCreated} currentSubtopic={currentSubtopic} defaultMode={defaultChatMode} pendingMessage={pendingIDEMessage} onPendingMessageConsumed={() => setPendingIDEMessage(null)} onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("code"); }} />
         );
     }
   };
 
   return (
-    <div className="orka-app-shell orka-bg h-screen flex overflow-hidden text-[#172033] relative">
-      <div className="pointer-events-none absolute inset-0 mist-grid opacity-35" />
-      <div className="pointer-events-none absolute left-[24rem] top-10 h-64 w-64 rounded-full bg-[#dcecf3]/70 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-10 right-14 h-72 w-72 rounded-full bg-[#ddebe3]/70 blur-3xl" />
+    <div className="orka-app-shell orka-bg h-screen flex overflow-hidden text-[#f4f6f3] relative">
+      <div className="pointer-events-none absolute inset-0 mist-grid opacity-40" />
       <LeftSidebar
         topics={topics}
         topicsLoading={topicsLoading}
@@ -534,7 +507,7 @@ export default function Home() {
       />
 
       <div className="relative z-10 flex flex-1 overflow-hidden p-3 pl-0">
-        <div className="flex-1 overflow-hidden rounded-[2rem] bg-[#f5f7f9]/90 shadow-sm border border-white/40 backdrop-blur-2xl ring-1 ring-[#526d82]/5 flex flex-col relative">
+        <div className="flex-1 overflow-hidden rounded-[1.35rem] bg-[#0a0c0e]/92 shadow-[0_28px_90px_rgba(0,0,0,0.34)] border border-white/[0.08] backdrop-blur-2xl ring-1 ring-white/[0.03] flex flex-col relative">
           <Suspense fallback={<LoadingFallback />}>
             {renderMain()}
           </Suspense>
@@ -543,3 +516,4 @@ export default function Home() {
     </div>
   );
 }
+

@@ -65,7 +65,7 @@ export default function CentralExamsPanel() {
       const session = await CentralExamsAPI.startKpssTurkceParagrafPractice({ limit: 5 });
       setPracticeSession(session);
     } catch {
-      setPracticeError("Pratik baslatilamadi. Biraz sonra tekrar dene.");
+      setPracticeError("Exam drill could not start. Try again later.");
     } finally {
       setPracticeLoading(false);
     }
@@ -85,7 +85,7 @@ export default function CentralExamsPanel() {
       });
       setPracticeResult(result);
     } catch {
-      setPracticeError("Cevaplar kaydedilemedi. Pratik seti yenilenmis olabilir.");
+      setPracticeError("Answers could not be saved. The exam drill may have refreshed.");
     } finally {
       setSubmitting(false);
     }
@@ -144,7 +144,7 @@ export default function CentralExamsPanel() {
               </div>
               <h1 className="mt-2 text-2xl font-black text-[#172033]">KPSS calisma alani</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">
-                KPSS hazirlik iskeleti Orka'nin sinav agaci, soru bankasi, pratik ve ogrenme hafizasi ile baglanan merkezi sinav alanidir.
+                KPSS hazirlik iskeleti Orka'nin sinav agaci, soru bankasi, exam drill ve ogrenme hafizasi ile baglanan merkezi sinav alanidir.
               </p>
             </div>
             <div className="rounded-xl border border-[#e5e9f0] bg-[#f8fafc] px-4 py-3 text-sm text-[#526d82]">
@@ -186,7 +186,7 @@ export default function CentralExamsPanel() {
                   ))}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold">
-                  <span className={exam.capabilities?.hasPractice ? "text-[#27724d]" : "text-[#98a2b3]"}>Pratik {exam.capabilities?.hasPractice ? "var" : "yok"}</span>
+                  <span className={exam.capabilities?.hasPractice ? "text-[#27724d]" : "text-[#98a2b3]"}>Question flow {exam.capabilities?.hasPractice ? "ready" : "limited"}</span>
                   <span className={exam.capabilities?.hasMiniDeneme ? "text-[#27724d]" : "text-[#98a2b3]"}>Mini deneme {exam.capabilities?.hasMiniDeneme ? "var" : "yok"}</span>
                   <span className={exam.capabilities?.hasQuestionBank ? "text-[#27724d]" : "text-[#98a2b3]"}>Soru bankasi {exam.capabilities?.hasQuestionBank ? "var" : "bos"}</span>
                   <span className={exam.canClaimOfficial ? "text-[#27724d]" : "text-[#98a2b3]"}>Resmi etiket {exam.canClaimOfficial ? "var" : "yok"}</span>
@@ -196,7 +196,7 @@ export default function CentralExamsPanel() {
           </div>
           {scaffoldedExams.length > 0 && (
             <div className="mt-4 rounded-xl border border-[#e5e9f0] bg-[#f8fafc] p-3 text-sm leading-6 text-[#667085]">
-              YKS, LGS ve YDS bu pakette yalnizca guvenli hazirlik iskeleti olarak gorunur; pratik ve deneme akisi sahte hazirlik icerigi uretmeden kapali kalir.
+              YKS, LGS ve YDS bu pakette yalnizca guvenli hazirlik iskeleti olarak gorunur; question flow ve deneme akisi sahte hazirlik icerigi uretmeden kapali kalir.
             </div>
           )}
         </section>
@@ -223,7 +223,7 @@ export default function CentralExamsPanel() {
                             <div key={topic.id} className="flex items-center justify-between gap-2">
                               <span>{topic.name}</span>
                               <span className="rounded-full bg-[#edf4f0] px-2 py-0.5 font-bold text-[#47725d]">
-                                {topic.practiceReadyCount} pratik
+                                {topic.practiceReadyCount} ready questions
                               </span>
                             </div>
                           ))}
@@ -274,14 +274,14 @@ export default function CentralExamsPanel() {
             </section>
 
             <section className="rounded-2xl border border-[#d7dee8] bg-white/84 p-5 shadow-sm">
-              <div className="text-xs font-black uppercase tracking-widest text-[#8a98a8]">Ilk pratik kapisi</div>
+              <div className="text-xs font-black uppercase tracking-widest text-[#8a98a8]">First exam drill</div>
               <h2 className="mt-1 text-lg font-black text-[#172033]">{entry?.title || "KPSS Turkce Paragraf"}</h2>
               <p className="mt-2 text-sm leading-6 text-[#667085]">
-                {entry?.description || "Turkce paragraf ve anlam sorulari icin dar kapsamli pratik girisi."}
+                {entry?.description || "Turkce paragraf ve anlam sorulari icin dar kapsamli question flow girisi."}
               </p>
               <div className="mt-4 rounded-xl border border-[#e6ebf1] bg-[#fbfcfd] p-3">
                 <div className="text-2xl font-black text-[#172033]">{entry?.practiceReadyCount ?? 0}</div>
-                <div className="text-xs font-bold text-[#667085]">yayina hazir pratik sorusu</div>
+                <div className="text-xs font-bold text-[#667085]">ready exam questions</div>
               </div>
               {entry?.hasPracticeReadyQuestions ? (
                 <button
@@ -290,12 +290,12 @@ export default function CentralExamsPanel() {
                   disabled={practiceLoading}
                   className="mt-4 flex w-full items-center justify-between rounded-xl bg-[#172033] px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {practiceLoading ? "Pratik hazirlaniyor" : "Pratigi baslat"}
+                  {practiceLoading ? "Question flow preparing" : "Start exam drill"}
                   {practiceLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
               ) : (
                 <div className="mt-4 rounded-xl border border-[#e5e9f0] bg-[#f8fafc] p-3 text-sm leading-6 text-[#667085]">
-                  {entry?.emptyState || "Bu alanda henuz yayina hazir pratik sorusu yok. Icerik eklendiginde burada cozulebilir hale gelir."}
+                  {entry?.emptyState || "Bu alanda henuz yayina hazir exam question yok. Icerik eklendiginde burada cozulebilir hale gelir."}
                 </div>
               )}
             </section>
@@ -305,7 +305,7 @@ export default function CentralExamsPanel() {
         <section className="rounded-2xl border border-[#d7dee8] bg-white/84 p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="text-xs font-black uppercase tracking-widest text-[#8a98a8]">KPSS Turkce Paragraf pratigi</div>
+              <div className="text-xs font-black uppercase tracking-widest text-[#8a98a8]">KPSS Turkce Paragraf drill</div>
               <h2 className="mt-1 text-lg font-black text-[#172033]">Coz, gonder, sonucu incele</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">
                 Yayina hazir sorularla dar pilot akis. Cevap anahtari ve aciklama sadece gonderimden sonra gosterilir.
@@ -333,14 +333,14 @@ export default function CentralExamsPanel() {
           {!practiceSession && !practiceResult && (
             <div className="mt-4 rounded-xl border border-[#e5e9f0] bg-[#f8fafc] p-4 text-sm leading-6 text-[#667085]">
               {entry?.hasPracticeReadyQuestions
-                ? "Pratik baslatildiginda sorular burada acilir. Seceneklerde dogru cevap bilgisi tasinmaz."
-                : entry?.emptyState || "Bu alanda henuz yayina hazir pratik sorusu yok."}
+                ? "Exam drill baslatildiginda sorular burada acilir. Seceneklerde dogru cevap bilgisi tasinmaz."
+                : entry?.emptyState || "Bu alanda henuz yayina hazir exam question yok."}
             </div>
           )}
 
           {practiceSession?.status === "empty" && (
             <div className="mt-4 rounded-xl border border-[#e5e9f0] bg-[#f8fafc] p-4 text-sm leading-6 text-[#667085]">
-              {practiceSession.emptyState || "Bu alanda henuz yayina hazir pratik sorusu yok."}
+              {practiceSession.emptyState || "Bu alanda henuz yayina hazir exam question yok."}
             </div>
           )}
 

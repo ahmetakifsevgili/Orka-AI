@@ -124,7 +124,7 @@ export default function InteractiveIDE({ onSendToChat, topicTitle, topicId, sess
     if (phase === "blocked") return "Sandbox güvenlik sınırı devrede. Orka host shell çalıştırmaz ve bunu başarılı sonuç gibi göstermez.";
     if (phase === "provider_missing") return "Kod çalıştırma sağlayıcısı hazır değil. Orka bu durumda sonuç uydurmaz.";
     if (phase === "network_error") return "Kod servisine ulaşılamadı. Kodun kaybolmadı; biraz sonra tekrar deneyebilirsin.";
-    return "Bu hata bir öğrenme sinyali olabilir. Tutor'a gönderirsen neyin kırıldığını adım adım açıklar.";
+    return "Bu hata bir öğrenme sinyali olabilir. Tutor'a gönderirsen Orka neyin kırıldığını adım adım açıklar.";
   })();
 
   const resetOutput = useCallback(() => {

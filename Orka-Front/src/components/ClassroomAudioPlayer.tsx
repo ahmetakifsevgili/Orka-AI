@@ -33,6 +33,19 @@ interface DialogueLine {
   text: string;
 }
 
+const surfaceLabel = (value?: string | null) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "orkalm" || normalized === "source_notebook") return "Source notebook";
+  if (normalized === "wiki" || normalized === "wiki_page") return "Wiki page";
+  if (normalized === "milestone") return "Milestone";
+  return "Study context";
+};
+
+const isSourceSurface = (value?: string | null) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "orkalm" || normalized === "source_notebook";
+};
+
 const mojibakeByteMap = new Map<number, number>([
   [0x00c2, 0xc2], [0x00c3, 0xc3], [0x00c4, 0xc4], [0x00c5, 0xc5],
   [0x00e2, 0xe2], [0x00ef, 0xef], [0x20ac, 0x80], [0x201a, 0x82],
@@ -449,7 +462,7 @@ export default function ClassroomAudioPlayer({
         window.setTimeout(() => speakLine(startIndex, queuedLines), 0);
       }
     } catch {
-      setAskError("Soru sesli ders bağlamına iletilemedi; browser TTS akışı devam ediyor.");
+      setAskError("Soru audio overview bağlamına iletilemedi; browser TTS akışı devam ediyor.");
     } finally {
       setIsAsking(false);
     }
@@ -488,9 +501,9 @@ export default function ClassroomAudioPlayer({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 border-b border-[#526d82]/10 bg-white/50 px-4 py-2 text-[10px] font-bold text-[#667085]">
-        <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">{surface}</span>
+        <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">{surfaceLabel(surface)}</span>
         <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">
-          {surface === "orkalm" ? "source_notebook" : "wiki_page"}
+          {surfaceLabel(isSourceSurface(surface) ? "source_notebook" : "wiki_page")}
         </span>
         <span className="rounded-full border border-[#526d82]/12 bg-white/70 px-2 py-0.5">
           {captionCueCount > 0 ? `${captionCueCount} caption cues` : "caption fallback"}

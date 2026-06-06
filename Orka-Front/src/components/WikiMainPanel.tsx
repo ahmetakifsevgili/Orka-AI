@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   Zap,
   Trash2,
+  ArrowUp,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, QuestionPracticeAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
@@ -43,6 +44,7 @@ import QuizCard from "./QuizCard";
 import RichMarkdown from "./RichMarkdown";
 import NotebookStudioPanel from "./NotebookStudioPanel";
 import ClassroomAudioPlayer from "./ClassroomAudioPlayer";
+import ObsidianGraph from "./ObsidianGraph";
 
 interface WikiPage {
   id: string;
@@ -1893,12 +1895,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="flex-1 flex bg-transparent overflow-hidden relative"
+      className="flex-1 flex flex-col bg-white overflow-hidden relative shadow-[-4px_0_24px_rgba(0,0,0,0.02)]"
     >
       {/* ─── LEFT PANE: WIKI CONTENT ─── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#526d82]/15 bg-[#f7f9fa]/62 backdrop-blur-sm z-10">
+        <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#eef1f3] bg-white z-10">
           <div className="flex flex-col gap-1 min-w-0 pr-8">
             <div className="flex items-center gap-1.5 text-xs text-[#667085] truncate font-medium tracking-wide">
               <span>{surfaceBreadcrumb}</span>
@@ -3785,17 +3787,19 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                           </div>
                         </div>
 
-                        <details className="group rounded-lg border border-[#526d82]/15 bg-[#f7f9fa]/70 overflow-hidden">
-                          <summary className="cursor-pointer px-3 py-2 text-xs text-[#667085] hover:text-[#344054]">
-                            Mermaid / UML benzeri diagram çıktısını göster
-                          </summary>
-                          <div className="px-3 pb-3">
-                            <RichMarkdown
-                              content={`\`\`\`mermaid\n${mindMap.mermaid}\n\`\`\``}
-                              className="prose prose-invert prose-sm max-w-none"
-                            />
+                        <div className="mt-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Network className="w-4 h-4 text-[#8b5cf6]" />
+                            <h4 className="text-sm font-semibold text-[#172033]">İnteraktif Kavram Haritası (Obsidian)</h4>
                           </div>
-                        </details>
+                          <ObsidianGraph 
+                            data={{
+                              nodes: mindMap.nodes.map(n => ({ id: n.id, label: n.label, val: 5 - (n.depth * 0.5), color: n.depth === 0 ? "#8b5cf6" : "#10b981" })),
+                              links: mindMap.nodes.filter(n => n.parentId).map(n => ({ source: n.parentId as string, target: n.id }))
+                            }} 
+                            onNodeClick={(node) => askAbout(node.label)}
+                          />
+                        </div>
                       </div>
                     ) : (
                       <p className="text-sm text-[#667085]">Kaynaklar hazır olduğunda dallı öğrenme haritası burada oluşur.</p>
@@ -3976,15 +3980,15 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         </div>
       </div>
 
-      {/* ─── RIGHT PANE: COPILOT (Ayarlanabilir / Kapatılabilir) ─── */}
+      {/* ─── BOTTOM PANE: COPILOT (Ayarlanabilir / Kapatılabilir) ─── */}
       <AnimatePresence initial={false}>
         {showCopilot && (
           <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 440, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 400, opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="h-full bg-[#f7f9fa]/70 border-l border-[#526d82]/15 flex flex-col flex-shrink-0"
+            className="w-full bg-[#f7f9fa]/70 border-t border-[#526d82]/15 flex flex-col flex-shrink-0"
           >
             {/* Copilot Header */}
             <div className="px-5 py-4 border-b border-[#526d82]/15 flex items-center justify-between flex-shrink-0 bg-[#f7f9fa]/45">

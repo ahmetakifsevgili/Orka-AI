@@ -20,10 +20,7 @@ function generateHeatmapData(): number[][] {
   for (let week = 0; week < 52; week++) {
     const weekData: number[] = [];
     for (let day = 0; day < 7; day++) {
-      const rand = Math.random();
-      if (rand > 0.7) weekData.push(Math.floor(Math.random() * 4) + 1);
-      else if (rand > 0.4) weekData.push(1);
-      else weekData.push(0);
+      weekData.push(0);
     }
     data.push(weekData);
   }
@@ -40,30 +37,21 @@ const getHeatmapColor = (value: number): string => {
   return "bg-zinc-400";
 };
 
-const topicProgress = [
-  { name: "Python Fundamentals", progress: 65, level: "Intermediate" },
-  { name: "Machine Learning", progress: 35, level: "Beginner" },
-];
+const topicProgress: Array<{ name: string; progress: number; level: string }> = [];
 
-const achievements = [
-  { icon: "🔥", title: "7-Day Streak", description: "Studied 7 days in a row", rarity: "Common" },
-  { icon: "🧠", title: "Quiz Master", description: "Scored 100% on 5 quizzes", rarity: "Rare" },
-  { icon: "📚", title: "Knowledge Seeker", description: "Completed 10 sub-lessons", rarity: "Common" },
-  { icon: "⚡", title: "Speed Learner", description: "Completed a topic in under 3 days", rarity: "Epic" },
-  { icon: "🎯", title: "Perfect Score", description: "100% accuracy on first attempt", rarity: "Legendary" },
-];
+const achievements: Array<{ icon: string; title: string; description: string; rarity: string }> = [];
 
 export default function Profile() {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const { attempts } = useQuizHistory();
 
   const correctAttempts = attempts.filter((a) => a.isCorrect).length;
-  const accuracy = attempts.length > 0 ? Math.round((correctAttempts / attempts.length) * 100) : 87;
+  const accuracy = attempts.length > 0 ? Math.round((correctAttempts / attempts.length) * 100) : 0;
 
   const stats = [
-    { icon: Flame, label: "Day Streak", value: "12", color: "text-zinc-300" },
-    { icon: BookOpen, label: "Topics Mastered", value: "2", color: "text-zinc-300" },
-    { icon: Target, label: "Quizzes Taken", value: String(attempts.length || 24), color: "text-zinc-300" },
+    { icon: Flame, label: "Day Streak", value: "0", color: "text-zinc-300" },
+    { icon: BookOpen, label: "Topics Mastered", value: "0", color: "text-zinc-300" },
+    { icon: Target, label: "Quizzes Taken", value: String(attempts.length), color: "text-zinc-300" },
     { icon: TrendingUp, label: "Accuracy Rate", value: `${accuracy}%`, color: "text-zinc-300" },
   ];
 
@@ -123,7 +111,7 @@ export default function Profile() {
             </div>
             <div>
               <h1 className="text-xl font-semibold text-zinc-100">Orka User</h1>
-              <p className="text-sm text-zinc-500">Learning since January 2024</p>
+              <p className="text-sm text-zinc-500">Evidence appears after real learning activity</p>
             </div>
           </motion.div>
 
@@ -197,8 +185,13 @@ function OverviewTab({ stats }: { stats: { icon: React.ElementType; label: strin
       {/* Topic Progress */}
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-5 mb-8">
         <h3 className="text-sm font-medium text-zinc-300 mb-4">Topic Progress</h3>
-        <div className="space-y-4">
-          {topicProgress.map((topic) => (
+        {topicProgress.length === 0 ? (
+          <p className="rounded-lg border border-zinc-800 bg-zinc-900/45 px-4 py-5 text-sm text-zinc-500">
+            No topic progress evidence yet. Progress appears after Tutor, Review / Quiz, Sources / Wiki, or Code IDE creates real signals.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {topicProgress.map((topic) => (
             <div key={topic.name}>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-sm text-zinc-300">{topic.name}</span>
@@ -213,8 +206,9 @@ function OverviewTab({ stats }: { stats: { icon: React.ElementType; label: strin
                 />
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Achievements */}
@@ -223,8 +217,13 @@ function OverviewTab({ stats }: { stats: { icon: React.ElementType; label: strin
           <Award className="w-4 h-4 text-zinc-500" />
           <h3 className="text-sm font-medium text-zinc-300">Achievements</h3>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {achievements.map((ach) => (
+        {achievements.length === 0 ? (
+          <p className="rounded-lg border border-zinc-800 bg-zinc-900/45 px-4 py-5 text-sm text-zinc-500">
+            No achievements yet. Orka will show earned milestones only after real evidence exists.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {achievements.map((ach) => (
             <div
               key={ach.title}
               className="flex items-start gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-900/50"
@@ -243,8 +242,9 @@ function OverviewTab({ stats }: { stats: { icon: React.ElementType; label: strin
                 </span>
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -293,7 +293,7 @@ function QuizHistoryTab({ attempts }: { attempts: import("@/lib/types").QuizAtte
 }
 
 function AnalyticsTab() {
-  const weeklyData = [3, 5, 2, 7, 4, 6, 8];
+  const weeklyData = [0, 0, 0, 0, 0, 0, 0];
   const maxVal = Math.max(...weeklyData);
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -319,11 +319,11 @@ function AnalyticsTab() {
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-5">
           <p className="text-xs text-zinc-500 mb-1">Avg. Session Duration</p>
-          <p className="text-2xl font-semibold text-zinc-100">23 min</p>
+          <p className="text-2xl font-semibold text-zinc-100">0 min</p>
         </div>
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-5">
           <p className="text-xs text-zinc-500 mb-1">Total Study Time</p>
-          <p className="text-2xl font-semibold text-zinc-100">48 hrs</p>
+          <p className="text-2xl font-semibold text-zinc-100">0 hrs</p>
         </div>
       </div>
     </motion.div>
@@ -331,15 +331,16 @@ function AnalyticsTab() {
 }
 
 function GoalsTab() {
-  const goals = [
-    { title: "Complete Python Fundamentals", progress: 65, deadline: "Apr 30, 2024" },
-    { title: "Pass ML Quiz with 90%+", progress: 35, deadline: "May 15, 2024" },
-    { title: "Learn 3 New Topics", progress: 66, deadline: "Jun 1, 2024" },
-  ];
+  const goals: Array<{ title: string; progress: number; deadline: string }> = [];
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
       <div className="space-y-3">
+        {goals.length === 0 && (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-5 text-sm text-zinc-500">
+            No goals are active yet. Goals should be created from real Mission Control or Tutor context.
+          </div>
+        )}
         {goals.map((goal) => (
           <div key={goal.title} className="bg-zinc-950 border border-zinc-800 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">

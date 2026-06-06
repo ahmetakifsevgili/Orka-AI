@@ -372,7 +372,7 @@ export default function QuizCard({
             </div>
             <h4 className="mb-2 text-sm font-semibold text-[#172033]">Kod sorusu</h4>
             <p className="mb-6 max-w-[300px] text-xs leading-relaxed text-[#667085]">
-              Bu soru için Orka IDE/sandbox akışını kullan. Kod sonucunu Tutor'a gönderdiğinde hata da öğrenme sinyali olur.
+              Bu soru için Orka IDE/sandbox akışını kullan. Kod sonucunu sohbete gönderdiğinde hata da öğrenme sinyali olur.
             </p>
             <button
               onClick={() => onOpenIDE?.(activeQuiz.question)}

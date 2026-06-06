@@ -131,7 +131,7 @@ function CodeBlock({
 
 function InlineCode({ children }: { children: React.ReactNode }) {
   return (
-    <code className="text-[#2d5870] bg-[#eaf4f7] border border-[#dcecf3] px-1.5 py-0.5 rounded-md text-[13px] font-mono">
+    <code className="text-[#8ce6df] bg-white/[0.06] border border-white/[0.08] px-1.5 py-0.5 rounded-md text-[13px] font-mono">
       {children}
     </code>
   );
@@ -428,7 +428,7 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
   const coursePlanQuality = metadata?.coursePlanQuality;
   const memoryHygiene = metadata?.learningMemoryHygiene;
   const wikiCuration = metadata?.wikiCuration;
-  const hasMeta = tools.length > 0 || citations.length > 0 || warnings.length > 0 || metadata?.fallbackReason || metadata?.groundingMode || metadata?.teachingMode || metadata?.styleMode || metadata?.tutorResponseMode || metadata?.tutorTeachingMove || metadata?.tutorGroundingPolicy || metadata?.personalizationMode || metadata?.tutorTurnStateId || metadata?.tutorPedagogyStatus || toolDecision?.selectedAction || lessonDelivery?.deliveryMode || adaptiveDiagnostic?.planReadiness || coursePlanQuality?.readinessStatus || memoryHygiene?.memoryStatus || wikiCuration?.curationStatus;
+  const hasMeta = false;
   if (!hasMeta) return null;
 
   return (
@@ -537,25 +537,6 @@ function ChatMetadataChips({ metadata }: { metadata: ChatMessageType["metadata"]
         >
           <BookOpen className="h-3 w-3" />
           {formatTechnicalLabel(metadata.personalizationMode)}
-        </span>
-      )}
-      {typeof metadata?.masteryProbability === "number" && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-[#526d82]/12 bg-white/75 px-2 py-1 text-[10px] font-bold text-[#667085]">
-          mastery %{Math.round(metadata.masteryProbability * 100)}
-        </span>
-      )}
-      {metadata?.tutorPedagogyStatus && (
-        <span
-          title={(metadata.pedagogyWarnings ?? []).map(formatTechnicalLabel).join(" · ") || undefined}
-          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${
-            metadata.tutorPedagogyStatus === "healthy"
-              ? "border-emerald-500/20 bg-emerald-50 text-emerald-700"
-              : "border-amber-500/25 bg-amber-50 text-amber-700"
-          }`}
-        >
-          <CheckCircle className="h-3 w-3" />
-          öğretim {formatTechnicalLabel(metadata.tutorPedagogyStatus)}
-          {typeof metadata.tutorPedagogyScore === "number" && <span>%{Math.round(metadata.tutorPedagogyScore * 100)}</span>}
         </span>
       )}
       {memoryHygiene?.memoryStatus && (
@@ -668,7 +649,7 @@ function LiveTutorTrace({ sessionId, enabled }: { sessionId?: string; enabled: b
   return (
     <details className="mt-2 rounded-2xl border border-[#526d82]/12 bg-white/60 px-4 py-3 text-xs text-[#344054]">
       <summary className="cursor-pointer select-none font-black text-[#172033]">
-        Canlı Tutor izi {source === "sql_projection" ? "(geçmiş kayıt)" : ""}
+        Canlı Orka izi {source === "sql_projection" ? "(geçmiş kayıt)" : ""}
       </summary>
       <div className="mt-3 space-y-2">
         {events.slice(-8).map((event) => (
@@ -721,8 +702,8 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
 
   if (toolDecision?.selectedAction) {
     items.push({
-      label: `Tutor aksiyonu: ${formatTechnicalLabel(toolDecision.selectedAction)}`,
-      detail: toolDecision.studentVisibleSummary || "Tutor bu turda guvenli bir sonraki adimi secti.",
+      label: `Orka aksiyonu: ${formatTechnicalLabel(toolDecision.selectedAction)}`,
+      detail: toolDecision.studentVisibleSummary || "Orka bu turda güvenli bir sonraki adımı seçti.",
       tone: (toolDecision.blockedTools?.length ?? 0) > 0 || (toolDecision.safetyWarnings?.length ?? 0) > 0 ? "watch" : "learning",
     });
   }
@@ -730,7 +711,7 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   if (lessonDelivery?.deliveryMode) {
     items.push({
       label: `Ders modu: ${formatTechnicalLabel(lessonDelivery.deliveryMode)}`,
-      detail: lessonDelivery.studentVisibleSummary || lessonDelivery.structure?.goal || "Tutor bu turda hedefli ders akisi kullandi.",
+      detail: lessonDelivery.studentVisibleSummary || lessonDelivery.structure?.goal || "Orka bu turda hedefli bir akış kullandı.",
       tone: (lessonDelivery.warnings?.length ?? 0) > 0 ? "watch" : "learning",
     });
   }
@@ -738,7 +719,7 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   if (metadata?.learningMemoryHygiene?.memoryStatus && items.length < 3) {
     items.push({
       label: `Ogrenme hafizasi: ${formatTechnicalLabel(metadata.learningMemoryHygiene.memoryStatus)}`,
-      detail: metadata.learningMemoryHygiene.studentVisibleSummary || "Tutor ham metin yerine guvenli ozet hafizayi kullaniyor.",
+      detail: metadata.learningMemoryHygiene.studentVisibleSummary || "Orka ham metin yerine güvenli özet hafızayı kullanıyor.",
       tone: (metadata.learningMemoryHygiene.warnings?.length ?? 0) > 0 ? "watch" : "learning",
     });
   }
@@ -815,7 +796,7 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
   } else if (typeof metadata?.masteryProbability === "number") {
     items.push({
       label: "Bu turda öğrenme izi güncellendi.",
-      detail: `Mastery tahmini %${Math.round(metadata.masteryProbability * 100)}; Orka bunu kesin öğrenildi iddiası olarak basmaz.`,
+      detail: "Orka bunu kesin öğrenildi iddiası olarak göstermez; sonraki adımı daha temkinli seçer.",
       tone: "learning",
     });
   } else if (metadata?.personalizationMode && metadata.personalizationMode !== "unknown") {
@@ -838,8 +819,8 @@ function buildLearningTraceSummary(metadata: ChatMessageType["metadata"]): Learn
 
   if (metadata?.currentPlanStepTitle && items.length < 3) {
     items.push({
-      label: "Aktif plan adimi baglandi.",
-      detail: `${metadata.currentPlanStepTitle}${metadata.currentPlanTutorMove ? ` - Tutor hamlesi: ${formatTechnicalLabel(metadata.currentPlanTutorMove)}.` : "."}`,
+      label: "Aktif plan adımı bağlandı.",
+      detail: `${metadata.currentPlanStepTitle}${metadata.currentPlanTutorMove ? ` - Orka hamlesi: ${formatTechnicalLabel(metadata.currentPlanTutorMove)}.` : "."}`,
       tone: "learning",
     });
   }
@@ -887,19 +868,19 @@ function LearningTraceSummaryLite({
   if (summary.length === 0) return null;
 
   const toneClass = {
-    grounded: "border-[#9ec7d9]/32 bg-[#dcecf3]/48",
-    learning: "border-[#8fb7a2]/28 bg-[#f2faf5]/70",
-    watch: "border-[#e8c46f]/32 bg-[#fff8ee]/75",
+    grounded: "border-[#6ed7ce]/25 bg-[#6ed7ce]/10",
+    learning: "border-[#a7e879]/20 bg-[#a7e879]/10",
+    watch: "border-[#dac17a]/25 bg-[#dac17a]/10",
   } satisfies Record<LearningTraceTone, string>;
 
   return (
-    <div className={`${compact ? "mt-3" : "mt-2"} rounded-2xl border border-[#526d82]/12 bg-[#f7f4ec]/72 px-4 py-3 text-[#344054] shadow-sm`}>
+    <div className={`${compact ? "mt-3" : "mt-2"} rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 text-[#c8cfca] shadow-sm`}>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#52768a]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6ed7ce]">
           Orka bu turda
         </p>
         {citations.length > 0 && (
-          <span className="rounded-full bg-white/64 px-2.5 py-1 text-[10px] font-bold text-[#47725d]">
+          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[10px] font-semibold text-[#a7e879]">
             {citations.length} kaynak işareti
           </span>
         )}
@@ -907,20 +888,12 @@ function LearningTraceSummaryLite({
       <div className={`grid gap-2 text-xs leading-5 ${compact ? "" : "md:grid-cols-2"}`}>
         {summary.map((item) => (
           <p key={item.label} className={`rounded-xl border px-3 py-2 ${toneClass[item.tone]}`}>
-            <span className="block font-black text-[#172033]">{item.label}</span>
-            <span className="mt-1 block text-[#667085]">{item.detail}</span>
+            <span className="block font-semibold text-[#eef2ee]">{item.label}</span>
+            <span className="mt-1 block text-[#9aa3a0]">{item.detail}</span>
           </p>
         ))}
-        {metadata?.tutorPedagogyStatus && !compact && (
-          <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
-            <span className="font-black text-[#172033]">Öğretim kalitesi: </span>
-            {metadata.tutorPedagogyStatus === "healthy"
-              ? "Tutor bu turda planlanan öğretim davranışına uydu."
-              : "Tutor cevabı izlemeye alındı; sonraki turda daha iyi ipucu, kaynak disiplini veya kontrol sorusu kullanacak."}
-          </p>
-        )}
       </div>
-      {!compact && (
+      {false && !compact && (
         <LiveTutorTrace sessionId={sessionId} enabled={Boolean(metadata?.tutorTurnStateId || metadata?.tutorActionTraceId || toolStatuses.length > 0 || tools.length > 0)} />
       )}
     </div>
@@ -977,7 +950,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   const learningHint = [...tools, ...toolStatuses].some((tool) => (tool.toolId ?? ("name" in tool ? tool.name : "") ?? "").toLowerCase().includes("ide"))
     ? "Kod çıktısı cevap bağlamına girdi. Kalıcı tekrar gerekiyorsa bunu review'a dönüştürebilirsin."
     : metadata?.teachingMode
-      ? `Tutor bu turda ${formatTechnicalLabel(metadata.teachingMode)} modunu seçti; stil ${formatTechnicalLabel(metadata.styleMode ?? "step_by_step")}, yük ${formatTechnicalLabel(metadata.cognitiveLoad ?? "normal")}.`
+      ? `Orka bu turda ${formatTechnicalLabel(metadata.teachingMode)} akışını seçti; stil ${formatTechnicalLabel(metadata.styleMode ?? "step_by_step")}, yük ${formatTechnicalLabel(metadata.cognitiveLoad ?? "normal")}.`
     : citations.length > 0
       ? "Bu cevap kaynak işaretleriyle ayrıldı; neye dayandığını sonradan kontrol edebilirsin."
       : metadata?.fallbackReason || warnings.length > 0
@@ -1001,12 +974,12 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
             {metadata.nextCheckPrompt}
           </p>
         )}
-        {metadata?.tutorPedagogyStatus && (
+        {false && metadata?.tutorPedagogyStatus && (
           <p className="rounded-xl bg-white/48 px-3 py-2 md:col-span-2">
             <span className="font-black text-[#172033]">Öğretim kalitesi: </span>
             {metadata.tutorPedagogyStatus === "healthy"
-              ? "Tutor bu turda planlanan öğretim davranışına uydu."
-              : "Tutor cevabı izlemeye alındı; sonraki turda daha iyi ipucu, kaynak disiplini veya kontrol sorusu kullanacak."}
+              ? "Orka bu turda planlanan davranışa uydu."
+              : "Orka cevabı izlemeye aldı; sonraki turda daha iyi ipucu, kaynak disiplini veya kontrol sorusu kullanacak."}
           </p>
         )}
         {toolStatuses.length > 0 && (
@@ -1093,18 +1066,18 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
         <div className="flex justify-end items-start gap-3">
           <div className="flex flex-col items-end max-w-lg">
             <div className="flex items-center gap-2 mb-1.5 flex-row-reverse">
-              <span className="text-xs font-medium text-[#344054]">{userName}</span>
-              <span className="text-[10px] text-[#98a2b3]">
+              <span className="text-xs font-medium text-[#9aa3a0]">{userName}</span>
+              <span className="text-[10px] text-[#6f7774]">
                 {formatTime(message.timestamp)}
               </span>
             </div>
-            <div className="bg-[#dcecf3]/80 border border-[#9ec7d9]/45 rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
-              <p className="text-[15px] text-[#172033] leading-relaxed whitespace-pre-wrap">
+            <div className="rounded-2xl rounded-tr-sm border border-white/[0.09] bg-white/[0.075] px-4 py-3 shadow-sm">
+              <p className="text-[15px] text-[#f4f6f3] leading-relaxed whitespace-pre-wrap">
                 {sanitizeVisibleChatContent(message.content)}
               </p>
             </div>
           </div>
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/75 border border-[#526d82]/15 flex items-center justify-center mt-1 overflow-hidden">
+          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/[0.08] border border-white/[0.09] flex items-center justify-center mt-1 overflow-hidden">
             <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=transparent" alt="User" className="w-full h-full object-cover" />
           </div>
         </div>
@@ -1112,14 +1085,14 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
         // ── AI mesajı (Boşken avatar çizilmez çünkü isThinking animasyonu dönüyor) ──
         <div className="flex items-start gap-3 max-w-full">
           {/* Avatar */}
-          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/75 border border-[#526d82]/15 shadow-sm flex items-center justify-center mt-1">
-            <OrcaLogo className="w-3.5 h-3.5 text-[#344054]" />
+          <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/[0.08] border border-white/[0.09] shadow-sm flex items-center justify-center mt-1">
+            <OrcaLogo className="w-3.5 h-3.5 text-[#f4f6f3]" />
           </div>
 
           <div className="flex-1 min-w-0">
             {/* Header */}
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium text-[#344054]">Orka AI</span>
+              <span className="text-xs font-medium text-[#c8cfca]">Orka AI</span>
               <span className="text-[10px] text-[#98a2b3]">
                 {formatTime(message.timestamp)}
               </span>
@@ -1143,22 +1116,22 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
 
               return (
                 <>
-                <div className="bg-white/70 border border-[#526d82]/14 rounded-[1.25rem] px-5 py-4 mb-3 shadow-[0_14px_38px_rgba(66,91,112,0.09)] backdrop-blur-xl">
+                <div className="bg-white/[0.045] border border-white/[0.08] rounded-[1.25rem] px-5 py-4 mb-3 shadow-[0_18px_50px_rgba(0,0,0,0.22)] backdrop-blur-xl">
                   <div
                     className="prose max-w-none
-                      prose-headings:text-[#172033] prose-headings:font-semibold
-                      prose-h2:text-[17px] prose-h2:mt-5 prose-h2:mb-2 prose-h2:pb-1.5 prose-h2:border-b prose-h2:border-[#526d82]/10
+                      prose-headings:text-[#f4f6f3] prose-headings:font-semibold
+                      prose-h2:text-[17px] prose-h2:mt-5 prose-h2:mb-2 prose-h2:pb-1.5 prose-h2:border-b prose-h2:border-white/[0.08]
                       prose-h3:text-[15px] prose-h3:mt-4 prose-h3:mb-2
-                      prose-p:text-[#344054] prose-p:leading-relaxed prose-p:my-2.5 prose-p:text-[15px]
-                      prose-strong:text-[#172033]
-                      prose-li:text-[#344054] prose-li:my-1 prose-li:text-[15px]
+                      prose-p:text-[#d7ddd8] prose-p:leading-relaxed prose-p:my-2.5 prose-p:text-[15px]
+                      prose-strong:text-[#f4f6f3]
+                      prose-li:text-[#d7ddd8] prose-li:my-1 prose-li:text-[15px]
                       prose-ul:my-2.5 prose-ol:my-2.5
-                      prose-a:text-[#2d5870] prose-a:underline prose-a:underline-offset-2
-                      prose-blockquote:border-l-4 prose-blockquote:border-[#9ec7d9] prose-blockquote:bg-[#f7f9fa] prose-blockquote:rounded-r-xl prose-blockquote:py-3 prose-blockquote:px-5 prose-blockquote:text-[#5f6f7b] prose-blockquote:italic prose-blockquote:my-4 prose-blockquote:shadow-sm
-                      prose-table:border-collapse prose-table:my-4 prose-table:w-full prose-table:rounded-xl prose-table:overflow-hidden prose-table:shadow-sm prose-table:border prose-table:border-[#dcecf3]
-                      prose-thead:bg-[#eaf4f7]
-                      prose-th:border-b prose-th:border-[#dcecf3] prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:text-[12px] prose-th:font-bold prose-th:text-[#2d5870] prose-th:uppercase prose-th:tracking-wider
-                      prose-td:border-b prose-td:border-[#eef1f3] prose-td:px-4 prose-td:py-3 prose-td:text-[13px] prose-td:text-[#344054]
+                      prose-a:text-[#8ce6df] prose-a:underline prose-a:underline-offset-2
+                      prose-blockquote:border-l-4 prose-blockquote:border-[#6ed7ce]/45 prose-blockquote:bg-white/[0.04] prose-blockquote:rounded-r-xl prose-blockquote:py-3 prose-blockquote:px-5 prose-blockquote:text-[#c8cfca] prose-blockquote:italic prose-blockquote:my-4 prose-blockquote:shadow-sm
+                      prose-table:border-collapse prose-table:my-4 prose-table:w-full prose-table:rounded-xl prose-table:overflow-hidden prose-table:shadow-sm prose-table:border prose-table:border-white/[0.08]
+                      prose-thead:bg-white/[0.06]
+                      prose-th:border-b prose-th:border-white/[0.08] prose-th:px-4 prose-th:py-3 prose-th:text-left prose-th:text-[12px] prose-th:font-bold prose-th:text-[#8ce6df] prose-th:uppercase prose-th:tracking-wider
+                      prose-td:border-b prose-td:border-white/[0.06] prose-td:px-4 prose-td:py-3 prose-td:text-[13px] prose-td:text-[#d7ddd8]
                       prose-pre:!bg-transparent prose-pre:!border-0 prose-pre:!p-0 prose-pre:!m-0
                     "
                   >
@@ -1241,7 +1214,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
             )}
 
             {/* V4: Sesli Sınıf butonu — sadece quiz olmayan ve içerik dolu AI mesajlarında */}
-            {!quizData && displayedContent.trim().length > 40 && !message.isStreaming && (
+            {false && !quizData && displayedContent.trim().length > 40 && !message.isStreaming && (
               <div className="mt-2 flex items-center gap-2">
                 <button
                   onClick={() => setAudioOpen(true)}
@@ -1257,7 +1230,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
         </div>
       )}
 
-      {audioOpen && (
+      {false && audioOpen && (
         <ClassroomAudioPlayer
           text={displayedContent}
           topicId={topicId}

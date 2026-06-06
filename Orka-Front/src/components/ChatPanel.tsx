@@ -14,7 +14,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Send, Sparkles, BookOpen, Bell, Globe, CheckCircle2, Edit3, RotateCcw } from "lucide-react";
+import { ArrowUp, Sparkles, BookOpen, Bell, Globe, CheckCircle2, Edit3, RotateCcw, Loader2, Check, Plus, Paperclip, FileText } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
@@ -109,6 +109,7 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const [isPlanMode, setIsPlanMode] = useState(defaultMode === "plan");
   const [isKorteksMode, setIsKorteksMode] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingState, setThinkingState] = useState(THINKING_STATES[0]);
   const [planFlowStage, setPlanFlowStage] = useState<PlanFlowStage>("idle");
@@ -1077,83 +1078,113 @@ export default function ChatPanel({
               bg-[#f7f9fa]/90 backdrop-blur-xl overflow-hidden
             `}
           >
-            <div className="px-4 pt-3 flex flex-col">
-              <textarea
-                id="tour-chat-input"
-                ref={textareaRef}
-                value={input}
-                onChange={handleTextareaChange}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  isKorteksMode
-                    ? "Araştırmamı istediğin konuyu yaz; web'de derinlemesine araştırayım..."
-                    : isPlanMode
-                    ? "Bana bir konu ver; önce niyeti netleştireyim, sonra Korteks araştırsın..."
-                    : "Bir şey sor veya müfredat oluşturmak için Plan Modu'nu aç..."
-                }
-                rows={1}
-                disabled={isThinking}
-                className="w-full bg-transparent resize-none outline-none text-[14px] text-[#172033] placeholder-[#8ba8b5] leading-relaxed min-h-[44px] max-h-[200px] py-1"
-              />
-
-              <div className="flex items-center justify-between pb-3 pt-2 border-t border-[#526d82]/10 mt-1">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => { setIsPlanMode((prev) => !prev); setIsKorteksMode(false); }}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
-                      ${isPlanMode
-                        ? "bg-[#dcecf3] border-[#9ec7d9]/60 text-[#172033] shadow-sm"
-                        : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
-                    `}
-                    title="Plan Modu - önce niyet analizi, sonra Korteks araştırması"
-                  >
-                    <Sparkles className={`w-3.5 h-3.5 ${isPlanMode ? "text-emerald-400" : ""}`} />
-                    <span>Plan Modu</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setIsKorteksMode((prev) => !prev); setIsPlanMode(false); }}
-                    className={`
-                      flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 border
-                      ${isKorteksMode
-                        ? "bg-emerald-900/30 border-emerald-700/50 text-emerald-400 shadow-sm"
-                        : "bg-[#eef1f3] border-[#526d82]/10 text-[#667085] hover:text-[#344054] hover:border-[#526d82]/20"}
-                    `}
-                    title="Korteks - web'de derin araştırma yapar ve wiki'ye kaydeder"
-                  >
-                    <Globe className={`w-3.5 h-3.5 ${isKorteksMode ? "text-emerald-400" : ""}`} />
-                    <span>Korteks</span>
-                  </button>
-
-                  {(isPlanMode || isKorteksMode) && (
-                    <motion.span
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className={`text-[10px] font-medium tracking-tight uppercase ${isKorteksMode ? "text-emerald-600" : "text-[#344054]"}`}
+            <div className="px-4 py-3 flex items-end gap-3 relative">
+              <div className="relative">
+                <button
+                  onClick={() => setShowAttachmentMenu((prev) => !prev)}
+                  className="flex items-center justify-center w-8 h-8 rounded-full text-[#667085] hover:bg-[#eef1f3] hover:text-[#172033] transition-colors"
+                  title="Dosya Ekle veya Mod Seç"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+                <AnimatePresence>
+                  {showAttachmentMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-xl shadow-xl border border-[#526d82]/15 overflow-hidden z-50"
                     >
-	                      {isKorteksMode ? "Korteks aktif" : "Plan modu aktif - quiz chat'e karışmaz"}
-                    </motion.span>
+                      <div className="p-1">
+                        <button
+                          onClick={() => {
+                            setShowAttachmentMenu(false);
+                            toast.success("Dosya ekleme dialogu yakında eklenecek.");
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-[#344054] hover:bg-[#f7f9fa] rounded-lg transition-colors text-left"
+                        >
+                          <FileText className="w-4 h-4 text-[#667085]" />
+                          <span>Dosya Ekle</span>
+                        </button>
+                        <div className="h-px bg-[#526d82]/10 my-1 mx-2" />
+                        <button
+                          onClick={() => {
+                            setIsPlanMode((prev) => !prev);
+                            setIsKorteksMode(false);
+                            setShowAttachmentMenu(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${isPlanMode ? "bg-[#dcecf3] text-[#172033]" : "text-[#344054] hover:bg-[#f7f9fa]"}`}
+                        >
+                          <Sparkles className={`w-4 h-4 ${isPlanMode ? "text-emerald-500" : "text-[#667085]"}`} />
+                          <span className="flex-1">Planlama Modu</span>
+                          {isPlanMode && <Check className="w-4 h-4 text-emerald-500" />}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsKorteksMode((prev) => !prev);
+                            setIsPlanMode(false);
+                            setShowAttachmentMenu(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${isKorteksMode ? "bg-emerald-50 text-emerald-700" : "text-[#344054] hover:bg-[#f7f9fa]"}`}
+                        >
+                          <Globe className={`w-4 h-4 ${isKorteksMode ? "text-emerald-500" : "text-[#667085]"}`} />
+                          <span className="flex-1">Derin Araştırma Modu</span>
+                          {isKorteksMode && <Check className="w-4 h-4 text-emerald-500" />}
+                        </button>
+                      </div>
+                    </motion.div>
                   )}
-                </div>
+                </AnimatePresence>
+              </div>
 
-                <div className="flex items-center gap-3">
-                   <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block">
-                     {input.length > 0 ? "Shift+Enter yeni satır" : ""}
-                   </span>
-                   <button
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || isThinking}
-                    className={`
-                      flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200
-                      ${!input.trim() || isThinking
-                        ? "bg-[#eef1f3] text-[#8ba8b5] opacity-50 cursor-not-allowed"
-                        : "bg-[#172033] hover:bg-[#2d5870] text-white shadow-lg shadow-sm"}
-                    `}
+              <div className="flex-1 flex flex-col justify-center min-h-[44px]">
+                {(isPlanMode || isKorteksMode) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-1"
                   >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
+                    <span className={`inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full w-max ${isKorteksMode ? "bg-emerald-100 text-emerald-700" : "bg-[#dcecf3] text-[#172033]"}`}>
+                      {isKorteksMode ? "Korteks Derin Araştırma" : "Planlama Modu"}
+                    </span>
+                  </motion.div>
+                )}
+                <textarea
+                  id="tour-chat-input"
+                  ref={textareaRef}
+                  value={input}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    isKorteksMode
+                      ? "Araştırmamı istediğin konuyu yaz..."
+                      : isPlanMode
+                      ? "Bana bir konu ver; önce niyeti netleştireyim..."
+                      : "Bir şey sor veya müfredat oluşturmak için Plan Modu'nu aç..."
+                  }
+                  rows={1}
+                  disabled={isThinking}
+                  className="w-full bg-transparent resize-none outline-none text-[14px] text-[#172033] placeholder-[#8ba8b5] leading-relaxed max-h-[200px]"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                 <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block mb-1">
+                   {input.length > 0 ? "Shift+Enter yeni satır" : ""}
+                 </span>
+                 <button
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() || isThinking}
+                  className={`
+                    flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200
+                    ${!input.trim() || isThinking
+                      ? "bg-[#eef1f3] text-[#8ba8b5] opacity-50 cursor-not-allowed"
+                      : "bg-[#172033] hover:bg-black text-white shadow-md"}
+                  `}
+                >
+                  <ArrowUp className="w-4 h-4 stroke-[2.5px]" />
+                </button>
               </div>
               <div className="hidden flex-wrap gap-2 border-t border-[#526d82]/10 pb-3 pt-2 md:flex">
                 {[
