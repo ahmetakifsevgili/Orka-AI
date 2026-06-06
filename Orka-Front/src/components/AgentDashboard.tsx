@@ -7,7 +7,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
-  BookOpen,
   Brain,
   ChevronRight,
   CircleCheck,
@@ -515,26 +514,7 @@ export default function AgentDashboard() {
                   <RagSparkline data={RAG_SPARKLINE} />
                 </div>
               </div>
-              <div className="px-4 pb-3 pt-2">
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: "calculus",          count: 38 },
-                    { label: "algorithms",         count: 29 },
-                    { label: "linear-algebra",     count: 21 },
-                    { label: "machine-learning",   count: 17 },
-                    { label: "data-structures",    count: 15 },
-                  ].map(({ label, count }) => (
-                    <span
-                      key={label}
-                      className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[11px] text-[#8f9894]"
-                    >
-                      <BookOpen className="h-2.5 w-2.5 text-[#5a6360]" />
-                      {label}
-                      <span className="text-[#5a6360]">·{count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
+
             </div>
           </div>
 
