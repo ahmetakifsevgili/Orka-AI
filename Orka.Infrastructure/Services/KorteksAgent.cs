@@ -184,7 +184,45 @@ public class KorteksAgent : IKorteksAgent
                 LogPrivacyGuard.SafeTextRef(diagnostic, "diag"),
                 LogPrivacyGuard.SafeExceptionType(ex));
             providerFailures.Add(diagnostic);
-            return BuildResearchResult(topic, topicId, string.Empty, capture, warnings, providerFailures);
+
+            var fallback = GetFallbackProvider(provider);
+            if (fallback == null)
+            {
+                return BuildResearchResult(topic, topicId, string.Empty, capture, warnings, providerFailures);
+            }
+
+            _logger.LogWarning(
+                "[Korteks] Kernel build failed, attempting fallback provider. Primary={Primary} Fallback={Fallback}",
+                provider,
+                fallback.Value.Provider);
+
+            try
+            {
+                var fallbackCapture = new KorteksToolCaptureFilter();
+                kernel = BuildKorteksKernelWithProvider(fallback.Value.Provider, fallback.Value.Model, fallbackCapture);
+                provider = fallback.Value.Provider;
+                model = fallback.Value.Model;
+                endpointHost = ResolveEndpointHost(provider);
+                capture = fallbackCapture;
+            }
+            catch (Exception fallbackEx)
+            {
+                var fallbackDiagnostic = KorteksFailureDiagnostic.Create(
+                    fallbackEx,
+                    KorteksFailureStage.KernelBuild,
+                    fallback.Value.Provider,
+                    fallback.Value.Model,
+                    ResolveEndpointHost(fallback.Value.Provider),
+                    capture);
+                _logger.LogError(
+                    "[Korteks] Fallback kernel build also failed. RunRef={RunRef} Fallback={Fallback} DiagnosticRef={DiagnosticRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeTextRef(runId, "run"),
+                    fallback.Value.Provider,
+                    LogPrivacyGuard.SafeTextRef(fallbackDiagnostic, "diag"),
+                    LogPrivacyGuard.SafeExceptionType(fallbackEx));
+                providerFailures.Add(fallbackDiagnostic);
+                return BuildResearchResult(topic, topicId, string.Empty, capture, warnings, providerFailures);
+            }
         }
 
         try

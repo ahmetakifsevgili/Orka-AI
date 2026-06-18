@@ -60,6 +60,9 @@ function getSecretOrConfig(secrets, config, key, fallback = "") {
 }
 
 function buildGeminiProbe(secrets, config) {
+  const enabled = String(getSecretOrConfig(secrets, config, "AI:Gemini:Enabled", "false")).toLowerCase() === "true";
+  if (!enabled) return null;
+
   const baseUrl = getSecretOrConfig(secrets, config, "AI:Gemini:BaseUrl", "https://generativelanguage.googleapis.com/v1beta/models");
   const model = getSecretOrConfig(secrets, config, "AI:Gemini:ModelQuiz",
     getSecretOrConfig(secrets, config, "AI:Gemini:ModelDeepPlan",
@@ -114,29 +117,29 @@ async function runSanityProbe() {
 
   const keys = {
     GitHubModels: {
-      url: "https://models.github.ai/inference/chat/completions",
+      url: `${String(getSecretOrConfig(secrets, appConfig, "AI:GitHubModels:BaseUrl", "https://models.github.ai/inference")).replace(/\/$/, "")}/chat/completions`,
       headers: {
         "Authorization": `Bearer ${secrets["AI:GitHubModels:Token"] || ""}`,
         "Content-Type": "application/json"
       },
       method: "POST",
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: getSecretOrConfig(secrets, appConfig, "AI:GitHubModels:Model", "gpt-4o-mini"),
         messages: [{ role: "user", content: "ping" }],
-        max_tokens: 5
+        max_completion_tokens: 5
       })
     },
     Groq: {
-      url: "https://api.groq.com/openai/v1/chat/completions",
+      url: `${String(getSecretOrConfig(secrets, appConfig, "AI:Groq:BaseUrl", "https://api.groq.com/openai/v1")).replace(/\/$/, "")}/chat/completions`,
       headers: {
         "Authorization": `Bearer ${secrets["AI:Groq:ApiKey"] || ""}`,
         "Content-Type": "application/json"
       },
       method: "POST",
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: getSecretOrConfig(secrets, appConfig, "AI:Groq:Model", "llama-3.3-70b-versatile"),
         messages: [{ role: "user", content: "ping" }],
-        max_tokens: 5
+        max_completion_tokens: 5
       })
     },
     Cerebras: {
@@ -166,16 +169,16 @@ async function runSanityProbe() {
       })
     },
     OpenRouter: {
-      url: "https://openrouter.ai/api/v1/chat/completions",
+      url: `${String(getSecretOrConfig(secrets, appConfig, "AI:OpenRouter:BaseUrl", "https://openrouter.ai/api/v1")).replace(/\/$/, "")}/chat/completions`,
       headers: {
         "Authorization": `Bearer ${secrets["AI:OpenRouter:ApiKey"] || ""}`,
         "Content-Type": "application/json"
       },
       method: "POST",
       body: JSON.stringify({
-        model: "anthropic/claude-3-5-haiku",
+        model: getSecretOrConfig(secrets, appConfig, "AI:OpenRouter:Model", "openai/gpt-4o-mini"),
         messages: [{ role: "user", content: "ping" }],
-        max_tokens: 5
+        max_completion_tokens: 5
       })
     },
     Tavily: {
@@ -202,11 +205,17 @@ async function runSanityProbe() {
       })
     },
     Cohere: {
-      url: "https://api.cohere.com/v1/models",
+      url: `${String(getSecretOrConfig(secrets, appConfig, "AI:Cohere:BaseUrl", "https://api.cohere.com/compatibility/v1")).replace(/\/$/, "")}/chat/completions`,
       headers: {
-        "Authorization": `Bearer ${secrets["AI:Cohere:ApiKey"] || ""}`
+        "Authorization": `Bearer ${secrets["AI:Cohere:ApiKey"] || ""}`,
+        "Content-Type": "application/json"
       },
-      method: "GET"
+      method: "POST",
+      body: JSON.stringify({
+        model: getSecretOrConfig(secrets, appConfig, "AI:Cohere:Model", "command-a-03-2025"),
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 5
+      })
     },
     YouTube: {
       url: `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=education&key=${secrets["AI:YouTube:ApiKey"] || ""}`,
@@ -289,6 +298,8 @@ async function runSanityProbe() {
         console.log(`  * \x1b[31m${r.provider}\x1b[0m: Check for invalid, revoked or expired token (HTTP ${r.status}).`);
       } else if (r.status === 429) {
         console.log(`  * \x1b[31m${r.provider}\x1b[0m: Key has hit quota limits or rate limiting (HTTP 429).`);
+      } else if (r.status === 413) {
+        console.log(`  * \x1b[31m${r.provider}\x1b[0m: Request payload is too large for this provider/model; shrink context or choose a larger-context fallback (HTTP 413).`);
       } else if (r.status === 404) {
         console.log(`  * \x1b[31m${r.provider}\x1b[0m: Model path not found. Check if the model ID is deprecated (HTTP 404).`);
       } else {

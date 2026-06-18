@@ -69,6 +69,31 @@ public sealed class AiReliabilityTests
     }
 
     [Fact]
+    public async Task CompleteChat_RequestTooLarge_FallsBackWithoutRetryingPrimary()
+    {
+        var providers = new FakeProviders();
+        providers.GitHubHandler = () => throw new HttpRequestException(
+            "provider payload too large",
+            null,
+            HttpStatusCode.RequestEntityTooLarge);
+        providers.GroqHandler = () => Task.FromResult("fallback-ok");
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(providers, telemetry: telemetry);
+
+        var result = await factory.CompleteChatAsync(AgentRole.Tutor, "system", "oversized context");
+
+        Assert.Equal("fallback-ok", result);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Equal(1, providers.GroqCalls);
+        Assert.Contains(telemetry.Events, e =>
+            e.Provider == "GitHubModels" &&
+            e.FailureKind == AiProviderFailureKind.RequestTooLarge &&
+            e.StatusCode == (int)HttpStatusCode.RequestEntityTooLarge);
+        Assert.Contains(telemetry.Events, e => e.Provider == "OpenRouter" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
     public async Task CompleteChat_QuizProviderInfraFailure_FallsBackToGitHubModels()
     {
         var providers = new FakeProviders();
@@ -196,6 +221,38 @@ public sealed class AiReliabilityTests
         Assert.Equal("cohere-ok", result);
         Assert.Equal(0, providers.GitHubCalls);
         Assert.Equal(1, cohere.Calls);
+        Assert.Equal(4096, cohere.LastMaxOutputTokens);
+        Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success);
+    }
+
+    [Fact]
+    public async Task StreamChat_CohereRoute_ClampsMaxOutputTokensLikeNonStream()
+    {
+        var providers = new FakeProviders();
+        var cohere = new FakeCohereService { Handler = () => Task.FromResult("cohere-stream-ok") };
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            cohere: cohere,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Tutor:Provider"] = "Cohere",
+                ["AI:AgentRouting:Tutor:Model"] = "command-a-03-2025",
+                ["AI:Cost:RoleBudgets:Tutor:MaxOutputTokens"] = "8192",
+                ["AI:Cohere:MaxOutputTokens"] = "4096"
+            });
+
+        var chunks = new List<string>();
+        await foreach (var chunk in factory.StreamChatAsync(AgentRole.Tutor, "system", "hello"))
+        {
+            chunks.Add(chunk);
+        }
+
+        Assert.Equal(new[] { "cohere-stream-ok" }, chunks);
+        Assert.Equal(0, providers.GitHubCalls);
+        Assert.Equal(1, cohere.StreamCalls);
         Assert.Equal(4096, cohere.LastMaxOutputTokens);
         Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success);
     }
@@ -504,6 +561,27 @@ public sealed class AiReliabilityTests
         Assert.Contains("category=quotaexceeded", exception.RedactedDiagnostic);
         Assert.Contains("retryable=false", exception.RedactedDiagnostic);
         Assert.Contains("fallbackable=true", exception.RedactedDiagnostic);
+    }
+
+    [Fact]
+    public async Task ProviderFailureMapper_RequestTooLarge_AllowsFallbackWithoutRetry()
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.RequestEntityTooLarge)
+        {
+            Content = new StringContent("""{"error":"payload too large","rawPrompt":"hidden"}""")
+        };
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        var exception = AiProviderFailureMapperForTests.FromResponse("OpenRouter", "anthropic/claude-3-5-haiku", response, rawBody);
+
+        Assert.Equal(AiProviderFailureKind.RequestTooLarge, exception.FailureKind);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, exception.StatusCode);
+        Assert.False(exception.IsRetryable);
+        Assert.True(exception.IsFallbackable);
+        Assert.Contains("category=requesttoolarge", exception.RedactedDiagnostic);
+        Assert.Contains("retryable=false", exception.RedactedDiagnostic);
+        Assert.Contains("fallbackable=true", exception.RedactedDiagnostic);
+        AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
     [Fact]

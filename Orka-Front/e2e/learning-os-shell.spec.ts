@@ -69,6 +69,12 @@ const sourceWikiPro = {
 };
 
 const now = "2026-06-05T09:00:00.000Z";
+const rawLeakMarkers = [
+  "__RAW_PROMPT_CANARY__",
+  "__PROVIDER_PAYLOAD_CANARY__",
+  "__SOURCE_CHUNK_TEXT_CANARY__",
+  "__ANSWER_KEY_CANARY__",
+] as const;
 
 function learningAction(label: string, targetRoute: string, actionType = targetRoute) {
   return {
@@ -283,6 +289,151 @@ const dashboardToday = {
   generatedAt: now,
 };
 
+function projectionVersionTag(version: number) {
+  return `lsv_shell_${version}`;
+}
+
+function buildLearningState(version: number) {
+  const refreshed = version > 1;
+  const nextAction = refreshed
+    ? {
+        ...learningAction("Continue refreshed projection", "tutor", "continue_plan"),
+        source: "mission_control",
+        appliesTo: ["tutor"],
+      }
+    : learningState.primaryNextAction;
+
+  return {
+    ...learningState,
+    learningStateVersion: projectionVersionTag(version),
+    signalSummary: {
+      ...learningState.signalSummary,
+      quizAttemptCount: refreshed ? 1 : 0,
+      correctAttemptCount: refreshed ? 1 : 0,
+      learningSignalCount: refreshed ? 1 : 0,
+      hasRealLearningData: refreshed,
+    },
+    primaryNextAction: nextAction,
+    generatedAt: now,
+  };
+}
+
+function buildMissionControl(version: number) {
+  const refreshed = version > 1;
+  return {
+    ...missionControl,
+    learningStateVersion: projectionVersionTag(version),
+    primaryMission: {
+      ...missionControl.primaryMission,
+      ...(refreshed ? learningAction("Continue refreshed projection", "tutor", "continue_plan") : {}),
+      missionKey: refreshed ? "shell-primary-refreshed" : missionControl.primaryMission.missionKey,
+      isPrimary: true,
+    },
+    userSafeSummary: refreshed
+      ? "Quiz evidence refreshed the central learning projection."
+      : missionControl.userSafeSummary,
+    generatedAt: now,
+  };
+}
+
+function buildStudyCoach(version: number) {
+  const refreshed = version > 1;
+  return {
+    ...studyCoach,
+    learningStateVersion: projectionVersionTag(version),
+    todayPlan: refreshed
+      ? "Use the refreshed quiz evidence to continue with Tutor."
+      : studyCoach.todayPlan,
+    focusPlan: {
+      ...studyCoach.focusPlan,
+      firstStep: undefined,
+      entryPoint: "tutor",
+      targetRoute: "tutor",
+      steps: refreshed ? ["Review quiz evidence", "Continue in Tutor"] : studyCoach.focusPlan.steps,
+    },
+    generatedAt: now,
+  };
+}
+
+function buildSourceWikiPro(version: number) {
+  return {
+    ...sourceWikiPro,
+    learningStateVersion: projectionVersionTag(version),
+    rawPrompt: rawLeakMarkers[0],
+    rawProviderPayload: rawLeakMarkers[1],
+    rawSourceChunk: rawLeakMarkers[2],
+  };
+}
+
+function buildDashboardToday(version: number) {
+  const refreshed = version > 1;
+  const state = buildLearningState(version);
+  const mission = buildMissionControl(version);
+  const coach = buildStudyCoach(version);
+  return {
+    ...dashboardToday,
+    learningStateVersion: projectionVersionTag(version),
+    nextAction: {
+      ...dashboardToday.nextAction,
+      label: refreshed ? "Continue refreshed projection" : dashboardToday.nextAction.label,
+      reason: refreshed ? "The latest quiz evidence changed the central next action." : dashboardToday.nextAction.reason,
+      view: "tutor",
+    },
+    orkaLearningState: state,
+    missionControl: mission,
+    studyCoach: coach,
+    sourceWikiPro: buildSourceWikiPro(version),
+    hasRealLearningData: refreshed,
+    generatedAt: now,
+  };
+}
+
+function buildContextPack(version: number) {
+  return {
+    topicId,
+    sessionId: "session-shell",
+    scopeStatus: "session",
+    learningStateVersion: projectionVersionTag(version),
+    estimatedTokenCount: 800,
+    blocks: [
+      {
+        blockType: "orka_state",
+        status: "ready",
+        summary: "Projection is bounded.",
+        priority: 1,
+        metadata: {
+          rawPrompt: rawLeakMarkers[0],
+          rawProviderPayload: rawLeakMarkers[1],
+        },
+      },
+      {
+        blockType: "active_lesson_snapshot",
+        status: "ready",
+        summary: "Active lesson snapshot is available.",
+        priority: 2,
+        metadata: {
+          rawSourceChunk: rawLeakMarkers[2],
+          answerKey: rawLeakMarkers[3],
+        },
+      },
+    ],
+    sourceRefs: [
+      {
+        sourceId: "source-canary",
+        label: "Source canary",
+        rawSourceChunk: rawLeakMarkers[2],
+      },
+    ],
+    trace: {
+      rawPrompt: rawLeakMarkers[0],
+      rawProviderPayload: rawLeakMarkers[1],
+      answerKey: rawLeakMarkers[3],
+    },
+    warnings: [],
+    generatedAt: now,
+  };
+}
+
 const studyRoom = {
   classroomSessionId: "classroom-shell",
   topicId,
@@ -483,6 +634,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 
 async function installShellMocks(page: Page) {
   const consoleErrors: string[] = [];
+  let projectionVersion = 1;
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
@@ -520,7 +672,7 @@ async function installShellMocks(page: Page) {
     }
 
     if (path === "/dashboard/today") {
-      return fulfillJson(route, dashboardToday);
+      return fulfillJson(route, buildDashboardToday(projectionVersion));
     }
 
     if (path === "/dashboard/stats") {
@@ -540,30 +692,19 @@ async function installShellMocks(page: Page) {
     }
 
     if (path === "/learning/mission-control") {
-      return fulfillJson(route, missionControl);
+      return fulfillJson(route, buildMissionControl(projectionVersion));
     }
 
     if (path === "/learning/study-coach") {
-      return fulfillJson(route, studyCoach);
+      return fulfillJson(route, buildStudyCoach(projectionVersion));
     }
 
     if (path === "/learning/orka-state") {
-      return fulfillJson(route, learningState);
+      return fulfillJson(route, buildLearningState(projectionVersion));
     }
 
     if (path === "/learning/context-pack") {
-      return fulfillJson(route, {
-        topicId,
-        sessionId: "session-shell",
-        scopeStatus: "session",
-        estimatedTokenCount: 800,
-        blocks: [
-          { blockType: "orka_state", status: "ready", summary: "Projection is bounded.", priority: 1, metadata: {} },
-          { blockType: "active_lesson_snapshot", status: "ready", summary: "Active lesson snapshot is available.", priority: 2, metadata: {} },
-        ],
-        warnings: [],
-        generatedAt: now,
-      });
+      return fulfillJson(route, buildContextPack(projectionVersion));
     }
 
     if (path === "/learning-snapshots/active-lesson") {
@@ -718,7 +859,7 @@ async function installShellMocks(page: Page) {
     }
 
     if (path === "/sources/wiki-pro") {
-      return fulfillJson(route, sourceWikiPro);
+      return fulfillJson(route, buildSourceWikiPro(projectionVersion));
     }
 
     if (path === "/sources/question-threads") {
@@ -781,6 +922,7 @@ async function installShellMocks(page: Page) {
     }
 
     if (path === "/question-practice/submit" && request.method() === "POST") {
+      projectionVersion += 1;
       return fulfillJson(route, {
         practiceSetId: "practice-projection",
         topicId,
@@ -795,6 +937,7 @@ async function installShellMocks(page: Page) {
             selectedOptionKey: "A",
             isCorrect: true,
             isBlank: false,
+            answerKey: rawLeakMarkers[3],
             learningImpact: {
               result: "correct",
               nextTutorMove: "continue_plan",
@@ -885,17 +1028,22 @@ test.describe("Learning OS Shell Professional Navigation", () => {
 
     await clickNav(page, "Review / Quiz", /\/app\/review$/);
     const orkaStateCountBeforeSubmit = apiCalls.filter((call) => call.path === "/learning/orka-state").length;
+    const contextPackCountBeforeSubmit = apiCalls.filter((call) => call.path === "/learning/context-pack").length;
     await page.getByRole("button", { name: "Start quiz loop" }).last().click();
     await expect(body).toContainText("Projection binding should update after submit.");
     await page.getByRole("button", { name: /A\s*Update projection/ }).click();
     await page.getByRole("button", { name: "Cevaplari kaydet" }).click();
     await expect(body).toContainText("1/1 dogru");
     await expect.poll(() => apiCalls.filter((call) => call.path === "/learning/orka-state").length).toBeGreaterThan(orkaStateCountBeforeSubmit);
+    await expect.poll(() => apiCalls.filter((call) => call.path === "/learning/context-pack").length).toBeGreaterThan(contextPackCountBeforeSubmit);
     expect(apiCalls.some((call) => call.method === "POST" && call.path === "/question-practice/submit")).toBeTruthy();
 
     await clickNav(page, "Ana Kokpit", /\/app$/);
-    for (const marker of ["__RAW_PROMPT_CANARY__", "__PROVIDER_PAYLOAD_CANARY__", "__SOURCE_CHUNK_TEXT_CANARY__", "__ANSWER_KEY_CANARY__"]) {
+    await expect(body).toContainText("Continue refreshed projection");
+    const pageContent = await page.content();
+    for (const marker of rawLeakMarkers) {
       await expect(body).not.toContainText(marker);
+      expect(pageContent).not.toContain(marker);
     }
     await testInfo.attach("projection-api-calls.json", {
       body: JSON.stringify(apiCalls, null, 2),

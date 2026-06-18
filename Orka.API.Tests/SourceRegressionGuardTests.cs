@@ -1000,6 +1000,7 @@ public sealed class SourceRegressionGuardTests
     {
         var appSettings = ReadRepoText("Orka.API/appsettings.json");
         var korteksAgent = ReadRepoText("Orka.Infrastructure/Services/KorteksAgent.cs");
+        var sanityProbe = ReadRepoText("life_tests/api_sanity_probe.mjs");
 
         Assert.Contains("anthropic/claude-opus-4.7", appSettings);
         Assert.Contains("nvidia/nemotron-nano-9b-v2:free", appSettings);
@@ -1009,6 +1010,13 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("AI:Gemini:Enabled", korteksAgent);
         Assert.Contains("AI:Gemini:Enabled false", korteksAgent);
         Assert.Contains("\"openrouter\" => geminiEnabled", korteksAgent);
+        Assert.Contains("Kernel build failed, attempting fallback provider", korteksAgent);
+        Assert.Contains("BuildKorteksKernelWithProvider(fallback.Value.Provider", korteksAgent);
+
+        Assert.Contains("AI:Gemini:Enabled", sanityProbe);
+        Assert.Contains("if (!enabled) return null;", sanityProbe);
+        Assert.Contains("AI:Cohere:BaseUrl", sanityProbe);
+        Assert.Contains("max_completion_tokens", sanityProbe);
     }
 
     private static int CountOccurrences(string text, string value)

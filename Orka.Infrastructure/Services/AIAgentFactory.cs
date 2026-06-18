@@ -624,19 +624,22 @@ public class AIAgentFactory : IAIAgentFactory
         return requestedMaxOutputTokens;
     }
 
-    private IAsyncEnumerable<string> StreamProvider(ProviderAttempt attempt, string roleName, string systemPrompt, string userMessage, int maxOutputTokens, CancellationToken ct) =>
-        attempt.Provider.ToLowerInvariant() switch
+    private IAsyncEnumerable<string> StreamProvider(ProviderAttempt attempt, string roleName, string systemPrompt, string userMessage, int maxOutputTokens, CancellationToken ct)
+    {
+        var providerMaxOutputTokens = MaxOutputTokensForProvider(attempt, roleName, maxOutputTokens);
+        return attempt.Provider.ToLowerInvariant() switch
         {
-            "githubmodels" => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct, maxOutputTokens),
-            "groq" => _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            "gemini" => _gemini.StreamWithModelAsync(attempt.Model, systemPrompt, userMessage, ct, maxOutputTokens),
-            "openrouter" => _openRouter.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            "cerebras" => _cerebras.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            "mistral" => _mistral.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            "sambanova" => _sambaNova.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            "cohere" => _cohere.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
-            _ => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct, maxOutputTokens)
+            "githubmodels" => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct, providerMaxOutputTokens),
+            "groq" => _groq.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "gemini" => _gemini.StreamWithModelAsync(attempt.Model, systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "openrouter" => _openRouter.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "cerebras" => _cerebras.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "mistral" => _mistral.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "sambanova" => _sambaNova.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "cohere" => _cohere.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            _ => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct, providerMaxOutputTokens)
         };
+    }
 
     private bool ShouldFallback(AgentRole role, AiProviderCallException failure, int attemptIndex, int attemptCount)
     {
@@ -765,10 +768,19 @@ public class AIAgentFactory : IAIAgentFactory
         var kind = statusCode switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AiProviderFailureKind.Authentication,
+            HttpStatusCode.PaymentRequired => AiProviderFailureKind.QuotaExceeded,
             HttpStatusCode.TooManyRequests => AiProviderFailureKind.RateLimited,
+            HttpStatusCode.RequestEntityTooLarge => AiProviderFailureKind.RequestTooLarge,
             >= HttpStatusCode.InternalServerError => AiProviderFailureKind.ServerError,
             _ => AiProviderFailureKind.Unknown
         };
+        var retryable = kind is AiProviderFailureKind.RateLimited
+            or AiProviderFailureKind.ServerError
+            or AiProviderFailureKind.Timeout
+            or AiProviderFailureKind.TransientNetwork;
+        var fallbackable = !IsFailFastStatus(statusCode) &&
+            (retryable || kind is AiProviderFailureKind.QuotaExceeded or AiProviderFailureKind.RequestTooLarge or AiProviderFailureKind.Unknown);
+
         return new AiProviderCallException(
             attempt.Provider,
             attempt.Model,
@@ -776,10 +788,16 @@ public class AIAgentFactory : IAIAgentFactory
             kind,
             "AI provider gecici olarak kullanilamiyor.",
             statusCode,
-            isRetryable: true,
-            isFallbackable: true,
+            isRetryable: retryable,
+            isFallbackable: fallbackable,
             redactedDiagnostic: SensitiveDataRedactor.Redact(ex.Message),
             innerException: ex);
+    }
+
+    private bool IsFailFastStatus(HttpStatusCode statusCode)
+    {
+        var configured = _configuration.GetSection("AI:Reliability:FailFastStatusCodes").Get<int[]>() ?? new[] { 401, 403 };
+        return configured.Contains((int)statusCode);
     }
 
     private void RecordSuccess(string roleName, ProviderAttempt attempt, string callKind, long latencyMs, int attemptIndex, AiUsageBudgetDecision? budget, string output)

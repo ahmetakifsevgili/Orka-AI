@@ -21,7 +21,7 @@ public sealed class ExternalProviderIntegrationTests
             {
                 new { role = "user", content = "Reply with exactly: ok" }
             },
-            max_tokens = 8,
+            max_completion_tokens = 8,
             temperature = 0
         });
         var body = await response.Content.ReadAsStringAsync();
@@ -45,7 +45,7 @@ public sealed class ExternalProviderIntegrationTests
             {
                 new { role = "user", content = "auth smoke" }
             },
-            max_tokens = 4,
+            max_completion_tokens = 4,
             temperature = 0
         });
 
@@ -95,17 +95,16 @@ public sealed class ExternalProviderIntegrationTests
     private async Task SmokeOpenAiCompatibleProviderAsync(string provider, string token, string baseUrl, string model)
     {
         using var client = CreateOpenAiCompatibleClient(baseUrl, token);
-        var response = await client.PostAsJsonAsync("chat/completions", new
+        var messages = new[]
         {
-            model,
-            messages = new[]
-            {
-                new { role = "system", content = "Reply with exactly: ok" },
-                new { role = "user", content = "ok" }
-            },
-            max_tokens = 8,
-            temperature = 0
-        });
+            new { role = "system", content = "Reply with exactly: ok" },
+            new { role = "user", content = "ok" }
+        };
+        var useCompletionTokens = provider is "OpenRouter" or "Groq";
+        var requestBody = useCompletionTokens
+            ? new { model, messages, max_completion_tokens = 8, temperature = 0 }
+            : (object)new { model, messages, max_tokens = 8, temperature = 0 };
+        var response = await client.PostAsJsonAsync("chat/completions", requestBody);
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.False(

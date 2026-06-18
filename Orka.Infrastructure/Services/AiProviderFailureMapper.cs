@@ -19,12 +19,13 @@ internal static class AiProviderFailureMapper
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AiProviderFailureKind.Authentication,
             HttpStatusCode.PaymentRequired => AiProviderFailureKind.QuotaExceeded,
             HttpStatusCode.TooManyRequests => AiProviderFailureKind.RateLimited,
+            HttpStatusCode.RequestEntityTooLarge => AiProviderFailureKind.RequestTooLarge,
             >= HttpStatusCode.InternalServerError => AiProviderFailureKind.ServerError,
             _ => AiProviderFailureKind.Unknown
         };
 
         var retryable = kind is AiProviderFailureKind.RateLimited or AiProviderFailureKind.ServerError;
-        var fallbackable = retryable || kind is AiProviderFailureKind.QuotaExceeded;
+        var fallbackable = retryable || kind is AiProviderFailureKind.QuotaExceeded or AiProviderFailureKind.RequestTooLarge;
         return new AiProviderCallException(
             provider,
             model,
@@ -55,6 +56,7 @@ internal static class AiProviderFailureMapper
             HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AiProviderFailureKind.Authentication,
             HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.PaymentRequired => AiProviderFailureKind.QuotaExceeded,
             HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.TooManyRequests => AiProviderFailureKind.RateLimited,
+            HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.RequestEntityTooLarge => AiProviderFailureKind.RequestTooLarge,
             HttpRequestException httpEx when httpEx.StatusCode >= HttpStatusCode.InternalServerError => AiProviderFailureKind.ServerError,
             HttpRequestException => fallbackKind,
             _ => AiProviderFailureKind.Unknown
@@ -66,7 +68,8 @@ internal static class AiProviderFailureMapper
             or AiProviderFailureKind.TransientNetwork
             or AiProviderFailureKind.InvalidResponse;
         var fallbackable = retryable
-            || kind is AiProviderFailureKind.QuotaExceeded;
+            || kind is AiProviderFailureKind.QuotaExceeded
+            || kind is AiProviderFailureKind.RequestTooLarge;
 
         return new AiProviderCallException(
             provider,

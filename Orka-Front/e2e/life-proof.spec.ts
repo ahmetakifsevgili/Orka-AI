@@ -28,6 +28,21 @@ test.describe("Authenticated Orka browser life proof", () => {
     expect(auth.token).toBeTruthy();
     expect(auth.user?.id).toBeTruthy();
 
+    const onboarding = await request.post(`${apiUrl}/api/user/onboarding`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      data: {
+        answeredCount: 1,
+        correctCount: 1,
+        measuredLevel: "Intermediate",
+        learningStyle: "practical",
+        pathPreference: "standard",
+        theme: "Light",
+      },
+    });
+    expect(onboarding.ok(), await onboarding.text()).toBeTruthy();
+    const onboardedUser = await onboarding.json();
+    expect(onboardedUser.isOnboardingCompleted).toBe(true);
+
     const topic = await request.post(`${apiUrl}/api/topics`, {
       headers: { Authorization: `Bearer ${auth.token}` },
       data: {
@@ -60,7 +75,7 @@ test.describe("Authenticated Orka browser life proof", () => {
         localStorage.setItem("orka_active_view", "home");
         localStorage.setItem(`orka_premium_tour_seen_v3_${user.id}`, "true");
       },
-      { token: auth.token, user: auth.user, topicId: topicBody.id },
+      { token: auth.token, user: onboardedUser, topicId: topicBody.id },
     );
 
     await page.goto("/app");
@@ -77,7 +92,7 @@ test.describe("Authenticated Orka browser life proof", () => {
       "Sources",
       "Wiki",
       "Notebook Studio",
-      "Quiz / Checkpoint",
+      "Review / Quiz",
       "Progress",
     ];
 
@@ -85,12 +100,16 @@ test.describe("Authenticated Orka browser life proof", () => {
       await expect(page.getByText(label).first()).toBeVisible({ timeout: 20000 });
     }
 
-    await page.getByRole("button", { name: "practice" }).click();
-    await expect(page.getByText("Adaptive Practice Workspace")).toBeVisible({ timeout: 20000 });
-    await expect(page.getByText("IDE laboratuvar").first()).toBeVisible({ timeout: 20000 });
-
     const body = page.locator("body");
-    await expect(body).toContainText("Orka AI");
+
+    await page.getByRole("button", { name: "Tutor" }).first().click();
+    await expect(body).toContainText("Orka AI", { timeout: 20000 });
+
+    await page.getByRole("button", { name: "Review / Quiz" }).first().click();
+    await expect(page.getByText("Review / Quiz").first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Start quiz loop" }).first()).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Code IDE" }).first()).toBeVisible({ timeout: 20000 });
+
     await expect(body).not.toContainText("rawPrompt");
     await expect(body).not.toContainText("answerKey");
     await expect(body).not.toContainText("correctAnswer");

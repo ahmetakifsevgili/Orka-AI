@@ -7,6 +7,7 @@ public enum AiProviderFailureKind
     RateLimited,
     TransientNetwork,
     Timeout,
+    RequestTooLarge,
     ServerError,
     InvalidResponse,
     QuotaExceeded,
