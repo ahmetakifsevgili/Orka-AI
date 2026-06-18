@@ -613,7 +613,7 @@ function ActiveLessonResumeCard({
         <>
           <h3 className="mt-1 text-sm font-black text-[#172033]">{lessonTitle}</h3>
           <p className="mt-1 text-[11px] leading-5 text-[#667085]">
-            {parentTitle ? `${parentTitle} içinde son çalıştığın ders.` : "Son çalıştığın ders burada hazır."}
+            {parentTitle ? `${parentTitle} içinde son çalıştığın ders.` : "Çalışmaya geç"}
           </p>
           <button
             onClick={() => onViewChange("chat")}

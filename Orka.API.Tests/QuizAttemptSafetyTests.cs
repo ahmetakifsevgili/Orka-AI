@@ -333,6 +333,80 @@ public sealed class QuizAttemptSafetyTests : IClassFixture<ApiSmokeFactory>
         Assert.Contains("Tutor sonraki hamlesi: prerequisite_scaffold", repair.Content);
     }
 
+    [Fact]
+    public async Task QuizAttempt_DoubleSubmit_ReturnsGracefullyAndPreventsDuplicate()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-double-submit");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Double Submit Quiz");
+        var (_, assessmentItemId) = await SeedAssessmentItemAsync(user.UserId, topicId);
+
+        var requestPayload = new
+        {
+            topicId,
+            assessmentItemId,
+            questionId = "q-auth",
+            question = "Server hangi secenegi dogrular?",
+            selectedOptionId = "B) Server dogrular",
+            isCorrect = false,
+            explanation = "client-provided explanation must be ignored",
+            skillTag = "server-authority",
+            conceptKey = "server-authority",
+            questionHash = $"double-submit-{Guid.NewGuid():N}"
+        };
+
+        // Send first submit
+        var response1 = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        response1.EnsureSuccessStatusCode();
+        using var json1 = await JsonDocument.ParseAsync(await response1.Content.ReadAsStreamAsync());
+        var attemptId1 = json1.RootElement.GetProperty("id").GetGuid();
+
+        // Send second submit (double submit)
+        var response2 = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        response2.EnsureSuccessStatusCode(); // Must be 200 OK, not 500!
+        using var json2 = await JsonDocument.ParseAsync(await response2.Content.ReadAsStreamAsync());
+        var attemptId2 = json2.RootElement.GetProperty("id").GetGuid();
+
+        // They must return the exact same attempt ID!
+        Assert.Equal(attemptId1, attemptId2);
+
+        // Verify only 1 attempt exists in the database
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var count = await db.QuizAttempts.CountAsync(a => a.UserId == user.UserId && a.AssessmentItemId == assessmentItemId);
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task QuizAttempt_DoubleSubmitWithNullTopicId_ReturnsGracefullyAndPreventsDuplicate()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-double-submit-null-topic");
+
+        var requestPayload = new
+        {
+            questionId = "q-null-topic",
+            question = "Soru text?",
+            selectedOptionId = "A) Cevap",
+            skillTag = "null-topic-skill",
+            conceptKey = "null-topic-concept",
+            questionHash = $"double-submit-null-topic-{Guid.NewGuid():N}"
+        };
+
+        // Send first submit
+        var response1 = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        response1.EnsureSuccessStatusCode();
+        using var json1 = await JsonDocument.ParseAsync(await response1.Content.ReadAsStreamAsync());
+        var attemptId1 = json1.RootElement.GetProperty("id").GetGuid();
+
+        // Send second submit (double submit)
+        var response2 = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        response2.EnsureSuccessStatusCode(); // Must be 200 OK
+        using var json2 = await JsonDocument.ParseAsync(await response2.Content.ReadAsStreamAsync());
+        var attemptId2 = json2.RootElement.GetProperty("id").GetGuid();
+
+        // They must return the exact same attempt ID!
+        Assert.Equal(attemptId1, attemptId2);
+    }
+
     private async Task<string> RegisterAndGetTokenAsync()
     {
         var email = $"quiz-{Guid.NewGuid():N}@orka.local";

@@ -570,32 +570,28 @@ public class AgentOrchestratorService : IAgentOrchestrator
         SessionState entryState,
         bool isStream)
     {
-        var postProcessor = _chatTurnPostProcessor;
-        var correlationId = _correlationContext.CorrelationId;
-        var sessionId = session.Id;
-        var topicId = session.TopicId;
-
-        _ = _backgroundQueue.QueueAsync(new BackgroundTaskItem(
-            JobType: "chat_turn_post_process",
-            UserId: userId,
-            CorrelationId: correlationId,
-            Work: async (token) =>
-            {
-                await postProcessor.ProcessSynchronouslyAsync(new ChatTurnPostProcessRequest(
-                    UserId: userId,
-                    SessionId: sessionId,
-                    TopicId: topicId,
-                    AssistantMessageId: assistantMessageId,
-                    UserContent: userContent,
-                    AssistantContent: assistantContent,
-                    AgentRole: agentRole,
-                    CorrelationId: correlationId,
-                    EntryState: entryState,
-                    IsStream: isStream));
-            }
-        ));
-
-        return ValueTask.CompletedTask;
+        try
+        {
+            return _chatTurnPostProcessor.ScheduleAsync(new ChatTurnPostProcessRequest(
+                UserId: userId,
+                SessionId: session.Id,
+                TopicId: session.TopicId,
+                AssistantMessageId: assistantMessageId,
+                UserContent: userContent,
+                AssistantContent: assistantContent,
+                AgentRole: agentRole,
+                CorrelationId: _correlationContext.CorrelationId,
+                EntryState: entryState,
+                IsStream: isStream));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[ChatPostProcess] Scheduling failed; chat response will continue. CorrelationRef={CorrelationRef} ErrorType={ErrorType}",
+                _correlationContext.CorrelationId,
+                ex.GetType().Name);
+            return ValueTask.CompletedTask;
+        }
     }
 
     public async Task<ChatMessageResponse> ProcessMessageAsync(Guid userId, string content, Guid? topicId, Guid? sessionId, bool isPlanMode = false, Guid? focusTopicId = null, string? focusTopicPath = null, string? focusSourceRef = null, CancellationToken ct = default)

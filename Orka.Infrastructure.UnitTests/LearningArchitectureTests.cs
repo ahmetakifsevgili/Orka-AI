@@ -1454,6 +1454,109 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task AdaptiveStudyPlannerService_TopologicalSort_EnforcesTransitiveClosurePrerequisites()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var snapshotId = await SeedConceptSnapshotAsync(db, userId, topicId);
+
+        // Seed transitive relations: A -> B -> C (where B is not in the active list)
+        db.ConceptRelations.AddRange(
+            new ConceptRelation
+            {
+                Id = Guid.NewGuid(),
+                ConceptGraphSnapshotId = snapshotId,
+                SourceConceptKey = "A",
+                TargetConceptKey = "B",
+                RelationType = "prerequisite",
+                CreatedAt = DateTime.UtcNow
+            },
+            new ConceptRelation
+            {
+                Id = Guid.NewGuid(),
+                ConceptGraphSnapshotId = snapshotId,
+                SourceConceptKey = "B",
+                TargetConceptKey = "C",
+                RelationType = "prerequisite",
+                CreatedAt = DateTime.UtcNow
+            }
+        );
+        await db.SaveChangesAsync();
+
+        // Create learning memory with concept A (observed_only, Priority 58) and concept C (usable, Priority 90)
+        // Since C has higher priority but depends transitively on A, A must be sorted before C!
+        var memory = new LearningMemoryLiteDto
+        {
+            HasEnoughSignals = true,
+            ConfidenceStatus = "usable",
+            RemediationReadyItems =
+            [
+                new LearningMemoryConceptDto
+                {
+                    TopicId = topicId,
+                    ConceptKey = "A",
+                    Label = "Concept A",
+                    ConfidenceStatus = "observed_only",
+                    UserSafeReason = "Zayıf sinyal.",
+                    EvidenceBasis = ["knowledge_tracing"],
+                    RemediationSeed = new RemediationSeedDto
+                    {
+                        ConceptKey = "A",
+                        Label = "Concept A",
+                        TopicId = topicId,
+                        Reason = "Kavram A telafi.",
+                        ConfidenceStatus = "observed_only",
+                        FirstAction = "practice_quiz"
+                    }
+                },
+                new LearningMemoryConceptDto
+                {
+                    TopicId = topicId,
+                    ConceptKey = "C",
+                    Label = "Concept C",
+                    ConfidenceStatus = "usable",
+                    UserSafeReason = "Kullanılabilir.",
+                    EvidenceBasis = ["knowledge_tracing"],
+                    RemediationSeed = new RemediationSeedDto
+                    {
+                        ConceptKey = "C",
+                        Label = "Concept C",
+                        TopicId = topicId,
+                        Reason = "Kavram C telafi.",
+                        ConfidenceStatus = "usable",
+                        FirstAction = "practice_quiz"
+                    }
+                }
+            ],
+            GoalReadiness = new GoalReadinessDto
+            {
+                ObservedLevel = "intermediate",
+                ObservedLevelConfidence = 0.85m,
+                NeedsMoreEvidence = false,
+                SuggestedDiagnosticFocus = ["Concept A"]
+            }
+        };
+
+        var service = new AdaptiveStudyPlannerService(db);
+        var plan = await service.BuildAsync(
+            userId,
+            new AdaptiveStudyPlanRequestDto { WeeklyAvailableMinutes = 180, CurrentLevel = "intermediate" },
+            memory,
+            Array.Empty<DashboardWeakConceptDto>(),
+            new DashboardSourceHealthDto { Status = "healthy", EvidenceQuality = new EvidenceQualityDto { Status = "strong" } },
+            null,
+            dueReviewCount: 0,
+            [topicId]);
+
+        var indexA = plan.Items.Select((item, idx) => new { item.ConceptKey, idx }).FirstOrDefault(x => x.ConceptKey == "A")?.idx ?? -1;
+        var indexC = plan.Items.Select((item, idx) => new { item.ConceptKey, idx }).FirstOrDefault(x => x.ConceptKey == "C")?.idx ?? -1;
+
+        Assert.True(indexA >= 0, "Concept A should be present in the plan items.");
+        Assert.True(indexC >= 0, "Concept C should be present in the plan items.");
+        Assert.True(indexA < indexC, "Concept A (prerequisite) must be sorted before Concept C (transitively dependent) despite C having higher priority.");
+    }
+
+    [Fact]
     public async Task TutorReflectionService_LogsNoSourceViolationAndLearningEvent()
     {
         await using var db = CreateDb();

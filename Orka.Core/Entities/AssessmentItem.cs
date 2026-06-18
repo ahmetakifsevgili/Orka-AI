@@ -1,8 +1,12 @@
+using System;
+using Orka.Core.Interfaces;
+
 namespace Orka.Core.Entities;
 
-public class AssessmentItem
+public class AssessmentItem : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
     public Guid? TopicId { get; set; }

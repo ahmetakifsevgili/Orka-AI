@@ -1,11 +1,13 @@
 using Orka.Core.Enums;
 using MediatR;
+using Orka.Core.Interfaces;
 
 namespace Orka.Core.Entities;
 
-public class Session
+public class Session : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid? TopicId { get; set; }
     public Topic? Topic { get; set; }
     public Guid UserId { get; set; }

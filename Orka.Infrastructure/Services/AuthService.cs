@@ -216,6 +216,7 @@ public class AuthService : IAuthService
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
+            new Claim("tenant_id", TenantIdForUser(user.Id)),
             new Claim("plan", user.Plan.ToString()),
             new Claim(ClaimTypes.Role, user.IsAdmin ? "Admin" : "User"),
             new Claim("isAdmin", user.IsAdmin.ToString().ToLowerInvariant())
@@ -232,6 +233,8 @@ public class AuthService : IAuthService
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    private static string TenantIdForUser(Guid userId) => $"user:{userId:D}";
 
     private (string RawToken, RefreshToken Entity) CreateRefreshToken(User user, Guid tokenFamilyId)
     {

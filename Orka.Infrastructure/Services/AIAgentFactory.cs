@@ -470,7 +470,7 @@ public class AIAgentFactory : IAIAgentFactory
         if (!_configuration.GetValue("AI:Reliability:FallbackEnabled", true))
             yield break;
 
-        var fallbackProviders = stream ? new[] { "Gemini", "Mistral" } : new[] { "GitHubModels", "OpenRouter", "Groq", "Mistral" };
+        var fallbackProviders = new[] { "GitHubModels", "OpenRouter", "Groq", "Mistral" };
         if (AllowsStrictExternalFallback(role, stream))
         {
             fallbackProviders = StrictExternalFallbackProviders();

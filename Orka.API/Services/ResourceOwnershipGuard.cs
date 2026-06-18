@@ -29,4 +29,15 @@ public sealed class ResourceOwnershipGuard
 
     public async Task<bool> OptionalSessionBelongsToUserAsync(Guid userId, Guid? sessionId, CancellationToken ct = default) =>
         !sessionId.HasValue || await SessionBelongsToUserAsync(userId, sessionId.Value, ct);
+
+    public Task<bool> QuizRunBelongsToUserAsync(Guid userId, Guid quizRunId, CancellationToken ct = default) =>
+        _db.QuizRuns.AsNoTracking().AnyAsync(q => q.Id == quizRunId && q.UserId == userId, ct);
+
+    public async Task<bool> OptionalQuizRunBelongsToUserAsync(Guid userId, Guid? quizRunId, CancellationToken ct = default)
+    {
+        if (!quizRunId.HasValue) return true;
+        var exists = await _db.QuizRuns.AsNoTracking().AnyAsync(q => q.Id == quizRunId.Value, ct);
+        if (!exists) return true;
+        return await _db.QuizRuns.AsNoTracking().AnyAsync(q => q.Id == quizRunId.Value && q.UserId == userId, ct);
+    }
 }

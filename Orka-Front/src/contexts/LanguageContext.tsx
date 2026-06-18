@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { UserAPI } from "@/services/api";
+import { UserAPI, storage } from "@/services/api";
 import { LANGUAGE_OPTIONS, normalizeLocale, type Locale } from "@/i18n/languages";
 import { messages } from "@/i18n/messages";
 
@@ -29,7 +29,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    const token = localStorage.getItem("orka_token");
+    const token = storage.getToken();
     if (!token) return;
 
     UserAPI.getMe()

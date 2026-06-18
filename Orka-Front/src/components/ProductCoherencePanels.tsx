@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { CentralExamsAPI, ClassroomAPI, CodeAPI, DashboardAPI, LearningAPI, NotebookStudioAPI, SourcesAPI } from "@/services/api";
 import type { DashboardTodayDto } from "@/services/api";
 import type {
@@ -162,8 +163,12 @@ function normalizeKey(value?: string | null) {
   return (value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
-function labelize(value?: string | null) {
+function labelize(value?: string | null, t?: (key: string) => string) {
   const key = normalizeKey(value);
+  if (t) {
+    const translated = t(`label_${key}`);
+    if (translated !== `label_${key}`) return translated;
+  }
   const labels: Record<string, string> = {
     thin_evidence: "Kanıt zayıf",
     thin_exam_evidence: "Sınav kanıtı zayıf",
@@ -189,7 +194,7 @@ function labelize(value?: string | null) {
   };
   if (labels[key]) return labels[key];
   const cleaned = (value ?? "").replace(/[_-]+/g, " ").trim();
-  return cleaned ? cleaned.replace(/\b\w/g, (char) => char.toUpperCase()) : "Not ready yet";
+  return cleaned ? cleaned.replace(/\b\w/g, (char) => char.toUpperCase()) : (t ? t("not_ready_yet") : "Not ready yet");
 }
 
 function toView(targetRoute?: string | null, entryPoint?: string | null, actionType?: string | null): ProductView {
@@ -228,9 +233,19 @@ function priorityTone(priority?: string | null) {
   return "border-white/[0.1] bg-white/[0.045] text-[#aeb6b2]";
 }
 
-function missionModuleDisplay(card: OrkaMissionModuleCardDto, view: ProductView) {
-  const fallbackSummary = card.userSafeSummary || "Orka bu modu mevcut öğrenme bağlamına göre açar.";
-  const map: Partial<Record<ProductView, { label: string; summary: string }>> = {
+function missionModuleDisplay(card: OrkaMissionModuleCardDto, view: ProductView, t?: (key: string) => string) {
+  const fallbackSummary = card.userSafeSummary || (t ? t("mission_fallback_summary") : "Orka bu modu mevcut öğrenme bağlamına göre açar.");
+  const map: Partial<Record<ProductView, { label: string; summary: string }>> = t ? {
+    tutor: { label: t("mission_tutor_label"), summary: t("mission_tutor_summary") },
+    "study-room": { label: t("mission_study_room_label"), summary: t("mission_study_room_summary") },
+    review: { label: t("mission_review_label"), summary: t("mission_review_summary") },
+    exams: { label: t("mission_exams_label"), summary: t("mission_exams_summary") },
+    "sources-wiki": { label: t("mission_sources_wiki_label"), summary: t("mission_sources_wiki_summary") },
+    notebook: { label: t("mission_notebook_label"), summary: t("mission_notebook_summary") },
+    code: { label: t("mission_code_label"), summary: t("mission_code_summary") },
+    progress: { label: t("mission_progress_label"), summary: t("mission_progress_summary") },
+    home: { label: t("mission_home_label"), summary: t("mission_home_summary") },
+  } : {
     tutor: { label: "Tutor", summary: "Bir fikri açıkla, onar veya hızlı kontrol et." },
     "study-room": { label: "Study Room", summary: "Chat yorarsa sınıf hissinde kısa ders anlatımı, örnek ve kontrol akışı aç." },
     review: { label: "Review / Quiz", summary: "Mini quiz, tekrar ve küçük kontrol döngüsünü aç." },
@@ -241,13 +256,14 @@ function missionModuleDisplay(card: OrkaMissionModuleCardDto, view: ProductView)
     progress: { label: "İlerleme", summary: "Zayıf kavram, bellek ve sıradaki güvenli adımı gör." },
     home: { label: "Ana Kokpit", summary: "Bugünün en doğru çalışma adımına dön." },
   };
-  return map[view] ?? { label: card.label || labelize(card.moduleKey), summary: fallbackSummary };
+  return map[view] ?? { label: card.label || labelize(card.moduleKey, t), summary: fallbackSummary };
 }
 
 function StatusPill({ label, tone }: { label?: string | null; tone?: "status" | "priority" }) {
+  const { t } = useLanguage();
   return (
     <span className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 text-[11px] font-bold ${tone === "priority" ? priorityTone(label) : statusTone(label)}`}>
-      <span className="truncate">{labelize(label)}</span>
+      <span className="truncate">{labelize(label, t)}</span>
     </span>
   );
 }
@@ -336,25 +352,27 @@ function PanelScaffold({
   );
 }
 
-function LoadingBlock({ label = "Orka çalışma yüzeyini hazırlıyor" }: { label?: string }) {
+function LoadingBlock({ label }: { label?: string }) {
+  const { t } = useLanguage();
   return (
     <div className="flex min-h-[180px] items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035]">
       <div className="flex items-center gap-2 text-sm font-semibold text-[#9aa3a0]">
         <Loader2 className="h-4 w-4 animate-spin" />
-        {label}
+        {label ?? t("loading_preparing_workspace")}
       </div>
     </div>
   );
 }
 
-function EmptyBlock({ title = "Henüz yeterli sinyal yok", detail = EMPTY_STATE }: { title?: string; detail?: string }) {
+function EmptyBlock({ title, detail }: { title?: string; detail?: string }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-xl border border-[#dac17a]/25 bg-[#dac17a]/10 p-4">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 text-[#dac17a]" />
         <div>
-          <h3 className="text-sm font-semibold text-[#f4f6f3]">{title}</h3>
-          <p className="mt-1 text-sm leading-6 text-[#9aa3a0]">{detail}</p>
+          <h3 className="text-sm font-semibold text-[#f4f6f3]">{title ?? t("empty_no_signal_yet")}</h3>
+          <p className="mt-1 text-sm leading-6 text-[#9aa3a0]">{detail ?? t("empty_state")}</p>
         </div>
       </div>
     </div>
@@ -362,12 +380,13 @@ function EmptyBlock({ title = "Henüz yeterli sinyal yok", detail = EMPTY_STATE 
 }
 
 function MetricGrid({ items }: { items: Array<{ label: string; value?: string | number | null; detail?: string | null }> }) {
+  const { t } = useLanguage();
   return (
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
       {items.map((item) => (
         <div key={item.label} className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8f9894]">{item.label}</div>
-          <div className="mt-2 text-lg font-semibold text-[#f4f6f3]">{item.value ?? "yok"}</div>
+          <div className="mt-2 text-lg font-semibold text-[#f4f6f3]">{item.value ?? t("none")}</div>
           {item.detail && <div className="mt-1 text-xs leading-5 text-[#9aa3a0]">{item.detail}</div>}
         </div>
       ))}
@@ -375,21 +394,22 @@ function MetricGrid({ items }: { items: Array<{ label: string; value?: string | 
   );
 }
 
-function WarningList({ warnings, title = "Uyarılar" }: { warnings: WarningLike[] | null | undefined; title?: string }) {
+function WarningList({ warnings, title }: { warnings: WarningLike[] | null | undefined; title?: string }) {
+  const { t } = useLanguage();
   const visible = safeList(warnings).filter((warning) => warning.label || warning.warningCode);
   if (visible.length === 0) return null;
   return (
     <section className="rounded-xl border border-[#ff7b7b]/20 bg-[#ff7b7b]/10 p-4">
       <h3 className="flex items-center gap-2 text-sm font-semibold text-[#ffb0b0]">
         <AlertTriangle className="h-4 w-4" />
-        {title}
+        {title ?? t("study_room_warnings_title")}
       </h3>
       <div className="mt-3 grid gap-2">
         {visible.slice(0, 5).map((warning, index) => (
           <div key={`${warning.warningCode ?? "warning"}-${index}`} className="rounded-lg border border-white/[0.08] bg-white/[0.04] p-3">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill label={warning.severity ?? "warning"} />
-              <span className="text-sm font-semibold text-[#f4f6f3]">{warning.label || labelize(warning.warningCode)}</span>
+              <span className="text-sm font-semibold text-[#f4f6f3]">{warning.label || labelize(warning.warningCode, t)}</span>
             </div>
             <ReasonChips items={warning.reasonCodes} />
           </div>
@@ -399,7 +419,9 @@ function WarningList({ warnings, title = "Uyarılar" }: { warnings: WarningLike[
   );
 }
 
-function ActionButton({ action, onViewChange, compact = false }: { action: ActionLike; onViewChange: (view: string) => void; compact?: boolean }) {
+function ActionButton({ action, onViewChange, compact = false }: { action?: ActionLike | null; onViewChange: (view: string) => void; compact?: boolean }) {
+  const { t } = useLanguage();
+  if (!action) return null;
   const view = toView(action.targetRoute, action.entryPoint, action.actionType ?? action.handoffType);
   return (
     <button
@@ -410,7 +432,7 @@ function ActionButton({ action, onViewChange, compact = false }: { action: Actio
       }`}
     >
       <span className="min-w-0">
-        <span className="block truncate">{action.label || labelize(action.actionType ?? action.handoffType)}</span>
+        <span className="block truncate">{action.label || labelize(action.actionType ?? action.handoffType, t)}</span>
         {!compact && action.reason && <span className="mt-0.5 block text-xs font-medium leading-5 text-[#9aa3a0]">{action.reason}</span>}
       </span>
       <ArrowRight className="h-4 w-4 shrink-0 text-[#8f9894]" />
@@ -418,12 +440,13 @@ function ActionButton({ action, onViewChange, compact = false }: { action: Actio
   );
 }
 
-function ActionList({ actions, onViewChange, title = "Önerilen adımlar" }: { actions: ActionLike[] | null | undefined; onViewChange: (view: string) => void; title?: string }) {
+function ActionList({ actions, onViewChange, title }: { actions: ActionLike[] | null | undefined; onViewChange: (view: string) => void; title?: string }) {
+  const { t } = useLanguage();
   const visible = safeList(actions).filter((action) => action.label || action.actionType || action.handoffType);
-  if (visible.length === 0) return <EmptyBlock title="Sırada zorunlu adım yok" detail="Bu yüzey için acil bir aksiyon görünmüyor." />;
+  if (visible.length === 0) return <EmptyBlock title={t("actions_no_mandatory_step")} detail={t("actions_no_urgent_action")} />;
   return (
     <section className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-4">
-      <h3 className="mb-3 text-sm font-semibold text-[#f4f6f3]">{title}</h3>
+      <h3 className="mb-3 text-sm font-semibold text-[#f4f6f3]">{title ?? t("actions_recommended_steps")}</h3>
       <div className="grid gap-2 lg:grid-cols-2">
         {visible.slice(0, 6).map((action, index) => (
           <ActionButton key={`${action.actionType ?? action.handoffType ?? "action"}-${index}`} action={action} onViewChange={onViewChange} />
@@ -434,20 +457,21 @@ function ActionList({ actions, onViewChange, title = "Önerilen adımlar" }: { a
 }
 
 function ModuleCardGrid({ cards, onViewChange }: { cards: OrkaMissionModuleCardDto[]; onViewChange: (view: string) => void }) {
+  const { t } = useLanguage();
   const fallback: OrkaMissionModuleCardDto[] = [
-    { moduleKey: "tutor", label: "Tutor", status: "ready", entryPoint: "ask_tutor", targetRoute: "chat", priority: "normal", userSafeSummary: "Ask for explanation, examples, or a quick check without leaving the learning flow.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "study_room", label: "Study Room", status: "limited", entryPoint: "open_study_room", targetRoute: "classroom", priority: "normal", userSafeSummary: "Chatten sıkıldığında sınıf ortamı gibi akan kısa ders anlatımı.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "review", label: "Review / Quiz", status: "ready", entryPoint: "review_due_concept", targetRoute: "review", priority: "normal", userSafeSummary: "Collect due review, micro questions, and short practice into one loop.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "exam", label: "Exam War Room", status: "limited", entryPoint: "practice_exam_outcome", targetRoute: "central-exams", priority: "normal", userSafeSummary: "Inspect weak outcomes and practice handoffs without score promises.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "sources", label: "Sources / Wiki", status: "limited", entryPoint: "source_review", targetRoute: "sources", priority: "normal", userSafeSummary: "Review source readiness, Wiki links, citations, and repair needs.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "notebook", label: "Notebook Studio", status: "limited", entryPoint: "open_notebook_pack", targetRoute: "notebook-studio", priority: "low", userSafeSummary: "Create evidence-backed study artifacts only after a source or lesson context exists.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "code", label: "Code IDE", status: "limited", entryPoint: "code_learning", targetRoute: "code-learning", priority: "normal", userSafeSummary: "Practice code with runtime state, repeated errors, and Tutor handoff context.", actionCount: 1, warningCount: 0, reasonCodes: [] },
-    { moduleKey: "progress", label: "Progress", status: "ready", entryPoint: "progress", targetRoute: "progress", priority: "low", userSafeSummary: "Review durable progress and memory status.", actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "tutor", label: t("mission_tutor_label"), status: "ready", entryPoint: "ask_tutor", targetRoute: "chat", priority: "normal", userSafeSummary: t("mod_tutor_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "study_room", label: t("mod_study_room_label"), status: "limited", entryPoint: "open_study_room", targetRoute: "classroom", priority: "normal", userSafeSummary: t("mod_study_room_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "review", label: t("mod_review_label"), status: "ready", entryPoint: "review_due_concept", targetRoute: "review", priority: "normal", userSafeSummary: t("mod_review_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "exam", label: t("mod_exams_label"), status: "limited", entryPoint: "practice_exam_outcome", targetRoute: "central-exams", priority: "normal", userSafeSummary: t("mod_exams_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "sources", label: t("mod_sources_wiki_label"), status: "limited", entryPoint: "source_review", targetRoute: "sources", priority: "normal", userSafeSummary: t("mod_sources_wiki_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "notebook", label: t("mod_notebook_label"), status: "limited", entryPoint: "open_notebook_pack", targetRoute: "notebook-studio", priority: "low", userSafeSummary: t("mod_notebook_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "code", label: t("mod_code_label"), status: "limited", entryPoint: "code_learning", targetRoute: "code-learning", priority: "normal", userSafeSummary: t("mod_code_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
+    { moduleKey: "progress", label: t("mod_progress_label"), status: "ready", entryPoint: "progress", targetRoute: "progress", priority: "low", userSafeSummary: t("mod_progress_desc"), actionCount: 1, warningCount: 0, reasonCodes: [] },
   ];
   const inputCards = safeList(cards);
   const list = (inputCards.length > 0 ? inputCards : fallback).map((card) => {
     const view = toView(card.targetRoute, card.entryPoint, card.moduleKey);
-    const display = missionModuleDisplay(card, view);
+    const display = missionModuleDisplay(card, view, t);
     return { ...card, label: display.label, userSafeSummary: display.summary };
   });
   return (
@@ -455,7 +479,7 @@ function ModuleCardGrid({ cards, onViewChange }: { cards: OrkaMissionModuleCardD
       {list.map((card) => {
         const view = toView(card.targetRoute, card.entryPoint, card.moduleKey);
         const Icon = moduleIconMap[view] ?? Layers;
-        const display = missionModuleDisplay(card, view);
+        const display = missionModuleDisplay(card, view, t);
         return (
           <button
             key={`${card.moduleKey}-${card.label}`}
@@ -469,7 +493,7 @@ function ModuleCardGrid({ cards, onViewChange }: { cards: OrkaMissionModuleCardD
               </div>
             </div>
             <h3 className="mt-3 text-sm font-semibold text-[#f4f6f3]">{display.label}</h3>
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#9aa3a0]">{card.userSafeSummary || "Orka çalışma bağlamına bağlı."}</p>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#9aa3a0]">{card.userSafeSummary || t("mission_fallback_bound")}</p>
           </button>
         );
       })}
@@ -478,6 +502,7 @@ function ModuleCardGrid({ cards, onViewChange }: { cards: OrkaMissionModuleCardD
 }
 
 function SectionList({ mission, onViewChange }: { mission: OrkaMissionControlDto; onViewChange: (view: string) => void }) {
+  const { t } = useLanguage();
   const sections = safeList(mission.sections);
   if (sections.length === 0) return null;
   return (
@@ -485,26 +510,27 @@ function SectionList({ mission, onViewChange }: { mission: OrkaMissionControlDto
       {sections.slice(0, 8).map((section) => {
         const actions = safeList(section.actions);
         return (
-        <div key={section.sectionKey} className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-[#f4f6f3]">{section.label || labelize(section.sectionKey)}</h3>
-            <StatusPill label={section.status} />
+          <div key={section.sectionKey} className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-[#f4f6f3]">{section.label || labelize(section.sectionKey, t)}</h3>
+              <StatusPill label={section.status} />
+            </div>
+            <ReasonChips items={section.reasonCodes} />
+            <div className="mt-3 grid gap-2">
+              {actions.slice(0, 2).map((action, index) => (
+                <ActionButton key={`${section.sectionKey}-${index}`} action={action} onViewChange={onViewChange} />
+              ))}
+              {actions.length === 0 && <p className="text-xs font-semibold text-[#667085]">{t("actions_no_visible_action")}</p>}
+            </div>
           </div>
-          <ReasonChips items={section.reasonCodes} />
-          <div className="mt-3 grid gap-2">
-            {actions.slice(0, 2).map((action, index) => (
-              <ActionButton key={`${section.sectionKey}-${index}`} action={action} onViewChange={onViewChange} />
-            ))}
-            {actions.length === 0 && <p className="text-xs font-semibold text-[#667085]">No visible action in this section yet.</p>}
-          </div>
-        </div>
-      );
+        );
       })}
     </section>
   );
 }
 
 export function MissionControlHome({ activeTopic, sessionId, topics, onViewChange }: HomePanelProps) {
+  const { t } = useLanguage();
   const [state, setState] = useState<{
     loading: boolean;
     today: DashboardTodayDto | null;
@@ -551,34 +577,34 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
   /* Human-readable readiness label */
   function readinessLabel(load?: string | null) {
     const k = (load ?? "").toLowerCase();
-    if (k.includes("thin") || k.includes("limited") || k.includes("unknown")) return "Başlamaya hazır";
-    if (k.includes("ready") || k.includes("stable") || k.includes("passed")) return "Güçlü";
-    if (k.includes("warning") || k.includes("stale")) return "Dikkat";
-    return "İnceleniyor";
+    if (k.includes("thin") || k.includes("limited") || k.includes("unknown")) return t("readiness_ready_to_start");
+    if (k.includes("ready") || k.includes("stable") || k.includes("passed")) return t("readiness_strong");
+    if (k.includes("warning") || k.includes("stale")) return t("readiness_watch");
+    return t("readiness_inspecting");
   }
 
   const moduleGrid = [
-    { key: "tutor",        label: "Tutor",      desc: "Bir konuyu sor, yanlışını açtır, kavramı kır.",              icon: MessageSquare,  accent: "#6ed7ce" },
-    { key: "study-room",   label: "Ders Odası", desc: "Konu anlatımı, örnek ve mini kontrol akışı.",               icon: GraduationCap,  accent: "#a7e879" },
-    { key: "review",       label: "Quiz & Tekrar",desc: "Diagnostic quiz, flashcard ve telafi pratiği.",            icon: ClipboardCheck, accent: "#b4a0f0" },
-    { key: "exams",        label: "Sınav Modu", desc: "Deneme analizi ve merkezi sınav hazırlığı.",               icon: GraduationCap,  accent: "#dac17a" },
-    { key: "sources-wiki", label: "Kaynaklar",  desc: "Kaynak defteri, Wiki notları ve citation izleri.",          icon: BookOpen,       accent: "#6ed7ce" },
-    { key: "notebook",     label: "Stüdyo",     desc: "Özet, slayt, zihin haritası ve sesli anlatım üret.",       icon: FileText,       accent: "#a7e879" },
-    { key: "code",         label: "Kod IDE",    desc: "Kodu çalıştır, hatayı öğrenme sinyaline dönüştür.",        icon: Code2,          accent: "#b4a0f0" },
-    { key: "progress",     label: "İlerleme",   desc: "Mastery durumu, bellek ve zayıf kavramlar.",               icon: BrainCircuit,   accent: "#a7e879" },
+    { key: "tutor",        label: t("mission_tutor_label"),      desc: t("mod_tutor_desc"),              icon: MessageSquare,  accent: "#6ed7ce" },
+    { key: "study-room",   label: t("mod_study_room_label"), desc: t("mod_study_room_desc"),               icon: GraduationCap,  accent: "#a7e879" },
+    { key: "review",       label: t("mod_review_label"), desc: t("mod_review_desc"),            icon: ClipboardCheck, accent: "#b4a0f0" },
+    { key: "exams",        label: t("mod_exams_label"), desc: t("mod_exams_desc"),               icon: GraduationCap,  accent: "#dac17a" },
+    { key: "sources-wiki", label: t("mod_sources_wiki_label"),  desc: t("mod_sources_wiki_desc"),          icon: BookOpen,       accent: "#6ed7ce" },
+    { key: "notebook",     label: t("mod_notebook_label"),     desc: t("mod_notebook_desc"),       icon: FileText,       accent: "#a7e879" },
+    { key: "code",         label: t("mod_code_label"),         desc: t("mod_code_desc"),        icon: Code2,          accent: "#b4a0f0" },
+    { key: "progress",     label: t("mod_progress_label"),   desc: t("mod_progress_desc"),               icon: BrainCircuit,   accent: "#a7e879" },
   ] as const;
 
   return (
     <PanelScaffold
       moduleKey="home"
-      title="Kontrol Paneli"
-      eyebrow="Bugünün çalışma yönü"
+      title={t("home_title")}
+      eyebrow={t("home_eyebrow")}
       icon={Sparkles}
       summary={undefined}
     >
       {state.loading && <LoadingBlock />}
       {!state.loading && state.error && (
-        <EmptyBlock title="Kontrol paneli yükleniyor" detail="Uygulama hazır. Öğrenme durumu alınıyor — ya da henüz hiç ders başlatılmadı." />
+        <EmptyBlock title={t("home_loading_title")} detail={t("home_loading_detail")} />
       )}
       {!state.loading && !state.error && (
         <>
@@ -591,12 +617,12 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
             }}
           >
             <div className="relative z-10">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: "#6ed7ce" }}>Bugün en iyi adım</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: "#6ed7ce" }}>{t("home_today_best_step")}</p>
               <h2 className="mt-3 max-w-3xl text-[28px] font-bold leading-tight tracking-tight text-white">
-                {primary?.label ?? state.today?.dailyFocusTitle ?? "Kısa bir tekrar ile başla"}
+                {primary?.label ?? state.today?.dailyFocusTitle ?? t("home_default_focus_title")}
               </h2>
               <p className="mt-3 max-w-2xl text-[14px] leading-7" style={{ color: "#8f9894" }}>
-                {primary?.reason ?? state.today?.dailyFocusReason ?? "Orka çalışma sinyalini toparlıyor — en risksiz başlangıç kısa bir tekrardır."}
+                {primary?.reason ?? state.today?.dailyFocusReason ?? t("home_default_focus_reason")}
               </p>
               <div className="mt-5 flex flex-wrap gap-2.5">
                 {primary && (
@@ -606,7 +632,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
                     className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition hover:-translate-y-0.5"
                     style={{ background: "#6ed7ce", color: "#041210", boxShadow: "0 0 24px rgba(110,215,206,0.22)" }}
                   >
-                    {primary.label || "Başla"}
+                    {primary.label || t("home_action_start")}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 )}
@@ -617,7 +643,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
                     className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-white/6"
                     style={{ borderColor: "rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)" }}
                   >
-                    Ders Odası'na geç
+                    {t("home_action_go_to_study_room")}
                   </button>
                 )}
                 {!primary && (
@@ -627,7 +653,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
                     className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition hover:-translate-y-0.5"
                     style={{ background: "#6ed7ce", color: "#041210" }}
                   >
-                    Tutor'ı aç
+                    {t("home_action_open_tutor")}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 )}
@@ -641,10 +667,10 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
           {/* ── Hazırlık durumu şeridi ── */}
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
-              { label: "Tekrar yükü",  value: readinessLabel(mission?.reviewLoad),          accent: "#6ed7ce" },
-              { label: "Telafi",        value: readinessLabel(mission?.repairLoad),          accent: "#a7e879" },
-              { label: "Sınav",         value: readinessLabel(mission?.examLoad),            accent: "#dac17a" },
-              { label: "Kaynak",        value: readinessLabel(mission?.sourceWikiLoad),      accent: "#b4a0f0" },
+              { label: t("home_review_load"),  value: readinessLabel(mission?.reviewLoad),          accent: "#6ed7ce" },
+              { label: t("home_repair_load"),  value: readinessLabel(mission?.repairLoad),          accent: "#a7e879" },
+              { label: t("home_exam_load"),    value: readinessLabel(mission?.examLoad),            accent: "#dac17a" },
+              { label: t("home_source_load"),  value: readinessLabel(mission?.sourceWikiLoad),      accent: "#b4a0f0" },
             ].map((item) => (
               <div
                 key={item.label}
@@ -659,7 +685,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
 
           {/* ── Modül grid ── */}
           <section>
-            <p className="mb-3 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#3a403d" }}>Modüller</p>
+            <p className="mb-3 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#3a403d" }}>{t("home_modules")}</p>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {moduleGrid.map((mod) => {
                 const Icon = mod.icon;
@@ -1053,6 +1079,12 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
   const activeSource = sourceRows[0];
   const activePage = wikiRows[0];
   const conceptRows = safeList(data?.sourceBackedConcepts).length ? safeList(data?.sourceBackedConcepts) : safeList(data?.linkedConcepts);
+  const evidenceMap = data?.evidenceMap ?? {
+    uploadedSourceCount: 0,
+    readySourceCount: 0,
+    wikiPageCount: 0,
+    linkedConceptCount: 0,
+  };
   return (
     <PanelScaffold
       moduleKey="sources-wiki"
@@ -1064,6 +1096,7 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
     >
       {state.loading && <LoadingBlock label="Kaynak ve Wiki verileri yükleniyor" />}
       {!state.loading && state.error && <EmptyBlock title="Kaynak alanı sınırlı" detail="Kaynak ve Wiki verisi henüz hazır değil. İlk adım olarak bir dosya veya not yükle." />}
+      {workspace && <section className="min-h-[680px] overflow-visible rounded-xl border border-white/[0.08] bg-[#050607]">{workspace}</section>}
       {!state.loading && data && (
         <>
           <section className="grid min-h-[560px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0f10] shadow-[0_24px_80px_rgba(0,0,0,0.22)] xl:grid-cols-[260px_minmax(0,1fr)_300px]">
@@ -1071,7 +1104,7 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6ed7ce]">Kaynaklar</p>
-                  <h3 className="mt-1 text-sm font-semibold text-[#f4f6f3]">{data.evidenceMap.readySourceCount}/{data.evidenceMap.uploadedSourceCount} hazır</h3>
+                  <h3 className="mt-1 text-sm font-semibold text-[#f4f6f3]">{evidenceMap.readySourceCount}/{evidenceMap.uploadedSourceCount} hazır</h3>
                 </div>
                 <button type="button" onClick={() => onViewChange("notebook")} className="rounded-lg border border-white/[0.1] px-2 py-1 text-xs font-semibold text-[#c8cfca] transition hover:border-[#6ed7ce]/40 hover:text-[#f4f6f3]">
                   Ekle
@@ -1147,11 +1180,11 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
               <div className="mt-3 grid grid-cols-3 gap-2 xl:grid-cols-1">
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
                   <div className="text-xs text-[#8f9894]">Wiki</div>
-                  <div className="mt-1 text-lg font-semibold text-[#f4f6f3]">{data.evidenceMap.wikiPageCount}</div>
+                  <div className="mt-1 text-lg font-semibold text-[#f4f6f3]">{evidenceMap.wikiPageCount}</div>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
                   <div className="text-xs text-[#8f9894]">Kavram</div>
-                  <div className="mt-1 text-lg font-semibold text-[#f4f6f3]">{data.evidenceMap.linkedConceptCount}</div>
+                  <div className="mt-1 text-lg font-semibold text-[#f4f6f3]">{evidenceMap.linkedConceptCount}</div>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.035] p-3">
                   <div className="text-xs text-[#8f9894]">Uyarı</div>
@@ -1174,12 +1207,6 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
             </aside>
           </section>
         </>
-      )}
-      {workspace && (
-        <details className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#050607]">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[#c8cfca]">Gelişmiş Wiki çalışma alanını aç</summary>
-          <section className="min-h-[680px] overflow-hidden border-t border-white/[0.08]">{workspace}</section>
-        </details>
       )}
     </PanelScaffold>
   );
@@ -1234,8 +1261,12 @@ export function NotebookStudioProPanel({ activeTopic, sessionId, onViewChange, w
     >
       {state.loading && <LoadingBlock label="Stüdyo hazırlanıyor" />}
       {!state.loading && state.error && <EmptyBlock title="Stüdyo henüz sınırlı" detail="Çıktı üretmek için önce bir kaynak veya Wiki sayfası bağla." />}
+      {workspace && <section className="min-h-[680px] overflow-visible rounded-xl border border-white/[0.08] bg-[#050607]">{workspace}</section>}
       {!state.loading && data && (
         <>
+          <div className="w-max rounded-md border border-[#6ed7ce]/20 bg-[#6ed7ce]/10 px-3 py-1 text-xs font-semibold text-[#9ee4de]">
+            Source notebook
+          </div>
           <section className="grid min-h-[560px] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0f10] shadow-[0_24px_80px_rgba(0,0,0,0.22)] xl:grid-cols-[260px_minmax(0,1fr)_300px]">
             <aside className="border-b border-white/[0.08] bg-[#080a0b] p-4 xl:border-b-0 xl:border-r">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6ed7ce]">Kaynak seçimi</p>
@@ -1315,12 +1346,6 @@ export function NotebookStudioProPanel({ activeTopic, sessionId, onViewChange, w
             </aside>
           </section>
         </>
-      )}
-      {workspace && (
-        <details className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#050607]">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[#c8cfca]">Gelişmiş Notebook araçlarını aç</summary>
-          <section className="min-h-[680px] overflow-hidden border-t border-white/[0.08]">{workspace}</section>
-        </details>
       )}
     </PanelScaffold>
   );

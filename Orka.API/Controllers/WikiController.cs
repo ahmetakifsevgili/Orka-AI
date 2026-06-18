@@ -304,15 +304,8 @@ public class WikiController : ControllerBase
     public async Task<IActionResult> DeleteBlock(Guid blockId)
     {
         var userId = GetUserId();
-        try
-        {
-            await _wikiService.DeleteWikiBlockAsync(blockId, userId);
-            return Ok();
-        }
-        catch (Exception)
-        {
-            return BadRequest(new { message = "İstek işlenemedi." });
-        }
+        await _wikiService.DeleteWikiBlockAsync(blockId, userId);
+        return Ok();
     }
 
     /// <summary>
@@ -322,25 +315,18 @@ public class WikiController : ControllerBase
     public async Task<IActionResult> ExportWiki(Guid topicId)
     {
         var userId = GetUserId();
-        try
-        {
-            var content = await _wikiService.GetWikiFullContentAsync(topicId, userId);
-            if (string.IsNullOrWhiteSpace(content))
-                return NotFound(new { message = "Bu konu için henüz wiki içeriği oluşturulmamış." });
+        var content = await _wikiService.GetWikiFullContentAsync(topicId, userId);
+        if (string.IsNullOrWhiteSpace(content))
+            return NotFound(new { message = "Bu konu için henüz wiki içeriği oluşturulmamış." });
 
-            return Ok(new
-            {
-                topicId,
-                exportedAt = DateTime.UtcNow,
-                format     = "markdown",
-                length     = content.Length,
-                content
-            });
-        }
-        catch (Exception)
+        return Ok(new
         {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+            topicId,
+            exportedAt = DateTime.UtcNow,
+            format     = "markdown",
+            length     = content.Length,
+            content
+        });
     }
 
     /// <summary>
@@ -352,98 +338,56 @@ public class WikiController : ControllerBase
     public async Task<IActionResult> GetBriefing(Guid topicId, [FromServices] ISummarizerAgent summarizer)
     {
         var userId = GetUserId();
-        try
+        var briefing = await summarizer.GenerateBriefingAsync(topicId, userId, HttpContext.RequestAborted);
+        return Ok(new
         {
-            var briefing = await summarizer.GenerateBriefingAsync(topicId, userId, HttpContext.RequestAborted);
-            return Ok(new
-            {
-                topicId,
-                topicTitle         = briefing.TopicTitle,
-                tldr               = briefing.TLDR,
-                keyTakeaways       = briefing.KeyTakeaways,
-                suggestedQuestions = briefing.SuggestedQuestions,
-                generatedAt        = briefing.GeneratedAt
-            });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+            topicId,
+            topicTitle         = briefing.TopicTitle,
+            tldr               = briefing.TLDR,
+            keyTakeaways       = briefing.KeyTakeaways,
+            suggestedQuestions = briefing.SuggestedQuestions,
+            generatedAt        = briefing.GeneratedAt
+        });
     }
 
     [HttpGet("{topicId}/glossary")]
     public async Task<IActionResult> GetGlossary(Guid topicId, [FromServices] ISummarizerAgent summarizer)
     {
         var userId = GetUserId();
-        try
-        {
-            var items = await summarizer.GenerateGlossaryAsync(topicId, userId, HttpContext.RequestAborted);
-            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+        var items = await summarizer.GenerateGlossaryAsync(topicId, userId, HttpContext.RequestAborted);
+        return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
     }
 
     [HttpGet("{topicId}/timeline")]
     public async Task<IActionResult> GetTimeline(Guid topicId, [FromServices] ISummarizerAgent summarizer)
     {
         var userId = GetUserId();
-        try
-        {
-            var items = await summarizer.GenerateTimelineAsync(topicId, userId, HttpContext.RequestAborted);
-            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+        var items = await summarizer.GenerateTimelineAsync(topicId, userId, HttpContext.RequestAborted);
+        return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
     }
 
     [HttpGet("{topicId}/mindmap")]
     public async Task<IActionResult> GetMindMap(Guid topicId, [FromServices] ISummarizerAgent summarizer)
     {
         var userId = GetUserId();
-        try
-        {
-            var map = await summarizer.GenerateMindMapAsync(topicId, userId, HttpContext.RequestAborted);
-            return Ok(new { topicId, mermaid = map.Mermaid, nodes = map.Nodes, generatedAt = DateTime.UtcNow });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+        var map = await summarizer.GenerateMindMapAsync(topicId, userId, HttpContext.RequestAborted);
+        return Ok(new { topicId, mermaid = map.Mermaid, nodes = map.Nodes, generatedAt = DateTime.UtcNow });
     }
 
     [HttpGet("{topicId}/study-cards")]
     public async Task<IActionResult> GetStudyCards(Guid topicId, [FromServices] ISummarizerAgent summarizer)
     {
         var userId = GetUserId();
-        try
-        {
-            var cards = await summarizer.GenerateStudyCardsAsync(topicId, userId, HttpContext.RequestAborted);
-            return Ok(new { topicId, cards, generatedAt = DateTime.UtcNow });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+        var cards = await summarizer.GenerateStudyCardsAsync(topicId, userId, HttpContext.RequestAborted);
+        return Ok(new { topicId, cards, generatedAt = DateTime.UtcNow });
     }
 
     [HttpGet("{topicId}/recommendations")]
     public async Task<IActionResult> GetRecommendations(Guid topicId, [FromServices] ILearningSignalService signals)
     {
         var userId = GetUserId();
-        try
-        {
-            var items = await signals.GetRecommendationsAsync(userId, topicId, HttpContext.RequestAborted);
-            return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "Islem su an tamamlanamadi. Lutfen tekrar deneyin." });
-        }
+        var items = await signals.GetRecommendationsAsync(userId, topicId, HttpContext.RequestAborted);
+        return Ok(new { topicId, items, generatedAt = DateTime.UtcNow });
     }
 
     /// <summary>

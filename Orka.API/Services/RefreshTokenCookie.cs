@@ -77,9 +77,9 @@ public static class RefreshTokenCookie
     }
 
     private static SameSiteMode ReadSameSite(IConfiguration configuration) =>
-        TryParseSameSite(Read(configuration, "SameSite", "Lax"), out var mode)
+        TryParseSameSite(Read(configuration, "SameSite", "Strict"), out var mode)
             ? mode
-            : SameSiteMode.Lax;
+            : SameSiteMode.Strict;
 
     private static bool ReadSecure(IConfiguration configuration, IHostEnvironment environment)
     {

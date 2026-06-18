@@ -174,3 +174,23 @@ Additional backend hardening endpoints:
 - `GET /api/tools/capabilities/{toolId}`
 
 These endpoints explicitly classify Dirty-Orka tools such as Wolfram, IDE execution, Weather, News, Crypto, Visual generation, YouTube pedagogy, Tavily/web search, SourcesQuery, ReviewQuery, Flashcards, DailyChallenge and Bookmarks. Disabled or provider-missing tools must be visible as disabled/beta/admin/dev capability rows, not silently omitted.
+
+## Phase 11 Learning OS Frontend Addendum
+
+Canonical app modes: Home / Mission Control, Tutor, Study Room, Review / Quiz, Exam War Room, Sources / Wiki, Notebook Studio, Code IDE, Progress / Memory, Settings / Safety.
+
+Legacy view aliases stay normalized in the frontend shell: `chat` -> `tutor`, `orkalm` -> `notebook`, `central-exams` -> `exams`.
+
+| Mode | Client | Endpoint |
+| --- | --- | --- |
+| Home / Mission Control | `DashboardAPI.getToday` | `/api/dashboard/today` |
+| Home / Mission Control | `LearningAPI.getOrkaState` | `/api/learning/orka-state` |
+| Home / Mission Control | `LearningAPI.getMissionControl` | `/api/learning/mission-control` |
+| Progress / Memory | `LearningAPI.getStudyCoach` | `/api/learning/study-coach` |
+| Exam War Room | `CentralExamsAPI.getWarRoom` | `/api/central-exams/{examCode}/war-room` |
+| Sources / Wiki | `SourcesAPI.getWikiPro` | `/api/sources/wiki-pro` |
+| Study Room | `ClassroomAPI.getStudyRoom` | `/api/classroom/study-room` |
+| Study Room | `ClassroomAPI.startStudyRoom` | `/api/classroom/study-room/start` |
+| Study Room | `ClassroomAPI.submitStudyRoomCheckpoint` | `/api/classroom/study-room/checkpoint` |
+| Notebook Studio | `NotebookStudioAPI.getPro` | `/api/notebook-studio/pro` |
+| Code IDE | `CodeAPI.getLearningIde` | `/api/code/learning-ide` |

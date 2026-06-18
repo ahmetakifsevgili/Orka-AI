@@ -434,16 +434,16 @@ export default function Home({ initialView }: { initialView?: string }) {
       case "sources-wiki":
       case "wiki":
         return (
-          <SplitPane
-            left={
-              <ChatPanel activeTopic={activeTopic} sessionId={sessionId} onSessionStart={setSessionId} messages={messages} setMessages={setMessages} sessionLoading={sessionLoading} onOpenWiki={handleOpenWiki} onTopicsRefresh={handleTopicsRefresh} onTopicAutoCreated={handleTopicAutoCreated} currentSubtopic={currentSubtopic} defaultMode={defaultChatMode} pendingMessage={pendingIDEMessage} onPendingMessageConsumed={() => setPendingIDEMessage(null)} onOpenIDE={(question) => { setActiveQuizQuestion(question ?? null); setActiveView("code"); }} />
-            }
-            right={
+          <SourceWikiProPanel
+            activeTopic={activeTopic}
+            sessionId={sessionId}
+            onViewChange={handleViewChange}
+            workspace={
               (wikiTopicId ?? activeTopic?.id) ? (
                 <WikiMainPanel topicId={(wikiTopicId ?? activeTopic?.id) as string} onClose={() => handleViewChange("tutor")} />
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-[#5a6360]">
-                  <p className="text-sm font-medium">Wiki i�in �nce bir sohbet veya konu se�.</p>
+                  <p className="text-sm font-medium">Kaynaklar için önce bir konu seç.</p>
                 </div>
               )
             }
@@ -452,17 +452,26 @@ export default function Home({ initialView }: { initialView?: string }) {
       case "notebook":
         case "orkalm":
         case "sources":
-          return (wikiTopicId ?? activeTopic?.id) ? (
-            <WikiMainPanel 
-              topicId={(wikiTopicId ?? activeTopic?.id) as string} 
-              mode="orkalm" 
-              onClose={() => { setActiveTopic(null); setWikiTopicId(null); handleViewChange("orkalm"); }} 
-            />
-          ) : (
-            <OrkaLMDashboard 
-              topics={topics} 
-              onSelectTopic={(topic) => { setActiveTopic(topic); handleViewChange("orkalm"); }} 
-              onTopicCreated={(topic) => { setTopics((prev) => [topic, ...prev]); setActiveTopic(topic); handleViewChange("orkalm"); }} 
+          return (
+            <NotebookStudioProPanel
+              activeTopic={activeTopic}
+              sessionId={sessionId}
+              onViewChange={handleViewChange}
+              workspace={
+                (wikiTopicId ?? activeTopic?.id) ? (
+                  <WikiMainPanel
+                    topicId={(wikiTopicId ?? activeTopic?.id) as string}
+                    mode="orkalm"
+                    onClose={() => { setActiveTopic(null); setWikiTopicId(null); handleViewChange("orkalm"); }}
+                  />
+                ) : (
+                  <OrkaLMDashboard
+                    topics={topics}
+                    onSelectTopic={(topic) => { setActiveTopic(topic); handleViewChange("orkalm"); }}
+                    onTopicCreated={(topic) => { setTopics((prev) => [topic, ...prev]); setActiveTopic(topic); handleViewChange("orkalm"); }}
+                  />
+                )
+              }
             />
           );
       case "code":

@@ -648,6 +648,45 @@
       ]
     }
   ],
+  "phase11LearningOsFrontendAddendum": {
+    "canonicalModes": [
+      "Home / Mission Control",
+      "Tutor",
+      "Study Room",
+      "Review / Quiz",
+      "Exam War Room",
+      "Sources / Wiki",
+      "Notebook Studio",
+      "Code IDE",
+      "Progress / Memory",
+      "Settings / Safety"
+    ],
+    "legacyViewAliases": {
+      "dashboard": "home",
+      "chat": "tutor",
+      "classroom": "study-room",
+      "learning": "review",
+      "practice": "review",
+      "central-exams": "exams",
+      "wiki": "sources-wiki",
+      "sources": "sources-wiki",
+      "orkalm": "notebook",
+      "ide": "code"
+    },
+    "frontendContracts": [
+      { "path": "/api/dashboard/today", "client": "DashboardAPI.getToday", "mode": "Home / Mission Control" },
+      { "path": "/api/learning/orka-state", "client": "LearningAPI.getOrkaState", "mode": "Home / Mission Control" },
+      { "path": "/api/learning/mission-control", "client": "LearningAPI.getMissionControl", "mode": "Home / Mission Control" },
+      { "path": "/api/learning/study-coach", "client": "LearningAPI.getStudyCoach", "mode": "Progress / Memory" },
+      { "path": "/api/central-exams/{examCode}/war-room", "client": "CentralExamsAPI.getWarRoom", "mode": "Exam War Room" },
+      { "path": "/api/sources/wiki-pro", "client": "SourcesAPI.getWikiPro", "mode": "Sources / Wiki" },
+      { "path": "/api/classroom/study-room", "client": "ClassroomAPI.getStudyRoom", "mode": "Study Room" },
+      { "path": "/api/classroom/study-room/start", "client": "ClassroomAPI.startStudyRoom", "mode": "Study Room" },
+      { "path": "/api/classroom/study-room/checkpoint", "client": "ClassroomAPI.submitStudyRoomCheckpoint", "mode": "Study Room" },
+      { "path": "/api/notebook-studio/pro", "client": "NotebookStudioAPI.getPro", "mode": "Notebook Studio" },
+      { "path": "/api/code/learning-ide", "client": "CodeAPI.getLearningIde", "mode": "Code IDE" }
+    ]
+  },
   "endpoints": [
     {
       "controller": "AudioController",

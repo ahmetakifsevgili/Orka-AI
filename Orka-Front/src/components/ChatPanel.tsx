@@ -19,16 +19,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
 import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview, ChatResponseMetadata, TeachingArtifact } from "@/lib/types";
-import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI, TutorAPI } from "@/services/api";
+import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI, TutorAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
 import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
-import ToolCapabilityStrip from "./ToolCapabilityStrip";
-import { AgentStatusRail, ArtifactCanvas } from "./AgenticWorkspace";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 
 type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
 
@@ -55,6 +52,21 @@ function eventValue<T = unknown>(event: TutorStreamEvent, key: string): T | unde
   const direct = (event as Record<string, unknown>)[key];
   if (direct !== undefined) return direct as T;
   return event.data?.[key] as T | undefined;
+}
+
+async function readStreamErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = await response.json() as { message?: string; error?: string };
+      return body.message || body.error || fallback;
+    }
+
+    const text = await response.text();
+    return text.trim() || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 type PlanCompletion = {
@@ -117,6 +129,28 @@ export default function ChatPanel({
   const [pendingPlanIntent, setPendingPlanIntent] = useState<StudyIntentPreview | null>(null);
   const [pendingPlanRawRequest, setPendingPlanRawRequest] = useState("");
 
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isUnmountedRef = useRef<boolean>(false);
+
+  const abortActiveStream = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  // Clean up any active stream on unmount & track unmounted state
+  useEffect(() => {
+    isUnmountedRef.current = false;
+    return () => {
+      isUnmountedRef.current = true;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   // Yeni topic modu aktifleştirildiğinde reset at
   useEffect(() => {
     if (!activeTopic && messages.length === 0) {
@@ -132,7 +166,7 @@ export default function ChatPanel({
 
   // Fetch user info
   useEffect(() => {
-    const token = localStorage.getItem("orka_token");
+    const token = storage.getToken();
     if (!token) return;
     UserAPI.getMe().then((res) => {
       const first = res.data?.firstName || "";
@@ -393,6 +427,13 @@ export default function ChatPanel({
     async (content: string) => {
       if (!content || isThinking) return;
 
+      abortActiveStream();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      if (!isUnmountedRef.current) {
+        setIsStreaming(true);
+      }
+
       const userMsg: ChatMessage = {
         id: `local-user-${Date.now()}`,
         role: "user",
@@ -411,18 +452,25 @@ export default function ChatPanel({
         isStreaming: true,
       };
 
-      setMessages((prev) => [...prev, userMsg, placeholderMsg]);
-      setIsThinking(true);
-      setPlanFlowStage("idle");
-      setPlanFlowDetail(null);
+      if (!isUnmountedRef.current) {
+        setMessages((prev) => [...prev, userMsg, placeholderMsg]);
+        setIsThinking(true);
+        setPlanFlowStage("idle");
+        setPlanFlowDetail(null);
+      }
 
       const isPlanRequest = isPlanMode || content.toLowerCase().includes("plan") || content.toLowerCase().includes("mufredat");
       const initStates = isPlanRequest ? PLANNING_THINKING_STATES : THINKING_STATES;
-      setThinkingState(initStates[0]);
+      if (!isUnmountedRef.current) {
+        setThinkingState(initStates[0]);
+      }
 
       let completedTopicId: string | null = null;
       let streamMetadata: ChatResponseMetadata | null = null;
       let streamArtifacts: TeachingArtifact[] = [];
+      let currentContent = "";
+      let streamStarted = false;
+      let streamProducedContent = false;
 
       try {
         const response = await ChatAPI.streamMessage({
@@ -430,9 +478,13 @@ export default function ChatPanel({
           sessionId: sessionId ?? undefined,
           content,
           isPlanMode: isPlanMode,
-        });
+        }, controller.signal);
 
-        if (!response.ok) throw new Error("Stream connection failed");
+        if (isUnmountedRef.current) return;
+
+        if (!response.ok) {
+          throw new Error(await readStreamErrorMessage(response, "Yanit akisi baslatilamadi."));
+        }
 
         // Session ID header check (for new sessions)
         const newSessionId = response.headers.get("X-Orka-SessionId");
@@ -440,19 +492,20 @@ export default function ChatPanel({
           onSessionStart(newSessionId);
         }
 
-
-
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
-        let currentContent = "";
 
         if (reader) {
-          setIsThinking(false);
+          streamStarted = true;
+          if (!isUnmountedRef.current) {
+            setIsThinking(false);
+          }
           let buffer = "";
           let currentEventType = "message";
           
           while (true) {
             const { done, value } = await reader.read();
+            if (isUnmountedRef.current) return;
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
@@ -470,23 +523,27 @@ export default function ChatPanel({
                 if (currentEventType === "done" || data === "[DONE]") break;
                 if (data.startsWith("[ERROR]:")) {
                   const errMsg = data.replace("[ERROR]:", "").trim() || "Yanıt akışında bir hata oluştu.";
-                  toast.error(errMsg, { duration: 6000 });
-                  setIsThinking(false);
-                  setMessages((prev) =>
-                    prev.map(m =>
-                      m.id === assistantId
-                        ? { ...m, content: currentContent || errMsg, isStreaming: false }
-                        : m
-                    )
-                  );
+                  if (!isUnmountedRef.current) {
+                    toast.error(errMsg, { duration: 6000 });
+                    setIsThinking(false);
+                    setMessages((prev) =>
+                      prev.map(m =>
+                        m.id === assistantId
+                          ? { ...m, content: currentContent || errMsg, isStreaming: false }
+                          : m
+                      )
+                    );
+                  }
                   return;
                 }
 
                 // [THINKING:... ] chunk'ları — chat'e yazma, sadece thinking state güncelle
                 if (data.startsWith("[THINKING:")) {
                   const thinkingText = data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, "");
-                  setThinkingState(thinkingText);
-                  setIsThinking(true);
+                  if (!isUnmountedRef.current) {
+                    setThinkingState(thinkingText);
+                    setIsThinking(true);
+                  }
                   continue;
                 }
 
@@ -495,8 +552,10 @@ export default function ChatPanel({
                   const type = tutorEvent.type;
                   if (type === "thinking") {
                     const message = eventValue<string>(tutorEvent, "message") ?? "Tutor state hazırlanıyor";
-                    setThinkingState(message);
-                    setIsThinking(true);
+                    if (!isUnmountedRef.current) {
+                      setThinkingState(message);
+                      setIsThinking(true);
+                    }
                     continue;
                   }
 
@@ -519,10 +578,12 @@ export default function ChatPanel({
                           ]
                         : previousStatuses,
                     };
-                    setThinkingState(`${toolId}: ${status}`);
-                    setMessages((prev) =>
-                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
-                    );
+                    if (!isUnmountedRef.current) {
+                      setThinkingState(`${toolId}: ${status}`);
+                      setMessages((prev) =>
+                        prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
+                      );
+                    }
                     continue;
                   }
 
@@ -540,6 +601,7 @@ export default function ChatPanel({
                     if (artifactId) {
                       try {
                         const artifact = await TutorAPI.getArtifact(artifactId);
+                        if (isUnmountedRef.current) return;
                         streamArtifacts = [
                           ...streamArtifacts.filter(a => a.id !== artifact.id),
                           artifact,
@@ -551,18 +613,22 @@ export default function ChatPanel({
                         };
                       }
                     }
-                    setThinkingState(`${artifactType} hazirlandi`);
-                    setMessages((prev) =>
-                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
-                    );
+                    if (!isUnmountedRef.current) {
+                      setThinkingState(`${artifactType} hazirlandi`);
+                      setMessages((prev) =>
+                        prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
+                      );
+                    }
                     continue;
                   }
 
                   if (type === "metadata") {
                     streamMetadata = (eventValue<ChatResponseMetadata>(tutorEvent, "metadata") ?? tutorEvent.metadata ?? streamMetadata) || null;
-                    setMessages((prev) =>
-                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
-                    );
+                    if (!isUnmountedRef.current) {
+                      setMessages((prev) =>
+                        prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata } : m)
+                      );
+                    }
                     continue;
                   }
 
@@ -581,21 +647,25 @@ export default function ChatPanel({
                       for (const artifactId of missing) {
                         try {
                           const artifact = await TutorAPI.getArtifact(artifactId);
+                          if (isUnmountedRef.current) return;
                           streamArtifacts = [...streamArtifacts, artifact];
                         } catch {
                           // Artifact fetch is best-effort; metadata still keeps the id.
                         }
                       }
                     }
-                    setMessages((prev) =>
-                      prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
-                    );
+                    if (!isUnmountedRef.current) {
+                      setMessages((prev) =>
+                        prev.map(m => m.id === assistantId ? { ...m, metadata: streamMetadata, artifacts: streamArtifacts } : m)
+                      );
+                    }
                     continue;
                   }
 
                   if (type === "token") {
                     const token = eventValue<string>(tutorEvent, "content") ?? tutorEvent.content ?? "";
                     currentContent += token;
+                    if (token.trim()) streamProducedContent = true;
                   } else {
                     continue;
                   }
@@ -604,7 +674,9 @@ export default function ChatPanel({
                   const trimmed = data.trim();
                   const isJsonLike = trimmed.startsWith("{") || trimmed.startsWith("[") || /^\s*\{/i.test(trimmed) || trimmed.includes('"type":') || trimmed.includes('"content":');
                   if (!isJsonLike) {
-                    currentContent += data.replaceAll("[NEWLINE]", "\n");
+                    const textChunk = data.replaceAll("[NEWLINE]", "\n");
+                    currentContent += textChunk;
+                    if (textChunk.trim()) streamProducedContent = true;
                   } else {
                     console.warn("SSE stream parser discarded unparsed JSON chunk:", trimmed);
                   }
@@ -622,8 +694,7 @@ export default function ChatPanel({
                   currentContent = currentContent.replace(/\[PLAN_READY\]/g, "");
 
                   // Play sound if enabled
-                  const userStr = localStorage.getItem("orka_user");
-                  const user = userStr ? JSON.parse(userStr) : null;
+                  const user = storage.getUser();
                   if (user?.settings?.soundsEnabled !== false) {
                      const audio = new Audio("/assets/notification.wav");
                      audio.play().catch(console.error);
@@ -632,10 +703,12 @@ export default function ChatPanel({
                   // Extract Topic Title cleanly or default to generic string
                   const match = currentContent.match(/\*\*(.*?)\*\*/);
                   const subjectName = match ? match[1] : "Secili egitim";
-                  toast.success(`${subjectName} calisma mufredati olustu.`, {
-                    duration: 5000,
-                    icon: "OK"
-                  });
+                  if (!isUnmountedRef.current) {
+                    toast.success(`${subjectName} calisma mufredati olustu.`, {
+                      duration: 5000,
+                      icon: "OK"
+                    });
+                  }
                 }
 
                 // IDE Open Detector (Robust)
@@ -651,11 +724,24 @@ export default function ChatPanel({
                   displayContent = currentContent.substring(0, trailingOpenBracketMatch.index);
                 }
 
-                setMessages((prev) =>
-                  prev.map(m => m.id === assistantId ? { ...m, content: displayContent } : m)
-                );
+                if (!isUnmountedRef.current) {
+                  setMessages((prev) =>
+                    prev.map(m => m.id === assistantId ? { ...m, content: displayContent } : m)
+                  );
+                }
               }
             }
+          }
+        }
+
+        if (isUnmountedRef.current) return;
+
+        if (streamStarted && !streamProducedContent && !currentContent.trim()) {
+          currentContent = "Bağlantı açıldı ama bu turda görünür yanıt üretilmedi.";
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, content: currentContent } : m)
+            );
           }
         }
 
@@ -663,9 +749,11 @@ export default function ChatPanel({
         const quizData = tryParseQuiz(currentContent);
         if (completedTopicId) {
           // Konu tamamlandı: AI mesajını bitir, ardından tamamlama kartı ekle
-          setMessages((prev) =>
-            prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
-          );
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            );
+          }
           const completionCard: ChatMessage = {
             id: `completion-${Date.now()}`,
             role: "ai",
@@ -674,40 +762,82 @@ export default function ChatPanel({
             completedTopicId,
             timestamp: new Date(),
           };
-          setMessages((prev) => [...prev, completionCard]);
+          if (!isUnmountedRef.current) {
+            setMessages((prev) => [...prev, completionCard]);
+          }
         } else if (quizData) {
-          setMessages((prev) =>
-            prev.map(m => m.id === assistantId ? { ...m, type: "quiz", quiz: quizData, isStreaming: false } : m)
-          );
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, type: "quiz", quiz: quizData, isStreaming: false } : m)
+            );
+          }
         } else {
-          setMessages((prev) =>
-            prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
-          );
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            );
+          }
         }
 
         // Force sidebar refresh to reflect potential hierarchy changes (Deep Plan, new topics)
-        onTopicsRefresh();
+        if (!isUnmountedRef.current) {
+          onTopicsRefresh();
+        }
 
         // If it was a null-topic start, the header will also have the new SessionId & TopicId
         const finalSessionId = response.headers.get("X-Orka-SessionId");
         const finalTopicId = response.headers.get("X-Orka-TopicId");
 
         if (finalSessionId && !sessionId) {
-            onSessionStart(finalSessionId);
-            if (finalTopicId && onTopicAutoCreated) {
-                onTopicAutoCreated(finalTopicId);
+            if (!isUnmountedRef.current) {
+              onSessionStart(finalSessionId);
+              if (finalTopicId && onTopicAutoCreated) {
+                  onTopicAutoCreated(finalTopicId);
+              }
+              // Re-fetch all topics to ensure the auto-created one is there
+              setTimeout(() => {
+                if (!isUnmountedRef.current) {
+                  onTopicsRefresh();
+                }
+              }, 500);
             }
-            // Re-fetch all topics to ensure the auto-created one is there
-            setTimeout(() => onTopicsRefresh(), 500);
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (streamStarted) {
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, content: currentContent || "Bağlantı açıldı ama bu turda görünür yanıt üretilmedi.", isStreaming: false } : m)
+            );
+          }
+          return;
+        }
+        if (err instanceof Error && err.name === "AbortError") {
+          console.log("Stream aborted cleanly");
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map(m => m.id === assistantId ? { ...m, isStreaming: false } : m)
+            );
+          }
+          return;
+        }
         console.error("Streaming error:", err);
-        toast.error("Yanıt akışında bir sorun oluştu.");
-        setMessages((prev) =>
-          prev.map(m => m.id === assistantId ? { ...m, content: "Baglanti tarafinda bir sorun olustu. Backend durumunu kontrol edip tekrar deneyelim." } : m)
-        );
+        if (!isUnmountedRef.current) {
+          const errorMessage = err instanceof Error && err.message
+            ? err.message
+            : "Yanit akisi baslatilamadi.";
+          toast.error(errorMessage);
+          setMessages((prev) =>
+            prev.map(m => m.id === assistantId ? { ...m, content: errorMessage, isStreaming: false } : m)
+          );
+        }
       } finally {
-        setIsThinking(false);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+        if (!isUnmountedRef.current) {
+          setIsThinking(false);
+          setIsStreaming(false);
+        }
       }
     },
     [
@@ -718,6 +848,9 @@ export default function ChatPanel({
       onSessionStart,
       setMessages,
       onTopicsRefresh,
+      onTopicAutoCreated,
+      onOpenIDE,
+      abortActiveStream,
     ]
   );
 
@@ -739,6 +872,14 @@ export default function ChatPanel({
   const sendKorteksMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
+
+      abortActiveStream();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      if (!isUnmountedRef.current) {
+        setIsStreaming(true);
+      }
+
       const userMsg: ChatMessage = {
         id: `local-user-${Date.now()}`,
         role: "user",
@@ -755,24 +896,34 @@ export default function ChatPanel({
         timestamp: new Date(),
         isStreaming: true,
       };
-      setMessages((prev) => [...prev, userMsg, placeholderMsg]);
-      setIsThinking(true);
-      setThinkingState("Korteks derin arastirma yapiyor...");
+      if (!isUnmountedRef.current) {
+        setMessages((prev) => [...prev, userMsg, placeholderMsg]);
+        setIsThinking(true);
+        setThinkingState("Korteks derin arastirma yapiyor...");
+      }
       let currentContent = "";
       try {
         const response = await KorteksAPI.stream({
           topic: content,
           topicId: activeTopic?.id ?? undefined,
-        });
-        if (!response.ok) throw new Error("Korteks stream failed");
+        }, controller.signal);
+
+        if (isUnmountedRef.current) return;
+
+        if (!response.ok) {
+          throw new Error(await readStreamErrorMessage(response, "Korteks arastirmasi baslatilamadi."));
+        }
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let currentEventType = "message";
         if (reader) {
-          setIsThinking(false);
+          if (!isUnmountedRef.current) {
+            setIsThinking(false);
+          }
           let buffer = "";
           while (true) {
             const { done, value } = await reader.read();
+            if (isUnmountedRef.current) return;
             if (done) break;
             const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
@@ -787,12 +938,16 @@ export default function ChatPanel({
               const data = line.substring(6).replace(/\r$/, "");
               if (currentEventType === "done" || data === "[DONE]") break;
               if (data.startsWith("[ERROR]:")) {
-                toast.error(data.replace("[ERROR]:", "").trim(), { duration: 6000 });
+                if (!isUnmountedRef.current) {
+                  toast.error(data.replace("[ERROR]:", "").trim(), { duration: 6000 });
+                }
                 break;
               }
               if (data.startsWith("[THINKING:")) {
-                setThinkingState(data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, ""));
-                setIsThinking(true);
+                if (!isUnmountedRef.current) {
+                  setThinkingState(data.replace(/^\[THINKING:\s*/, "").replace(/\]$/, ""));
+                  setIsThinking(true);
+                }
                 continue;
               }
               const trimmed = data.trim();
@@ -809,27 +964,51 @@ export default function ChatPanel({
                 displayContent = currentContent.substring(0, trailingOpenBracketMatch.index);
               }
 
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: displayContent } : m))
-              );
+              if (!isUnmountedRef.current) {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === assistantId ? { ...m, content: displayContent } : m))
+                );
+              }
             }
           }
         }
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
-        );
-        onTopicsRefresh();
-      } catch (err) {
+        if (!isUnmountedRef.current) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+          );
+          onTopicsRefresh();
+        }
+      } catch (err: any) {
+        if (err instanceof Error && err.name === "AbortError") {
+          console.log("Korteks stream aborted cleanly");
+          if (!isUnmountedRef.current) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+            );
+          }
+          return;
+        }
         console.error("Korteks error:", err);
-        toast.error("Korteks arastirmasi basarisiz oldu.");
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, content: "Korteks arastirmasi sirasinda bir hata olustu. Bu sonuc plana aktarilmadi.", isStreaming: false } : m))
-        );
+        if (!isUnmountedRef.current) {
+          const errorMessage = err instanceof Error && err.message
+            ? err.message
+            : "Korteks arastirmasi basarisiz oldu.";
+          toast.error(errorMessage);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: errorMessage, isStreaming: false } : m))
+          );
+        }
       } finally {
-        setIsThinking(false);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+        if (!isUnmountedRef.current) {
+          setIsThinking(false);
+          setIsStreaming(false);
+        }
       }
     },
-    [isThinking, activeTopic, setMessages, onTopicsRefresh]
+    [isThinking, activeTopic, setMessages, onTopicsRefresh, abortActiveStream]
   );
 
   // ── Textarea send ──────────────────────────────────────────────────────
@@ -894,16 +1073,6 @@ export default function ChatPanel({
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
-  const assistantMessages = messages.filter((message) => message.role === "ai");
-  const latestAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : null;
-  const latestMetadata = latestAssistantMessage?.metadata ?? null;
-  const canvasArtifacts = assistantMessages.flatMap((message) => message.artifacts ?? []).slice(-4);
-  const workspaceState = useLearningWorkspaceState({
-    topicId: activeTopic?.id,
-    sessionId: sessionId ?? undefined,
-    metadata: latestMetadata,
-  });
-
   // ── Session loading spinner ────────────────────────────────────────────
   if (sessionLoading) {
     return (
@@ -959,10 +1128,7 @@ export default function ChatPanel({
             </>
           )}
         </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden lg:block">
-            <ToolCapabilityStrip compact />
-          </div>
+          <div className="flex items-center gap-4">
           {activeTopic && (
             <button
               onClick={() => onOpenWiki(activeTopic.id)}
@@ -1082,7 +1248,7 @@ export default function ChatPanel({
               <div className="relative">
                 <button
                   onClick={() => setShowAttachmentMenu((prev) => !prev)}
-                  className="flex items-center justify-center w-8 h-8 rounded-full text-[#667085] hover:bg-[#eef1f3] hover:text-[#172033] transition-colors"
+                  className="composer-action-menu-trigger flex items-center justify-center w-8 h-8 rounded-full text-[#667085] hover:bg-[#eef1f3] hover:text-[#172033] transition-colors"
                   title="Dosya Ekle veya Mod Seç"
                 >
                   <Plus className="w-5 h-5" />
@@ -1170,10 +1336,10 @@ export default function ChatPanel({
               </div>
 
               <div className="flex items-center gap-3">
-                 <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block mb-1">
-                   {input.length > 0 ? "Shift+Enter yeni satır" : ""}
-                 </span>
-                 <button
+                <span className="text-[10px] text-[#8ba8b5] hidden sm:inline-block mb-1">
+                  {input.length > 0 ? "Shift+Enter yeni satır" : ""}
+                </span>
+                <button
                   onClick={() => handleSend()}
                   disabled={!input.trim() || isThinking}
                   className={`
@@ -1212,15 +1378,6 @@ export default function ChatPanel({
           </div>
         </div>
 
-        <aside className="hidden min-h-0 w-[360px] shrink-0 border-l border-[#526d82]/10 bg-[#fbfcfd] 2xl:flex">
-          <ArtifactCanvas artifacts={canvasArtifacts} learningArtifacts={workspaceState.recentArtifacts} />
-        </aside>
-        <AgentStatusRail
-          metadata={latestMetadata}
-          sessionId={sessionId ?? undefined}
-          topicTitle={activeTopic?.title}
-          workspaceState={workspaceState}
-        />
       </div>
     </div>
   );

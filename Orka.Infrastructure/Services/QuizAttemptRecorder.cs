@@ -299,14 +299,14 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(questionHash) && topicId.HasValue)
+        if (!string.IsNullOrWhiteSpace(questionHash))
         {
             return await _db.QuizAttempts
                 .AsNoTracking()
                 .OrderBy(a => a.CreatedAt)
                 .FirstOrDefaultAsync(a =>
                     a.UserId == userId &&
-                    a.TopicId == topicId.Value &&
+                    a.TopicId == topicId &&
                     a.QuestionHash == questionHash,
                     ct);
         }
@@ -332,6 +332,14 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
 
     private static bool IsLikelyDuplicateAttempt(DbUpdateException ex)
     {
+        if (ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx)
+        {
+            if (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+            {
+                return true;
+            }
+        }
+
         var message = ex.InnerException?.Message ?? ex.Message;
         return message.Contains("IX_QuizAttempts_UserId_QuizRunId_AssessmentItemId", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("IX_QuizAttempts_UserId_TopicId_QuestionHash", StringComparison.OrdinalIgnoreCase) ||

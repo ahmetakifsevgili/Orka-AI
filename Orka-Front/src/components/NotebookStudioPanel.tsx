@@ -605,7 +605,7 @@ export default function NotebookStudioPanel({
     ? sourceTitle || "Kaynak koleksiyonu"
     : wikiPageTitle || "Konu not defteri";
   const buildPackLabel = surface === "source_notebook"
-    ? sourceId ? "Kaynak defteri oluştur" : "Kaynak koleksiyonu oluştur"
+    ? "Build source set"
     : wikiPageId ? "Sayfa defteri oluştur" : "Konu defteri oluştur";
 
   if (primaryArtifactActions.length > 0) return (
@@ -715,7 +715,7 @@ export default function NotebookStudioPanel({
                   </button>
                 ))}
                 {advancedArtifacts.length > 0 && (
-                  <details className="pt-1">
+                  <details open className="pt-1">
                     <summary className="cursor-pointer rounded-lg px-3 py-2 text-[11px] font-bold text-[#7b8582] transition hover:bg-white/[0.045] hover:text-[#dce4df]">
                       Gelismis ciktilar ({advancedArtifacts.length})
                     </summary>
@@ -724,10 +724,11 @@ export default function NotebookStudioPanel({
                         <button
                           key={artifact.id}
                           type="button"
+                          aria-label={artifact.title}
                           onClick={() => setSelectedArtifactId(artifact.id)}
                           className="w-full rounded-lg px-3 py-1.5 text-left text-[11px] font-semibold text-[#8d9894] transition hover:bg-white/[0.045] hover:text-[#f7faf7]"
                         >
-                          {labelFor(artifact.artifactType)}
+                          {artifact.title}
                         </button>
                       ))}
                     </div>
@@ -750,6 +751,7 @@ export default function NotebookStudioPanel({
               <h5 className="mt-3 text-2xl font-black tracking-tight text-[#172033]">
                 {selectedArtifact?.title || selected.title}
               </h5>
+              {selectedArtifact && <ArtifactSurfaceSummary artifact={selectedArtifact} />}
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#52606a]">
                 {selected.summary || "Bu defter secili kaynak veya wiki sayfasindan guvenli calisma ciktisi uretir."}
               </p>
@@ -766,11 +768,7 @@ export default function NotebookStudioPanel({
                       <MediaMeta label="Kaynak" value={safeStatusLabel(getArtifactMetaValue(selectedArtifact, "sourceReadiness") ?? selectedArtifact.sourceBasis)} tone={statusTone(getArtifactMetaValue(selectedArtifact, "sourceReadiness") ?? selectedArtifact.sourceBasis)} />
                     </div>
                   )}
-                  <RichMarkdown
-                    content={renderableContent(selectedArtifact)}
-                    className="prose prose-sm max-w-none text-sm leading-6 prose-headings:text-[#172033] prose-p:text-[#344054] prose-li:text-[#344054] prose-p:my-2 prose-li:my-1"
-                  />
-                  <details className="mt-5 rounded-xl border border-[#172033]/10 bg-white/55 p-3">
+                  <details open className="mt-5 rounded-xl border border-[#172033]/10 bg-white/55 p-3">
                     <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-[#667085]">
                       Kanit, graph ve metadata
                     </summary>
@@ -778,6 +776,10 @@ export default function NotebookStudioPanel({
                       <ProfessionalArtifactPreview artifact={selectedArtifact} />
                     </div>
                   </details>
+                  <RichMarkdown
+                    content={renderableContent(selectedArtifact)}
+                    className="mt-4 prose prose-sm max-w-none text-sm leading-6 prose-headings:text-[#172033] prose-p:text-[#344054] prose-li:text-[#344054] prose-p:my-2 prose-li:my-1"
+                  />
                 </>
               ) : (
                 <div className="rounded-xl border border-dashed border-[#172033]/14 bg-white/44 px-4 py-6 text-sm text-[#667085]">
@@ -833,7 +835,7 @@ export default function NotebookStudioPanel({
                   </button>
                 ))}
               </div>
-              <details className="mt-3">
+              <details open className="mt-3">
                 <summary className="cursor-pointer rounded-lg px-2 py-1.5 text-[11px] font-bold text-[#7b8582] transition hover:bg-white/[0.045] hover:text-[#dce4df]">
                   Gelismis uretim ve export
                 </summary>
@@ -860,7 +862,7 @@ export default function NotebookStudioPanel({
                   )}
                 </div>
                 <div className="mt-3 grid gap-2">
-                  <button type="button" onClick={() => selected && loadExportPreview(selected.id)} disabled={loading} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-left text-[11px] font-bold text-[#dce4df] transition hover:bg-white/[0.06] disabled:opacity-40">Export onizle</button>
+                  <button type="button" onClick={() => selected && loadExportPreview(selected.id)} disabled={loading} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-left text-[11px] font-bold text-[#dce4df] transition hover:bg-white/[0.06] disabled:opacity-40">Preview</button>
                   <button type="button" onClick={() => exportPack("markdown")} disabled={loading} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-left text-[11px] font-bold text-[#dce4df] transition hover:bg-white/[0.06] disabled:opacity-40">Markdown al</button>
                   <button type="button" onClick={() => exportPack("html")} disabled={loading} className="rounded-lg border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-left text-[11px] font-bold text-[#dce4df] transition hover:bg-white/[0.06] disabled:opacity-40">Safe HTML al</button>
                 </div>
@@ -873,6 +875,7 @@ export default function NotebookStudioPanel({
                 <div className="grid gap-2">
                   <SignalBox label="Readiness" value={safeStatusLabel(exportResult?.exportReadiness ?? exportPreview?.exportReadiness ?? "preview_pending")} />
                   <SignalBox label="Format" value={safeStatusLabel(exportResult?.format ?? "slide_preview")} />
+                  <SignalBox label="Export scope key" value={String(exportResult?.exportScope ?? exportPreview?.exportScope ?? "scoped_preview_pending").replaceAll("_", " ").toLowerCase()} />
                 </div>
                 {exportResult && (
                   <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[#050706] p-2 text-[10px] leading-4 text-[#cbd5d1]">
@@ -916,7 +919,7 @@ export default function NotebookStudioPanel({
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#f4f6f3] px-3 py-1.5 text-xs font-semibold text-[#070809] transition hover:bg-[#dfe5df] disabled:opacity-40"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {surface === "source_notebook" ? (sourceId ? "Build source set" : "Build source collection") : wikiPageId ? "Build page set" : "Build milestone set"}
+            {surface === "source_notebook" ? "Build source set" : wikiPageId ? "Build page set" : "Build milestone set"}
           </button>
         </div>
       </div>
@@ -1081,6 +1084,7 @@ export default function NotebookStudioPanel({
                 <MediaMeta label="Erisilebilirlik" value={safeStatusLabel(exportResult?.accessibility?.status ?? (exportPreview ? "usable" : "preview_pending"))} />
                 <MediaMeta label="Yüzey" value={surfaceLabel(exportResult?.surface ?? exportPreview?.surface ?? (surface === "source_notebook" ? "orkalm" : "wiki"))} />
                 <MediaMeta label="Export scope" value={surfaceLabel(exportResult?.exportScope ?? exportPreview?.exportScope ?? "scoped_preview_pending")} />
+                <MediaMeta label="Export scope key" value={String(exportResult?.exportScope ?? exportPreview?.exportScope ?? "scoped_preview_pending").replaceAll("_", " ").toLowerCase()} />
               </div>
               <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1.5 text-[11px] font-semibold leading-5 text-[#8a6a33]">
                 PPTX etkin degil; su an guvenli preview, Markdown, escaped HTML ve manifest paketi uretilir.
@@ -1207,7 +1211,6 @@ export default function NotebookStudioPanel({
     </section>
   );
 }
-
 function SignalBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-white/[0.08] bg-white/[0.045] p-2">
@@ -1223,6 +1226,25 @@ function MediaMeta({ label, value, tone }: { label: string; value: string; tone?
       <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#667085]">{label}</div>
       <div className={`mt-1 w-full rounded-md border px-2 py-1 text-[10px] font-bold leading-4 ${tone ?? "border-[#526d82]/14 bg-white/70 text-[#667085]"}`}>
         <span className="block whitespace-normal break-words">{value}</span>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactSurfaceSummary({ artifact }: { artifact: LearningArtifactDto }) {
+  const data = parseArtifactJson(artifact);
+  const surface = readString(data, "surface") ?? "surface_unknown";
+  const contextType = readString(data, "contextType") ?? "context_unknown";
+  const audioDeferred = readBoolean(data, "audioDeferred");
+  const crossSurfaceSync = readBoolean(data, "crossSurfaceSync");
+
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <MediaMeta label="Yüzey" value={surfaceLabel(surface)} tone={surface === "source_notebook" ? "border-sky-500/20 bg-sky-500/10 text-sky-700" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"} />
+      <MediaMeta label="Bağlam" value={surfaceLabel(contextType)} />
+      <div className="sm:col-span-2 flex flex-wrap gap-1.5 rounded-lg border border-[#526d82]/12 bg-white/55 px-3 py-2 text-[11px] font-semibold leading-5 text-[#344054]">
+        <StateChip label={crossSurfaceSync === false ? "Yüzeyler ayrı tutuluyor" : "Senkron durumu bilinmiyor"} tone={crossSurfaceSync === false ? "safe" : "watch"} />
+        <StateChip label={audioDeferred === true ? "Sesli anlatım beklemede" : "Sesli anlatım hazır"} tone={audioDeferred === true ? "watch" : "safe"} />
       </div>
     </div>
   );
@@ -1255,8 +1277,8 @@ function ProfessionalArtifactPreview({ artifact }: { artifact: LearningArtifactD
   return (
     <div className="mb-3 space-y-2">
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <MediaMeta label="Yüzey" value={surfaceLabel(surface)} tone={surface === "source_notebook" ? "border-sky-500/20 bg-sky-500/10 text-sky-300" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"} />
-        <MediaMeta label="Bağlam" value={surfaceLabel(contextType)} />
+        <MediaMeta label="Detay yüzey" value={surfaceLabel(surface)} tone={surface === "source_notebook" ? "border-sky-500/20 bg-sky-500/10 text-sky-300" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"} />
+        <MediaMeta label="Detay bağlam" value={surfaceLabel(contextType)} />
         <MediaMeta label="Kanıt" value={safeStatusLabel(evidenceStatus)} tone={statusTone(evidenceStatus)} />
         <MediaMeta label="Kaynak durumu" value={safeStatusLabel(sourceReadiness)} tone={statusTone(sourceReadiness)} />
       </div>

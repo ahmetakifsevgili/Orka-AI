@@ -1,13 +1,102 @@
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Configuration;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
+using Orka.Core.Interfaces;
 
 namespace Orka.Infrastructure.Data;
 
+public static class AesEncryptionHelper
+{
+    private static readonly byte[] DefaultKey = Encoding.UTF8.GetBytes("ORKA_DEFAULT_DB_ENCRYPTION_KEY_S"); // Exactly 32 bytes for AES-256
+
+    public static byte[] EncryptionKey { get; set; } = DefaultKey;
+
+    public static string Encrypt(string? plainText)
+    {
+        if (string.IsNullOrEmpty(plainText))
+            return plainText ?? string.Empty;
+
+        using var aes = Aes.Create();
+        aes.Key = EncryptionKey;
+        aes.GenerateIV();
+        var iv = aes.IV;
+
+        using var encryptor = aes.CreateEncryptor(aes.Key, iv);
+        using var ms = new MemoryStream();
+
+        // Write IV first
+        ms.Write(iv, 0, iv.Length);
+
+        using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+        using (var sw = new StreamWriter(cs, Encoding.UTF8))
+        {
+            sw.Write(plainText);
+        }
+
+        return Convert.ToBase64String(ms.ToArray());
+    }
+
+    public static string Decrypt(string? cipherText)
+    {
+        if (string.IsNullOrEmpty(cipherText))
+            return cipherText ?? string.Empty;
+
+        try
+        {
+            var fullCipher = Convert.FromBase64String(cipherText);
+
+            using var aes = Aes.Create();
+            aes.Key = EncryptionKey;
+
+            var iv = new byte[aes.BlockSize / 8]; // 16 bytes for AES
+            if (fullCipher.Length < iv.Length)
+                return cipherText; // Return as-is if not properly encrypted
+
+            Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
+            aes.IV = iv;
+
+            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+            using var ms = new MemoryStream(fullCipher, iv.Length, fullCipher.Length - iv.Length);
+            using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+            using var sr = new StreamReader(cs, Encoding.UTF8);
+
+            return sr.ReadToEnd();
+        }
+        catch
+        {
+            // Decryption failed: probably plaintext in DB or bad key, return original to be resilient
+            return cipherText;
+        }
+    }
+}
+
 public class OrkaDbContext : DbContext
 {
-    public OrkaDbContext(DbContextOptions<OrkaDbContext> options) : base(options)
+    private readonly string? _tenantId;
+
+    public OrkaDbContext(
+        DbContextOptions<OrkaDbContext> options,
+        ITenantService? tenantService = null,
+        IConfiguration? configuration = null) : base(options)
     {
+        _tenantId = tenantService?.GetCurrentTenantId();
+
+        if (configuration != null)
+        {
+            var keyStr = configuration["Database:EncryptionKey"];
+            if (!string.IsNullOrEmpty(keyStr))
+            {
+                AesEncryptionHelper.EncryptionKey = Encoding.UTF8.GetBytes(keyStr.PadRight(32).Substring(0, 32));
+            }
+        }
     }
 
     public DbSet<User> Users { get; set; } = null!;
@@ -152,6 +241,19 @@ public class OrkaDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        var encryptionConverter = new ValueConverter<string, string>(
+            v => AesEncryptionHelper.Encrypt(v),
+            v => AesEncryptionHelper.Decrypt(v)
+        );
+
+        modelBuilder.Entity<Message>()
+            .Property(m => m.Content)
+            .HasConversion(encryptionConverter);
+
+        modelBuilder.Entity<SourceChunk>()
+            .Property(c => c.Text)
+            .HasConversion(encryptionConverter);
+
         modelBuilder.Entity<User>()
             .Property(u => u.Plan)
             .HasConversion<string>();
@@ -175,7 +277,7 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
             .IsUnique();
-            
+
         modelBuilder.Entity<RefreshToken>()
             .Property(rt => rt.TokenHash)
             .HasMaxLength(64);
@@ -536,6 +638,7 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<QuizAttempt>()
             .HasIndex(qa => new { qa.UserId, qa.TopicId, qa.QuestionHash })
+            .HasDatabaseName("IX_QuizAttempts_UserId_TopicId_QuestionHash")
             .IsUnique()
             .HasFilter("[QuestionHash] IS NOT NULL");
 
@@ -553,6 +656,7 @@ public class OrkaDbContext : DbContext
 
         modelBuilder.Entity<QuizAttempt>()
             .HasIndex(qa => new { qa.UserId, qa.QuizRunId, qa.AssessmentItemId })
+            .HasDatabaseName("IX_QuizAttempts_UserId_QuizRunId_AssessmentItemId")
             .IsUnique()
             .HasFilter("[QuizRunId] IS NOT NULL AND [AssessmentItemId] IS NOT NULL");
 
@@ -5149,5 +5253,41 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<QuestionReviewEvent>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<QuestionReviewWorkflow>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<WikiKnowledgeNotebookSnapshot>().HasQueryFilter(e => !e.IsDeleted);
+
+    }
+
+    public override int SaveChanges()
+    {
+        SetTenantId();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        SetTenantId();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void SetTenantId()
+    {
+        if (string.IsNullOrEmpty(_tenantId)) return;
+
+        foreach (var entry in ChangeTracker.Entries<IMustHaveTenant>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                if (string.IsNullOrEmpty(entry.Entity.TenantId))
+                {
+                    entry.Entity.TenantId = _tenantId;
+                }
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                if (entry.Property(p => p.TenantId).IsModified)
+                {
+                    entry.Property(p => p.TenantId).CurrentValue = _tenantId;
+                }
+            }
+        }
     }
 }

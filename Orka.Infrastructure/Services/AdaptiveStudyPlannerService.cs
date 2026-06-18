@@ -461,6 +461,67 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
             }
         }
 
+        // 1. Build direct prerequisite adjacency map (Source is prerequisite of Target)
+        var directAdj = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var allKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var rel in relations ?? Array.Empty<ConceptRelation>())
+        {
+            var u = rel.SourceConceptKey;
+            var v = rel.TargetConceptKey;
+
+            if (string.IsNullOrWhiteSpace(u) || string.IsNullOrWhiteSpace(v))
+            {
+                continue;
+            }
+
+            allKeys.Add(u);
+            allKeys.Add(v);
+
+            if (!directAdj.TryGetValue(u, out var neighbors))
+            {
+                neighbors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                directAdj[u] = neighbors;
+            }
+            neighbors.Add(v);
+        }
+
+        // Ensure keys from items are also included in transitive closure universe
+        foreach (var item in allItems)
+        {
+            if (!string.IsNullOrWhiteSpace(item.ConceptKey))
+            {
+                allKeys.Add(item.ConceptKey);
+            }
+        }
+
+        // 2. Compute transitive closure reachability using BFS
+        // transitiveDependents[u] contains all nodes v that depend on u (directly or transitively)
+        var transitiveDependents = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var startKey in allKeys)
+        {
+            var dependents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var queue = new Queue<string>();
+            queue.Enqueue(startKey);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (directAdj.TryGetValue(current, out var neighbors))
+                {
+                    foreach (var neighbor in neighbors)
+                    {
+                        if (dependents.Add(neighbor))
+                        {
+                            queue.Enqueue(neighbor);
+                        }
+                    }
+                }
+            }
+            transitiveDependents[startKey] = dependents;
+        }
+
+        // 3. Initialize in-degree and adjacency lists for items
         var inDegree = new Dictionary<AdaptiveStudyPlanItemDto, int>();
         var adj = new Dictionary<AdaptiveStudyPlanItemDto, List<AdaptiveStudyPlanItemDto>>();
 
@@ -470,25 +531,40 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
             adj[item] = new List<AdaptiveStudyPlanItemDto>();
         }
 
-        foreach (var rel in relations)
-        {
-            var sourceKey = rel.SourceConceptKey;
-            var targetKey = rel.TargetConceptKey;
+        // 4. Populate item-level dependencies using transitive closure reachability
+        var uniqueEdges = new HashSet<(AdaptiveStudyPlanItemDto Source, AdaptiveStudyPlanItemDto Target)>();
 
-            if (conceptToItems.TryGetValue(sourceKey, out var sourceItems) &&
-                conceptToItems.TryGetValue(targetKey, out var targetItems))
+        foreach (var sourceKey in transitiveDependents.Keys)
+        {
+            if (conceptToItems.TryGetValue(sourceKey, out var sourceItems))
             {
-                foreach (var sItem in sourceItems)
+                foreach (var targetKey in transitiveDependents[sourceKey])
                 {
-                    foreach (var tItem in targetItems)
+                    if (conceptToItems.TryGetValue(targetKey, out var targetItems))
                     {
-                        adj[sItem].Add(tItem);
-                        inDegree[tItem]++;
+                        foreach (var sItem in sourceItems)
+                        {
+                            foreach (var tItem in targetItems)
+                            {
+                                // Self-dependency check to avoid cycle-induced self-loops
+                                if (sItem == tItem)
+                                {
+                                    continue;
+                                }
+
+                                if (uniqueEdges.Add((sItem, tItem)))
+                                {
+                                    adj[sItem].Add(tItem);
+                                    inDegree[tItem]++;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
+        // 5. Kahn's Algorithm for topological sorting
         var zeroInDegree = allItems.Where(item => inDegree[item] == 0).ToList();
         var result = new List<AdaptiveStudyPlanItemDto>();
 
@@ -543,6 +619,7 @@ public sealed class AdaptiveStudyPlannerService : IAdaptiveStudyPlannerService
             }
         }
 
+        // Fallback for missing elements (e.g. cycle-locked nodes)
         if (result.Count < allItems.Count)
         {
             var missing = allItems.Where(item => !result.Contains(item));

@@ -115,6 +115,46 @@ public sealed class ScheduledWorkersPushGroundingTests
     }
 
     [Fact]
+    public async Task SrsReminderWorker_WhenLockRenewalFails_AbortsInstantly()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, Email = "srs-abort@example.com", CreatedAt = DateTime.UtcNow });
+        db.Topics.Add(new Topic { Id = topicId, UserId = userId, Title = "SRS Abort", CreatedAt = DateTime.UtcNow });
+        db.ReviewItems.Add(new ReviewItem
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            ReviewKey = "concept:abort",
+            ConceptTag = "lock abort",
+            DueAt = DateTime.UtcNow.AddMinutes(-5),
+            Status = "active",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var redis = new TestRedisMemoryService { FailRenewals = true };
+        var config = Config(
+            ("Workers:SrsReminder:Enabled", "true"),
+            ("Workers:SrsReminder:LockExpirySeconds", "3")
+        );
+
+        var telemetry = new RuntimeTelemetryService(db, NullLogger<RuntimeTelemetryService>.Instance);
+        var notifications = new NotificationService(db);
+        var delayingPush = new DelayingPushDeliveryService(TimeSpan.FromSeconds(2));
+        var service = new SrsReminderWorkerService(db, notifications, delayingPush, telemetry, config, redis, NullLogger<SrsReminderWorkerService>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await service.RunOnceAsync());
+
+        var evt = await db.ToolTelemetryEvents.FirstOrDefaultAsync(e => e.ToolId == "srs_reminder_worker");
+        Assert.NotNull(evt);
+        Assert.Equal("cancelled", evt.CapabilityStatus);
+    }
+
+    [Fact]
     public async Task DailyChallengeWorker_CreatesReminderAndPreventsDuplicate()
     {
         await using var db = CreateDb();
@@ -142,6 +182,43 @@ public sealed class ScheduledWorkersPushGroundingTests
         var notifications = await db.Notifications.Where(n => n.Type == "daily-challenge").ToListAsync();
         Assert.Single(notifications);
         Assert.Equal("DailyChallenge", notifications[0].RelatedEntityType);
+    }
+
+    [Fact]
+    public async Task DailyChallengeWorker_WhenLockRenewalFails_AbortsInstantly()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        db.Users.Add(new User { Id = userId, Email = "daily-abort@example.com", CreatedAt = DateTime.UtcNow });
+        db.DailyChallenges.Add(new DailyChallenge
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Date = DateTime.UtcNow.Date,
+            SourceType = "fallback",
+            SourceSkillTag = "lock abort",
+            QuestionsJson = "[]",
+            Status = "active",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var redis = new TestRedisMemoryService { FailRenewals = true };
+        var config = Config(
+            ("Workers:DailyChallenge:Enabled", "true"),
+            ("Workers:DailyChallenge:LockExpirySeconds", "3")
+        );
+
+        var telemetry = new RuntimeTelemetryService(db, NullLogger<RuntimeTelemetryService>.Instance);
+        var notifications = new NotificationService(db);
+        var delayingPush = new DelayingPushDeliveryService(TimeSpan.FromSeconds(2));
+        var service = new DailyChallengeWorkerService(db, notifications, delayingPush, telemetry, config, redis, NullLogger<DailyChallengeWorkerService>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await service.RunOnceAsync());
+
+        var evt = await db.ToolTelemetryEvents.FirstOrDefaultAsync(e => e.ToolId == "daily_challenge_worker");
+        Assert.NotNull(evt);
+        Assert.Equal("cancelled", evt.CapabilityStatus);
     }
 
     [Fact]
@@ -340,8 +417,14 @@ public sealed class ScheduledWorkersPushGroundingTests
             return Task.FromResult(true);
         }
 
+        public bool FailRenewals { get; set; }
+
         public Task<bool> RenewLockAsync(string key, string value, TimeSpan expiry)
         {
+            if (FailRenewals)
+            {
+                return Task.FromResult(false);
+            }
             if (_locks.TryGetValue(key, out var existing) && existing.Value == value)
             {
                 _locks[key] = (value, DateTime.UtcNow.Add(expiry));
@@ -358,6 +441,18 @@ public sealed class ScheduledWorkersPushGroundingTests
                 _locks.Remove(key);
             }
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class DelayingPushDeliveryService : IPushDeliveryService
+    {
+        private readonly TimeSpan _delay;
+        public DelayingPushDeliveryService(TimeSpan delay) => _delay = delay;
+
+        public async Task<PushDeliveryResultDto> SendAsync(Guid userId, PushSubscription? subscription, Notification notification, CancellationToken ct = default)
+        {
+            await Task.Delay(_delay, ct);
+            return new PushDeliveryResultDto(true, "sent", "Delivered successfully", "Mock", 0);
         }
     }
 }

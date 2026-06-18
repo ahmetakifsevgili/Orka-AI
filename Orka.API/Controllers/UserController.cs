@@ -9,6 +9,7 @@ using Orka.Core.Enums;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using System.Linq;
+using Orka.Core.Entities;
 
 namespace Orka.API.Controllers;
 
@@ -27,6 +28,14 @@ public class UpdateSettingsRequest
     public bool? WeeklyReport { get; set; }
     public bool? NewContentAlerts { get; set; }
     public bool? SoundsEnabled { get; set; }
+}
+public class UserOnboardingRequest
+{
+    public int AnsweredCount { get; set; }
+    public int CorrectCount { get; set; }
+    public string MeasuredLevel { get; set; } = "beginner";
+    public string LearningStyle { get; set; } = "theoretical";
+    public string PathPreference { get; set; } = "standard";
 }
 
 [Authorize]
@@ -48,15 +57,17 @@ public class UserController : ControllerBase
     private Guid GetUserId() => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("me")]
-    public async Task<IActionResult> GetCurrentUser()
+    public async Task<IActionResult> GetCurrentUser(CancellationToken ct)
     {
         var userId = GetUserId();
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
         var dailyLimit = user.Plan == UserPlan.Pro
             ? _configuration.GetValue<int>("Limits:ProUserDailyMessages", 500)
             : _configuration.GetValue<int>("Limits:FreeUserDailyMessages", 50);
+
+        var isOnboardingCompleted = await _dbContext.DiagnosticProfiles.AnyAsync(p => p.UserId == userId, ct);
 
         return Ok(new
         {
@@ -66,13 +77,14 @@ public class UserController : ControllerBase
             email = user.Email,
             plan = user.Plan.ToString(),
             isAdmin = user.IsAdmin,
+            isOnboardingCompleted,
             storageUsedMB = user.StorageUsedMB,
             storageLimitMB = user.StorageLimitMB,
             dailyMessageCount = user.DailyMessageCount,
             dailyLimit,
             dailyResetAt = user.DailyMessageResetAt,
             createdAt = user.CreatedAt,
-            settings = new 
+            settings = new
             {
                 theme = user.Theme,
                 language = user.Language,
@@ -86,32 +98,32 @@ public class UserController : ControllerBase
     }
 
     [HttpPatch("profile")]
-    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest req)
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest req, CancellationToken ct)
     {
         var userId = GetUserId();
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
         if (!string.IsNullOrWhiteSpace(req.FirstName)) user.FirstName = req.FirstName;
         if (!string.IsNullOrWhiteSpace(req.LastName)) user.LastName = req.LastName;
-        
+
         // E-mail değişikliği dikkat gerektirir ancak basit tutuyoruz:
-        if (!string.IsNullOrWhiteSpace(req.Email)) 
+        if (!string.IsNullOrWhiteSpace(req.Email))
         {
-            var exists = await _dbContext.Users.AnyAsync(u => u.Email == req.Email && u.Id != userId);
+            var exists = await _dbContext.Users.AnyAsync(u => u.Email == req.Email && u.Id != userId, ct);
             if (exists) return BadRequest("Bu e-posta zaten kullanımda.");
             user.Email = req.Email;
         }
 
-        await _dbContext.SaveChangesAsync();
+        await _dbContext.SaveChangesAsync(ct);
         return Ok(new { Message = "Profil başarıyla güncellendi." });
     }
 
     [HttpPatch("settings")]
-    public async Task<IActionResult> UpdateSettings([FromBody] UpdateSettingsRequest req)
+    public async Task<IActionResult> UpdateSettings([FromBody] UpdateSettingsRequest req, CancellationToken ct)
     {
         var userId = GetUserId();
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
         if (req.Theme != null) user.Theme = req.Theme;
@@ -122,18 +134,68 @@ public class UserController : ControllerBase
         if (req.NewContentAlerts.HasValue) user.NewContentAlerts = req.NewContentAlerts.Value;
         if (req.SoundsEnabled.HasValue) user.SoundsEnabled = req.SoundsEnabled.Value;
 
-        await _dbContext.SaveChangesAsync();
+        await _dbContext.SaveChangesAsync(ct);
         return Ok(new { Message = "Ayarlar başarıyla kaydedildi." });
+    }
+
+    [HttpPost("onboarding")]
+    public async Task<IActionResult> SaveOnboarding([FromBody] UserOnboardingRequest req, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user == null) return NotFound();
+
+        // 1. Delete existing diagnostic records if a user re-initiates onboarding
+        var existingProfiles = await _dbContext.DiagnosticProfiles
+            .Where(p => p.UserId == userId)
+            .ToListAsync(ct);
+        if (existingProfiles.Any())
+        {
+            _dbContext.DiagnosticProfiles.RemoveRange(existingProfiles);
+        }
+
+        // 2. Instantiate a DiagnosticProfile with the quiz score and serialize preferences to ProfileJson
+        var accuracyPercent = req.AnsweredCount > 0 ? (req.CorrectCount * 100) / req.AnsweredCount : 0;
+
+        var profileJsonObj = new
+        {
+            learningStyle = req.LearningStyle,
+            pathPreference = req.PathPreference
+        };
+        var profileJson = System.Text.Json.JsonSerializer.Serialize(profileJsonObj);
+
+        var profile = new DiagnosticProfile
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            AnsweredCount = req.AnsweredCount,
+            CorrectCount = req.CorrectCount,
+            AccuracyPercent = accuracyPercent,
+            MeasuredLevel = req.MeasuredLevel,
+            ProfileJson = profileJson,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _dbContext.DiagnosticProfiles.Add(profile);
+
+        // 3. Update user settings (Theme = "Dark" if practical mode is chosen)
+        if (string.Equals(req.LearningStyle, "practical", StringComparison.OrdinalIgnoreCase))
+        {
+            user.Theme = "Dark";
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+        return Ok(new { Message = "Onboarding completed successfully." });
     }
 
     /// <summary>
     /// Kullanıcının gamification istatistiklerini döner: TotalXP, Streak, Level bilgisi.
     /// </summary>
     [HttpGet("gamification")]
-    public async Task<IActionResult> GetGamification()
+    public async Task<IActionResult> GetGamification(CancellationToken ct)
     {
         var userId = GetUserId();
-        var user = await _dbContext.Users.FindAsync(userId);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
         // Level hesaplama: her 100 XP = 1 level
@@ -156,7 +218,7 @@ public class UserController : ControllerBase
                 ub.Badge.Threshold,
                 ub.EarnedAt
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(new
         {
@@ -180,10 +242,9 @@ public class UserController : ControllerBase
     }
 
     [HttpGet("export")]
-    public async Task<IActionResult> ExportData()
+    public async Task<IActionResult> ExportData(CancellationToken ct)
     {
         var userId = GetUserId();
-        var ct = HttpContext.RequestAborted;
         var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
@@ -472,10 +533,10 @@ public class UserController : ControllerBase
     }
 
     [HttpDelete("account")]
-    public async Task<IActionResult> DeleteAccount()
+    public async Task<IActionResult> DeleteAccount(CancellationToken ct)
     {
         var userId = GetUserId();
-        var deleted = await _dataLifecycle.DeleteAccountAsync(userId, HttpContext.RequestAborted);
+        var deleted = await _dataLifecycle.DeleteAccountAsync(userId, ct);
         if (!deleted) return NotFound();
 
         return Ok(new { Message = "Hesap ve tüm ilişkili veriler kalıcı olarak silindi." });

@@ -85,16 +85,16 @@ public class TopicsController : ControllerBase
             progressPercentage = topic.ProgressPercentage,
             successScore = topic.SuccessScore,
             isMastered = topic.IsMastered,
-            topic = new { 
-                topic.Id, 
-                topic.Title, 
-                topic.Emoji, 
+            topic = new {
+                topic.Id,
+                topic.Title,
+                topic.Emoji,
                 topic.Category,
                 PlanIntent = resolvedPlanIntent,
-                topic.ParentTopicId, 
-                topic.Order, 
-                topic.CurrentPhase, 
-                topic.CreatedAt, 
+                topic.ParentTopicId,
+                topic.Order,
+                topic.CurrentPhase,
+                topic.CreatedAt,
                 topic.LastAccessedAt,
                 progressPercentage = topic.ProgressPercentage,
                 successScore = topic.SuccessScore,
@@ -106,7 +106,7 @@ public class TopicsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateTopic([FromBody] CreateTopicBody? request)
+    public async Task<IActionResult> CreateTopic([FromBody] CreateTopicBody? request, CancellationToken ct)
     {
         if (request == null)
             return BadRequest(new { message = "Konu istegi zorunlu." });
@@ -121,24 +121,31 @@ public class TopicsController : ControllerBase
         }
 
         var userId = GetUserId();
-        var result = await _topicService.CreateDiscoveryTopicAsync(userId, request.Title);
-        
-        // Emoji and Category if provided (discovery creates with defaults)
-        if (!string.IsNullOrEmpty(request.Emoji)) result.Topic.Emoji = request.Emoji;
-        if (!string.IsNullOrEmpty(request.Category)) result.Topic.Category = request.Category;
-        if (!string.IsNullOrWhiteSpace(request.PlanIntent)) result.Topic.PlanIntent = request.PlanIntent.Trim();
-        else result.Topic.PlanIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category);
-        await _db.SaveChangesAsync();
-        
-        return Ok(new
+        try
         {
-            id = result.Topic.Id,
-            title = result.Topic.Title,
-            emoji = result.Topic.Emoji,
-            category = result.Topic.Category,
-            planIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category),
-            createdAt = result.Topic.CreatedAt
-        });
+            var result = await _topicService.CreateDiscoveryTopicAsync(userId, request.Title);
+
+            // Emoji and Category if provided (discovery creates with defaults)
+            if (!string.IsNullOrEmpty(request.Emoji)) result.Topic.Emoji = request.Emoji;
+            if (!string.IsNullOrEmpty(request.Category)) result.Topic.Category = request.Category;
+            if (!string.IsNullOrWhiteSpace(request.PlanIntent)) result.Topic.PlanIntent = request.PlanIntent.Trim();
+            else result.Topic.PlanIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category);
+            await _db.SaveChangesAsync(ct);
+
+            return Ok(new
+            {
+                id = result.Topic.Id,
+                title = result.Topic.Title,
+                emoji = result.Topic.Emoji,
+                category = result.Topic.Category,
+                planIntent = ResolvePlanIntent(result.Topic.PlanIntent, result.Topic.Category),
+                createdAt = result.Topic.CreatedAt
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPatch("{id}")]
@@ -187,7 +194,7 @@ public class TopicsController : ControllerBase
     }
 
     [HttpGet("{id}/curriculum")]
-    public async Task<IActionResult> GetCurriculum(Guid id)
+    public async Task<IActionResult> GetCurriculum(Guid id, CancellationToken ct)
     {
         var userId = GetUserId();
         var parent = await _topicService.GetTopicByIdAsync(id, userId);
@@ -197,14 +204,14 @@ public class TopicsController : ControllerBase
             .Where(t => t.ParentTopicId == id && t.UserId == userId && t.PlanIntent == "Module" && !t.IsArchived)
             .OrderBy(t => t.Order)
             .ThenBy(t => t.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
         var moduleIds = modules.Select(m => m.Id).ToList();
         var lessons = await _db.Topics
             .Where(t => t.ParentTopicId.HasValue && moduleIds.Contains(t.ParentTopicId.Value) && t.UserId == userId && !t.IsArchived)
             .OrderBy(t => t.ParentTopicId)
             .ThenBy(t => t.Order)
             .ThenBy(t => t.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var chapters = modules.Select(module =>
         {
@@ -350,7 +357,7 @@ public class TopicsController : ControllerBase
     /// Alt konuları (müfredat konu listesi) döner — DeepPlan ile oluşturulan alt başlıklar.
     /// </summary>
     [HttpGet("{id}/subtopics")]
-    public async Task<IActionResult> GetSubtopics(Guid id)
+    public async Task<IActionResult> GetSubtopics(Guid id, CancellationToken ct)
     {
         var userId = GetUserId();
         var parent = await _topicService.GetTopicByIdAsync(id, userId);
@@ -371,7 +378,7 @@ public class TopicsController : ControllerBase
                 completedSections  = t.CompletedSections,
                 totalSections      = t.TotalSections
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(new
         {
@@ -386,7 +393,7 @@ public class TopicsController : ControllerBase
     /// Konunun ilerleme özetini döner — XP, tamamlanma yüzdesi, quiz başarı oranı.
     /// </summary>
     [HttpGet("{id}/progress")]
-    public async Task<IActionResult> GetProgress(Guid id)
+    public async Task<IActionResult> GetProgress(Guid id, CancellationToken ct)
     {
         var userId = GetUserId();
         var topic = await _topicService.GetTopicByIdAsync(id, userId);
@@ -394,7 +401,7 @@ public class TopicsController : ControllerBase
 
         var quizAttempts = await _db.QuizAttempts
             .Where(qa => qa.TopicId == id && qa.UserId == userId)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var totalAttempts   = quizAttempts.Count;
         var correctAttempts = quizAttempts.Count(qa => qa.IsCorrect);

@@ -55,6 +55,14 @@ CLAUDE.local.md
 # ── Test & denetim çıktıları ──────────────────────────────────────────────────
 scripts/reports/
 scripts/llm-eval/output/
+.test-results/
+Orka-Front/test-results/
+build_out.txt
+build_output*.txt
+clean_build*.txt
+infra_build*.txt
+solution_build*.txt
+tests_infrastructure*.txt
 *.log
 !.claude/*.log
 Orka.API/build.txt

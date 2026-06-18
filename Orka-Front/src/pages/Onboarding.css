@@ -1,0 +1,130 @@
+/* Onboarding Premium CSS Styles & Animations */
+
+@keyframes spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-spin-reverse {
+  animation: spin-reverse 10s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    transform: scale(0.95);
+    filter: drop-shadow(0 0 15px rgba(110, 215, 206, 0.3)) blur(1px);
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 35px rgba(110, 215, 206, 0.65)) blur(0.5px);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Theme Wipe Clip Transition */
+.theme-wipe-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  background-color: var(--wipe-bg, #070809);
+  clip-path: circle(0px at var(--wipe-x, 50%) var(--wipe-y, 50%));
+  transition: clip-path 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-wipe-overlay.theme-wipe-active {
+  clip-path: circle(150vmax at var(--wipe-x, 50%) var(--wipe-y, 50%));
+}
+
+/* Shimmer sweeping light ray reflection */
+@keyframes shimmer {
+  0% {
+    left: -150%;
+  }
+  50% {
+    left: -150%;
+  }
+  100% {
+    left: 150%;
+  }
+}
+
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -150%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 30%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.2) 70%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: rotate(30deg);
+  animation: shimmer 4s infinite linear;
+}
+
+/* Glassmorphism Card Surface */
+.onboarding-glass {
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.light .onboarding-glass {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+}
+
+.onboarding-glass:hover {
+  border-color: rgba(110, 215, 206, 0.35);
+  box-shadow: 0 0 30px rgba(110, 215, 206, 0.15);
+  transform: translateY(-4px);
+}
+
+.onboarding-glass-selected {
+  background: rgba(110, 215, 206, 0.08);
+  border-color: rgba(110, 215, 206, 0.7);
+  box-shadow: 0 0 30px rgba(110, 215, 206, 0.25);
+}
+
+.light .onboarding-glass-selected {
+  background: rgba(110, 215, 206, 0.05);
+  border-color: rgba(110, 215, 206, 0.8);
+  box-shadow: 0 0 30px rgba(110, 215, 206, 0.15);
+}
+
+/* Custom fade-in and slide transitions for steps */
+.step-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.step-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}

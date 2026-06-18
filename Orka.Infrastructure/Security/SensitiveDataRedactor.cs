@@ -60,12 +60,12 @@ public static class SensitiveDataRedactor
     private static string MaskEmail(Match match)
     {
         var value = match.Value;
-        var at = value.IndexOf('@');
-        if (at <= 0)
+        if (string.IsNullOrWhiteSpace(value))
             return "[REDACTED_EMAIL]";
 
-        var first = value[0];
-        var domain = value[(at + 1)..];
-        return $"{first}***@{domain}";
+        var normalized = value.Trim().ToLowerInvariant();
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var hash = Convert.ToHexString(bytes).ToLowerInvariant();
+        return $"[EMAIL_HASH:{hash}]";
     }
 }

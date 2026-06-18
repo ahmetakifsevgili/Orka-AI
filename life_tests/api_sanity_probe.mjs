@@ -147,7 +147,7 @@ async function runSanityProbe() {
       },
       method: "POST",
       body: JSON.stringify({
-        model: "llama3.1-8b",
+        model: secrets["AI:Cerebras:Model"] || "gpt-oss-120b",
         messages: [{ role: "user", content: "ping" }],
         max_tokens: 5
       })
@@ -196,7 +196,7 @@ async function runSanityProbe() {
       },
       method: "POST",
       body: JSON.stringify({
-        model: "mistral-tiny",
+        model: secrets["AI:Mistral:Model"] || "mistral-small-latest",
         messages: [{ role: "user", content: "ping" }],
         max_tokens: 5
       })

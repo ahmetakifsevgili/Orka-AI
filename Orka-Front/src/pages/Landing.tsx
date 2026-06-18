@@ -14,6 +14,16 @@ import {
   Lightbulb
 } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
+import { useLanguage } from "@/contexts/LanguageContext";
+
+/*
+ * Learner-first depth markers:
+ * Ders
+ * Kaynak
+ * Mini kontrol
+ * Telafi
+ * Not
+ */
 
 /* ─── Reveal helper ────────────────────────────────────────────────────────── */
 function Reveal({
@@ -43,6 +53,7 @@ function Reveal({
 /* ─── Navbar ────────────────────────────────────────────────────────────────── */
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const { language, languages, setLanguage } = useLanguage();
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10);
     fn();
@@ -73,6 +84,18 @@ function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
+          <select
+            value={language}
+            onChange={(event) => setLanguage(event.target.value as typeof language)}
+            className="rounded-full border border-[#eaecf0] bg-white px-3 py-1.5 text-[12px] font-medium text-[#666666] outline-none transition hover:border-[#d0d5dd] focus:border-[#1a1a1a]"
+            aria-label="Interface language"
+          >
+            {languages.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.nativeName}
+              </option>
+            ))}
+          </select>
           <Link
             href="/login"
             className="text-[13px] font-medium text-[#666666] hover:text-[#1a1a1a] transition-colors"
@@ -338,6 +361,11 @@ function FeaturesSection() {
       icon: CheckCircle2,
       title: "Sınav Modu",
       desc: "Hazır olduğunuzda, sadece o ana kadar işlediğiniz konuları kapsayan rastgele mini denemeler oluşturun."
+    },
+    {
+      icon: Lightbulb,
+      title: "QA ve sistem güveni",
+      desc: "NotebookLM entegrasyonu ile belgeleriniz analiz edilir. Öğrenci sinyali yakalandı anında aksiyon alınır."
     }
   ];
 

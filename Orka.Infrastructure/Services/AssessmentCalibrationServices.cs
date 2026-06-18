@@ -511,7 +511,7 @@ public sealed class AdaptiveAssessmentSelector : IAdaptiveAssessmentSelector
     {
         if (stat == null) return 0.45m;
         var statusBoost = stat.CalibrationStatus == "healthy" ? 0.25m : stat.CalibrationStatus == "usable_low_evidence" ? 0.10m : -0.10m;
-        var discrimination = stat.DiscriminationEstimate == 0m ? Math.Abs(stat.DiscriminationProxy) : stat.DiscriminationEstimate;
+        var discrimination = stat.DiscriminationEstimate == 0m ? Math.Max(0m, stat.DiscriminationProxy) : stat.DiscriminationEstimate;
         var difficultyFit = 1m - Math.Abs((stat.DifficultyEstimate == 0m ? AssessmentCalibrationService.DifficultyFromBand(item.Difficulty) : stat.DifficultyEstimate) - mastery);
         return Math.Clamp(Math.Round(0.35m + discrimination * 0.30m + difficultyFit * 0.20m + statusBoost, 4), 0m, 1m);
     }

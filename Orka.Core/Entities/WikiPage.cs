@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using Orka.Core.Interfaces;
 
 namespace Orka.Core.Entities;
 
-public class WikiPage
+public class WikiPage : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid TopicId { get; set; }
     public Topic Topic { get; set; } = null!;
     public Guid UserId { get; set; }

@@ -50,7 +50,7 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
 
         var lockKey = "orka:lock:srs_reminder_worker";
         var lockValue = Guid.NewGuid().ToString();
-        var lockExpiry = TimeSpan.FromMinutes(5);
+        var lockExpiry = TimeSpan.FromSeconds(ReadInt("Workers:SrsReminder:LockExpirySeconds", 300, 1, 86400));
 
         var acquired = await _redisMemory.AcquireLockAsync(lockKey, lockValue, lockExpiry);
         if (!acquired)
@@ -59,7 +59,8 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
             return 0;
         }
 
-        using var lockRenewal = StartLockRenewal(lockKey, lockValue, lockExpiry, ct);
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var lockRenewal = StartLockRenewal(lockKey, lockValue, lockExpiry, runCts);
         try
         {
             var sw = Stopwatch.StartNew();
@@ -76,11 +77,11 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
                     .Where(r => r.Status == "active" && r.DueAt <= now)
                     .OrderBy(r => r.DueAt)
                     .Take(batchSize)
-                    .ToListAsync(ct);
+                    .ToListAsync(runCts.Token);
 
                 foreach (var item in dueItems)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    runCts.Token.ThrowIfCancellationRequested();
 
                     var alreadyNotified = await _db.Notifications.AsNoTracking().AnyAsync(n =>
                         n.UserId == item.UserId &&
@@ -88,7 +89,7 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
                         n.RelatedEntityType == "ReviewItem" &&
                         n.RelatedEntityId == item.Id &&
                         n.CreatedAt >= duplicateCutoff,
-                        ct);
+                        runCts.Token);
 
                     if (alreadyNotified) continue;
 
@@ -103,28 +104,28 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
                             "ReviewItem",
                             item.Id,
                             now.AddDays(1)),
-                        ct);
+                        runCts.Token);
 
                     var subscriptions = await _db.PushSubscriptions.AsNoTracking()
                         .Where(p => p.UserId == item.UserId && p.Status == "active")
                         .Take(3)
-                        .ToListAsync(ct);
+                        .ToListAsync(runCts.Token);
 
                     if (subscriptions.Count == 0)
                     {
-                        await _push.SendAsync(item.UserId, null, ToNotificationEntity(dto, item.UserId), ct);
+                        await _push.SendAsync(item.UserId, null, ToNotificationEntity(dto, item.UserId), runCts.Token);
                     }
                     else
                     {
                         foreach (var subscription in subscriptions)
-                            await _push.SendAsync(item.UserId, subscription, ToNotificationEntity(dto, item.UserId), ct);
+                            await _push.SendAsync(item.UserId, subscription, ToNotificationEntity(dto, item.UserId), runCts.Token);
                     }
 
                     sent++;
                 }
 
                 sw.Stop();
-                await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, ct, sent);
+                await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, runCts.Token, sent);
                 return sent;
             }
             catch (OperationCanceledException)
@@ -150,9 +151,9 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
         }
     }
 
-    private CancellationTokenSource StartLockRenewal(string lockKey, string lockValue, TimeSpan lockExpiry, CancellationToken ct)
+    private CancellationTokenSource StartLockRenewal(string lockKey, string lockValue, TimeSpan lockExpiry, CancellationTokenSource runCts)
     {
-        var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(runCts.Token);
         var interval = TimeSpan.FromMilliseconds(Math.Max(1000, lockExpiry.TotalMilliseconds / 3));
 
         _ = Task.Run(async () =>
@@ -165,19 +166,36 @@ public sealed class SrsReminderWorkerService : ISrsReminderWorkerService
                     var renewed = await _redisMemory.RenewLockAsync(lockKey, lockValue, lockExpiry);
                     if (!renewed)
                     {
-                        _logger.LogWarning("[SrsReminderWorker] Lock renewal failed; another instance may acquire after TTL.");
+                        _logger.LogError("[SrsReminderWorker] Lock renewal failed! Instantly aborting the worker thread to prevent race conditions.");
+                        try
+                        {
+                            runCts.Cancel();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[SrsReminderWorker] Failed to cancel runCts on lock renewal failure.");
+                        }
                         return;
                     }
                 }
             }
             catch (OperationCanceledException) when (renewalCts.IsCancellationRequested)
             {
-                // Expected when the worker run completes.
+                // Expected when the worker run completes or is aborted.
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("[SrsReminderWorker] Lock renewal loop failed. ErrorType={ErrorType}",
                     LogPrivacyGuard.SafeExceptionType(ex));
+                _logger.LogError("[SrsReminderWorker] Lock renewal loop crashed; aborting run to prevent race conditions.");
+                try
+                {
+                    runCts.Cancel();
+                }
+                catch (Exception cancelEx)
+                {
+                    _logger.LogError(cancelEx, "[SrsReminderWorker] Failed to cancel runCts on lock renewal crash.");
+                }
             }
         }, CancellationToken.None);
 

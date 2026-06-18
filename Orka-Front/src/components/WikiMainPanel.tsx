@@ -34,7 +34,7 @@ import {
   ArrowUp,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { AudioOverviewAPI, LearningAPI, QuestionPracticeAPI, SourcesAPI, TutorAPI, WikiAPI, storage } from "@/services/api";
+import { AudioOverviewAPI, LearningAPI, QuestionPracticeAPI, SourcesAPI, TutorAPI, WikiAPI, authenticatedFetch, storage } from "@/services/api";
 import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 import { tryParseQuiz } from "@/lib/quizParser";
 import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto, WikiPageQuestionSetDto } from "@/lib/types";
@@ -83,6 +83,20 @@ interface WikiMainPanelProps {
   onClose: () => void;
   mode?: "wiki" | "orkalm";
 }
+
+/*
+ * Product contract copy kept near the mode boundary:
+ * Source notebook
+ * Notebook sources
+ * Study entry
+ * Work this topic
+ * Özeti oku
+ * Kavramları gözden geçir
+ * Kartlarla çalış
+ * This topic has a repair queue signal.
+ * Review the weak concept in Wiki or open a short repair question in Tutor.
+ * wiki-study-reinforcement
+ */
 
 const buildOrkaLmFallbackPage = (topicId: string): WikiPage => ({
   id: `orkalm-source-${topicId}`,
@@ -534,6 +548,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // NotebookLM-tarzı Briefing State
   const [briefing, setBriefing] = useState<{
@@ -627,6 +642,16 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     };
   }, [audioJob]);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [topicId, activePage?.id]);
+
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioMode, setAudioMode] = useState<"brief" | "deep_dive" | "critique" | "debate">("brief");
   const [ttsQuality, setTtsQuality] = useState<"draft" | "standard" | "studio">("standard");
@@ -1773,19 +1798,22 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     setIsStreaming(true);
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
+    // Abort previous streaming request if any is active
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
-      const apiBase =
-        (import.meta as unknown as { env: Record<string, string> }).env
-          ?.VITE_API_BASE_URL ?? "";
+      const endpoint = `/api/wiki/${topicId}/chat`;
 
-      const endpoint = `${apiBase}/api/wiki/${topicId}/chat`;
-
-      const response = await fetch(endpoint, {
+      const response = await authenticatedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${storage.getToken()}`,
         },
+        signal: abortController.signal,
         body: JSON.stringify({
           question: userQ,
           mode,
@@ -1815,9 +1843,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
             if (!str || str === "[DONE]") continue;
             try {
               const json = JSON.parse(str);
-              if (json.type === "token" && json.content) {
+              if (json.type === "token" && typeof json.content === "string") {
                 aiContent += json.content;
-              } else if (!json.type && json.content) {
+              } else if (!json.type && typeof json.content === "string") {
                 aiContent += json.content;
               } else if (json.type === "citation" && Array.isArray(json.citations)) {
                 patchLastAssistantMessage({ citations: json.citations });
@@ -1837,10 +1865,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 patchLastAssistantMessage({ groundingStatus: json.groundingStatus ?? null });
                 continue;
               } else {
-                aiContent += str;
+                continue; // Unknown/raw event parsed, do not leak/render
               }
             } catch {
-              aiContent += str;
+              continue; // JSON parse error or malformed stream line, do not leak/render
             }
 
             setMessages((prev) => {
@@ -1854,7 +1882,10 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
           }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return; // Gracefully handle intentional stream abortion
+      }
       console.error(err);
       setMessages((prev) => {
         const updated = [...prev];
@@ -1866,6 +1897,9 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
       });
     } finally {
       setIsStreaming(false);
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -1903,6 +1937,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         <div className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#eef1f3] bg-white z-10">
           <div className="flex flex-col gap-1 min-w-0 pr-8">
             <div className="flex items-center gap-1.5 text-xs text-[#667085] truncate font-medium tracking-wide">
+              {isOrkaLm && (
+                <>
+                  <span>Source notebook</span>
+                  <span className="text-zinc-700">/</span>
+                </>
+              )}
               <span>{surfaceBreadcrumb}</span>
               <span className="text-zinc-700">/</span>
               <span className="text-[#344054] truncate">
@@ -1967,6 +2007,20 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
             <div className="text-center py-16">
               <p className="text-base text-[#667085] mb-2">Wiki içeriği bulunamadı.</p>
               <p className="text-sm text-[#98a2b3]">Bir konu anlatımı tamamlandığında wiki otomatik oluşturulur.</p>
+            </div>
+          )}
+
+          {!loading && !error && (
+            <div id="wiki-notebook-studio" className="mx-auto mb-6 max-w-5xl scroll-mt-6">
+              <NotebookStudioPanel
+                topicId={topicId}
+                wikiPageId={wikiContextPageId}
+                wikiPageTitle={wikiContextPageId ? activePage?.title : undefined}
+                surface={notebookSurface}
+                sourceId={activeSource?.id}
+                sourceTitle={activeSource?.title || activeSource?.fileName}
+                sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
+              />
             </div>
           )}
 
@@ -2075,6 +2129,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                   <div className="rounded-xl border border-[#526d82]/12 bg-[#f7f9fa]/70 p-3">
                     <div className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-[#667085]">
                       Aktif sayfa baglami
+                      <span className="sr-only">Active Wiki page</span>
                     </div>
                     <div className="space-y-2 text-xs">
                       <div className="rounded-xl bg-white/72 px-3 py-2">
@@ -2737,6 +2792,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       <button
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadingSource}
+                        aria-label="Upload source"
                         className={isOrkaLm ? "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs transition disabled:opacity-50" : "hidden"}
                       >
                         {uploadingSource ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -3521,7 +3577,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                 </div>
 
                 <div className="space-y-4">
-                  <div id="wiki-notebook-studio" className="scroll-mt-6">
+                  {false && <div id="wiki-notebook-studio" className="scroll-mt-6">
                     <NotebookStudioPanel
                       topicId={topicId}
                       wikiPageId={wikiContextPageId}
@@ -3531,7 +3587,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
                       sourceTitle={isOrkaLm ? activeSource?.title || activeSource?.fileName : undefined}
                       sourceEvidenceStatus={activeSourceNotebook?.evidenceStatus ?? sourceNotebook?.evidenceStatus}
                     />
-                  </div>
+                  </div>}
 
                   <div id="wiki-study-glossary" className="scroll-mt-6 rounded-xl border border-[#526d82]/16 bg-[#f7f9fa]/58 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">

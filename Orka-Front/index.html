@@ -9,6 +9,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem('orka_theme');
+        var resolvedTheme = 'light';
+        if (savedTheme === 'Dark') {
+          resolvedTheme = 'dark';
+        } else if (savedTheme === 'System' || !savedTheme) {
+          if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            resolvedTheme = 'dark';
+          }
+        }
+        var root = document.documentElement;
+        root.classList.remove('dark', 'light');
+        root.classList.add(resolvedTheme);
+        root.setAttribute('data-theme', resolvedTheme);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
 <body>

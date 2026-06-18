@@ -13,7 +13,7 @@ namespace Orka.Infrastructure.Utilities;
 public static class LogPrivacyGuard
 {
     private const int DefaultMaxLength = 160;
-    private static readonly Regex GuidRegex = new(
+    public static readonly Regex GuidRegex = new(
         @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
         RegexOptions.Compiled);
 
@@ -78,7 +78,10 @@ public static class LogPrivacyGuard
             .Replace('\n', ' ')
             .Trim();
 
-        sanitized = GuidRegex.Replace(sanitized, "id_ref");
+        sanitized = GuidRegex.Replace(sanitized, match =>
+        {
+            return $"id_ref_{Hash(match.Value.ToLowerInvariant())}";
+        });
         sanitized = WindowsPathRegex.Replace(sanitized, "path_ref");
         sanitized = UnixPathRegex.Replace(sanitized, "path_ref");
 
@@ -127,6 +130,6 @@ public static class LogPrivacyGuard
     private static string Hash(string value)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes)[..10].ToLowerInvariant();
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

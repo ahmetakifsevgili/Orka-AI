@@ -17,7 +17,8 @@
     "smoke:build": "vite build",
     "quick:build": "vite build",
     "quick:frontend": "npm run smoke:ui && npm run smoke:contracts && npm run smoke:build",
-    "quick:smoke": "npm run smoke:ui && npm run smoke:navigation && npm run smoke:contracts && npm run smoke:security && npm run smoke:browser"
+    "quick:smoke": "npm run smoke:ui && npm run smoke:navigation && npm run smoke:contracts && npm run smoke:security && npm run smoke:browser",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -52,6 +53,7 @@
     "tailwindcss": "^4.1.4",
     "tw-animate-css": "^1.3.0",
     "typescript": "^5.8.3",
-    "vite": "^6.3.2"
+    "vite": "^6.3.2",
+    "vitest": "^4.1.8"
   }
 }

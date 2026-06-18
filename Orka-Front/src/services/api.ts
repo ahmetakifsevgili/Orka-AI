@@ -12,7 +12,6 @@ import type { ActiveLessonSnapshotDto, ActiveLessonSnapshotRequestDto, AdaptiveA
 
 export interface AuthTokens {
   token: string;
-  refreshToken?: string;
 }
 
 export interface AuthUser {
@@ -22,6 +21,7 @@ export interface AuthUser {
   email: string;
   plan?: string;
   isAdmin?: boolean;
+  isOnboardingCompleted?: boolean;
   dailyMessageCount?: number;
   dailyLimit?: number;
   settings?: {
@@ -97,6 +97,8 @@ export const buildApiUrl = (path: string) => {
 
 export const storage = {
   getToken: () => localStorage.getItem(TOKEN_KEY),
+  saveToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  removeToken: () => localStorage.removeItem(TOKEN_KEY),
   getUser: (): AuthUser | null => {
     const raw = localStorage.getItem(USER_KEY);
     return raw ? (JSON.parse(raw) as AuthUser) : null;
@@ -148,11 +150,24 @@ const handleAuthFailure = () => {
 };
 
 // Request interceptor — attach Bearer token
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = storage.getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+api.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    if (config && config.headers) {
+      const token = storage.getToken();
+      if (token) {
+        if (typeof config.headers.set === "function") {
+          config.headers.set("Authorization", `Bearer ${token}`);
+        } else {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 // Response interceptor — transparent token refresh on 401
 let isRefreshing = false;
@@ -180,6 +195,9 @@ const refreshAccessToken = async () => {
       {},
       { withCredentials: true }
     );
+    if (!data || !data.token) {
+      throw new Error("Token refresh response did not return a valid token");
+    }
     localStorage.setItem(TOKEN_KEY, data.token);
     api.defaults.headers.common.Authorization = `Bearer ${data.token}`;
     flushQueue(null, data.token);
@@ -218,41 +236,80 @@ export const authenticatedFetch = async (path: string, init: RequestInit = {}) =
 api.interceptors.response.use(
   (res: AxiosResponse) => res,
   async (error) => {
-    const original = error.config as OrkaAxiosConfig & {
-      _retry?: boolean;
-    };
-    const isAuthRoute = isAuthUrl(original?.url);
+    // Gracefully absorb and normalize undefined/null or malformed error objects
+    let safeError = error;
+    if (!safeError) {
+      safeError = new Error("Bilinmeyen bir hata oluştu");
+    } else if (typeof safeError === "string") {
+      safeError = new Error(safeError);
+    } else if (typeof safeError !== "object") {
+      safeError = new Error(String(safeError));
+    }
 
-    if (original && error.response?.status === 401 && !isAuthRoute && !original._retry) {
+    // Detect axios request cancellation (avoid throwing global network error toast on intentional cancel)
+    if (axios.isCancel(safeError)) {
+      return Promise.reject(safeError);
+    }
+
+    const original = (safeError && typeof safeError === "object" ? safeError.config : undefined) as OrkaAxiosConfig & {
+      _retry?: boolean;
+    } | undefined;
+
+    const isAuthRoute = original?.url ? isAuthUrl(original.url) : false;
+
+    // Safe extraction of response properties to avoid TypeError crashes
+    const responseObj = safeError && typeof safeError === "object" ? safeError.response : undefined;
+    const status = responseObj?.status;
+    const headers = responseObj?.headers;
+    const responseData = responseObj?.data;
+
+    if (original && status === 401 && !isAuthRoute && !original._retry) {
       original._retry = true;
       try {
         const token = await refreshAccessToken();
-        original.headers.Authorization = `Bearer ${token}`;
+        if (!original.headers) {
+          original.headers = {} as any;
+        }
+        if (typeof original.headers.set === "function") {
+          original.headers.set("Authorization", `Bearer ${token}`);
+        } else {
+          original.headers.Authorization = `Bearer ${token}`;
+        }
         return api(original);
       } catch (refreshError) {
         return Promise.reject(refreshError);
       }
     }
 
-    // Global error notification, excluding auth routes.
+    // Global error notification, excluding auth routes and suppressed errors.
     if (!isAuthRoute && !original?.suppressErrorToast) {
-      const status = error.response?.status;
       const url = original?.url ?? "bilinmeyen endpoint";
       const endpointLabel = url.split("/").slice(-2).join("/");
-      const correlationId = error.response?.headers?.["x-correlation-id"];
+      const correlationId = headers?.["x-correlation-id"];
       const suffix = correlationId ? ` · id: ${correlationId}` : "";
 
-      if (!error.response) {
+      // Comprehensive network dropout / DNS failure / offline / CORS check
+      const isNetworkError =
+        !responseObj &&
+        (safeError?.request ||
+          safeError?.code === "ERR_NETWORK" ||
+          safeError?.code === "ERR_CORS" ||
+          safeError?.message?.toLowerCase().includes("network error") ||
+          safeError?.message?.toLowerCase().includes("cors") ||
+          safeError?.message?.toLowerCase().includes("cross-origin") ||
+          (typeof navigator !== "undefined" && !navigator.onLine));
+
+      if (isNetworkError) {
         toast.error(`Sunucuya bağlanılamıyor (${endpointLabel})`, { id: `net-${endpointLabel}` });
       } else if (status === 404) {
         toast.error(`Hata: ${endpointLabel} bulunamadı (404)${suffix}`, { id: `404-${endpointLabel}` });
       } else if (status && status >= 500) {
-        const message = (error.response?.data as { message?: string } | undefined)?.message ?? "Sunucu hatası";
+        const message = (responseData as { message?: string } | undefined)?.message ?? "Sunucu hatası";
         toast.error(`${endpointLabel}: ${message} (${status})${suffix}`, { id: `5xx-${endpointLabel}` });
       }
     }
 
-    return Promise.reject(error);
+    return Promise.reject(safeError);
   }
 );
 
@@ -286,6 +343,13 @@ export const UserAPI = {
     soundsEnabled?: boolean;
   }) => api.patch("/user/settings", data),
   deleteAccount: () => api.delete("/user/account"),
+  saveOnboarding: (data: {
+    answeredCount: number;
+    correctCount: number;
+    measuredLevel: string;
+    learningStyle: string;
+    pathPreference: string;
+  }) => api.post("/user/onboarding", data),
 };
 
 export const TopicsAPI = {
@@ -309,18 +373,22 @@ export const ChatAPI = {
     isPlanMode?: boolean;
   }) => api.post("/chat/message", data),
   
-  streamMessage: async (data: {
-    topicId?: string;
-    sessionId?: string;
-    content: string;
-    isPlanMode?: boolean;
-  }) => {
+  streamMessage: async (
+    data: {
+      topicId?: string;
+      sessionId?: string;
+      content: string;
+      isPlanMode?: boolean;
+    },
+    signal?: AbortSignal
+  ) => {
     return authenticatedFetch("/api/chat/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal,
     });
   },
 
@@ -1159,18 +1227,19 @@ export const KorteksAPI = {
   },
 
   // Stream topic research.
-  stream: (data: { topic: string; topicId?: string; sourceUrl?: string }) => {
+  stream: (data: { topic: string; topicId?: string; sourceUrl?: string }, signal?: AbortSignal) => {
     return authenticatedFetch("/api/korteks/research-stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
+      signal,
     });
   },
 
   // Stream research with an uploaded PDF / TXT / MD file.
-  streamWithFile: (data: { topic: string; topicId?: string; file: File }) => {
+  streamWithFile: (data: { topic: string; topicId?: string; file: File }, signal?: AbortSignal) => {
     const form = new FormData();
     form.append("topic", data.topic);
     if (data.topicId) form.append("topicId", data.topicId);
@@ -1178,6 +1247,7 @@ export const KorteksAPI = {
     return authenticatedFetch("/api/korteks/research-file", {
       method: "POST",
       body: form,
+      signal,
     });
   },
 };

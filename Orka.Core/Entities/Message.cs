@@ -1,11 +1,13 @@
 using System;
 using Orka.Core.Enums;
+using Orka.Core.Interfaces;
 
 namespace Orka.Core.Entities;
 
-public class Message
+public class Message : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid SessionId { get; set; }
     public Session Session { get; set; } = null!;
     public bool IsNewTopic { get; set; }

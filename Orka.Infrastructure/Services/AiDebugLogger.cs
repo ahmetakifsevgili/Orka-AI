@@ -129,7 +129,18 @@ public static class AiDebugLogger
 
     private static string SanitizeIdentifier(string? value, string fallback)
     {
-        var redacted = SensitiveDataRedactor.Redact(value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+
+        var redacted = SensitiveDataRedactor.Redact(value).Trim();
+
+        // Scrub any Guid (user identifier) in provider/model name with SHA-256
+        redacted = LogPrivacyGuard.GuidRegex.Replace(redacted, match =>
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(match.Value.ToLowerInvariant()));
+            return $"id_ref_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+        });
+
         if (string.IsNullOrWhiteSpace(redacted))
             return fallback;
 
@@ -162,13 +173,22 @@ public static class AiDebugLogger
         if (CountUnsafeSignals($"{uri.Host}{safePath}") > 0)
             return string.Empty;
 
+        // Scrub any email patterns (via SensitiveDataRedactor) and Guids (via GuidRegex) with SHA-256
+        safePath = SensitiveDataRedactor.Redact(safePath);
+
+        safePath = LogPrivacyGuard.GuidRegex.Replace(safePath, match =>
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(match.Value.ToLowerInvariant()));
+            return $"id_ref_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+        });
+
         return $"{uri.Scheme}://{uri.Host}{safePath}";
     }
 
     private static string Hash(string value)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static int CountUnsafeSignals(string value)

@@ -239,7 +239,8 @@ public class QuizController : ControllerBase
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
         if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
-            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalQuizRunBelongsToUserAsync(userId, request.QuizRunId, HttpContext.RequestAborted))
         {
             return NotFound();
         }
@@ -352,7 +353,8 @@ public class QuizController : ControllerBase
 
         if (!await _ownership.AdaptiveSessionBelongsToUserAsync(userId, adaptiveSessionId, HttpContext.RequestAborted) ||
             !await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
-            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+            !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted) ||
+            !await _ownership.OptionalQuizRunBelongsToUserAsync(userId, request.QuizRunId, HttpContext.RequestAborted))
         {
             return NotFound();
         }
@@ -387,6 +389,13 @@ public class QuizController : ControllerBase
         {
             using var requestDoc = await JsonDocument.ParseAsync(HttpContext.Request.Body, cancellationToken: HttpContext.RequestAborted);
             var request = ParseStartPlanDiagnosticRequest(requestDoc.RootElement);
+
+            if (!await _ownership.TopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+                !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+            {
+                return NotFound();
+            }
+
             var result = await _planDiagnostic.StartAsync(userId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
@@ -420,6 +429,13 @@ public class QuizController : ControllerBase
         {
             using var requestDoc = await JsonDocument.ParseAsync(HttpContext.Request.Body, cancellationToken: HttpContext.RequestAborted);
             var request = ParseStartPlanDiagnosticRequest(requestDoc.RootElement);
+
+            if (!await _ownership.TopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
+                !await _ownership.OptionalSessionBelongsToUserAsync(userId, request.SessionId, HttpContext.RequestAborted))
+            {
+                return NotFound();
+            }
+
             var accepted = await _planDiagnostic.StartQueuedAsync(userId, request, HttpContext.RequestAborted);
 
             await _backgroundQueue.QueueAsync(new BackgroundTaskItem(
@@ -488,6 +504,11 @@ public class QuizController : ControllerBase
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId)) return Unauthorized();
 
+        if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted))
+        {
+            return NotFound();
+        }
+
         try
         {
             var result = await _studyIntentAnalyzer.AnalyzeAsync(userId, request, HttpContext.RequestAborted);
@@ -528,6 +549,10 @@ public class QuizController : ControllerBase
             var result = await _planDiagnostic.RecordAnswerAsync(userId, planRequestId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
         catch (Exception ex)
         {
             _logger.LogError("[QuizController] Plan diagnostic answer failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
@@ -558,6 +583,10 @@ public class QuizController : ControllerBase
             var result = await _planDiagnostic.FinalizeAsync(userId, request, HttpContext.RequestAborted);
             return Ok(result);
         }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
         catch (Exception ex)
         {
             _logger.LogError("[QuizController] Plan diagnostic finalize failed. UserRef={UserRef} PlanRequestRef={PlanRequestRef} ErrorType={ErrorType}",
@@ -578,6 +607,10 @@ public class QuizController : ControllerBase
         {
             var result = await _planDiagnostic.SkipAndGenerateAsync(userId, planRequestId, HttpContext.RequestAborted);
             return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
         }
         catch (Exception ex)
         {

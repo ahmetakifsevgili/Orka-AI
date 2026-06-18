@@ -162,6 +162,7 @@ export default function LeftSidebar({
         {/* New topic button */}
         <div className="mb-4 px-2">
           <button
+            id="tour-new-topic"
             type="button"
             onClick={() => onTopicClick(null, "chat")}
             className="flex h-9 w-full items-center gap-2.5 rounded-xl border px-3 text-[13px] font-medium transition"
@@ -181,7 +182,7 @@ export default function LeftSidebar({
                   transition={{ duration: 0.1 }}
                   className="truncate"
                 >
-                  Yeni Sohbet
+                  Yeni calisma
                 </motion.span>
               )}
             </AnimatePresence>
@@ -193,9 +194,18 @@ export default function LeftSidebar({
           {PRIMARY_NAV.map((item) => {
             const Icon = item.icon;
             const active = activeKey === item.key;
+            const tourId = (() => {
+              if (item.key === "home") return "tour-nav-dashboard";
+              if (item.key === "tutor") return "tour-nav-learning";
+              if (item.key === "sources-wiki") return "tour-nav-wiki";
+              if (item.key === "notebook") return "tour-nav-ide";
+              return undefined;
+            })();
+
             return (
               <button
                 key={item.key}
+                id={tourId}
                 type="button"
                 onClick={() => onViewChange(item.view)}
                 title={!isExpanded ? item.label : undefined}
@@ -250,7 +260,7 @@ export default function LeftSidebar({
                 className="mb-2 flex items-center justify-between px-1"
               >
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#667085]">
-                  Geçmiş Sohbetler
+                  Gecmis calismalar
                 </span>
                 {loading && <Loader2 className="h-3 w-3 animate-spin text-[#3a403d]" />}
               </motion.div>
@@ -344,7 +354,7 @@ export default function LeftSidebar({
           <button
             type="button"
             onClick={() => onViewChange("settings")}
-            title={!isExpanded ? "Ayarlar" : undefined}
+            title={!isExpanded ? "Settings / Safety" : undefined}
             className={[
               "mb-2 flex h-9 w-full items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium transition",
               activeView === "settings"
@@ -356,7 +366,7 @@ export default function LeftSidebar({
             <AnimatePresence>
               {isExpanded && (
                 <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  Ayarlar
+                  Settings / Safety
                 </motion.span>
               )}
             </AnimatePresence>
@@ -396,7 +406,7 @@ export default function LeftSidebar({
                   onClick={onLogout}
                   disabled={logoutLoading}
                   className="grid h-7 w-7 flex-none place-items-center rounded-lg text-[#3a403d] transition hover:bg-white/6 hover:text-[#8f9894] disabled:opacity-40"
-                  aria-label="Çıkış yap"
+                  aria-label="Log out"
                 >
                   {logoutLoading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

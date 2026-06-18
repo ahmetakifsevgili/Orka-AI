@@ -590,6 +590,7 @@ public sealed class SourceRegressionGuardTests
         var api = ReadRepoText("Orka-Front/src/services/api.ts");
         var home = ReadRepoText("Orka-Front/src/pages/Home.tsx");
         var sidebar = ReadRepoText("Orka-Front/src/components/LeftSidebar.tsx");
+        var navigation = ReadRepoText("Orka-Front/src/lib/appNavigation.ts");
         var dashboardPanel = ReadRepoText("Orka-Front/src/components/DashboardPanel.tsx");
 
         Assert.Contains("HttpGet(\"today\")", dashboardController);
@@ -604,11 +605,24 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("\"progress\"", home);
         Assert.Contains("Kaynaklar için önce bir konu seç.", home);
 
-        Assert.Contains("labelKey: \"learn\"", sidebar);
-        Assert.Contains("labelKey: \"sources\"", sidebar);
-        Assert.Contains("labelKey: \"practice\"", sidebar);
-        Assert.Contains("labelKey: \"review\"", sidebar);
-        Assert.Contains("labelKey: \"progress\"", sidebar);
+        Assert.Contains("APP_NAV_ITEMS", sidebar);
+        Assert.DoesNotContain("labelKey", sidebar);
+        foreach (var label in new[]
+                 {
+                     "Ana Kokpit",
+                     "Tutor",
+                     "Study Room",
+                     "Review / Quiz",
+                     "Exam War Room",
+                     "Sources / Wiki",
+                     "Notebook Studio",
+                     "Code IDE",
+                     "Progress",
+                     "Settings / Safety"
+                 })
+        {
+            Assert.Contains(label, navigation);
+        }
 
         Assert.Contains("todayFocusTitle", dashboardPanel);
         Assert.Contains("sourceHealthLabel", dashboardPanel);

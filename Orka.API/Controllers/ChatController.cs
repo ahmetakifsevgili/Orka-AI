@@ -23,7 +23,7 @@ using Orka.Infrastructure.Utilities;
 namespace Orka.API.Controllers;
 
 [Authorize]
-[EnableRateLimiting("ChatLimiter")]
+[EnableRateLimiting("AiLimiter")]
 [ApiController]
 [Route("api/chat")]
 public class ChatController : ControllerBase
@@ -182,6 +182,18 @@ public class ChatController : ControllerBase
             // Without this, GetResponse() blocks until the first AI chunk (up to 90s if primary model retries).
             await Response.WriteAsync(": connected\n\n");
             await Response.Body.FlushAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Stream initialization rejected. UserRef={UserRef} TopicRef={TopicRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                LogPrivacyGuard.SafeId(request.SessionId, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            Response.ContentType = "application/json";
+            await Response.WriteAsJsonAsync(new { message = "Yanit akisi baslatilamadi. Secili konu veya oturum durumunu kontrol edip tekrar deneyin." });
+            return;
         }
         catch (Exception ex)
         {

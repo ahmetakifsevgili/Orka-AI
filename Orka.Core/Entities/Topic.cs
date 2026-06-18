@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using Orka.Core.Enums;
+using Orka.Core.Interfaces;
 
 namespace Orka.Core.Entities;
 
-public class Topic
+public class Topic : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
     public string Title { get; set; } = string.Empty;

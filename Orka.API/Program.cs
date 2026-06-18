@@ -43,6 +43,10 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddAuthInfrastructure(builder.Configuration, builder.Environment);
+builder.Services.AddRateLimiter(options =>
+{
+    AuthInfrastructureExtensions.ConfigureOrkaRateLimiter(options, builder.Configuration);
+});
 builder.Services.AddScoped<IPendingEfMigrationsReader, EfCorePendingMigrationsReader>();
 
 builder.Services.AddDbContext<OrkaDbContext>(options =>

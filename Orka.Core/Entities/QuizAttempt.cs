@@ -1,10 +1,12 @@
 using System;
+using Orka.Core.Interfaces;
 
 namespace Orka.Core.Entities;
 
-public class QuizAttempt
+public class QuizAttempt : IMustHaveTenant
 {
     public Guid Id { get; set; }
+    public string TenantId { get; set; } = string.Empty;
     public Guid? QuizRunId { get; set; }
     public string? QuestionId { get; set; }
     public Guid? SessionId { get; set; }

@@ -50,7 +50,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
 
         var lockKey = "orka:lock:daily_challenge_worker";
         var lockValue = Guid.NewGuid().ToString();
-        var lockExpiry = TimeSpan.FromMinutes(5);
+        var lockExpiry = TimeSpan.FromSeconds(ReadInt("Workers:DailyChallenge:LockExpirySeconds", 300, 1, 86400));
 
         var acquired = await _redisMemory.AcquireLockAsync(lockKey, lockValue, lockExpiry);
         if (!acquired)
@@ -59,7 +59,8 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
             return 0;
         }
 
-        using var lockRenewal = StartLockRenewal(lockKey, lockValue, lockExpiry, ct);
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var lockRenewal = StartLockRenewal(lockKey, lockValue, lockExpiry, runCts);
         try
         {
             var sw = Stopwatch.StartNew();
@@ -75,11 +76,11 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
                     .Where(c => c.Date == today && c.Status == "active")
                     .OrderBy(c => c.CreatedAt)
                     .Take(batchSize)
-                    .ToListAsync(ct);
+                    .ToListAsync(runCts.Token);
 
                 foreach (var challenge in challenges)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    runCts.Token.ThrowIfCancellationRequested();
 
                     var alreadyNotified = await _db.Notifications.AsNoTracking().AnyAsync(n =>
                         n.UserId == challenge.UserId &&
@@ -87,7 +88,7 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
                         n.RelatedEntityType == "DailyChallenge" &&
                         n.RelatedEntityId == challenge.Id &&
                         n.CreatedAt >= duplicateCutoff,
-                        ct);
+                        runCts.Token);
 
                     if (alreadyNotified) continue;
 
@@ -102,28 +103,28 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
                             "DailyChallenge",
                             challenge.Id,
                             today.AddDays(1)),
-                        ct);
+                        runCts.Token);
 
                     var subscriptions = await _db.PushSubscriptions.AsNoTracking()
                         .Where(p => p.UserId == challenge.UserId && p.Status == "active")
                         .Take(3)
-                        .ToListAsync(ct);
+                        .ToListAsync(runCts.Token);
 
                     if (subscriptions.Count == 0)
                     {
-                        await _push.SendAsync(challenge.UserId, null, ToNotificationEntity(dto, challenge.UserId), ct);
+                        await _push.SendAsync(challenge.UserId, null, ToNotificationEntity(dto, challenge.UserId), runCts.Token);
                     }
                     else
                     {
                         foreach (var subscription in subscriptions)
-                            await _push.SendAsync(challenge.UserId, subscription, ToNotificationEntity(dto, challenge.UserId), ct);
+                            await _push.SendAsync(challenge.UserId, subscription, ToNotificationEntity(dto, challenge.UserId), runCts.Token);
                     }
 
                     sent++;
                 }
 
                 sw.Stop();
-                await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, ct, sent);
+                await RecordWorkerEventAsync("enabled", true, null, sw.ElapsedMilliseconds, runCts.Token, sent);
                 return sent;
             }
             catch (OperationCanceledException)
@@ -149,9 +150,9 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
         }
     }
 
-    private CancellationTokenSource StartLockRenewal(string lockKey, string lockValue, TimeSpan lockExpiry, CancellationToken ct)
+    private CancellationTokenSource StartLockRenewal(string lockKey, string lockValue, TimeSpan lockExpiry, CancellationTokenSource runCts)
     {
-        var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(runCts.Token);
         var interval = TimeSpan.FromMilliseconds(Math.Max(1000, lockExpiry.TotalMilliseconds / 3));
 
         _ = Task.Run(async () =>
@@ -164,19 +165,36 @@ public sealed class DailyChallengeWorkerService : IDailyChallengeWorkerService
                     var renewed = await _redisMemory.RenewLockAsync(lockKey, lockValue, lockExpiry);
                     if (!renewed)
                     {
-                        _logger.LogWarning("[DailyChallengeWorker] Lock renewal failed; another instance may acquire after TTL.");
+                        _logger.LogError("[DailyChallengeWorker] Lock renewal failed! Instantly aborting the worker thread to prevent race conditions.");
+                        try
+                        {
+                            runCts.Cancel();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[DailyChallengeWorker] Failed to cancel runCts on lock renewal failure.");
+                        }
                         return;
                     }
                 }
             }
             catch (OperationCanceledException) when (renewalCts.IsCancellationRequested)
             {
-                // Expected when the worker run completes.
+                // Expected when the worker run completes or is aborted.
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("[DailyChallengeWorker] Lock renewal loop failed. ErrorType={ErrorType}",
                     LogPrivacyGuard.SafeExceptionType(ex));
+                _logger.LogError("[DailyChallengeWorker] Lock renewal loop crashed; aborting run to prevent race conditions.");
+                try
+                {
+                    runCts.Cancel();
+                }
+                catch (Exception cancelEx)
+                {
+                    _logger.LogError(cancelEx, "[DailyChallengeWorker] Failed to cancel runCts on lock renewal crash.");
+                }
             }
         }, CancellationToken.None);
 

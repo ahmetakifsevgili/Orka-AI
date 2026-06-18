@@ -10,6 +10,7 @@ try {
 Write-Host "[quick-all] Active Git Branch: $branch | Commit: $commit"
 $frontRoot = Join-Path $root "Orka-Front"
 $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
+$dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
 
 Write-Host "[quick-all] Git diff hygiene..."
 git -C $root diff --check
@@ -28,12 +29,26 @@ Write-Host "[quick-all] Frontend typecheck..."
     -FilePath $npm `
     -ArgumentList @("run", "typecheck")
 
+Write-Host "[quick-all] Frontend Vitest unit tests..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 45 `
+    -WorkingDirectory $frontRoot `
+    -FilePath $npm `
+    -ArgumentList @("run", "test:unit")
+
 Write-Host "[quick-all] Frontend production build..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `
     -TimeoutSeconds 40 `
     -WorkingDirectory $frontRoot `
     -FilePath $npm `
     -ArgumentList @("run", "build", "--", "--logLevel", "error")
+
+Write-Host "[quick-all] MSBuild unit tests (Infrastructure)..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 90 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("test", ".\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj", "--nologo", "--verbosity", "minimal")
 
 Write-Host "[quick-all] Backend quick smoke..."
 & "$PSScriptRoot\quick-backend.ps1"

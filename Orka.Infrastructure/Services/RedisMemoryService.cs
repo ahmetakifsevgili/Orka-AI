@@ -38,7 +38,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            string key = $"orka:feedback:{sessionId}";
+            string key = $"orka:feedback:{{{sessionId:D}}}";
             var record = new EvaluatorRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
             var entry = JsonSerializer.Serialize(record);
 
@@ -67,7 +67,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            string key = $"orka:feedback:{sessionId}";
+            string key = $"orka:feedback:{{{sessionId:D}}}";
             var items = await _db.ListRangeAsync(key, 0, count - 1);
             return items.Select(x => NormalizeFeedbackEntry(x.ToString())).ToList();
         }
@@ -107,7 +107,10 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            string key = $"orka:rateLimit:{clientIp}";
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(clientIp ?? ""));
+            var hashedIp = Convert.ToBase64String(hashBytes);
+            string key = $"orka:rateLimit:{{{hashedIp}}}";
             var count = await _db.StringIncrementAsync(key);
 
             // Eğer key ilk defa oluşturulduysa, Timer (TTL) başlat.
@@ -174,7 +177,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:piston:{sessionId}:last";
+            var key = $"orka:piston:{{{sessionId:D}}}:last";
             var payload = JsonSerializer.Serialize(new
             {
                 Code        = code.Length > 500 ? code[..500] + "..." : code, // Uzun kodu kırp
@@ -201,7 +204,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var val = await _db.StringGetAsync($"orka:piston:{sessionId}:last");
+            var val = await _db.StringGetAsync($"orka:piston:{{{sessionId:D}}}:last");
             return val.HasValue ? val.ToString() : string.Empty;
         }
         catch (Exception ex)
@@ -217,7 +220,7 @@ public class RedisMemoryService : IRedisMemoryService
         try
         {
             await _db.StringSetAsync(
-                $"orka:wiki-ready:{topicId}",
+                $"orka:wiki-ready:{{{topicId:D}}}",
                 DateTime.UtcNow.ToString("O"),
                 TimeSpan.FromHours(1));
         }
@@ -253,7 +256,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key     = $"orka:gold:{userId}:{topicId}";
+            var key     = $"orka:gold:{{{userId:D}:{topicId:D}}}";
             var scrubbedUser = ScrubPii(userMessage, 100000);
             var truncatedUser = scrubbedUser.Length > 300 ? scrubbedUser[..300] + "..." : scrubbedUser;
             var scrubbedAgent = ScrubPii(agentResponse, 100000);
@@ -283,7 +286,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key   = $"orka:gold:{userId}:{topicId}";
+            var key   = $"orka:gold:{{{userId:D}:{topicId:D}}}";
             var items = await _db.ListRangeAsync(key, 0, count - 1);
 
             return items
@@ -326,7 +329,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:metrics:{agentRole}";
+            var key = $"orka:metrics:{{{agentRole}}}";
             var payload = JsonSerializer.Serialize(new AgentCallRecord(
                 LatencyMs:  latencyMs,
                 IsSuccess:  isSuccess,
@@ -355,7 +358,7 @@ public class RedisMemoryService : IRedisMemoryService
         {
             try
             {
-                var key   = $"orka:metrics:{role}";
+                var key   = $"orka:metrics:{{{role}}}";
                 var items = await _db.ListRangeAsync(key, 0, 99);
 
                 if (items.Length == 0)
@@ -411,7 +414,7 @@ public class RedisMemoryService : IRedisMemoryService
 
             foreach (var role in AllAgentRoles)
             {
-                var key = $"orka:metrics:{role}";
+                var key = $"orka:metrics:{{{role}}}";
                 var items = await _db.ListRangeAsync(key, 0, -1);
                 foreach (var item in items)
                 {
@@ -765,11 +768,10 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            await _db.KeyDeleteAsync(new RedisKey[]
-            {
+            await _db.KeyDeleteAsync([
                 LearningSummaryKey(userId, topicId),
                 LearningRecommendationsKey(userId, topicId)
-            });
+            ]);
             await RecordCacheMetricAsync("learning-invalidation", hit: false, tool: reason);
             _logger.LogInformation("[Redis] Learning cache temizlendi. UserRef={UserRef} TopicRef={TopicRef} Reason={Reason}",
                 UserRef(userId), TopicRef(topicId), LogPrivacyGuard.SafeMessage(reason, 80));
@@ -842,8 +844,8 @@ public class RedisMemoryService : IRedisMemoryService
             await _db.ListLeftPushAsync(key, payload);
             await _db.ListTrimAsync(key, 0, 199);
             await _db.KeyExpireAsync(key, TimeSpan.FromHours(24));
-            await _db.SetAddAsync("orka:cache_metrics:areas", normalizedArea);
-            await _db.KeyExpireAsync("orka:cache_metrics:areas", TimeSpan.FromDays(7));
+            await _db.SetAddAsync("orka:{cache_metrics}:areas", normalizedArea);
+            await _db.KeyExpireAsync("orka:{cache_metrics}:areas", TimeSpan.FromDays(7));
         }
         catch (Exception ex)
         {
@@ -858,7 +860,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var areas = (await _db.SetMembersAsync("orka:cache_metrics:areas"))
+            var areas = (await _db.SetMembersAsync("orka:{cache_metrics}:areas"))
                 .Select(x => x.ToString())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Concat(DefaultCacheMetricAreas)
@@ -1081,7 +1083,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:topic_score:{topicId}";
+            var key = $"orka:topic_score:{{{topicId:D}}}";
             var record = new TopicScoreRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
             var entry = JsonSerializer.Serialize(record);
 
@@ -1100,7 +1102,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:topic_score:{topicId}";
+            var key = $"orka:topic_score:{{{topicId:D}}}";
             var items = await _db.ListRangeAsync(key, 0, -1);
 
             if (items.Length == 0) return (0, 0);
@@ -1138,7 +1140,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:student_profile:{topicId}";
+            var key = $"orka:student_profile:{{{topicId:D}}}";
             var record = new StudentProfileRecord(understandingScore, ScrubPii(weaknesses ?? string.Empty, 500), DateTime.UtcNow);
 
             // Konu bazında sadece en güncel profili tek record olarak tutmak isteyebiliriz.
@@ -1163,7 +1165,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:student_profile:{topicId}";
+            var key = $"orka:student_profile:{{{topicId:D}}}";
             var val = await _db.StringGetAsync(key);
 
             if (val.IsNullOrEmpty) return null;
@@ -1189,7 +1191,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:lowquality:{sessionId}";
+            var key = $"orka:lowquality:{{{sessionId:D}}}";
             var record = new LowQualityFeedbackRecord(score, feedback ?? string.Empty, DateTime.UtcNow);
             var payload = JsonSerializer.Serialize(record);
 
@@ -1209,7 +1211,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:lowquality:{sessionId}";
+            var key = $"orka:lowquality:{{{sessionId:D}}}";
             // StringGetDelete: atomik tek-kullanımlık okuma + silme.
             RedisValue val;
             try
@@ -1247,7 +1249,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:korteks:{topicId}";
+            var key = $"orka:korteks:{{{topicId:D}}}";
             // Çok büyük raporları kırp — quiz/tutor 2-3K karakter yeter.
             var trimmed = string.IsNullOrEmpty(report)
                 ? string.Empty
@@ -1268,7 +1270,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:korteks:{topicId}";
+            var key = $"orka:korteks:{{{topicId:D}}}";
             var val = await _db.StringGetAsync(key);
             return val.HasValue ? val.ToString() : null;
         }
@@ -1286,7 +1288,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:youtube:{topicId}";
+            var key = $"orka:youtube:{{{topicId:D}}}";
             // 24 saat TTL — YouTube içeriği sık değişmez, kota tasarrufu kritik
             await _db.StringSetAsync(key, payload, TimeSpan.FromHours(24));
             _logger.LogInformation("[Redis] YouTube context cache'lendi. TopicRef={TopicRef} Length={Length}", TopicRef(topicId), payload.Length);
@@ -1302,7 +1304,7 @@ public class RedisMemoryService : IRedisMemoryService
     {
         try
         {
-            var key = $"orka:youtube:{topicId}";
+            var key = $"orka:youtube:{{{topicId:D}}}";
             var val = await _db.StringGetAsync(key);
             if (val.HasValue)
             {
@@ -1329,16 +1331,16 @@ public class RedisMemoryService : IRedisMemoryService
     private static string KeyRef(string? key) => LogPrivacyGuard.SafeTextRef(key, "redis");
 
     public static string LearningSummaryKey(Guid userId, Guid topicId) =>
-        $"orka:v1:learning:summary:{userId}:{topicId}";
+        $"orka:v1:learning:summary:{{{userId:D}:{topicId:D}}}";
 
     public static string LearningRecommendationsKey(Guid userId, Guid topicId) =>
-        $"orka:v1:learning:recommendations:{userId}:{topicId}";
+        $"orka:v1:learning:recommendations:{{{userId:D}:{topicId:D}}}";
 
     public static string NotebookToolKey(string tool, Guid userId, Guid topicId, long version) =>
-        $"orka:v1:notebook:{NormalizeMetricPart(tool)}:{userId}:{topicId}:v{version}";
+        $"orka:v1:notebook:{NormalizeMetricPart(tool)}:{{{userId:D}:{topicId:D}}}:v{version}";
 
     private static string QuizHashKey(Guid userId, Guid topicId) =>
-        $"orka:v1:quiz:hashes:{userId}:{topicId}";
+        $"orka:v1:quiz:hashes:{{{userId:D}:{topicId:D}}}";
 
     public static string ComputeQuestionHash(string question, string? skillTag, string? topicPath, string? topic, string? difficulty)
     {
@@ -1356,10 +1358,10 @@ public class RedisMemoryService : IRedisMemoryService
     }
 
     private static string NotebookVersionKey(Guid topicId) =>
-        $"orka:v1:notebook:version:{topicId}";
+        $"orka:v1:notebook:version:{{{topicId:D}}}";
 
     private static string CacheMetricKey(string area) =>
-        $"orka:v1:metrics:cache:{NormalizeMetricPart(area)}";
+        $"orka:v1:metrics:cache:{{{NormalizeMetricPart(area)}}}";
 
     private static string NormalizeMetricPart(string value)
     {

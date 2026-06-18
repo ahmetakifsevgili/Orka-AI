@@ -251,10 +251,29 @@ export default function ClassroomAudioPlayer({
   const [status, setStatus] = useState<"idle" | "playing" | "paused" | "done">(
     "idle"
   );
+
+  const isMountedRef = useRef(true);
   const statusRef = useRef(status);
+  const cancelSentinelRef = useRef<boolean>(false);
+  const playSessionIdRef = useRef<number>(0);
+
+  const transitionStatus = (newStatus: "idle" | "playing" | "paused" | "done") => {
+    if (!isMountedRef.current) return;
+    statusRef.current = newStatus;
+    setStatus(newStatus);
+    if (newStatus === "playing") {
+      cancelSentinelRef.current = false;
+    } else {
+      cancelSentinelRef.current = true;
+    }
+  };
+
   useEffect(() => {
-    statusRef.current = status;
+    if (isMountedRef.current) {
+      statusRef.current = status;
+    }
   }, [status]);
+
   const [question, setQuestion] = useState("");
   const [classroomId, setClassroomId] = useState<string | null>(null);
   const [isAsking, setIsAsking] = useState(false);
@@ -272,20 +291,6 @@ export default function ClassroomAudioPlayer({
     linesRef.current = lines;
   }, [lines]);
 
-  useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-    const update = () => setVoices(window.speechSynthesis.getVoices());
-    update();
-    window.speechSynthesis.onvoiceschanged = update;
-    return () => {
-      if (backendAudioUrlRef.current) {
-        URL.revokeObjectURL(backendAudioUrlRef.current);
-        backendAudioUrlRef.current = null;
-      }
-      window.speechSynthesis.cancel();
-    };
-  }, []);
-
   const stopBackendAudio = () => {
     if (backendAudioRef.current) {
       backendAudioRef.current.pause();
@@ -298,24 +303,70 @@ export default function ClassroomAudioPlayer({
     }
   };
 
+  const stopAllAudio = () => {
+    cancelSentinelRef.current = true;
+    playSessionIdRef.current += 1;
+    stopBackendAudio();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    if (!("speechSynthesis" in window)) {
+      return () => {
+        isMountedRef.current = false;
+        stopAllAudio();
+      };
+    }
+    const update = () => {
+      if (isMountedRef.current && "speechSynthesis" in window) {
+        setVoices(window.speechSynthesis.getVoices());
+      }
+    };
+    update();
+    window.speechSynthesis.onvoiceschanged = update;
+    return () => {
+      isMountedRef.current = false;
+      stopAllAudio();
+    };
+  }, []);
+
   const playAudioUrl = async (audioUrl: string, revokeOnStop = false): Promise<boolean> => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
     const audio = new Audio(audioUrl);
 
     stopBackendAudio();
     backendAudioRef.current = audio;
     backendAudioUrlRef.current = revokeOnStop ? audioUrl : null;
 
+    const currentSessionId = playSessionIdRef.current;
+
     audio.onended = () => {
+      if (currentSessionId !== playSessionIdRef.current) {
+        return;
+      }
       stopBackendAudio();
-      setStatus("done");
+      transitionStatus("done");
     };
     audio.onerror = () => {
+      if (currentSessionId !== playSessionIdRef.current) return;
       stopBackendAudio();
+      transitionStatus("done");
     };
 
     try {
       await audio.play();
-      setStatus("playing");
+      if (currentSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+        audio.pause();
+        stopBackendAudio();
+        return false;
+      }
+      transitionStatus("playing");
       return true;
     } catch {
       stopBackendAudio();
@@ -326,13 +377,25 @@ export default function ClassroomAudioPlayer({
   const tryPlayBackendAudio = async (interactionId?: string, attempts = 1): Promise<boolean> => {
     if (!interactionId) return false;
 
+    const currentSessionId = playSessionIdRef.current;
+
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (currentSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+        return false;
+      }
       try {
         const response = await ClassroomAPI.getInteractionAudio(interactionId);
+        if (currentSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+          return false;
+        }
         const audioUrl = URL.createObjectURL(response);
-        return await playAudioUrl(audioUrl, true);
+        const played = await playAudioUrl(audioUrl, true);
+        if (played) return true;
       } catch {
         stopBackendAudio();
+        if (currentSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+          return false;
+        }
         if (attempt < attempts) {
           await delay(900);
         }
@@ -342,9 +405,18 @@ export default function ClassroomAudioPlayer({
     return false;
   };
 
-  const speakLine = (idx: number, queuedLines: DialogueLine[] = linesRef.current) => {
+  const speakLine = (
+    idx: number,
+    queuedLines: DialogueLine[] = linesRef.current,
+    sessionId: number = playSessionIdRef.current
+  ) => {
+    if (!isMountedRef.current || cancelSentinelRef.current || statusRef.current !== "playing" || sessionId !== playSessionIdRef.current) {
+      return;
+    }
     if (idx >= queuedLines.length) {
-      setStatus("done");
+      if (sessionId === playSessionIdRef.current) {
+        transitionStatus("done");
+      }
       return;
     }
     const line = queuedLines[idx];
@@ -355,65 +427,87 @@ export default function ClassroomAudioPlayer({
     u.rate = line.speaker === "HOCA" ? 0.95 : 1.05;
     u.pitch = line.speaker === "HOCA" ? 0.95 : 1.1;
     u.onend = () => {
-      if (statusRef.current !== "playing") return;
+      if (!isMountedRef.current || cancelSentinelRef.current || statusRef.current !== "playing" || sessionId !== playSessionIdRef.current) return;
       setCurrentIdx(idx + 1);
-      speakLine(idx + 1, queuedLines);
+      speakLine(idx + 1, queuedLines, sessionId);
     };
     u.onerror = () => {
-      if (statusRef.current === "playing") {
-        setStatus("done");
-      }
+      if (!isMountedRef.current || cancelSentinelRef.current || statusRef.current !== "playing" || sessionId !== playSessionIdRef.current) return;
+      transitionStatus("done");
     };
     utterRef.current = u;
     try {
       window.speechSynthesis.speak(u);
     } catch (err) {
       console.error("speechSynthesis.speak failed:", err);
-      setStatus("done");
+      if (sessionId === playSessionIdRef.current) {
+        transitionStatus("done");
+      }
     }
   };
 
   const handlePlay = () => {
+    cancelSentinelRef.current = false;
     if (status === "paused") {
       if (backendAudioRef.current) {
         backendAudioRef.current.play().catch(() => undefined);
-        setStatus("playing");
+        transitionStatus("playing");
         return;
       }
-      window.speechSynthesis.resume();
-      setStatus("playing");
+      transitionStatus("playing");
+      speakLine(currentIdx, linesRef.current);
       return;
     }
+
+    playSessionIdRef.current += 1;
+    const currentSessionId = playSessionIdRef.current;
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
     if (initialAudioUrl) {
       void playAudioUrl(initialAudioUrl, false).then((played) => {
-        if (!played) {
-          setStatus("playing");
+        if (currentSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+          return;
+        }
+        if (!played && isMountedRef.current) {
+          transitionStatus("playing");
           setCurrentIdx(0);
-          speakLine(0, linesRef.current);
+          speakLine(0, linesRef.current, currentSessionId);
         }
       });
       return;
     }
-    setStatus("playing");
-    setCurrentIdx(0);
-    speakLine(0, linesRef.current);
+
+    transitionStatus("playing");
+    if (isMountedRef.current) {
+      setCurrentIdx(0);
+    }
+    speakLine(0, linesRef.current, currentSessionId);
   };
 
   const handlePause = () => {
+    transitionStatus("paused");
     if (backendAudioRef.current) {
       backendAudioRef.current.pause();
-      setStatus("paused");
       return;
     }
-    window.speechSynthesis.pause();
-    setStatus("paused");
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.pause();
+    }
   };
 
   const handleStop = () => {
+    transitionStatus("idle");
+    playSessionIdRef.current += 1;
     stopBackendAudio();
-    window.speechSynthesis.cancel();
-    setStatus("idle");
-    setCurrentIdx(0);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (isMountedRef.current) {
+      setCurrentIdx(0);
+    }
   };
 
   const handleAsk = async () => {
@@ -422,6 +516,10 @@ export default function ClassroomAudioPlayer({
 
     setIsAsking(true);
     setAskError(null);
+
+    // Stop current audio synchronously before starting the ask process
+    stopAllAudio();
+
     try {
       let id = classroomId;
       if (!id) {
@@ -436,46 +534,79 @@ export default function ClassroomAudioPlayer({
           audioMode,
         });
         id = started.id;
-        setClassroomId(id);
+        if (isMountedRef.current) {
+          setClassroomId(id);
+        }
       }
+
+      const currentSessionId = playSessionIdRef.current;
 
       const answer = await ClassroomAPI.ask(id, {
         question: trimmed,
         activeSegment,
       });
+
+      if (!isMountedRef.current || currentSessionId !== playSessionIdRef.current) return;
+
       const answerLines = ensureClassroomDialogue(parseDialogue(answer.answer));
       const startIndex = linesRef.current.length;
       const queuedLines = [...linesRef.current, ...answerLines];
       linesRef.current = queuedLines;
+
       setExtraLines((prev) => [...prev, ...answerLines]);
       setQuestion("");
       setCurrentIdx(startIndex);
+
+      // We start a new active play session for the response
+      playSessionIdRef.current += 1;
+      const nextSessionId = playSessionIdRef.current;
+      cancelSentinelRef.current = false;
 
       const backendPlayed = await tryPlayBackendAudio(
         answer.interactionId,
         answer.audioQueued === false ? 1 : 6,
       );
 
+      if (!isMountedRef.current) return;
+
+      // Check if we were cancelled/interrupted during the backend audio play attempt
+      if (nextSessionId !== playSessionIdRef.current || cancelSentinelRef.current) {
+        return;
+      }
+
       if (!backendPlayed && supports && answerLines.length > 0) {
-        window.speechSynthesis.cancel();
-        setStatus("playing");
-        window.setTimeout(() => speakLine(startIndex, queuedLines), 0);
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+
+        transitionStatus("playing");
+        window.setTimeout(() => {
+          if (isMountedRef.current && statusRef.current === "playing" && nextSessionId === playSessionIdRef.current) {
+            speakLine(startIndex, queuedLines, nextSessionId);
+          }
+        }, 0);
       }
     } catch {
-      setAskError("Soru audio overview bağlamına iletilemedi; browser TTS akışı devam ediyor.");
+      if (isMountedRef.current) {
+        setAskError("Soru audio overview bağlamına iletilemedi; browser TTS akışı devam ediyor.");
+      }
     } finally {
-      setIsAsking(false);
+      if (isMountedRef.current) {
+        setIsAsking(false);
+      }
     }
   };
 
   const supports = "speechSynthesis" in window;
   const handleQuickConfusion = () => {
     const activeLine = lines[Math.min(Math.max(currentIdx, 0), Math.max(lines.length - 1, 0))];
-    setQuestion(
-      activeLine
-        ? `Bu kısmı anlamadım: "${activeLine.text.slice(0, 160)}". Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?`
-        : "Bu kısmı anlamadım. Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?"
-    );
+    if (isMountedRef.current) {
+      setQuestion(
+        activeLine
+          ? `Bu kısmı anlamadım: "${activeLine.text.slice(0, 160)}". Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?`
+          : "Bu kısmı anlamadım. Tutor ve asistan daha basit bir örnekle tekrar anlatabilir mi?"
+      );
+    }
   };
 
   return (

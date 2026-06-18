@@ -26,6 +26,7 @@ namespace Orka.API.Extensions
         public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration, IHostEnvironment env)
         {
             services.AddHttpContextAccessor(); // Chaos Monkey & request-scoped context
+            services.AddScoped<ITenantService, TenantService>();
             services.AddSingleton<AuthAttemptRateLimiter>();
             services.AddSingleton<IRedisAuthAttemptStore, RedisAuthAttemptStore>();
             services.AddSingleton<IAuthAttemptLimiter>(sp =>
@@ -101,160 +102,163 @@ namespace Orka.API.Extensions
                     });
                 });
 
-            services.AddRateLimiter(options =>
-            {
-                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-                options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                {
-                    if (!TryGetExpensiveEndpointSection(httpContext.Request.Path, out var section))
-                    {
-                        return RateLimitPartition.GetNoLimiter("non-expensive-endpoint");
-                    }
-
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-                    var permitLimit = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>($"RateLimits:{section}:ConcurrencyLimit", 2);
-
-                    return RateLimitPartition.GetConcurrencyLimiter($"{section}:{partitionKey}", _ => new ConcurrencyLimiterOptions
-                    {
-                        PermitLimit = Math.Clamp(permitLimit, 1, 8),
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst
-                    });
-                });
-
-                options.AddPolicy("ChatLimiter", httpContext =>
-                {
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-
-                    var replenishMinutes = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Chat:ReplenishmentMinutes", 1);
-
-                    return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = 10,
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
-                        TokensPerPeriod = 10,
-                        AutoReplenishment = true
-                    });
-                });
-
-                options.AddPolicy("CodeLimiter", httpContext =>
-                {
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-
-                    var replenishMinutes = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Code:ReplenishmentMinutes", 1);
-
-                    return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = 10,
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
-                        TokensPerPeriod = 10,
-                        AutoReplenishment = true
-                    });
-                });
-
-                options.AddPolicy("ResearchLimiter", httpContext =>
-                {
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-
-                    var replenishMinutes = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Research:ReplenishmentMinutes", 1);
-
-                    return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = 5,
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
-                        TokensPerPeriod = 5,
-                        AutoReplenishment = true
-                    });
-                });
-
-                options.AddPolicy("UploadLimiter", httpContext =>
-                {
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-
-                    var replenishMinutes = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Upload:ReplenishmentMinutes", 1);
-
-                    return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = 10,
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
-                        TokensPerPeriod = 10,
-                        AutoReplenishment = true
-                    });
-                });
-
-                options.AddPolicy("QuizLimiter", httpContext =>
-                {
-                    var partitionKey = BuildRateLimitPartitionKey(httpContext);
-
-                    var tokenLimit = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Quiz:PermitLimit", 40);
-
-                    var replenishMinutes = httpContext.RequestServices
-                        .GetRequiredService<IConfiguration>()
-                        .GetValue<int>("RateLimits:Quiz:ReplenishmentMinutes", 1);
-
-                    return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
-                    {
-                        TokenLimit = Math.Clamp(tokenLimit, 25, 100),
-                        QueueLimit = 0,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
-                        TokensPerPeriod = Math.Clamp(tokenLimit, 25, 100),
-                        AutoReplenishment = true
-                    });
-                });
-
-                // Regression guard: expensive endpoints must keep named token policies plus concurrency gates.
-                // Tokens: AddPolicy<string>("AudioLimiter" AddPolicy("AudioLimiter"
-                // Tokens: AddPolicy<string>("QuestionDraftLimiter" AddPolicy("QuestionDraftLimiter"
-                // Tokens: AddPolicy<string>("QuestionImportLimiter" AddPolicy("QuestionImportLimiter"
-                options.AddPolicy<string>("AudioLimiter", httpContext =>
-                    CreateTokenBucketPartition(httpContext, "Audio", tokenLimit: 5));
-                options.AddPolicy<string>("QuestionDraftLimiter", httpContext =>
-                    CreateTokenBucketPartition(httpContext, "QuestionDraft", tokenLimit: 10));
-                options.AddPolicy<string>("QuestionImportLimiter", httpContext =>
-                    CreateTokenBucketPartition(httpContext, "QuestionImport", tokenLimit: 10));
-            });
-
             return services;
         }
 
-        private static string BuildRateLimitPartitionKey(HttpContext httpContext)
+        public static void ConfigureOrkaRateLimiter(RateLimiterOptions options, IConfiguration configuration)
         {
-            var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                         ?? httpContext.User.FindFirst("sub")?.Value
-                         ?? "anonymous";
-            var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            return $"user:{HashPartitionPart(userId)}|ip:{HashPartitionPart(ip)}";
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+            {
+                if (!TryGetExpensiveEndpointSection(httpContext.Request.Path, out var section))
+                {
+                    return RateLimitPartition.GetNoLimiter("non-expensive-endpoint");
+                }
+
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+                var permitLimit = configuration.GetValue<int>($"RateLimits:{section}:ConcurrencyLimit", 2);
+
+                return RateLimitPartition.GetConcurrencyLimiter($"{section}:{partitionKey}", _ => new ConcurrencyLimiterOptions
+                {
+                    PermitLimit = Math.Clamp(permitLimit, 1, 8),
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+                });
+            });
+
+            options.AddPolicy("ChatLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Chat:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 10,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = 10,
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy("AiLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Chat:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 10,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = 10,
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy("CodeLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Code:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 10,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = 10,
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy("ResearchLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Research:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 5,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = 5,
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy("UploadLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Upload:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = 10,
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = 10,
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy("QuizLimiter", httpContext =>
+            {
+                var partitionKey = BuildRateLimitPartitionKey(httpContext);
+
+                var tokenLimit = configuration.GetValue<int>("RateLimits:Quiz:PermitLimit", 40);
+                var replenishMinutes = configuration.GetValue<int>("RateLimits:Quiz:ReplenishmentMinutes", 1);
+
+                return RateLimitPartition.GetTokenBucketLimiter(partitionKey, _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = Math.Clamp(tokenLimit, 25, 100),
+                    QueueLimit = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    ReplenishmentPeriod = TimeSpan.FromMinutes(replenishMinutes),
+                    TokensPerPeriod = Math.Clamp(tokenLimit, 25, 100),
+                    AutoReplenishment = true
+                });
+            });
+
+            options.AddPolicy<string>("AudioLimiter", httpContext =>
+                CreateTokenBucketPartition(httpContext, "Audio", tokenLimit: 5));
+            options.AddPolicy<string>("QuestionDraftLimiter", httpContext =>
+                CreateTokenBucketPartition(httpContext, "QuestionDraft", tokenLimit: 10));
+            options.AddPolicy<string>("QuestionImportLimiter", httpContext =>
+                CreateTokenBucketPartition(httpContext, "QuestionImport", tokenLimit: 10));
         }
 
-        private static string HashPartitionPart(string value)
+        public static string BuildRateLimitPartitionKey(HttpContext httpContext)
+        {
+            var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                         ?? httpContext.User.FindFirst("sub")?.Value;
+
+            if (!string.IsNullOrEmpty(userId) && userId != "anonymous")
+            {
+                return $"user:{HashPartitionPart(userId)}";
+            }
+
+            var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            return $"ip:{HashPartitionPart(ip)}";
+        }
+
+        public static string HashPartitionPart(string value)
         {
             var normalized = string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim().ToLowerInvariant();
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
             return Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
         }
 
-        private static RateLimitPartition<string> CreateTokenBucketPartition(
+        public static RateLimitPartition<string> CreateTokenBucketPartition(
             HttpContext httpContext,
             string section,
             int tokenLimit)
@@ -275,7 +279,7 @@ namespace Orka.API.Extensions
             });
         }
 
-        private static bool TryGetExpensiveEndpointSection(PathString path, out string section)
+        public static bool TryGetExpensiveEndpointSection(PathString path, out string section)
         {
             if (path.StartsWithSegments("/api/audio", StringComparison.OrdinalIgnoreCase))
             {
@@ -299,7 +303,7 @@ namespace Orka.API.Extensions
             return false;
         }
 
-        private static PartitionedRateLimiter<HttpContext> CreateExpensiveEndpointLimiter(
+        public static PartitionedRateLimiter<HttpContext> CreateExpensiveEndpointLimiter(
             string section,
             int tokenLimit,
             int defaultConcurrency) =>

@@ -1,17 +1,20 @@
-import { type ReactNode, useState, useEffect, lazy, Suspense } from "react";
+import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Route, Switch, Redirect } from "wouter";
+import { Route, Switch } from "wouter";
 import { Toaster } from "react-hot-toast";
 import { QuizHistoryProvider } from "./contexts/QuizHistoryContext";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { FontSizeProvider } from "./contexts/FontSizeContext";
 import { ToolCapabilitiesProvider } from "./contexts/ToolCapabilitiesContext";
-import { AuthAPI } from "./services/api";
+import { AuthProvider } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
+import PublicGate from "./components/PublicGate";
 import OrcaLogo from "./components/OrcaLogo";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Home = lazy(() => import("./pages/Home"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Courses = lazy(() => import("./pages/Courses"));
@@ -51,48 +54,6 @@ function OrkaLoadingScreen({ label = "Yükleniyor" }: { label?: string }) {
   );
 }
 
-// ── ProtectedRoute ─────────────────────────────────────────────────────────
-// Token yoksa /login'e yönlendirir. Refresh token varsa sessizce yenilemeyi dener.
-
-function ProtectedRoute({ children }: { children: ReactNode }) {
-  const [isBootstrapping, setIsBootstrapping] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    async function checkAuth() {
-      const token = localStorage.getItem("orka_token");
-      if (token) {
-        setIsAuthenticated(true);
-        setIsBootstrapping(false);
-        return;
-      }
-
-      try {
-        const response = await AuthAPI.refresh();
-        const data = response.data;
-        localStorage.setItem("orka_token", data.token);
-        setIsAuthenticated(true);
-      } catch (err) {
-        localStorage.removeItem("orka_token");
-        setIsAuthenticated(false);
-      } finally {
-        setIsBootstrapping(false);
-      }
-    }
-    checkAuth();
-  }, []);
-
-  if (isBootstrapping) {
-    return <OrkaLoadingScreen label="Oturum doğrulanıyor" />;
-  }
-
-  if (!isAuthenticated) {
-    return <Redirect to="/login" />;
-  }
-
-  return <>{children}</>;
-}
-
 // ── Router ─────────────────────────────────────────────────────────────────
 
 function AppRouter() {
@@ -100,8 +61,23 @@ function AppRouter() {
     <Suspense fallback={<OrkaLoadingScreen />}>
       <Switch>
         {/* Public */}
-        <Route path="/" component={Landing} />
-        <Route path="/login" component={Login} />
+        <Route path="/">
+          <PublicGate>
+            <Landing />
+          </PublicGate>
+        </Route>
+        <Route path="/login">
+          <PublicGate>
+            <Login />
+          </PublicGate>
+        </Route>
+
+        {/* Onboarding */}
+        <Route path="/onboarding">
+          <ProtectedRoute allowOnboardingOnly>
+            <Onboarding />
+          </ProtectedRoute>
+        </Route>
 
         {/* Protected */}
         <Route path="/app/:view">
@@ -138,28 +114,30 @@ function AppRouter() {
 export default function App() {
   return (
     <ErrorBoundary>
-    <ThemeProvider>
-      <FontSizeProvider>
-        <LanguageProvider>
-          <QuizHistoryProvider>
-            <ToolCapabilitiesProvider>
-              <Toaster
-                position="top-right"
-                toastOptions={{
-                  style: {
-                    background: "#18181b",
-                    border: "1px solid #27272a",
-                    color: "#fafafa",
-                    fontSize: "13px",
-                  },
-                }}
-              />
-              <AppRouter />
-            </ToolCapabilitiesProvider>
-          </QuizHistoryProvider>
-        </LanguageProvider>
-      </FontSizeProvider>
-    </ThemeProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <FontSizeProvider>
+            <LanguageProvider>
+              <QuizHistoryProvider>
+                <ToolCapabilitiesProvider>
+                  <Toaster
+                    position="top-right"
+                    toastOptions={{
+                      style: {
+                        background: "#18181b",
+                        border: "1px solid #27272a",
+                        color: "#fafafa",
+                        fontSize: "13px",
+                      },
+                    }}
+                  />
+                  <AppRouter />
+                </ToolCapabilitiesProvider>
+              </QuizHistoryProvider>
+            </LanguageProvider>
+          </FontSizeProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }
