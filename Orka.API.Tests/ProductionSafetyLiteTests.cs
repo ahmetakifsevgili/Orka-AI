@@ -115,6 +115,46 @@ public sealed class ProductionSafetyLiteTests
         Assert.DoesNotContain("ORKA_TEST", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("AI:Reliability:StrictExternalFallbackProviders:0", "Cohere", "AI:Cohere:ApiKey")]
+    [InlineData("AI:Reliability:FallbackProviders:0", "OpenRouter", "AI:OpenRouter:ApiKey")]
+    [InlineData("AI:Reliability:FallbackProviders:0", "Mistral", "AI:Mistral:ApiKey")]
+    public void ProductionSafetyPolicy_FailsClosedWhenConfiguredFallbackProviderCredentialIsMissing(
+        string providerListKey,
+        string provider,
+        string credentialKey)
+    {
+        var values = ValidProtectedConfiguration();
+        values[providerListKey] = provider;
+        values[credentialKey] = null;
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ProductionSafetyStartupPolicy.Validate(Configuration(values), new TestEnvironment("Production"), useInMemoryDatabase: false));
+
+        Assert.Contains(provider, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("test-github-token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionSafetyPolicy_AllowsConfiguredFallbackProvidersWhenCredentialsExist()
+    {
+        var values = ValidProtectedConfiguration();
+        values["AI:Reliability:StrictExternalFallbackProviders:0"] = "GitHubModels";
+        values["AI:Reliability:StrictExternalFallbackProviders:1"] = "Cohere";
+        values["AI:Reliability:StrictExternalFallbackProviders:2"] = "Groq";
+        values["AI:Reliability:FallbackProviders:0"] = "GitHubModels";
+        values["AI:Reliability:FallbackProviders:1"] = "OpenRouter";
+        values["AI:Reliability:FallbackProviders:2"] = "Groq";
+        values["AI:Reliability:FallbackProviders:3"] = "Mistral";
+        values["AI:Reliability:FallbackProviders:4"] = "Cohere";
+        values["AI:Cohere:ApiKey"] = "test-cohere-key";
+        values["AI:Groq:ApiKey"] = "test-groq-key";
+        values["AI:OpenRouter:ApiKey"] = "test-openrouter-key";
+        values["AI:Mistral:ApiKey"] = "test-mistral-key";
+
+        ProductionSafetyStartupPolicy.Validate(Configuration(values), new TestEnvironment("Production"), useInMemoryDatabase: false);
+    }
+
     [Fact]
     public void ProductionSafetyPolicy_FailsClosedWhenRefreshCookieIsNotSecure()
     {

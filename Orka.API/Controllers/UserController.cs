@@ -122,16 +122,7 @@ public class UserController : ControllerBase
             return BadRequest(new { message = "Theme must be Dark, Light, or System." });
         }
 
-        // 1. Delete existing diagnostic records if a user re-initiates onboarding
-        var existingProfiles = await _dbContext.DiagnosticProfiles
-            .Where(p => p.UserId == userId)
-            .ToListAsync(ct);
-        if (existingProfiles.Any())
-        {
-            _dbContext.DiagnosticProfiles.RemoveRange(existingProfiles);
-        }
-
-        // 2. Instantiate a DiagnosticProfile with the quiz score and serialize preferences to ProfileJson
+        // Keep onboarding evidence separate from plan/quiz diagnostics.
         var accuracyPercent = req.AnsweredCount > 0 ? (req.CorrectCount * 100) / req.AnsweredCount : 0;
 
         var profileJsonObj = new
@@ -142,21 +133,36 @@ public class UserController : ControllerBase
         };
         var profileJson = System.Text.Json.JsonSerializer.Serialize(profileJsonObj);
 
-        var profile = new DiagnosticProfile
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            AnsweredCount = req.AnsweredCount,
-            CorrectCount = req.CorrectCount,
-            AccuracyPercent = accuracyPercent,
-            MeasuredLevel = req.MeasuredLevel,
-            ProfileJson = profileJson,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-        _dbContext.DiagnosticProfiles.Add(profile);
+        var profile = await _dbContext.DiagnosticProfiles
+            .Where(p => p.UserId == userId &&
+                        p.TopicId == null &&
+                        p.QuizRunId == null &&
+                        p.PlanRequestId == null &&
+                        p.ConceptGraphSnapshotId == null)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
-        // 3. Apply only an explicit client theme. Existing users keep their preference otherwise.
+        var now = DateTime.UtcNow;
+        if (profile == null)
+        {
+            profile = new DiagnosticProfile
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                CreatedAt = now
+            };
+            _dbContext.DiagnosticProfiles.Add(profile);
+        }
+
+        profile.AnsweredCount = req.AnsweredCount;
+        profile.CorrectCount = req.CorrectCount;
+        profile.AccuracyPercent = accuracyPercent;
+        profile.MeasuredLevel = req.MeasuredLevel;
+        profile.ProfileJson = profileJson;
+        profile.UpdatedAt = now;
+        user.IsOnboardingCompleted = true;
+
+        // Apply only an explicit client theme. Existing users keep their preference otherwise.
         if (normalizedTheme != null)
         {
             user.Theme = normalizedTheme;

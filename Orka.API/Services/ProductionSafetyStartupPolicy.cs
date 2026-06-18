@@ -195,22 +195,8 @@ public static class ProductionSafetyStartupPolicy
         if (configuration.GetValue<bool>("AI:ProductionSafety:AllowMissingProviderCredentials"))
             return;
 
-        var routedProviders = configuration.GetSection("AI:AgentRouting")
-            .GetChildren()
-            .Where(section => !section.Key.StartsWith('_'))
-            .Select(section => section["Provider"])
-            .Where(provider => !string.IsNullOrWhiteSpace(provider))
-            .Select(provider => provider!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (routedProviders.Length == 0)
-        {
-            var primary = configuration["AI:Primary"];
-            routedProviders = string.IsNullOrWhiteSpace(primary) ? [] : [primary.Trim()];
-        }
-
-        var missing = routedProviders
+        var configuredProviders = GetConfiguredAiProviders(configuration);
+        var missing = configuredProviders
             .Where(provider =>
                 ProviderCredentialKeys.TryGetValue(provider, out var key) &&
                 string.IsNullOrWhiteSpace(configuration[key]))
@@ -218,7 +204,46 @@ public static class ProductionSafetyStartupPolicy
             .ToArray();
 
         if (missing.Length > 0)
-            errors.Add("AI provider credentials are missing for routed providers: " + string.Join(", ", missing));
+            errors.Add("AI provider credentials are missing for configured providers: " + string.Join(", ", missing));
+    }
+
+    private static string[] GetConfiguredAiProviders(IConfiguration configuration)
+    {
+        var providers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddProvider(providers, configuration["AI:Primary"]);
+
+        foreach (var provider in configuration.GetSection("AI:AgentRouting")
+                     .GetChildren()
+                     .Where(section => !section.Key.StartsWith('_'))
+                     .Select(section => section["Provider"]))
+        {
+            AddProvider(providers, provider);
+        }
+
+        foreach (var provider in ReadProviderList(configuration, "AI:Reliability:StrictExternalFallbackProviders"))
+        {
+            AddProvider(providers, provider);
+        }
+
+        foreach (var provider in ReadProviderList(configuration, "AI:Reliability:FallbackProviders"))
+        {
+            AddProvider(providers, provider);
+        }
+
+        return providers.ToArray();
+    }
+
+    private static IEnumerable<string?> ReadProviderList(IConfiguration configuration, string key) =>
+        configuration.GetSection(key)
+            .GetChildren()
+            .Select(section => section.Value);
+
+    private static void AddProvider(HashSet<string> providers, string? provider)
+    {
+        if (!string.IsNullOrWhiteSpace(provider))
+        {
+            providers.Add(provider.Trim());
+        }
     }
 
     private static bool HasPositiveDecimal(IConfiguration configuration, string key) =>

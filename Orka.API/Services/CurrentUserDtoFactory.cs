@@ -1,6 +1,5 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orka.Core.DTOs.Auth;
 using Orka.Core.Entities;
@@ -11,24 +10,20 @@ namespace Orka.API.Services;
 
 public static class CurrentUserDtoFactory
 {
-    public static async Task<UserDto> CreateAsync(
+    public static Task<UserDto> CreateAsync(
         User user,
         OrkaDbContext dbContext,
         IConfiguration configuration,
         CancellationToken cancellationToken = default)
     {
-        var isOnboardingCompleted = await dbContext.DiagnosticProfiles
-            .AsNoTracking()
-            .AnyAsync(p => p.UserId == user.Id, cancellationToken);
-
-        return new UserDto
+        return Task.FromResult(new UserDto
         {
             Id = user.Id.ToString(),
             FirstName = user.FirstName,
             LastName = user.LastName,
             Email = user.Email,
             Plan = user.Plan.ToString(),
-            IsOnboardingCompleted = isOnboardingCompleted,
+            IsOnboardingCompleted = user.IsOnboardingCompleted,
             StorageUsedMB = user.StorageUsedMB,
             StorageLimitMB = user.StorageLimitMB,
             DailyMessageCount = user.DailyMessageCount,
@@ -46,7 +41,7 @@ public static class CurrentUserDtoFactory
                 NewContentAlerts = user.NewContentAlerts,
                 SoundsEnabled = user.SoundsEnabled
             }
-        };
+        });
     }
 
     private static int GetDailyLimit(UserPlan plan, IConfiguration configuration)

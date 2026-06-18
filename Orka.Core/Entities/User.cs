@@ -18,6 +18,7 @@ public class User
     public DateTime DailyMessageResetAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
+    public bool IsOnboardingCompleted { get; set; } = false;
 
     /// <summary>
     /// Sistem izleme paneli (System Health HUD, LLMOps dashboard, denetim scriptleri)

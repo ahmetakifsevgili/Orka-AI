@@ -157,6 +157,7 @@ public sealed class TenantIsolationTests
     {
         var options = CreateOptions();
         var user = CreateUser("profile@example.test", theme: "Light");
+        user.IsOnboardingCompleted = true;
 
         await using var db = new OrkaDbContext(options);
         db.Users.Add(user);

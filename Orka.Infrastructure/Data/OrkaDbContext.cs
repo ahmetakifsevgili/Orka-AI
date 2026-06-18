@@ -272,6 +272,10 @@ public class OrkaDbContext : DbContext
             .Property(u => u.Plan)
             .HasConversion<string>();
 
+        modelBuilder.Entity<User>()
+            .Property(u => u.IsOnboardingCompleted)
+            .HasDefaultValue(false);
+
         modelBuilder.Entity<Message>()
             .Property(m => m.MessageType)
             .HasConversion<string>();
