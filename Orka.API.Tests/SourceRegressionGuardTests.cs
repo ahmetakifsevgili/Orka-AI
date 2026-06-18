@@ -1019,6 +1019,20 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("max_completion_tokens", sanityProbe);
     }
 
+    [Fact]
+    public void PedagogyAuditPrivacyGuards_RedactJwtCheckpointFields()
+    {
+        var privacy = ReadRepoText("scripts/pedagogy-audit/privacy.mjs");
+
+        Assert.Contains("\"jwt\"", privacy);
+        Assert.Contains("\"jsonwebtoken\"", privacy);
+        Assert.Contains("\"accessjwt\"", privacy);
+        Assert.Contains("\"refreshjwt\"", privacy);
+        Assert.Contains("[redacted_jwt]", privacy);
+        Assert.Contains("/\"jwt\"\\s*:/i", privacy);
+        Assert.Contains("eyJ[A-Za-z0-9_-]+\\.", privacy);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;

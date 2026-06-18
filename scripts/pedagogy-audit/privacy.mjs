@@ -5,6 +5,10 @@ const DROP_KEYS = new Set([
   "accesstoken",
   "refreshtoken",
   "idtoken",
+  "jwt",
+  "jsonwebtoken",
+  "accessjwt",
+  "refreshjwt",
   "authorization",
   "password",
   "apikey",
@@ -40,6 +44,7 @@ const ID_SUFFIX_KEYS = new Set([
 
 const SECRET_PATTERNS = [
   /Bearer\s+[A-Za-z0-9._-]+/i,
+  /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/i,
   /[A-Z]:\\\\/i,
   /thoughtSignature|thought_signature/i,
   /rawProviderPayload|rawSourceChunk|rawToolPayload/i,
@@ -47,6 +52,7 @@ const SECRET_PATTERNS = [
   /"answerKey"\s*:/i,
   /"correctAnswer"\s*:/i,
   /"token"\s*:/i,
+  /"jwt"\s*:/i,
   /"userId"\s*:/i,
   /"ownerId"\s*:/i,
 ];
@@ -86,6 +92,7 @@ export function createPrivacy(runId) {
     if (typeof value === "string") {
       return value
         .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+        .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gi, "[redacted_jwt]")
         .replace(/[A-Z]:\\\\[^\s"]+/g, "[redacted_path]");
     }
     return value;

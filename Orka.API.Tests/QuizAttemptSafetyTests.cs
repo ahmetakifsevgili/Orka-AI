@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Orka.Core.Constants;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
 using Orka.Infrastructure.Data;
@@ -331,6 +332,83 @@ public sealed class QuizAttemptSafetyTests : IClassFixture<ApiSmokeFactory>
         Assert.Contains("Remediation ihtiyaci: medium", repair.Content);
         Assert.Contains("Telafi tipi: prerequisite_repair", repair.Content);
         Assert.Contains("Tutor sonraki hamlesi: prerequisite_scaffold", repair.Content);
+    }
+
+    [Fact]
+    public async Task QuizAttempt_CorrectAnswerAfterRemediationStarted_RecordsCompletedOnce()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "quiz-remediation-complete");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Remediation Completion Quiz");
+        var (quizRunId, assessmentItemId) = await SeedAssessmentItemAsync(user.UserId, topicId);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            db.LearningSignals.Add(new LearningSignal
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.UserId,
+                TopicId = topicId,
+                SignalType = LearningSignalTypes.RemediationStarted,
+                SkillTag = "server-authority",
+                TopicPath = "server-authority",
+                Score = 0,
+                IsPositive = false,
+                PayloadJson = """
+                {
+                  "schemaVersion": "orka.remediation-lifecycle.v1",
+                  "selectedAction": "start_remediation",
+                  "recordedAt": "2026-06-18T00:00:00Z"
+                }
+                """,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-2)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var requestPayload = new
+        {
+            quizRunId,
+            topicId,
+            assessmentItemId,
+            questionId = "q-auth",
+            question = "Server hangi secenegi dogrular?",
+            selectedOptionId = "B",
+            isCorrect = false,
+            explanation = "client-provided explanation must be ignored",
+            skillTag = "server-authority",
+            conceptKey = "server-authority",
+            questionHash = $"remediation-complete-{Guid.NewGuid():N}"
+        };
+
+        var response = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        response.EnsureSuccessStatusCode();
+        using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        Assert.Equal("correct", json.RootElement.GetProperty("learningImpact").GetProperty("result").GetString());
+        var attemptId = json.RootElement.GetProperty("id").GetGuid();
+
+        var replay = await user.Client.PostAsJsonAsync("/api/quiz/attempt", requestPayload);
+        replay.EnsureSuccessStatusCode();
+
+        using var scopeAfter = _factory.Services.CreateScope();
+        var dbAfter = scopeAfter.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var completions = await dbAfter.LearningSignals
+            .AsNoTracking()
+            .Where(s =>
+                s.UserId == user.UserId &&
+                s.TopicId == topicId &&
+                s.SignalType == LearningSignalTypes.RemediationCompleted)
+            .ToListAsync();
+
+        var completion = Assert.Single(completions);
+        Assert.Equal("server-authority", completion.SkillTag);
+        Assert.Equal(100, completion.Score);
+        Assert.True(completion.IsPositive.GetValueOrDefault());
+        Assert.False(string.IsNullOrWhiteSpace(completion.PayloadJson));
+        using var payload = JsonDocument.Parse(completion.PayloadJson!);
+        Assert.Equal("orka.remediation-lifecycle.v1", payload.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.Equal("verified_correct_attempt", payload.RootElement.GetProperty("completedBy").GetString());
+        Assert.Equal(attemptId, payload.RootElement.GetProperty("quizAttemptId").GetGuid());
     }
 
     [Fact]
