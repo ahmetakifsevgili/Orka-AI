@@ -1116,6 +1116,26 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             }
         }
 
+        if (IsDuplicateQualityFailure(lastFailure))
+        {
+            _logger.LogWarning(
+                "[PlanDiagnostic] Diagnostic quiz duplicate repair fallback activated. TopicRef={TopicRef}",
+                LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
+
+            var repairedQuiz = NormalizeDiagnosticQuizForDelivery(
+                DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar));
+            repairedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(
+                repairedQuiz,
+                topicTitle,
+                requestedQuestionCount,
+                out _,
+                learningBlueprint);
+            repairedQuiz = NormalizeDiagnosticQuizForDelivery(
+                await _assessmentGrammar.AttachQuestionMetadataAsync(repairedQuiz, assessmentGrammar, ct));
+            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(repairedQuiz, requestedQuestionCount);
+            return repairedQuiz;
+        }
+
         try
         {
             throw lastFailure ?? new InvalidOperationException("Diagnostic quiz provider returned no usable output.");
@@ -1150,7 +1170,7 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         const int batchSize = 5;
-        const int maxConcurrentBatches = 2;
+        const int maxConcurrentBatches = 1;
         var batches = specs
             .Chunk(batchSize)
             .Select((batch, index) => new
@@ -1200,6 +1220,19 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         return merged.ToJsonString(JsonOptions);
+    }
+
+    private static bool IsDuplicateQualityFailure(Exception? exception)
+    {
+        while (exception is not null)
+        {
+            if (exception.Message.Contains("Duplicate or near-duplicate questions", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            exception = exception.InnerException;
+        }
+
+        return false;
     }
 
     private sealed record DiagnosticBatchResult(int Index, IReadOnlyList<JsonNode> Questions);

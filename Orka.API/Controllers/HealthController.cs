@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Orka.API.Controllers;
@@ -19,13 +20,16 @@ public class HealthController : ControllerBase
 {
     private readonly HealthCheckService _healthCheckService;
     private readonly IWebHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
 
     public HealthController(
         HealthCheckService healthCheckService,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        IConfiguration configuration)
     {
         _healthCheckService = healthCheckService;
         _environment = environment;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -42,8 +46,9 @@ public class HealthController : ControllerBase
     [HttpGet("ready")]
     public async Task<IActionResult> Ready()
     {
+        var timeoutSeconds = Math.Clamp(_configuration.GetValue("HealthChecks:ReadinessTimeoutSeconds", 10), 2, 30);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted);
-        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
         HealthReport result;
         try
@@ -57,7 +62,7 @@ public class HealthController : ControllerBase
             return StatusCode(503, new
             {
                 status = "Unhealthy",
-                duration = 2000,
+                duration = timeoutSeconds * 1000,
                 timedOut = true
             });
         }

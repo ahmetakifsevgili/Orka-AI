@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orka.Core.DTOs;
 using Orka.Core.Enums;
@@ -168,16 +169,16 @@ public sealed class AsyncLocalAiRequestContextAccessor : IAiRequestContextAccess
 
 public sealed class AiUsageBudgetService : IAiUsageBudgetService
 {
-    private readonly OrkaDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ITokenCostEstimator _estimator;
     private readonly IConfiguration _configuration;
 
     public AiUsageBudgetService(
-        OrkaDbContext db,
+        IServiceScopeFactory scopeFactory,
         ITokenCostEstimator estimator,
         IConfiguration configuration)
     {
-        _db = db;
+        _scopeFactory = scopeFactory;
         _estimator = estimator;
         _configuration = configuration;
     }
@@ -193,8 +194,11 @@ public sealed class AiUsageBudgetService : IAiUsageBudgetService
         var (_, estimatedCost) = _estimator.Estimate(request.Model ?? string.Empty, request.InputText, estimatedOutputText);
         var totalTokens = inputTokens + maxOutputTokens;
 
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+
         var today = DateTime.UtcNow.Date;
-        var costs = _db.CostRecords.AsNoTracking().Where(c => c.OccurredAt >= today);
+        var costs = db.CostRecords.AsNoTracking().Where(c => c.OccurredAt >= today);
         var globalCost = await costs.SumAsync(c => c.EstimatedCostUsd, ct);
         var globalTokens = await costs.SumAsync(c => c.EstimatedTokens, ct);
 

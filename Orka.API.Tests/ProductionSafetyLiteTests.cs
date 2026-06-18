@@ -203,21 +203,25 @@ public sealed class ProductionSafetyLiteTests
     [Fact]
     public async Task AiUsageBudgetService_DeniesUserAndGlobalDailyLimits()
     {
-        await using var db = CreateDb();
+        await using var provider = CreateDbServices();
         var userId = Guid.NewGuid();
-        db.CostRecords.Add(new CostRecord
+        using (var seedScope = provider.CreateScope())
         {
-            Id = Guid.NewGuid(),
-            OccurredAt = DateTime.UtcNow,
-            UserId = userId,
-            AgentRole = "Tutor",
-            EstimatedTokens = 10,
-            EstimatedCostUsd = 0.01m
-        });
-        await db.SaveChangesAsync();
+            var db = seedScope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            db.CostRecords.Add(new CostRecord
+            {
+                Id = Guid.NewGuid(),
+                OccurredAt = DateTime.UtcNow,
+                UserId = userId,
+                AgentRole = "Tutor",
+                EstimatedTokens = 10,
+                EstimatedCostUsd = 0.01m
+            });
+            await db.SaveChangesAsync();
+        }
 
         var userLimited = new AiUsageBudgetService(
-            db,
+            provider.GetRequiredService<IServiceScopeFactory>(),
             new TokenCostEstimator(),
             Configuration(new Dictionary<string, string?>
             {
@@ -238,7 +242,7 @@ public sealed class ProductionSafetyLiteTests
         Assert.Equal("user_daily_cost", userDecision.Reason);
 
         var globallyLimited = new AiUsageBudgetService(
-            db,
+            provider.GetRequiredService<IServiceScopeFactory>(),
             new TokenCostEstimator(),
             Configuration(new Dictionary<string, string?>
             {
@@ -257,6 +261,35 @@ public sealed class ProductionSafetyLiteTests
 
         Assert.False(globalDecision.Allowed);
         Assert.Equal("global_daily_cost", globalDecision.Reason);
+    }
+
+    [Fact]
+    public async Task AiUsageBudgetService_AllowsParallelChecksWithoutSharingDbContext()
+    {
+        await using var provider = CreateDbServices();
+        var service = new AiUsageBudgetService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new TokenCostEstimator(),
+            Configuration(new Dictionary<string, string?>
+            {
+                ["AI:Cost:Enabled"] = "true",
+                ["AI:Cost:GlobalDailyUsdLimit"] = "100",
+                ["AI:Cost:UserDailyUsdLimit"] = "100"
+            }));
+
+        var tasks = Enumerable.Range(0, 32)
+            .Select(_ => service.CheckAsync(new AiUsageBudgetRequest(
+                UserId: Guid.NewGuid(),
+                Role: "Quiz",
+                Provider: "GitHubModels",
+                Model: "openai/gpt-4o",
+                InputText: "parallel budget check",
+                MaxOutputTokens: 512)))
+            .ToArray();
+
+        var decisions = await Task.WhenAll(tasks);
+
+        Assert.All(decisions, decision => Assert.True(decision.Allowed));
     }
 
     [Fact]
@@ -448,13 +481,11 @@ public sealed class ProductionSafetyLiteTests
             .AddInMemoryCollection(values)
             .Build();
 
-    private static OrkaDbContext CreateDb()
+    private static ServiceProvider CreateDbServices()
     {
-        var options = new DbContextOptionsBuilder<OrkaDbContext>()
-            .UseInMemoryDatabase($"production-safety-{Guid.NewGuid():N}")
-            .Options;
-
-        return new OrkaDbContext(options);
+        var services = new ServiceCollection();
+        services.AddDbContext<OrkaDbContext>(_ => _.UseInMemoryDatabase($"production-safety-{Guid.NewGuid():N}"));
+        return services.BuildServiceProvider();
     }
 
     private sealed record AuthCredentials(string Email, string Password);

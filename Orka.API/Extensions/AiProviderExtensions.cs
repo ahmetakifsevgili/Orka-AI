@@ -95,7 +95,7 @@ namespace Orka.API.Extensions
                     o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
                 });
 
-            services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(15))
+            services.AddHttpClient("Mistral", c => c.Timeout = TimeSpan.FromSeconds(60))
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {
                     PooledConnectionLifetime = TimeSpan.FromMinutes(2)
@@ -104,6 +104,8 @@ namespace Orka.API.Extensions
                 {
                     o.Retry.MaxRetryAttempts          = 1;
                     o.Retry.Delay                     = TimeSpan.FromMilliseconds(300);
+                    o.AttemptTimeout.Timeout          = TimeSpan.FromSeconds(45);
+                    o.TotalRequestTimeout.Timeout     = TimeSpan.FromSeconds(60);
                     o.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
                 });
 

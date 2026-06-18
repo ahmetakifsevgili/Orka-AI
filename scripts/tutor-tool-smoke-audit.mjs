@@ -35,6 +35,7 @@ const reportDir = path.resolve(ROOT, args["report-dir"] ?? "life_tests/reports/t
 const timeoutMs = Number(args.timeoutMs ?? args["timeout-ms"] ?? 30000);
 const includeChatProbes = boolArg(args, "include-chat-probes");
 const password = `OrkaToolSmoke${runId}!`;
+const clientIp = args["client-ip"] ?? `127.41.${Number(runId.slice(-4, -2) || 0) % 240}.42`;
 
 main().catch(async (error) => {
   const message = error instanceof Error ? error.message : String(error);
@@ -291,6 +292,7 @@ async function request(method, url, { token, body, timeoutMs: perRequestTimeout 
   const timeout = setTimeout(() => controller.abort(), perRequestTimeout);
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (clientIp) headers["X-Forwarded-For"] = clientIp;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
   try {
@@ -330,7 +332,11 @@ async function checkRedisPorts(ports) {
 function tcpOpen(host, port, timeout) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
+    let settled = false;
     const done = (value) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
       socket.destroy();
       resolve(value);
     };

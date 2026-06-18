@@ -17,12 +17,14 @@ internal static class AiProviderFailureMapper
         var kind = response.StatusCode switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AiProviderFailureKind.Authentication,
+            HttpStatusCode.PaymentRequired => AiProviderFailureKind.QuotaExceeded,
             HttpStatusCode.TooManyRequests => AiProviderFailureKind.RateLimited,
             >= HttpStatusCode.InternalServerError => AiProviderFailureKind.ServerError,
             _ => AiProviderFailureKind.Unknown
         };
 
-        var fallbackable = kind is AiProviderFailureKind.RateLimited or AiProviderFailureKind.ServerError;
+        var retryable = kind is AiProviderFailureKind.RateLimited or AiProviderFailureKind.ServerError;
+        var fallbackable = retryable || kind is AiProviderFailureKind.QuotaExceeded;
         return new AiProviderCallException(
             provider,
             model,
@@ -31,7 +33,7 @@ internal static class AiProviderFailureMapper
             "AI provider gecici olarak kullanilamiyor.",
             response.StatusCode,
             response.Headers.RetryAfter?.Delta,
-            isRetryable: fallbackable,
+            isRetryable: retryable,
             isFallbackable: fallbackable,
             redactedDiagnostic: BuildResponseDiagnostic(provider, model, response, responseBody, kind, fallbackable));
     }
@@ -48,19 +50,23 @@ internal static class AiProviderFailureMapper
         var kind = exception switch
         {
             TaskCanceledException or TimeoutException => AiProviderFailureKind.Timeout,
+            _ when IsTimeoutRejected(exception) => AiProviderFailureKind.Timeout,
             System.Text.Json.JsonException or InvalidOperationException => AiProviderFailureKind.InvalidResponse,
             HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => AiProviderFailureKind.Authentication,
+            HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.PaymentRequired => AiProviderFailureKind.QuotaExceeded,
             HttpRequestException httpEx when httpEx.StatusCode is HttpStatusCode.TooManyRequests => AiProviderFailureKind.RateLimited,
             HttpRequestException httpEx when httpEx.StatusCode >= HttpStatusCode.InternalServerError => AiProviderFailureKind.ServerError,
             HttpRequestException => fallbackKind,
             _ => AiProviderFailureKind.Unknown
         };
 
-        var fallbackable = kind is AiProviderFailureKind.RateLimited
+        var retryable = kind is AiProviderFailureKind.RateLimited
             or AiProviderFailureKind.ServerError
             or AiProviderFailureKind.Timeout
             or AiProviderFailureKind.TransientNetwork
             or AiProviderFailureKind.InvalidResponse;
+        var fallbackable = retryable
+            || kind is AiProviderFailureKind.QuotaExceeded;
 
         return new AiProviderCallException(
             provider,
@@ -69,7 +75,7 @@ internal static class AiProviderFailureMapper
             kind,
             "AI provider gecici olarak kullanilamiyor.",
             statusCode: exception is HttpRequestException http ? http.StatusCode : null,
-            isRetryable: fallbackable,
+            isRetryable: retryable,
             isFallbackable: fallbackable,
             redactedDiagnostic: BuildExceptionDiagnostic(provider, model, exception, kind, fallbackable),
             innerException: exception);
@@ -89,7 +95,7 @@ internal static class AiProviderFailureMapper
             $"provider={SafeToken(provider, "provider")}",
             $"status={(int)response.StatusCode}",
             $"category={kind.ToString().ToLowerInvariant()}",
-            $"retryable={fallbackable.ToString().ToLowerInvariant()}",
+            $"retryable={(kind is AiProviderFailureKind.RateLimited or AiProviderFailureKind.ServerError).ToString().ToLowerInvariant()}",
             $"fallbackable={fallbackable.ToString().ToLowerInvariant()}",
             $"bodyLength={body.Length}",
             $"bodyHash={Hash(body)}"
@@ -109,12 +115,17 @@ internal static class AiProviderFailureMapper
         AiProviderFailureKind kind,
         bool fallbackable)
     {
+        var retryable = kind is AiProviderFailureKind.RateLimited
+            or AiProviderFailureKind.ServerError
+            or AiProviderFailureKind.Timeout
+            or AiProviderFailureKind.TransientNetwork
+            or AiProviderFailureKind.InvalidResponse;
         var parts = new List<string>
         {
             $"provider={SafeToken(provider, "provider")}",
             $"category={kind.ToString().ToLowerInvariant()}",
             $"exceptionType={SafeToken(exception.GetType().Name, "exception")}",
-            $"retryable={fallbackable.ToString().ToLowerInvariant()}",
+            $"retryable={retryable.ToString().ToLowerInvariant()}",
             $"fallbackable={fallbackable.ToString().ToLowerInvariant()}"
         };
 
@@ -142,6 +153,9 @@ internal static class AiProviderFailureMapper
             ? fallback
             : safe.Length <= 120 ? safe : safe[..120];
     }
+
+    private static bool IsTimeoutRejected(Exception exception) =>
+        exception.GetType().Name.Contains("TimeoutRejected", StringComparison.OrdinalIgnoreCase);
 
     private static string Hash(string value)
     {

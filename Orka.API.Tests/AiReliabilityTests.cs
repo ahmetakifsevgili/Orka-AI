@@ -252,8 +252,7 @@ public sealed class AiReliabilityTests
             {
                 ["AI:AgentRouting:Quiz:Provider"] = "GitHubModels",
                 ["AI:AgentRouting:Quiz:Model"] = "openai/gpt-4o",
-                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768",
-                ["AI:Reliability:SameProviderRateLimitRetries"] = "0"
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
             });
 
         var result = await factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz");
@@ -263,6 +262,56 @@ public sealed class AiReliabilityTests
         Assert.Equal(1, cohere.Calls);
         Assert.Equal(0, providers.GroqCalls);
         Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
+    public async Task CompleteChat_StrictFallbackCanReachGroqWhenGitHubRateLimitedAndCohereTimesOut()
+    {
+        var providers = new FakeProviders();
+        providers.GitHubHandler = () => throw new AiProviderCallException(
+            "GitHubModels",
+            "openai/gpt-4o",
+            "Quiz",
+            AiProviderFailureKind.RateLimited,
+            "rate limited",
+            HttpStatusCode.TooManyRequests,
+            isRetryable: true,
+            isFallbackable: true);
+        providers.GroqHandler = () => Task.FromResult("""[{"assessmentItemId":"00000000-0000-0000-0000-000000000001"}]""");
+
+        var cohere = new FakeCohereService
+        {
+            Handler = () => throw new AiProviderCallException(
+                "Cohere",
+                "command-a-03-2025",
+                "Quiz",
+                AiProviderFailureKind.Timeout,
+                "timeout",
+                isRetryable: true,
+                isFallbackable: true)
+        };
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            cohere: cohere,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Quiz:Provider"] = "GitHubModels",
+                ["AI:AgentRouting:Quiz:Model"] = "openai/gpt-4o",
+                ["AI:Reliability:MaxAttemptsPerRequest"] = "3",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz");
+
+        Assert.Contains("assessmentItemId", result);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Equal(1, cohere.Calls);
+        Assert.Equal(1, providers.GroqCalls);
+        Assert.Equal(8192, providers.LastGroqMaxOutputTokens);
+        Assert.Contains(telemetry.Events, e => e.Provider == "Groq" && e.Success && e.FallbackUsed);
     }
 
     [Fact]
@@ -438,6 +487,26 @@ public sealed class AiReliabilityTests
     }
 
     [Fact]
+    public async Task ProviderFailureMapper_PaymentRequired_AllowsFallbackWithoutRetry()
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent("""{"error":"insufficient credits"}""")
+        };
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        var exception = AiProviderFailureMapperForTests.FromResponse("OpenRouter", "anthropic/claude-3-5-haiku", response, rawBody);
+
+        Assert.Equal(AiProviderFailureKind.QuotaExceeded, exception.FailureKind);
+        Assert.Equal(HttpStatusCode.PaymentRequired, exception.StatusCode);
+        Assert.False(exception.IsRetryable);
+        Assert.True(exception.IsFallbackable);
+        Assert.Contains("category=quotaexceeded", exception.RedactedDiagnostic);
+        Assert.Contains("retryable=false", exception.RedactedDiagnostic);
+        Assert.Contains("fallbackable=true", exception.RedactedDiagnostic);
+    }
+
+    [Fact]
     public void ProviderFailureMapper_ExceptionDiagnostic_DoesNotRetainExceptionMessage()
     {
         var exception = AiProviderFailureMapperForTests.FromException(
@@ -450,6 +519,20 @@ public sealed class AiReliabilityTests
         Assert.Contains("exceptionType=InvalidOperationException", exception.RedactedDiagnostic);
         Assert.DoesNotContain("InvalidOperationException: rawProviderPayload", exception.RedactedDiagnostic, StringComparison.OrdinalIgnoreCase);
         AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
+    }
+
+    [Fact]
+    public void ProviderFailureMapper_TimeoutRejected_AllowsFallback()
+    {
+        var exception = AiProviderFailureMapperForTests.FromException(
+            "Mistral",
+            "mistral-small-latest",
+            new TestTimeoutRejectedException());
+
+        Assert.Equal(AiProviderFailureKind.Timeout, exception.FailureKind);
+        Assert.True(exception.IsRetryable);
+        Assert.True(exception.IsFallbackable);
+        Assert.Contains("category=timeout", exception.RedactedDiagnostic);
     }
 
 
@@ -676,6 +759,7 @@ public sealed class AiReliabilityTests
         public int MistralCalls;
         public string? LastGitHubModel;
         public int? LastGitHubMaxOutputTokens;
+        public int? LastGroqMaxOutputTokens;
         public Func<Task<string>> GitHubHandler { get; set; } = () => Task.FromResult("github-ok");
         public Func<Task<string>> GroqHandler { get; set; } = () => Task.FromResult("groq-ok");
         public Func<Task<string>> GeminiHandler { get; set; } = () => Task.FromResult("gemini-ok");
@@ -697,6 +781,7 @@ public sealed class AiReliabilityTests
         public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
         {
             GroqCalls++;
+            LastGroqMaxOutputTokens = maxOutputTokens;
             return GroqHandler();
         }
 
@@ -870,6 +955,8 @@ public sealed class AiReliabilityTests
         public Task ReleaseLockAsync(string key, string value) => Task.CompletedTask;
     }
 }
+
+internal sealed class TestTimeoutRejectedException : Exception;
 
 internal static class AiProviderFailureMapperForTests
 {

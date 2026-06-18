@@ -489,7 +489,7 @@ public class AIAgentFactory : IAIAgentFactory
 
     private int MaxAttempts(AgentRole role)
     {
-        var configured = Math.Max(1, _configuration.GetValue("AI:Reliability:MaxAttemptsPerRequest", 2));
+        var configured = Math.Max(1, _configuration.GetValue("AI:Reliability:MaxAttemptsPerRequest", 5));
         return configured;
     }
 
@@ -498,7 +498,7 @@ public class AIAgentFactory : IAIAgentFactory
         var configured = _configuration.GetSection("AI:Reliability:StrictExternalFallbackProviders").Get<string[]>();
         return configured is { Length: > 0 }
             ? configured
-            : new[] { "GitHubModels", "Cohere", "Groq" };
+            : new[] { "GitHubModels", "OpenRouter", "Mistral", "Cohere", "Groq" };
     }
 
     private string[] FallbackProviders()
@@ -616,6 +616,11 @@ public class AIAgentFactory : IAIAgentFactory
             return Math.Min(requestedMaxOutputTokens, _configuration.GetValue("AI:Cohere:MaxOutputTokens", 4096));
         }
 
+        if (string.Equals(attempt.Provider, "Groq", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Min(requestedMaxOutputTokens, _configuration.GetValue("AI:Groq:MaxOutputTokens", 8192));
+        }
+
         return requestedMaxOutputTokens;
     }
 
@@ -661,6 +666,12 @@ public class AIAgentFactory : IAIAgentFactory
         }
 
         if (!DisallowInMemoryFallback(role))
+        {
+            return false;
+        }
+
+        if (AllowsStrictExternalFallback(role, stream: false) &&
+            !_configuration.GetValue("AI:Reliability:RetryStrictPrimaryRateLimits", false))
         {
             return false;
         }
