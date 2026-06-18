@@ -13,7 +13,7 @@ try {
 } catch {}
 Write-Host "[quick-coordination] Active Git Branch: $branch | Commit: $commit"
 $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
-$coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
+$coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|PlanDiagnosticApiFlowTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 
 if (-not $NoBuild) {
     Write-Host "[quick-coordination] Building Orka.API.Tests..."

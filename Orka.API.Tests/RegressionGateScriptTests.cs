@@ -48,6 +48,7 @@ public sealed class RegressionGateScriptTests
         "DashboardCoordinationHealthTests",
         "ChatParityTests",
         "QuizLearningPipelineTests",
+        "PlanDiagnosticApiFlowTests",
         "BackendCoordinationSmokeTests",
         "KorteksContractTests",
         "RegressionGateScriptTests"
