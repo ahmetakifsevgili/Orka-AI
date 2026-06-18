@@ -297,6 +297,7 @@ public sealed class AdaptiveStudyPlanDto
 
 public sealed class OrkaLearningStateDto
 {
+    public string LearningStateVersion { get; set; } = "lsv_unknown";
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
     public string ScopeStatus { get; set; } = "global";
@@ -362,6 +363,7 @@ public sealed class OrkaLearningStateConflictDto
 
 public sealed class OrkaMissionControlDto
 {
+    public string LearningStateVersion { get; set; } = "lsv_unknown";
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
     public string ScopeStatus { get; set; } = "global";
@@ -448,6 +450,7 @@ public sealed class OrkaMissionWarningDto
 
 public sealed class OrkaStudyCoachDto
 {
+    public string LearningStateVersion { get; set; } = "lsv_unknown";
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
     public string ScopeStatus { get; set; } = "global";

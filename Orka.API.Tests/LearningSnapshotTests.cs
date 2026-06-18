@@ -252,6 +252,8 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.Equal(topicId.ToString(), root.GetProperty("topicId").GetString(), ignoreCase: true);
         Assert.Equal(sessionId.ToString(), root.GetProperty("sessionId").GetString(), ignoreCase: true);
         Assert.Equal("orka.learning-context-pack.v1.1", root.GetProperty("schemaVersion").GetString());
+        var learningStateVersion = root.GetProperty("learningStateVersion").GetString();
+        Assert.StartsWith("lsv_", learningStateVersion);
         var watermark = root.GetProperty("contextWatermark").GetString();
         Assert.StartsWith("ctx_", watermark);
         Assert.True(root.GetProperty("estimatedTokenCount").GetInt32() > 0);
@@ -296,6 +298,7 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         secondResponse.EnsureSuccessStatusCode();
         using var secondBody = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
         Assert.Equal(watermark, secondBody.RootElement.GetProperty("contextWatermark").GetString());
+        Assert.Equal(learningStateVersion, secondBody.RootElement.GetProperty("learningStateVersion").GetString());
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Orka.Core.DTOs;
 using Orka.Core.Constants;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
@@ -134,6 +135,13 @@ public sealed class PlanDiagnosticApiFlowTests
             b.QuizAttemptId == firstAttempt.Id &&
             !b.IsDeleted) <= 2);
 
+        var projectionBeforeTutor = await user.Client.GetFromJsonAsync<OrkaLearningStateDto>($"/api/learning/orka-state?topicId={topicId}")
+            ?? throw new InvalidOperationException("Pre-tutor projection missing.");
+        var missionBeforeTutor = await user.Client.GetFromJsonAsync<OrkaMissionControlDto>($"/api/learning/mission-control?topicId={topicId}")
+            ?? throw new InvalidOperationException("Pre-tutor mission missing.");
+        Assert.StartsWith("lsv_", projectionBeforeTutor.LearningStateVersion);
+        Assert.Equal(projectionBeforeTutor.LearningStateVersion, missionBeforeTutor.LearningStateVersion);
+
         var tutor = await user.Client.PostAsJsonAsync("/api/chat/message", new
         {
             content = "Ilk yanlis yaptigim kavrami telafi et ve sonra mikro kontrol sor.",
@@ -145,15 +153,41 @@ public sealed class PlanDiagnosticApiFlowTests
         Assert.True(
             tutorBody!.Metadata?.RemediationLesson != null ||
             tutorBody.Metadata?.TutorToolDecision?.SelectedAction == "start_remediation");
-        Assert.True(await db.LearningSignals.AnyAsync(s =>
+        var remediationStartedSignals = await db.LearningSignals
+            .AsNoTracking()
+            .Where(s =>
             s.UserId == user.UserId &&
             s.TopicId == topicId &&
-            s.SignalType == LearningSignalTypes.RemediationStarted));
+                s.SignalType == LearningSignalTypes.RemediationStarted)
+            .ToListAsync();
+        Assert.NotEmpty(remediationStartedSignals);
+        Assert.All(remediationStartedSignals, signal =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(signal.PayloadJson));
+            using var payload = JsonDocument.Parse(signal.PayloadJson!);
+            Assert.Equal("orka.remediation-lifecycle.v1", payload.RootElement.GetProperty("schemaVersion").GetString());
+            Assert.True(payload.RootElement.TryGetProperty("recordedAt", out var recordedAt) && recordedAt.ValueKind == JsonValueKind.String);
+            Assert.True(
+                payload.RootElement.TryGetProperty("selectedAction", out var selectedAction) && !string.IsNullOrWhiteSpace(selectedAction.GetString()) ||
+                payload.RootElement.TryGetProperty("deliveryMode", out var deliveryMode) && !string.IsNullOrWhiteSpace(deliveryMode.GetString()) ||
+                payload.RootElement.TryGetProperty("sourceBasis", out var sourceBasis) && !string.IsNullOrWhiteSpace(sourceBasis.GetString()));
+        });
         Assert.True(await db.WikiBlocks.AnyAsync(b =>
             b.WikiPage.UserId == user.UserId &&
             b.WikiPage.TopicId == topicId &&
             b.BlockType == WikiBlockType.RepairNote &&
             !b.IsDeleted));
+
+        var projectionAfterTutor = await user.Client.GetFromJsonAsync<OrkaLearningStateDto>($"/api/learning/orka-state?topicId={topicId}")
+            ?? throw new InvalidOperationException("Post-tutor projection missing.");
+        var missionAfterTutor = await user.Client.GetFromJsonAsync<OrkaMissionControlDto>($"/api/learning/mission-control?topicId={topicId}")
+            ?? throw new InvalidOperationException("Post-tutor mission missing.");
+        var contextPackAfterTutor = await user.Client.GetFromJsonAsync<LearningContextPackDto>($"/api/learning/context-pack?topicId={topicId}")
+            ?? throw new InvalidOperationException("Post-tutor context pack missing.");
+        Assert.StartsWith("lsv_", projectionAfterTutor.LearningStateVersion);
+        Assert.NotEqual(projectionBeforeTutor.LearningStateVersion, projectionAfterTutor.LearningStateVersion);
+        Assert.Equal(projectionAfterTutor.LearningStateVersion, missionAfterTutor.LearningStateVersion);
+        Assert.Equal(projectionAfterTutor.LearningStateVersion, contextPackAfterTutor.LearningStateVersion);
     }
 
     [Fact]

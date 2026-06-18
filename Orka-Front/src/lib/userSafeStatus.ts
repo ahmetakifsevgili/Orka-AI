@@ -50,13 +50,52 @@ const STATUS_LABELS: Record<string, string> = {
   thin: "Havuz zayıf",
 };
 
+const SAFE_UNKNOWN_STATUS = "Durum izleniyor";
+const INTERNAL_STATUS_TOKENS = [
+  "cohere",
+  "debug",
+  "gemini",
+  "githubmodels",
+  "groq",
+  "model",
+  "openrouter",
+  "payload",
+  "provider",
+  "raw",
+  "secret",
+  "token",
+  "trace",
+];
+const INTERNAL_COMPOUND_MARKERS = [
+  "apikey",
+  "developerprompt",
+  "hiddenprompt",
+  "modelid",
+  "stacktrace",
+  "systemprompt",
+];
+
 export function userSafeStatus(value?: string | null): string {
   if (!value) return "";
   const normalized = value.toLowerCase().trim();
   if (STATUS_LABELS[normalized]) return STATUS_LABELS[normalized];
   const matched = Object.entries(STATUS_LABELS).find(([key]) => normalized.includes(key));
   if (matched) return matched[1];
-  return value.replace(/[_-]+/g, " ");
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  const compact = tokens.join("");
+  if (
+    INTERNAL_STATUS_TOKENS.some((marker) => tokens.includes(marker)) ||
+    INTERNAL_COMPOUND_MARKERS.some((marker) => compact.includes(marker))
+  ) {
+    return SAFE_UNKNOWN_STATUS;
+  }
+
+  const fallback = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!fallback || fallback.length > 64 || /[{}[\]<>:=/"'\\]/.test(fallback)) {
+    return SAFE_UNKNOWN_STATUS;
+  }
+
+  return fallback;
 }
 
 export function statusTone(value?: string | null): "good" | "watch" | "bad" | "neutral" {

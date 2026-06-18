@@ -3,6 +3,7 @@ namespace Orka.Core.DTOs;
 public sealed class LearningContextPackDto
 {
     public string SchemaVersion { get; set; } = "orka.learning-context-pack.v1.1";
+    public string LearningStateVersion { get; set; } = "lsv_unknown";
     public Guid? TopicId { get; set; }
     public Guid? SessionId { get; set; }
     public string ScopeStatus { get; set; } = "unknown";

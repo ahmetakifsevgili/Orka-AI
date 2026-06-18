@@ -8,9 +8,15 @@ describe("userSafeStatus", () => {
     expect(userSafeStatus("evidence_insufficient")).not.toContain("_");
   });
 
-  it("falls back without exposing raw separators for unknown statuses", () => {
-    expect(userSafeStatus("custom_provider_state")).toBe("custom provider state");
-    expect(userSafeStatus("custom-provider-state")).toBe("custom provider state");
+  it("falls back without exposing raw separators for benign unknown statuses", () => {
+    expect(userSafeStatus("custom_stage_state")).toBe("custom stage state");
+    expect(userSafeStatus("custom-stage-state")).toBe("custom stage state");
+  });
+
+  it("does not expose internal provider, prompt, token, or debug markers", () => {
+    expect(userSafeStatus("custom_provider_state")).toBe("Durum izleniyor");
+    expect(userSafeStatus("openrouter_model_id_missing")).toBe("Durum izleniyor");
+    expect(userSafeStatus("rawPrompt: developer payload")).toBe("Durum izleniyor");
   });
 
   it("classifies source statuses with stable tones", () => {

@@ -79,6 +79,7 @@ public sealed class OrkaMissionControlService : IOrkaMissionControlService
 
         return new OrkaMissionControlDto
         {
+            LearningStateVersion = state.LearningStateVersion,
             TopicId = state.TopicId,
             SessionId = state.SessionId,
             ScopeStatus = state.ScopeStatus,

@@ -1101,6 +1101,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       await refreshSources();
       setActiveSource(uploaded);
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Kaynak yüklenemedi.");
     } finally {
@@ -1140,6 +1141,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       }
       SourcesAPI.getTopicQuality(topicId).then(setSourceQuality).catch(() => undefined);
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Kaynaklı cevap üretilemedi.");
     } finally {
@@ -1176,6 +1178,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       }
       SourcesAPI.getTopicQuality(topicId).then(setSourceQuality).catch(() => undefined);
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Kaynak defteri cevabi uretilemedi.");
     } finally {
@@ -1201,6 +1204,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       setActiveQuestionThread(thread);
       await refreshQuestionThreads();
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
       toast.success("Source Q&A thread kaydedildi.");
     } catch {
       toast.error("Source Q&A thread olusturulamadi.");
@@ -1222,6 +1226,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       setThreadFollowUp("");
       await refreshQuestionThreads();
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Follow-up kaydedilemedi.");
     } finally {
@@ -1239,6 +1244,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       });
       setActiveQuestionThread(thread);
       await refreshQuestionThreads();
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Thread review durumu guncellenemedi.");
     } finally {
@@ -1259,6 +1265,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       setActiveQuestionThread(thread);
       await refreshQuestionThreads();
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
       toast.success("Thread Wiki notuna baglandi.");
     } catch {
       toast.error("Wiki trace yazilamadi.");
@@ -1301,6 +1308,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       });
       toast.success("Kaynak karsilastirma hazir.");
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Kaynaklar karsilastirilamadi.");
     } finally {
@@ -1424,6 +1432,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
       }
       await refreshSources();
       setNotebookRefreshTick((tick) => tick + 1);
+      onLearningProjectionChanged?.();
     } catch {
       toast.error("Kaynak silinemedi.");
     }
@@ -1518,6 +1527,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
         createdLinkCount: result.createdLinkCount,
         evidenceStatus: result.evidenceStatus,
       });
+      onLearningProjectionChanged?.();
       toast.success(result.createdPageCount > 0 ? "Wiki sayfa haritasi hazirlandi." : "Wiki sayfa haritasi guncellendi.");
     } catch {
       toast.error("Wiki sayfa haritasi senkronize edilemedi.");
@@ -1539,6 +1549,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
         confirmedLinkCount: result.confirmedLinkCount,
         suggestedLinkCount: result.suggestedLinkCount,
       });
+      onLearningProjectionChanged?.();
       toast.success("OrkaLM kaynak-kavram onerileri hazirlandi.");
     } catch {
       toast.error("Kaynak-kavram baglari guncellenemedi.");

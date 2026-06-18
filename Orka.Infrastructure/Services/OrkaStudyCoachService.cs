@@ -74,6 +74,9 @@ public sealed class OrkaStudyCoachService : IOrkaStudyCoachService
 
         return new OrkaStudyCoachDto
         {
+            LearningStateVersion = string.IsNullOrWhiteSpace(missionControl.LearningStateVersion)
+                ? state.LearningStateVersion
+                : missionControl.LearningStateVersion,
             TopicId = state.TopicId,
             SessionId = state.SessionId,
             ScopeStatus = state.ScopeStatus,

@@ -1814,6 +1814,7 @@ export interface LearningContextPackTraceDto {
 
 export interface LearningContextPackDto {
   schemaVersion?: string;
+  learningStateVersion?: string | null;
   topicId?: string | null;
   sessionId?: string | null;
   scopeStatus: string;
@@ -1828,6 +1829,7 @@ export interface LearningContextPackDto {
 export interface LearningWorkspaceState {
   topicId?: string | null;
   sessionId?: string | null;
+  learningStateVersion?: string | null;
   contextPack?: LearningContextPackDto | null;
   orkaLearningState?: OrkaLearningStateDto | null;
   missionControl?: OrkaMissionControlDto | null;
@@ -4750,6 +4752,7 @@ export interface OrkaLearningContractQuery {
 }
 
 export interface OrkaMissionControlDto {
+  learningStateVersion?: string | null;
   topicId?: string;
   sessionId?: string;
   scopeStatus: string;
@@ -4830,6 +4833,7 @@ export interface OrkaMissionSectionDto {
 }
 
 export interface OrkaStudyCoachDto {
+  learningStateVersion?: string | null;
   topicId?: string;
   sessionId?: string;
   scopeStatus: string;
@@ -4898,6 +4902,7 @@ export interface OrkaStudyCoachWarningDto {
 }
 
 export interface OrkaLearningStateDto {
+  learningStateVersion?: string | null;
   topicId?: string;
   sessionId?: string;
   scopeStatus: string;

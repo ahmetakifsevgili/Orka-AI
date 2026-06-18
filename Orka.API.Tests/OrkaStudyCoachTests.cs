@@ -150,8 +150,10 @@ public sealed class OrkaStudyCoachTests
 
         Assert.NotNull(dashboard.MissionControl);
         Assert.NotNull(dashboard.StudyCoach);
+        Assert.StartsWith("lsv_", dashboard.StudyCoach!.LearningStateVersion);
+        Assert.Equal(dashboard.MissionControl!.LearningStateVersion, dashboard.StudyCoach.LearningStateVersion);
         Assert.Contains(
-            dashboard.StudyCoach!.Actions,
+            dashboard.StudyCoach.Actions,
             a => a.ActionType == dashboard.MissionControl!.PrimaryMission.ActionType ||
                  a.ActionType is "repair_concept" or "repair_prerequisite");
         Assert.NotEqual("normal", dashboard.StudyCoach.RhythmStatus);

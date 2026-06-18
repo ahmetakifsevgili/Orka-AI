@@ -57,6 +57,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
         var pack = new LearningContextPackDto
         {
             SchemaVersion = SchemaVersion,
+            LearningStateVersion = state.LearningStateVersion,
             TopicId = resolvedTopicId,
             SessionId = resolvedSessionId,
             ScopeStatus = state.ScopeStatus,
@@ -316,6 +317,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
                     EstimatedTokenCount = EstimateSerializedTokens(new LearningContextPackDto
                     {
                         SchemaVersion = pack.SchemaVersion,
+                        LearningStateVersion = pack.LearningStateVersion,
                         TopicId = pack.TopicId,
                         SessionId = pack.SessionId,
                         ScopeStatus = pack.ScopeStatus,
@@ -394,6 +396,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
         var material = string.Join('\n', new[]
         {
             SchemaVersion,
+            $"state:{state.LearningStateVersion}",
             $"scope:{state.ScopeStatus}",
             $"topic:{state.TopicId?.ToString("N") ?? "global"}",
             $"session:{state.SessionId?.ToString("N") ?? "none"}",

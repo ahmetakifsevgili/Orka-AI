@@ -696,7 +696,7 @@ export default function ChatPanel({
                     currentContent += textChunk;
                     if (textChunk.trim()) streamProducedContent = true;
                   } else {
-                    console.warn("SSE stream parser discarded unparsed JSON chunk:", trimmed);
+                    console.warn("SSE stream parser discarded unparsed JSON chunk.", { length: trimmed.length });
                   }
                 }
 
@@ -978,7 +978,7 @@ export default function ChatPanel({
               if (!isJsonLike) {
                 currentContent += data;
               } else {
-                console.warn("Korteks SSE parser discarded unparsed JSON chunk:", trimmed);
+                console.warn("Korteks SSE parser discarded unparsed JSON chunk.", { length: trimmed.length });
               }
               // Clean the content before displaying, delaying any trailing partial tag
               let displayContent = currentContent;

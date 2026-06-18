@@ -15,6 +15,7 @@ $resultsRoot = Join-Path $root ".test-results\quick-backend"
 New-Item -ItemType Directory -Path $resultsRoot -Force | Out-Null
 $lifeTestFilter = "BackendLifeTests|PedagogicalReleaseClosureTests"
 $productCoherenceFilter = "OrkaUnifiedEvaluationHarnessTests|StudentSimulationEvaluationTests|OrkaCodeLearningIdeTests|OrkaNotebookStudioProTests|OrkaStudyRoomTests|OrkaSourceWikiProTests|OrkaExamWarRoomTests|OrkaStudyCoachTests|OrkaMissionControlTests|OrkaLearningStateCoherenceTests|LearningSnapshotTests"
+$planDiagnosticUnitFilter = "PlanDiagnosticTests|DiagnosticQuizQualityGateTests|DeepPlanDiagnosticTraceabilityTests|StudyIntentAnalyzerTests|PlanResearchCompressorTests"
 $regressionFilter = "DevContractTests|ContentSafetyTests|AiReliabilityTests|DataLifecycleTests|AuthTokenContractTests|PublicSecuritySurfaceTests|RequestBoundarySafetyTests|MigrationPolicyTests|BacklogBeforeProductionTests|ProductionSafetyLiteTests|AuthSwaggerHealthSmokeTests|EndpointBridgeSmokeTests|SourceRegressionGuardTests|RuntimeTelemetryHardeningTests|ToolCapabilityContractTests|FullyQualifiedName~Auth"
 $coordinationFilter = "TopicTreeScopeContractTests|RagScopeIntegrationTests|DashboardAggregationTests|DashboardCoordinationHealthTests|ChatParityTests|QuizLearningPipelineTests|PlanDiagnosticApiFlowTests|BackendCoordinationSmokeTests|KorteksContractTests|RegressionGateScriptTests"
 
@@ -55,6 +56,13 @@ Write-Host "[quick-backend] Building Orka.API.Tests..."
     -FilePath $dotnet `
     -ArgumentList @("build", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--configuration", "Debug", "--verbosity", "minimal", "/p:RestoreIgnoreFailedSources=true", "/nr:false")
 
+Write-Host "[quick-backend] Building Orka.Infrastructure.UnitTests..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 60 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("build", ".\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj", "--configuration", "Debug", "--verbosity", "minimal", "/p:RestoreIgnoreFailedSources=true", "/nr:false")
+
 Assert-LifecycleSqlServerProvisioned
 
 Write-Host "[quick-backend] Running backend lifetest release proof..."
@@ -70,6 +78,13 @@ Write-Host "[quick-backend] Running product coherence release proof..."
     -WorkingDirectory $root `
     -FilePath $dotnet `
     -ArgumentList @("test", ".\Orka.API.Tests\Orka.API.Tests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "product-coherence"), "--filter", $productCoherenceFilter, "--blame-hang", "--blame-hang-timeout", "60s")
+
+Write-Host "[quick-backend] Running plan diagnostic unit release guard..."
+& "$PSScriptRoot\run-command-with-timeout.ps1" `
+    -TimeoutSeconds 120 `
+    -WorkingDirectory $root `
+    -FilePath $dotnet `
+    -ArgumentList @("test", ".\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj", "--no-build", "--nologo", "--verbosity", "minimal", "-m:1", "--results-directory", (Join-Path $resultsRoot "plan-diagnostic-unit"), "--filter", $planDiagnosticUnitFilter, "--blame-hang", "--blame-hang-timeout", "30s")
 
 Write-Host "[quick-backend] Running stabilization regression baseline..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `

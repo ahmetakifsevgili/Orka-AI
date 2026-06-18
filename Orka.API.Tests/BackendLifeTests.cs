@@ -228,6 +228,13 @@ public sealed class BackendLifeTests
         Assert.Equal(state.PrimaryNextAction.ActionType, mission.PrimaryMission.ActionType);
         Assert.Equal(topicState.PrimaryNextAction.ActionType, dashboard.OrkaLearningState?.PrimaryNextAction.ActionType);
         Assert.Equal(topicMission.PrimaryMission.ActionType, dashboard.MissionControl?.PrimaryMission.ActionType);
+        Assert.StartsWith("lsv_", state.LearningStateVersion);
+        Assert.Equal(state.LearningStateVersion, mission.LearningStateVersion);
+        Assert.Equal(state.LearningStateVersion, contextPack.LearningStateVersion);
+        Assert.StartsWith("lsv_", topicState.LearningStateVersion);
+        Assert.Equal(topicState.LearningStateVersion, topicMission.LearningStateVersion);
+        Assert.Equal(topicState.LearningStateVersion, dashboard.OrkaLearningState?.LearningStateVersion);
+        Assert.Equal(topicMission.LearningStateVersion, dashboard.MissionControl?.LearningStateVersion);
         Assert.Equal(tree.RootId, dashboard.OrkaLearningState?.TopicId);
         Assert.Equal(tree.RootId, dashboard.MissionControl?.TopicId);
         Assert.Equal(state.ScopeStatus, mission.ScopeStatus);

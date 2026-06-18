@@ -87,6 +87,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       setFront("");
       setBack("");
       toast.success("Flashcard kaydedildi.");
+      onLearningProjectionChanged?.();
       await refresh();
     } catch {
       toast.error("Flashcard kaydedilemedi.");
@@ -108,6 +109,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       });
       setBookmarkNote("");
       toast.success("Bookmark eklendi.");
+      onLearningProjectionChanged?.();
       await refresh();
     } catch {
       toast.error("Bookmark eklenemedi.");
@@ -390,7 +392,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                       <p className="text-sm font-bold text-[#172033]">{card.front}</p>
                       <p className="mt-1 text-xs text-[#667085]">{card.back}</p>
                     </div>
-                    <button onClick={async () => { await FlashcardsAPI.delete(card.id); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Flashcard sil">
+                    <button onClick={async () => { await FlashcardsAPI.delete(card.id); onLearningProjectionChanged?.(); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Flashcard sil">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -409,7 +411,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                 <div key={item.reviewItemId ?? item.id} className="rounded-xl border border-[#526d82]/10 bg-[#f7f9fa]/70 px-3 py-2">
                   <p className="text-sm font-bold text-[#172033]">{item.conceptTag ?? item.skillTag ?? item.learningObjective ?? "Review item"}</p>
                   <p className="text-xs text-[#667085]">{item.status ?? item.origin ?? "due"}</p>
-                  <button onClick={async () => { await ReviewAPI.complete(item.reviewItemId ?? item.id, 4); await refresh(); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#547c61]/20 bg-[#d9e7de]/70 px-2.5 py-1 text-[11px] font-bold text-[#547c61]">
+                  <button onClick={async () => { await ReviewAPI.complete(item.reviewItemId ?? item.id, 4); onLearningProjectionChanged?.(); await refresh(); }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-[#547c61]/20 bg-[#d9e7de]/70 px-2.5 py-1 text-[11px] font-bold text-[#547c61]">
                     <CheckCircle2 className="h-3 w-3" /> Tamamla
                   </button>
                 </div>
@@ -424,7 +426,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                 <p className="text-sm font-bold text-[#172033]">{challenge.status ?? "today"}</p>
                 <p className="mt-1 text-xs text-[#667085]">{challenge.sourceSkillTag ?? challenge.sourceConceptTag ?? "Zayıf alan odaklı görev"}</p>
                 {challengeQuestions.slice(0, 2).map((q: any, i: number) => (
-                  <p key={i} className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-[#344054]">{typeof q === "string" ? q : q.question ?? JSON.stringify(q)}</p>
+                  <p key={i} className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-[#344054]">{typeof q === "string" ? q : q.question ?? "Gunun kisa kontrol sorusu hazirlaniyor."}</p>
                 ))}
                 {challenge.id && (
                   <button onClick={async () => { await DailyChallengeAPI.submit(challenge.id, "Frontend quick submit", 3, topicId); onLearningProjectionChanged?.(); await refresh(); }} className="mt-3 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white">
@@ -452,7 +454,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                       <p className="text-sm font-bold text-[#172033]">{item.title}</p>
                       {item.note && <p className="mt-1 text-xs text-[#667085]">{item.note}</p>}
                     </div>
-                    <button onClick={async () => { await BookmarksAPI.delete(item.id); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Bookmark sil">
+                    <button onClick={async () => { await BookmarksAPI.delete(item.id); onLearningProjectionChanged?.(); await refresh(); }} className="rounded-lg p-1 text-[#98a2b3] hover:bg-red-50 hover:text-red-500" aria-label="Bookmark sil">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>

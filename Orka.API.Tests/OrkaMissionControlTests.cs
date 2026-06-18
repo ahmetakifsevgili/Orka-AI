@@ -250,6 +250,9 @@ public sealed class OrkaMissionControlTests
         Assert.NotNull(dashboard.MissionControl);
         Assert.NotNull(dashboard.OrkaLearningState);
         Assert.Equal(dashboard.MissionControl!.PrimaryMission.ActionType, dashboard.OrkaLearningState!.PrimaryNextAction.ActionType);
+        Assert.StartsWith("lsv_", mission.LearningStateVersion);
+        Assert.Equal(mission.LearningStateVersion, dashboard.MissionControl.LearningStateVersion);
+        Assert.Equal(dashboard.MissionControl.LearningStateVersion, dashboard.OrkaLearningState.LearningStateVersion);
         Assert.Equal(mission.PrimaryMission.ActionType, dashboard.MissionControl.PrimaryMission.ActionType);
         Assert.Equal(mission.ScopeStatus, dashboard.MissionControl.ScopeStatus);
         Assert.Equal(mission.PrimaryMission.EntryPoint, dashboard.MissionControl.PrimaryMission.EntryPoint);
@@ -276,6 +279,7 @@ public sealed class OrkaMissionControlTests
         var json = JsonSerializer.Serialize(mission, JsonOptions);
 
         Assert.Equal(topicId, mission.TopicId);
+        Assert.StartsWith("lsv_", mission.LearningStateVersion);
         Assert.Equal("topic", mission.ScopeStatus);
         Assert.NotNull(mission.PrimaryMission);
         Assert.False(string.IsNullOrWhiteSpace(mission.PrimaryMission.MissionKey));

@@ -4,6 +4,8 @@ using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Core.Services;
 using Orka.Infrastructure.Data;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Orka.Infrastructure.Services;
 
@@ -91,9 +93,22 @@ public sealed class OrkaLearningStateService : IOrkaLearningStateService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(24)
             .ToArray();
+        var learningStateVersion = await BuildLearningStateVersionAsync(
+            userId,
+            resolved.TopicId,
+            resolved.SessionId,
+            scopeIds,
+            signalSummary,
+            sourceHealth,
+            primary,
+            secondary,
+            conflicts,
+            reasonCodes,
+            ct);
 
         return new OrkaLearningStateDto
         {
+            LearningStateVersion = learningStateVersion,
             TopicId = resolved.TopicId,
             SessionId = resolved.SessionId,
             ScopeStatus = resolved.SessionId.HasValue ? "session" : resolved.TopicId.HasValue ? "topic" : "global",
@@ -111,6 +126,194 @@ public sealed class OrkaLearningStateService : IOrkaLearningStateService
             GeneratedAt = DateTimeOffset.UtcNow
         };
     }
+
+    private async Task<string> BuildLearningStateVersionAsync(
+        Guid userId,
+        Guid? topicId,
+        Guid? sessionId,
+        IReadOnlyCollection<Guid> scopeIds,
+        OrkaLearningSignalSummaryDto signalSummary,
+        DashboardSourceHealthDto sourceHealth,
+        OrkaUnifiedNextActionDto primary,
+        IReadOnlyList<OrkaUnifiedNextActionDto> secondary,
+        IReadOnlyList<OrkaLearningStateConflictDto> conflicts,
+        IReadOnlyList<string> reasonCodes,
+        CancellationToken ct)
+    {
+        var evidenceQuality = sourceHealth.EvidenceQuality;
+        var facts = new List<string>
+        {
+            "orka.learning-state.v1",
+            $"scope:{(sessionId.HasValue ? "session" : topicId.HasValue ? "topic" : "global")}",
+            $"topic:{topicId?.ToString("N") ?? "global"}",
+            $"session:{sessionId?.ToString("N") ?? "none"}",
+            $"summary:{signalSummary.EvidenceCount}|{signalSummary.QuizAttemptCount}|{signalSummary.CorrectAttemptCount}|{signalSummary.WrongAttemptCount}|{signalSummary.BlankOrSkippedAttemptCount}|{signalSummary.DueReviewCount}|{signalSummary.LearningSignalCount}|{signalSummary.SourceCount}|{signalSummary.ReadySourceCount}|{signalSummary.WikiPageCount}|{signalSummary.StudyRoomSessionCount}|{signalSummary.StudyRoomQuestionCount}|{signalSummary.HasRealLearningData}",
+            $"source:{sourceHealth.Status}|{sourceHealth.CitationCoverage}|{sourceHealth.UnsupportedCitationCount}|{evidenceQuality?.Status ?? "unknown"}|{evidenceQuality?.SourceCount ?? 0}|{evidenceQuality?.ReadySourceCount ?? 0}",
+            $"primary:{ActionVersionMaterial(primary)}",
+            $"secondary:{string.Join(';', secondary.Select(ActionVersionMaterial).OrderBy(static value => value, StringComparer.Ordinal))}",
+            $"conflicts:{string.Join(';', conflicts.Select(c => $"{SafeVersionPart(c.ConflictCode)}:{SafeVersionPart(c.Severity)}:{string.Join(',', c.ReasonCodes.OrderBy(static r => r, StringComparer.Ordinal))}").OrderBy(static value => value, StringComparer.Ordinal))}",
+            $"reasons:{string.Join(',', reasonCodes.OrderBy(static r => r, StringComparer.Ordinal))}"
+        };
+
+        facts.Add(VersionFact(
+            "quiz",
+            await _db.QuizAttempts.AsNoTracking()
+                .Where(a => a.UserId == userId &&
+                            (!sessionId.HasValue || a.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (a.TopicId.HasValue && scopeIds.Contains(a.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(a => (DateTime?)a.CreatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "signals",
+            await _db.LearningSignals.AsNoTracking()
+                .Where(s => s.UserId == userId &&
+                            (!sessionId.HasValue || s.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (s.TopicId.HasValue && scopeIds.Contains(s.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(s => (DateTime?)s.CreatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "sources",
+            await _db.LearningSources.AsNoTracking()
+                .Where(s => s.UserId == userId &&
+                            !s.IsDeleted &&
+                            (!sessionId.HasValue || s.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (s.TopicId.HasValue && scopeIds.Contains(s.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(s => (DateTime?)s.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "source_quality",
+            await _db.SourceQualityReports.AsNoTracking()
+                .Where(r => r.UserId == userId &&
+                            (scopeIds.Count == 0 || (r.TopicId.HasValue && scopeIds.Contains(r.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(r => (DateTime?)r.GeneratedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "source_bundles",
+            await _db.SourceEvidenceBundles.AsNoTracking()
+                .Where(b => b.UserId == userId &&
+                            !b.IsDeleted &&
+                            (!sessionId.HasValue || b.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (b.TopicId.HasValue && scopeIds.Contains(b.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(b => (DateTime?)b.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "wiki_pages",
+            await _db.WikiPages.AsNoTracking()
+                .Where(p => p.UserId == userId &&
+                            !p.IsDeleted &&
+                            (!sessionId.HasValue || p.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || scopeIds.Contains(p.TopicId)))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(p => (DateTime?)p.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "wiki_blocks",
+            await _db.WikiBlocks.AsNoTracking()
+                .Where(b => !b.IsDeleted &&
+                            b.WikiPage.UserId == userId &&
+                            !b.WikiPage.IsDeleted &&
+                            (!sessionId.HasValue || b.WikiPage.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || scopeIds.Contains(b.WikiPage.TopicId)))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(b => (DateTime?)b.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "wiki_notebook",
+            await _db.WikiKnowledgeNotebookSnapshots.AsNoTracking()
+                .Where(n => n.UserId == userId &&
+                            !n.IsDeleted &&
+                            (scopeIds.Count == 0 || scopeIds.Contains(n.TopicId)))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(n => (DateTime?)n.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "active_snapshots",
+            await _db.ActiveLessonSnapshots.AsNoTracking()
+                .Where(s => s.UserId == userId &&
+                            !s.IsDeleted &&
+                            (!sessionId.HasValue || s.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (s.TopicId.HasValue && scopeIds.Contains(s.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(s => (DateTime?)s.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "student_snapshots",
+            await _db.StudentContextSnapshots.AsNoTracking()
+                .Where(s => s.UserId == userId &&
+                            !s.IsDeleted &&
+                            (!sessionId.HasValue || s.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (s.TopicId.HasValue && scopeIds.Contains(s.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(s => (DateTime?)s.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "concept_mastery",
+            await _db.ConceptMasteries.AsNoTracking()
+                .Where(m => m.UserId == userId &&
+                            (scopeIds.Count == 0 || (m.TopicId.HasValue && scopeIds.Contains(m.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(m => (DateTime?)(m.LastEvidenceAt ?? m.UpdatedAt))))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "review",
+            await _db.ReviewItems.AsNoTracking()
+                .Where(r => r.UserId == userId &&
+                            (scopeIds.Count == 0 || (r.TopicId.HasValue && scopeIds.Contains(r.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(r => (DateTime?)r.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "study_room",
+            await _db.ClassroomSessions.AsNoTracking()
+                .Where(c => c.UserId == userId &&
+                            (!sessionId.HasValue || c.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (c.TopicId.HasValue && scopeIds.Contains(c.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(c => (DateTime?)c.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "study_room_interactions",
+            await _db.ClassroomInteractions.AsNoTracking()
+                .Where(i => i.ClassroomSession.UserId == userId &&
+                            (!sessionId.HasValue || i.ClassroomSession.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || (i.ClassroomSession.TopicId.HasValue && scopeIds.Contains(i.ClassroomSession.TopicId.Value))))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(i => (DateTime?)i.CreatedAt)))
+                .FirstOrDefaultAsync(ct)));
+        facts.Add(VersionFact(
+            "notebook_packs",
+            await _db.LearningNotebookPacks.AsNoTracking()
+                .Where(p => p.UserId == userId &&
+                            !p.IsDeleted &&
+                            (!sessionId.HasValue || p.SessionId == sessionId.Value) &&
+                            (scopeIds.Count == 0 || scopeIds.Contains(p.TopicId)))
+                .GroupBy(_ => 1)
+                .Select(g => new VersionFactProjection(g.Count(), g.Max(p => (DateTime?)p.UpdatedAt)))
+                .FirstOrDefaultAsync(ct)));
+
+        var material = string.Join('\n', facts);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        return $"lsv_{Convert.ToHexString(bytes).ToLowerInvariant()[..24]}";
+    }
+
+    private static string VersionFact(string name, VersionFactProjection? fact) =>
+        $"{name}:{fact?.Count ?? 0}:{FormatVersionTimestamp(fact?.LatestAt)}";
+
+    private static string FormatVersionTimestamp(DateTime? value) =>
+        value.HasValue ? value.Value.ToUniversalTime().Ticks.ToString() : "0";
+
+    private static string ActionVersionMaterial(OrkaUnifiedNextActionDto action) =>
+        $"{SafeVersionPart(action.ActionType)}:{SafeVersionPart(action.Priority)}:{action.TopicId?.ToString("N") ?? string.Empty}:{SafeVersionPart(action.ConceptKey)}:{SafeVersionPart(action.Source)}:{string.Join(',', action.ReasonCodes.OrderBy(static r => r, StringComparer.Ordinal))}";
+
+    private static string SafeVersionPart(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Replace('\n', ' ').Replace('\r', ' ');
 
     private async Task<ResolvedScope?> ResolveScopeAsync(Guid userId, Guid? topicId, Guid? sessionId, CancellationToken ct)
     {
@@ -690,6 +893,8 @@ public sealed class OrkaLearningStateService : IOrkaLearningStateService
     };
 
     private static bool NotBlank(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private sealed record VersionFactProjection(int Count, DateTime? LatestAt);
 
     private sealed record ResolvedScope(Guid? TopicId, Guid? SessionId);
 }

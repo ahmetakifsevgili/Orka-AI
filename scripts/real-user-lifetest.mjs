@@ -375,6 +375,60 @@ function extractAction(payload) {
   );
 }
 
+function extractLearningStateVersion(payload) {
+  return (
+    payload?.learningStateVersion ??
+    payload?.orkaLearningState?.learningStateVersion ??
+    payload?.missionControl?.learningStateVersion ??
+    payload?.studyCoach?.learningStateVersion ??
+    null
+  );
+}
+
+function assertProjectionCoherence(persona, label, keys) {
+  const entries = Object.entries(keys)
+    .filter(([name]) => name !== "dashboard")
+    .map(([name, key]) => ({ name, key, payload: persona.snapshots[key] }))
+    .filter((entry) => entry.payload);
+  if (entries.length === 0) {
+    warn("LearningOS", `${persona.slug} ${label} projection coherence`, "no projection payloads captured");
+    return;
+  }
+
+  const versions = entries.map((entry) => ({
+    name: entry.name,
+    version: extractLearningStateVersion(entry.payload),
+  }));
+  const missing = versions.filter((entry) => !String(entry.version ?? "").startsWith("lsv_"));
+  if (missing.length > 0) {
+    fail("LearningOS", `${persona.slug} ${label} projection version`, `missing/invalid: ${missing.map((entry) => entry.name).join(", ")}`);
+    return;
+  }
+
+  const uniqueVersions = unique(versions.map((entry) => entry.version));
+  if (uniqueVersions.length === 1) {
+    pass("LearningOS", `${persona.slug} ${label} projection version coherence`, `version=${shortId(uniqueVersions[0])}`);
+  } else {
+    fail("LearningOS", `${persona.slug} ${label} projection version coherence`, versions.map((entry) => `${entry.name}:${shortId(entry.version)}`).join(" | "));
+  }
+
+  const dashboard = persona.snapshots[keys.dashboard];
+  if (!dashboard) return;
+  const dashboardTopicId = dashboard.orkaLearningState?.topicId ?? dashboard.missionControl?.topicId;
+  if (dashboardTopicId && dashboardTopicId !== persona.topicId) {
+    warn("LearningOS", `${persona.slug} ${label} dashboard projection scope`, `dashboard topic=${shortId(dashboardTopicId)}, persona topic=${shortId(persona.topicId)}`);
+    return;
+  }
+
+  const dashboardStateVersion = dashboard.orkaLearningState?.learningStateVersion;
+  const dashboardMissionVersion = dashboard.missionControl?.learningStateVersion;
+  if (dashboardStateVersion && dashboardMissionVersion && dashboardStateVersion !== dashboardMissionVersion) {
+    fail("LearningOS", `${persona.slug} ${label} dashboard embedded projection mismatch`, `${shortId(dashboardStateVersion)} != ${shortId(dashboardMissionVersion)}`);
+  } else if (dashboardStateVersion || dashboardMissionVersion) {
+    pass("LearningOS", `${persona.slug} ${label} dashboard embedded projection coherence`, `version=${shortId(dashboardStateVersion ?? dashboardMissionVersion)}`);
+  }
+}
+
 async function preflight() {
   console.log(`\nOrka real-user lifetest`);
   console.log(`Base URL: ${BASE_URL}`);
@@ -574,6 +628,14 @@ async function baselineLearningOs(persona) {
   await getContract(persona, "learning state", "GET", `/api/learning/orka-state${topicQuery}`, { area: "LearningOS" });
   await getContract(persona, "mission control", "GET", `/api/learning/mission-control${topicQuery}`, { area: "LearningOS" });
   await getContract(persona, "study coach", "GET", `/api/learning/study-coach${topicQuery}`, { area: "LearningOS" });
+  await getContract(persona, "context pack", "GET", `/api/learning/context-pack${topicQuery}`, { area: "LearningOS" });
+  assertProjectionCoherence(persona, "baseline", {
+    dashboard: "dashboard today",
+    state: "learning state",
+    mission: "mission control",
+    coach: "study coach",
+    contextPack: "context pack",
+  });
   await getContract(persona, "review due", "GET", `/api/review/due${topicQuery}`, { area: "Review" });
   await getContract(persona, "wiki pages", "GET", `/api/wiki/${persona.topicId}`, { area: "Wiki" });
   await getContract(persona, "wiki graph", "GET", `/api/wiki/${persona.topicId}/graph`, { area: "Wiki", optional: true });
@@ -890,8 +952,17 @@ async function codeFlow(persona) {
 async function refreshCoreContracts(persona) {
   const topicQuery = qs({ topicId: persona.topicId });
   await getContract(persona, "dashboard today refreshed", "GET", "/api/dashboard/today", { area: "Dashboard" });
+  await getContract(persona, "learning state refreshed", "GET", `/api/learning/orka-state${topicQuery}`, { area: "LearningOS" });
   await getContract(persona, "mission control refreshed", "GET", `/api/learning/mission-control${topicQuery}`, { area: "LearningOS" });
   await getContract(persona, "study coach refreshed", "GET", `/api/learning/study-coach${topicQuery}`, { area: "LearningOS" });
+  await getContract(persona, "context pack refreshed", "GET", `/api/learning/context-pack${topicQuery}`, { area: "LearningOS" });
+  assertProjectionCoherence(persona, "refreshed", {
+    dashboard: "dashboard today refreshed",
+    state: "learning state refreshed",
+    mission: "mission control refreshed",
+    coach: "study coach refreshed",
+    contextPack: "context pack refreshed",
+  });
   await getContract(persona, "study room refreshed", "GET", `/api/classroom/study-room${topicQuery}`, { area: "StudyRoom" });
   await getContract(persona, "source wiki pro refreshed", "GET", `/api/sources/wiki-pro${topicQuery}`, { area: "SourceWikiPro" });
   await getContract(persona, "notebook studio pro refreshed", "GET", `/api/notebook-studio/pro${topicQuery}`, { area: "Notebook" });

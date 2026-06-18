@@ -488,6 +488,7 @@ export default function Home({ initialView }: { initialView?: string }) {
             activeTopic={activeTopic}
             sessionId={sessionId}
             onViewChange={handleViewChange}
+            workspaceState={workspaceState}
             workspace={
               (wikiTopicId ?? activeTopic?.id) ? (
                 <WikiMainPanel topicId={(wikiTopicId ?? activeTopic?.id) as string} sessionId={sessionId} workspaceState={workspaceState} onLearningProjectionChanged={handleLearningProjectionChanged} onClose={() => handleViewChange("tutor")} />
@@ -507,6 +508,7 @@ export default function Home({ initialView }: { initialView?: string }) {
               activeTopic={activeTopic}
               sessionId={sessionId}
               onViewChange={handleViewChange}
+              workspaceState={workspaceState}
               workspace={
                 (wikiTopicId ?? activeTopic?.id) ? (
                   <WikiMainPanel

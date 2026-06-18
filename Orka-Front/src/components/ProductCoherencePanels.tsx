@@ -70,6 +70,7 @@ type BasePanelProps = {
   sessionId: string | null;
   onViewChange: (view: string) => void;
   workspace?: ReactNode;
+  workspaceState?: LearningWorkspaceState | null;
 };
 
 type HomePanelProps = BasePanelProps & {
@@ -1035,9 +1036,10 @@ function CompactList({ title, items }: { title: string; items: Array<{ title: st
   );
 }
 
-export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, workspace }: BasePanelProps) {
+export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, workspace, workspaceState }: BasePanelProps) {
   const [state, setState] = useState<LoadState<OrkaSourceWikiProDto>>({ loading: true, data: null, error: false });
   const params = useMemo(() => compactParams(activeTopic, sessionId), [activeTopic, sessionId]);
+  const learningStateVersion = workspaceState?.learningStateVersion ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -1048,7 +1050,7 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, learningStateVersion]);
 
   const data = state.data;
   const warnings: SourceWikiProWarningDto[] = data ? [...safeList(data.citationWarnings), ...safeList(data.examWarRoomWarnings), ...safeList(data.missionControlWarnings), ...safeList(data.conflictWarnings)] : [];
@@ -1203,9 +1205,10 @@ export function SourceWikiProPanel({ activeTopic, sessionId, onViewChange, works
   );
 }
 
-export function NotebookStudioProPanel({ activeTopic, sessionId, onViewChange, workspace }: BasePanelProps) {
+export function NotebookStudioProPanel({ activeTopic, sessionId, onViewChange, workspace, workspaceState }: BasePanelProps) {
   const [state, setState] = useState<LoadState<OrkaNotebookStudioProDto>>({ loading: true, data: null, error: false });
   const params = useMemo(() => compactParams(activeTopic, sessionId), [activeTopic, sessionId]);
+  const learningStateVersion = workspaceState?.learningStateVersion ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -1216,7 +1219,7 @@ export function NotebookStudioProPanel({ activeTopic, sessionId, onViewChange, w
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, learningStateVersion]);
 
   const data = state.data;
   const actions: NotebookStudioPackActionDto[] = data

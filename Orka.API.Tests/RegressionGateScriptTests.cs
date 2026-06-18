@@ -75,6 +75,15 @@ public sealed class RegressionGateScriptTests
         "LearningSnapshotTests"
     ];
 
+    private static readonly string[] MandatoryPlanDiagnosticUnitTests =
+    [
+        "PlanDiagnosticTests",
+        "DiagnosticQuizQualityGateTests",
+        "DeepPlanDiagnosticTraceabilityTests",
+        "StudyIntentAnalyzerTests",
+        "PlanResearchCompressorTests"
+    ];
+
     [Fact]
     public void QuickCoordinationRunsMandatoryCoordinationTests()
     {
@@ -117,6 +126,17 @@ public sealed class RegressionGateScriptTests
 
         Assert.Contains("coordination regression baseline", script, StringComparison.OrdinalIgnoreCase);
         foreach (var testName in MandatoryCoordinationTests)
+            Assert.Contains(testName, script);
+    }
+
+    [Fact]
+    public void QuickBackendIncludesPlanDiagnosticUnitReleaseGuard()
+    {
+        var script = Read("scripts/quick-backend.ps1");
+
+        Assert.Contains("plan diagnostic unit release guard", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orka.Infrastructure.UnitTests.csproj", script, StringComparison.Ordinal);
+        foreach (var testName in MandatoryPlanDiagnosticUnitTests)
             Assert.Contains(testName, script);
     }
 

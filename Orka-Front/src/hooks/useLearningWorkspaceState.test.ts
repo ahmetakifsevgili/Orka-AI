@@ -9,8 +9,10 @@ import type {
 } from "@/lib/types";
 
 const now = "2026-06-18T09:00:00.000Z";
+const learningStateVersion = "lsv_projection_test";
 
 const mission = {
+  learningStateVersion,
   topicId: "topic-projection",
   sessionId: "session-projection",
   scopeStatus: "session",
@@ -43,6 +45,7 @@ const mission = {
 } satisfies OrkaMissionControlDto;
 
 const learningState = {
+  learningStateVersion,
   topicId: "topic-projection",
   sessionId: "session-projection",
   scopeStatus: "session",
@@ -126,6 +129,7 @@ const learningState = {
 } satisfies OrkaLearningStateDto;
 
 const studyCoach = {
+  learningStateVersion,
   topicId: "topic-projection",
   sessionId: "session-projection",
   scopeStatus: "session",
@@ -176,6 +180,7 @@ describe("buildLearningWorkspaceState", () => {
       studyCoach,
       contextPack: {
         schemaVersion: "orka.learning-context-pack.v1.1",
+        learningStateVersion,
         topicId: "topic-projection",
         sessionId: "session-projection",
         scopeStatus: "session",
@@ -228,6 +233,7 @@ describe("buildLearningWorkspaceState", () => {
 
     expect(state.topicId).toBe("topic-projection");
     expect(state.sessionId).toBe("session-projection");
+    expect(state.learningStateVersion).toBe(learningStateVersion);
     expect(state.missionControl?.primaryMission.label).toBe("Repair weak concept");
     expect(state.orkaLearningState?.sourceHealth.status).toBe("wiki_backed");
     expect(state.studyCoach?.todayPlan).toBe("Repair first.");

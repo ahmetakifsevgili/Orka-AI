@@ -59,6 +59,7 @@ export type BuildLearningWorkspaceStateInput = {
 const emptyState = (topicId?: string | null, sessionId?: string | null): LearningWorkspaceState => ({
   topicId: topicId ?? null,
   sessionId: sessionId ?? null,
+  learningStateVersion: null,
   contextPack: null,
   orkaLearningState: null,
   missionControl: null,
@@ -198,6 +199,16 @@ function nextActionsFromProjection(
   });
 }
 
+function resolveLearningStateVersion(input: BuildLearningWorkspaceStateInput): string | null {
+  return (
+    input.orkaLearningState?.learningStateVersion ??
+    input.missionControl?.learningStateVersion ??
+    input.studyCoach?.learningStateVersion ??
+    input.contextPack?.learningStateVersion ??
+    null
+  );
+}
+
 export function buildLearningWorkspaceState(input: BuildLearningWorkspaceStateInput): LearningWorkspaceState {
   const recentArtifacts = input.artifacts?.items?.slice(0, 6) ?? [];
   const currentPlanStep = normalizePlanStep(firstPlanStep(input.planQuality), input.metadata);
@@ -225,6 +236,7 @@ export function buildLearningWorkspaceState(input: BuildLearningWorkspaceStateIn
   return {
     topicId: input.topicId ?? input.orkaLearningState?.topicId ?? input.missionControl?.topicId ?? input.studyCoach?.topicId ?? null,
     sessionId: input.sessionId ?? input.orkaLearningState?.sessionId ?? input.missionControl?.sessionId ?? input.studyCoach?.sessionId ?? null,
+    learningStateVersion: resolveLearningStateVersion(input),
     contextPack: input.contextPack ?? null,
     orkaLearningState: input.orkaLearningState ?? null,
     missionControl: input.missionControl ?? null,
@@ -271,7 +283,13 @@ export function useLearningWorkspaceState({
       metadata?.tutorActionTraceId,
       metadata?.sourceReadiness,
       metadata?.currentPlanStepId,
+      metadata?.currentPlanStepTitle,
+      metadata?.currentPlanTutorMove,
+      metadata?.currentPlanQuizHook,
+      metadata?.activeConceptKey,
+      metadata?.planSourceReadiness,
       metadata?.latestAssessmentMode,
+      metadata?.tutorNextLearningActions?.join(","),
       includeContextPack,
       refreshKey,
     ].filter(Boolean).join("|"),
@@ -285,7 +303,13 @@ export function useLearningWorkspaceState({
       metadata?.tutorActionTraceId,
       metadata?.sourceReadiness,
       metadata?.currentPlanStepId,
+      metadata?.currentPlanStepTitle,
+      metadata?.currentPlanTutorMove,
+      metadata?.currentPlanQuizHook,
+      metadata?.activeConceptKey,
+      metadata?.planSourceReadiness,
       metadata?.latestAssessmentMode,
+      metadata?.tutorNextLearningActions,
       refreshKey,
     ],
   );
