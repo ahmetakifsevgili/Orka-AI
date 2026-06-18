@@ -16,6 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
   citation_unsupported: "Citation kaynakla eşleşmiyor",
   low_confidence: "Güven düşük",
   source_grounded: "Kaynakla destekli",
+  wiki_backed: "Wiki ile destekli",
   model_only: "Genel açıklama",
   hint_first_then_scaffold: "Önce ipucu, sonra adım adım",
   remediate: "Telafi anlatımı",
@@ -60,7 +61,7 @@ export function userSafeStatus(value?: string | null): string {
 
 export function statusTone(value?: string | null): "good" | "watch" | "bad" | "neutral" {
   const normalized = (value ?? "").toLowerCase();
-  if (/(healthy|ready|source_grounded|complete|success)/.test(normalized)) return "good";
+  if (/(healthy|ready|source_grounded|wiki_backed|complete|success)/.test(normalized)) return "good";
   if (/(degraded|blocked|timeout|unsupported|missing|error|critical|failed)/.test(normalized)) return "bad";
   if (/(watch|low|thin|unknown|insufficient|needs_input|skipped)/.test(normalized)) return "watch";
   return "neutral";

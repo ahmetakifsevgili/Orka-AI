@@ -3,8 +3,11 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Orka.Core.Constants;
+using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
@@ -84,6 +87,12 @@ public sealed class PlanDiagnosticApiFlowTests
         Assert.NotNull(firstAnswerBody);
         Assert.Equal(1, firstAnswerBody!.AnsweredQuestionCount);
 
+        var duplicateFirstAnswer = await user.Client.PostAsJsonAsync($"/api/quiz/plan-diagnostic/{ready.PlanRequestId}/attempt", BuildAnswer(questions[0], topicId, ready.QuizRunId, isCorrect: false));
+        Assert.Equal(HttpStatusCode.OK, duplicateFirstAnswer.StatusCode);
+        var duplicateFirstAnswerBody = await duplicateFirstAnswer.Content.ReadFromJsonAsync<PlanDiagnosticAnswerResponse>();
+        Assert.NotNull(duplicateFirstAnswerBody);
+        Assert.Equal(1, duplicateFirstAnswerBody!.AnsweredQuestionCount);
+
         PlanDiagnosticAnswerResponse? lastAnswerBody = firstAnswerBody;
         for (var i = 1; i < questions.Count; i++)
         {
@@ -105,6 +114,46 @@ public sealed class PlanDiagnosticApiFlowTests
         Assert.Equal(PlanDiagnosticStatus.PlanGenerated, finalizeBody!.Status);
         Assert.True(finalizeBody.PlanGenerated);
         Assert.NotEmpty(finalizeBody.GeneratedTopicIds);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var firstAttempts = await db.QuizAttempts
+            .AsNoTracking()
+            .Where(a => a.UserId == user.UserId && a.AssessmentItemId == questions[0].AssessmentItemId)
+            .ToListAsync();
+        var firstAttempt = Assert.Single(firstAttempts);
+        Assert.Equal(1, await db.LearningSignals.CountAsync(s =>
+            s.UserId == user.UserId &&
+            s.QuizAttemptId == firstAttempt.Id &&
+            s.SignalType == LearningSignalTypes.QuizAnswered));
+        Assert.Equal(1, await db.LearningSignals.CountAsync(s =>
+            s.UserId == user.UserId &&
+            s.QuizAttemptId == firstAttempt.Id &&
+            s.SignalType == LearningSignalTypes.WeaknessDetected));
+        Assert.True(await db.WikiBlocks.CountAsync(b =>
+            b.QuizAttemptId == firstAttempt.Id &&
+            !b.IsDeleted) <= 2);
+
+        var tutor = await user.Client.PostAsJsonAsync("/api/chat/message", new
+        {
+            content = "Ilk yanlis yaptigim kavrami telafi et ve sonra mikro kontrol sor.",
+            topicId
+        });
+        tutor.EnsureSuccessStatusCode();
+        var tutorBody = await tutor.Content.ReadFromJsonAsync<ChatMessageResponse>();
+        Assert.NotNull(tutorBody);
+        Assert.True(
+            tutorBody!.Metadata?.RemediationLesson != null ||
+            tutorBody.Metadata?.TutorToolDecision?.SelectedAction == "start_remediation");
+        Assert.True(await db.LearningSignals.AnyAsync(s =>
+            s.UserId == user.UserId &&
+            s.TopicId == topicId &&
+            s.SignalType == LearningSignalTypes.RemediationStarted));
+        Assert.True(await db.WikiBlocks.AnyAsync(b =>
+            b.WikiPage.UserId == user.UserId &&
+            b.WikiPage.TopicId == topicId &&
+            b.BlockType == WikiBlockType.RepairNote &&
+            !b.IsDeleted));
     }
 
     [Fact]

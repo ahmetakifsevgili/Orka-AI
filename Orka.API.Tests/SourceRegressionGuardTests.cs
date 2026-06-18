@@ -995,6 +995,22 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("image.pollinations.ai", securitySmoke);
     }
 
+    [Fact]
+    public void ProviderRoutingGuards_OpenRouterModelsArePinnedAndKorteksHonorsGeminiDisabled()
+    {
+        var appSettings = ReadRepoText("Orka.API/appsettings.json");
+        var korteksAgent = ReadRepoText("Orka.Infrastructure/Services/KorteksAgent.cs");
+
+        Assert.Contains("anthropic/claude-opus-4.7", appSettings);
+        Assert.Contains("nvidia/nemotron-nano-9b-v2:free", appSettings);
+        Assert.DoesNotContain("anthropic/claude-opus-4-7", appSettings);
+        Assert.DoesNotContain("nvidia/nemotron-nano-9b-v2\"", appSettings);
+
+        Assert.Contains("AI:Gemini:Enabled", korteksAgent);
+        Assert.Contains("AI:Gemini:Enabled false", korteksAgent);
+        Assert.Contains("\"openrouter\" => geminiEnabled", korteksAgent);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;

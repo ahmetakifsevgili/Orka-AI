@@ -523,6 +523,18 @@ async function installShellMocks(page: Page) {
       return fulfillJson(route, dashboardToday);
     }
 
+    if (path === "/dashboard/stats") {
+      return fulfillJson(route, {});
+    }
+
+    if (path === "/quiz/stats") {
+      return fulfillJson(route, {});
+    }
+
+    if (path === "/user/gamification") {
+      return fulfillJson(route, {});
+    }
+
     if (path === "/learning/mission-control") {
       return fulfillJson(route, missionControl);
     }

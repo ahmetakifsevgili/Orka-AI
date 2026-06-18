@@ -48,6 +48,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
     private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ITutorPolicyTraceService? _policyTrace;
     private readonly IWikiLearningTraceWriter? _wikiTraceWriter;
+    private readonly ILearningSignalService? _learningSignals;
     private readonly ILogger<AgentOrchestratorService> _logger;
 
     public AgentOrchestratorService(
@@ -74,7 +75,8 @@ public class AgentOrchestratorService : IAgentOrchestrator
         ITopicScopeResolver topicScopeResolver,
         ILogger<AgentOrchestratorService> logger,
         ITutorPolicyTraceService? policyTrace = null,
-        IWikiLearningTraceWriter? wikiTraceWriter = null)
+        IWikiLearningTraceWriter? wikiTraceWriter = null,
+        ILearningSignalService? learningSignals = null)
     {
         _db = db;
         _tutorAgent = tutorAgent;
@@ -99,6 +101,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
         _topicScopeResolver = topicScopeResolver;
         _policyTrace = policyTrace;
         _wikiTraceWriter = wikiTraceWriter;
+        _learningSignals = learningSignals;
         _logger = logger;
     }
 
@@ -316,6 +319,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                                      (syncResponse.Contains("[{") && syncResponse.Contains("\"question\""));
                 var msgType = isQuizResponse ? MessageType.Quiz : MessageType.General;
 
+                await RecordTutorRemediationLifecycleSignalAsync(userId, session, metadata, syncMsgId, syncAgentRole);
                 await AppendTutorTurnToWikiAsync(userId, session, content, syncResponse, syncMsgId, metadata, syncAgentRole, msgType);
 
                 yield return syncResponse;
@@ -408,6 +412,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
                 session.CurrentState,
                 isStream: true);
             var metadata = await BuildTutorMetadataAsync(userId, session, fullResponse);
+            await RecordTutorRemediationLifecycleSignalAsync(userId, session, metadata, msgId, "TutorAgent", ct);
             await AppendTutorTurnToWikiAsync(userId, session, content, fullResponse, msgId, metadata, "TutorAgent", MessageType.General);
             yield return System.Text.Json.JsonSerializer.Serialize(new
             {
@@ -767,6 +772,7 @@ public class AgentOrchestratorService : IAgentOrchestrator
             isStream: false);
 
         var metadata = await BuildTutorMetadataAsync(userId, session, aiResponse);
+        await RecordTutorRemediationLifecycleSignalAsync(userId, session, metadata, aiMsg.Id, responseAgentRole);
         var tutorWikiPageId = await AppendTutorTurnToWikiAsync(userId, session, content, aiResponse, aiMsg.Id, metadata, responseAgentRole, aiMsg.MessageType);
         if (tutorWikiPageId.HasValue)
         {
@@ -1150,6 +1156,89 @@ public class AgentOrchestratorService : IAgentOrchestrator
         if (normalized.Contains("wiki")) return "wiki_backed";
         if (normalized.Contains("insufficient") || normalized.Contains("degraded") || normalized.Contains("stale")) return "evidence_insufficient";
         return "model_assisted";
+    }
+
+    private async Task RecordTutorRemediationLifecycleSignalAsync(
+        Guid userId,
+        Session session,
+        ChatResponseMetadata metadata,
+        Guid assistantMessageId,
+        string agentRole,
+        CancellationToken ct = default)
+    {
+        if (_learningSignals == null ||
+            !session.TopicId.HasValue ||
+            !string.Equals(agentRole, "TutorAgent", StringComparison.OrdinalIgnoreCase) ||
+            !IsRemediationTurn(metadata))
+        {
+            return;
+        }
+
+        try
+        {
+            var assistantMessageRef = assistantMessageId.ToString("D");
+            var alreadyRecorded = await _db.LearningSignals.AsNoTracking().AnyAsync(s =>
+                s.UserId == userId &&
+                s.TopicId == session.TopicId.Value &&
+                s.SessionId == session.Id &&
+                s.SignalType == LearningSignalTypes.RemediationStarted &&
+                s.PayloadJson != null &&
+                s.PayloadJson.Contains(assistantMessageRef),
+                ct);
+            if (alreadyRecorded) return;
+
+            var conceptKey = FirstNonEmpty(
+                metadata.RemediationLesson?.ConceptKey,
+                metadata.RemediationSeed?.ConceptKey,
+                metadata.MisconceptionSignal?.ConceptKey,
+                metadata.ActiveConceptKey,
+                metadata.CurrentPlanStepTitle);
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schemaVersion = "orka.remediation-lifecycle.v1",
+                assistantMessageId,
+                remediationId = metadata.RemediationLesson?.RemediationId,
+                conceptKey,
+                selectedAction = metadata.TutorToolDecision?.SelectedAction,
+                deliveryMode = metadata.TutorLessonDelivery?.DeliveryMode,
+                repairType = metadata.RemediationLesson?.RepairType,
+                triggerType = metadata.RemediationLesson?.Trigger.TriggerType,
+                confidence = metadata.RemediationLesson?.Confidence,
+                sourceBasis = metadata.RemediationLesson?.SourceBasis,
+                recordedAt = DateTimeOffset.UtcNow
+            });
+
+            await _learningSignals.RecordSignalAsync(
+                userId,
+                session.TopicId,
+                session.Id,
+                LearningSignalTypes.RemediationStarted,
+                string.IsNullOrWhiteSpace(conceptKey) ? null : conceptKey,
+                FirstNonEmpty(metadata.CurrentPlanStepTitle, metadata.RemediationLesson?.Trigger.UserSafeLabel),
+                score: null,
+                isPositive: false,
+                payloadJson: payload,
+                ct: ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogDebug("[TutorRemediation] Lifecycle signal write skipped. UserRef={UserRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(session.Id, "session"),
+                LogPrivacyGuard.SafeExceptionType(ex));
+        }
+    }
+
+    private static bool IsRemediationTurn(ChatResponseMetadata metadata)
+    {
+        if (metadata.RemediationLesson != null) return true;
+        if (string.Equals(metadata.TutorToolDecision?.SelectedAction, "start_remediation", StringComparison.OrdinalIgnoreCase)) return true;
+
+        var deliveryMode = metadata.TutorLessonDelivery?.DeliveryMode;
+        if (deliveryMode is "misconception_repair" or "prerequisite_repair") return true;
+
+        var policy = metadata.TutorRemediationPolicy;
+        return policy is "guided_repair" or "prerequisite_review";
     }
 
     private static string BuildTutorWikiBlockContent(string userContent, string assistantContent, ChatResponseMetadata metadata)

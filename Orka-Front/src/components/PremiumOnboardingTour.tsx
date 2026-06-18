@@ -11,7 +11,7 @@ export function usePremiumOnboarding() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.isOnboardingCompleted !== false) return;
+    if (user.isOnboardingCompleted === false) return;
 
     const storageKey = `orka_premium_tour_seen_v3_${user.id}`;
 

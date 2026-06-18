@@ -75,13 +75,43 @@ public sealed class ChatParityTests
             .SingleAsync(b => b.WikiPageId == pageId && b.BlockType == WikiBlockType.StudentQuestion);
 
         Assert.Equal("tutor", block.Source);
-        Assert.Equal("model_assisted", block.SourceBasis);
+        Assert.Equal("wiki_backed", block.SourceBasis);
         Assert.Contains("Ogrenci sorusu:", block.Content);
         Assert.Contains("Tutor notu:", block.Content);
         Assert.DoesNotContain("rawProviderPayload", block.Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("hiddenPrompt", block.Content, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("student", questionBlock.Source);
         Assert.Contains("Big-O mantigini", questionBlock.Content);
+    }
+
+    [Fact]
+    public async Task NonStreamTutorChat_DoesNotCreateWikiBackedCaptureWithoutWikiContext()
+    {
+        var capture = new CapturingPostProcessor();
+        await using var factory = CreateFactory(capture, services =>
+        {
+            services.RemoveAll<IWikiLearningTraceWriter>();
+        });
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "chat-no-wiki-capture");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Chat No Wiki Capture");
+
+        var response = await user.Client.PostAsJsonAsync("/api/chat/message", new
+        {
+            content = "Big-O mantigini kisa bir ornekle anlat.",
+            topicId
+        });
+
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ChatMessageResponse>();
+
+        Assert.NotNull(body);
+        Assert.False(body!.WikiUpdated);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        Assert.False(await db.WikiBlocks.AnyAsync(b =>
+            b.WikiPage.UserId == user.UserId &&
+            b.SourceBasis == "wiki_backed"));
     }
 
     [Fact]

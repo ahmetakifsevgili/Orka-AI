@@ -3,16 +3,22 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Orka.Core.Constants;
+using Orka.Infrastructure.Data;
 using Xunit;
 
 namespace Orka.API.Tests;
 
 public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
 {
+    private readonly ApiSmokeFactory _factory;
     private readonly HttpClient _client;
 
     public EndpointBridgeSmokeTests(ApiSmokeFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -174,6 +180,15 @@ public sealed class EndpointBridgeSmokeTests : IClassFixture<ApiSmokeFactory>
         Assert.Contains("\"type\":\"citation\"", sse);
         Assert.Contains("\"type\":\"metadata\"", sse);
         Assert.Contains("\"groundingStatus\":\"source_grounded\"", sse);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        var signal = await db.LearningSignals
+            .AsNoTracking()
+            .SingleOrDefaultAsync(s => s.TopicId == topicId && s.SignalType == LearningSignalTypes.WikiQuestionAsked);
+        Assert.NotNull(signal);
+        Assert.Contains("\"schemaVersion\":\"orka.wiki-question-signal.v1\"", signal!.PayloadJson);
+        Assert.DoesNotContain("rawProviderPayload", signal.PayloadJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

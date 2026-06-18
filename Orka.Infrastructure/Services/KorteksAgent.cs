@@ -61,13 +61,18 @@ public class KorteksAgent : IKorteksAgent
 
     private (string Provider, string Model)? GetFallbackProvider(string primaryProvider)
     {
-        // Fallback chain: OpenRouter -> Gemini -> Groq -> OpenRouter
+        var geminiEnabled = _config.GetValue("AI:Gemini:Enabled", false);
+        // Fallback chain: OpenRouter -> Groq when Gemini is disabled; Gemini remains opt-in.
         return primaryProvider.ToLowerInvariant() switch
         {
-            "openrouter" => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview"),
+            "openrouter" => geminiEnabled
+                ? ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview")
+                : ("groq", _config["AI:Groq:ModelKorteks"] ?? _config["AI:Groq:Model"] ?? "llama-3.3-70b-versatile"),
             "gemini"     => ("groq", _config["AI:Groq:ModelKorteks"] ?? _config["AI:Groq:Model"] ?? "llama-3.3-70b-versatile"),
             "groq"       => ("openrouter", _config["AI:OpenRouter:ModelKorteks"] ?? _config["AI:OpenRouter:Model"] ?? "meta-llama/llama-4-maverick"),
-            "sambanova"  => ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview"),
+            "sambanova"  => geminiEnabled
+                ? ("gemini", _config["AI:Gemini:ModelKorteks"] ?? _config["AI:Gemini:ModelDeepPlan"] ?? _config["AI:Gemini:Model"] ?? "gemini-3.1-pro-preview")
+                : ("groq", _config["AI:Groq:ModelKorteks"] ?? _config["AI:Groq:Model"] ?? "llama-3.3-70b-versatile"),
             _            => null
         };
     }
@@ -92,6 +97,8 @@ public class KorteksAgent : IKorteksAgent
                 baseUrl = _config["AI:Mistral:BaseUrl"] ?? "https://api.mistral.ai/v1";
                 break;
             case "gemini":
+                if (!_config.GetValue("AI:Gemini:Enabled", false))
+                    throw new InvalidOperationException("AI:Gemini:Enabled false; Korteks Gemini provider disabled.");
                 apiKey  = _config["AI:Gemini:ApiKey"] ?? throw new InvalidOperationException("AI:Gemini:ApiKey eksik.");
                 baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/";
                 break;

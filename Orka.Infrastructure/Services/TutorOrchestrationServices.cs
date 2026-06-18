@@ -470,10 +470,21 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             ktStates.FirstOrDefault()?.ConceptKey,
             masteries.FirstOrDefault()?.ConceptKey);
         var learningLoopSignal = await LoadLearningLoopSignalAsync(userId, topicId, evidenceBackedConceptCandidate, ct);
+        if (string.IsNullOrWhiteSpace(mentionedConceptKey))
+        {
+            var latestLoopSignal = await LoadLearningLoopSignalAsync(userId, topicId, activeConceptKey: null, ct);
+            if (latestLoopSignal?.Status == "remediation_ready" &&
+                (learningLoopSignal == null ||
+                 learningLoopSignal.Status != "remediation_ready" ||
+                 latestLoopSignal.CreatedAt > learningLoopSignal.CreatedAt))
+            {
+                learningLoopSignal = latestLoopSignal;
+            }
+        }
         var activeKey = FirstNonEmpty(
             mentionedConceptKey,
-            policyContext.ActiveConceptKey,
             learningLoopSignal?.ConceptKey,
+            policyContext.ActiveConceptKey,
             ktStates.FirstOrDefault()?.ConceptKey,
             masteries.FirstOrDefault()?.ConceptKey,
             firstGraphConceptKey);

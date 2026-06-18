@@ -13,7 +13,7 @@
     "smoke:security": "node scripts/smoke-security.mjs",
     "smoke:browser:journey": "playwright test e2e/smoke.spec.ts e2e/onboarding-and-tutor.spec.ts e2e/learning-os-shell.spec.ts",
     "smoke:browser:contracts": "playwright test e2e/notebook-studio-contract.spec.ts",
-    "smoke:browser": "npm run smoke:browser:journey",
+    "smoke:browser": "npm run smoke:browser:journey && npm run smoke:browser:contracts",
     "life:browser": "playwright test e2e/life-proof.spec.ts",
     "typecheck": "tsc --noEmit",
     "smoke:build": "vite build",

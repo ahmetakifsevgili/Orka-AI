@@ -736,7 +736,7 @@ Before closing Long-Term Adaptive Learning Engine:
 - Confirm no new AI/provider calls, OpenAI API migration, official curriculum claim, medical/psychological claim, or exam success guarantee was added.
 - Run:
   ```powershell
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LongTermAdaptiveLearningTests|LearningSnapshotTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|TutorPedagogyPolicyTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LongTermAdaptiveLearningTests|LearningSnapshotTests|QuizLearningPipelineTests|QuizAttemptSafetyTests|TutorPedagogyPolicyTests|PlanQualityGuardTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
@@ -761,8 +761,8 @@ Before closing Exam & Curriculum Depth Pack:
 - Confirm no scraping, new AI/provider calls, OpenAI API migration, frontend redesign, mobile app, teacher/classroom/dershane workflow, payment/subscription, official exam claim, or success guarantee was added.
 - Run:
   ```powershell
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "ExamCurriculumDepthTests|CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentBlueprintTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LongTermAdaptiveLearningTests" --no-restore --verbosity minimal
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningSnapshotTests|QuizLearningPipelineTests|TutorPedagogyPolicyTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "ExamCurriculumDepthTests|CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LongTermAdaptiveLearningTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "LearningSnapshotTests|QuizLearningPipelineTests|TutorPedagogyPolicyTests|PlanQualityGuardTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
@@ -788,7 +788,7 @@ Before closing Source/Wiki Intelligence Deepening:
 - Run:
   ```powershell
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "SourceWikiIntelligenceTests|SourceEvidenceLifecycleTests|WikiGraphContractTests|LearningNotebookStudioTests|LongTermAdaptiveLearningTests|ExamCurriculumDepthTests" --no-restore --verbosity minimal
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|LearningSnapshotTests|QuizLearningPipelineTests|PlanQualityTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|LearningSnapshotTests|QuizLearningPipelineTests|PlanQualityGuardTests|PlanQualitySequencingTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
@@ -934,7 +934,7 @@ Before closing Exam War Room Backend:
 - Run:
   ```powershell
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "OrkaExamWarRoomTests|ExamCurriculumDepthTests|OrkaMissionControlTests|OrkaStudyCoachTests|OrkaLearningStateCoherenceTests|StudentSimulationEvaluationTests" --no-restore --verbosity minimal
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentBlueprintTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "CentralExamLearningLoopTests|CentralExamDenemeLearningLoopTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "DashboardAggregationTests|DashboardCoordinationHealthTests|TutorPedagogyPolicyTests|LongTermAdaptiveLearningTests|SourceWikiIntelligenceTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "PublicSecuritySurfaceTests|AgenticSecurityTrustTests|LearningRuntimeTelemetryTests" --no-restore --verbosity minimal
@@ -1175,7 +1175,7 @@ Before closing Wiki Auto-Curation & Learning Memory Cleanup:
 - Confirm frontend Wiki/chat surfaces render compact curation/memory labels without raw JSON, raw chunks, answer keys, or overclaim copy.
 - Run:
   ```powershell
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityGuardTests|PlanQualitySequencingTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
   dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
@@ -1198,7 +1198,7 @@ Before closing Wiki Copilot UX:
 - Confirm user scoping blocks other-user page copilot access.
 - Run:
   ```powershell
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityGuardTests|PlanQualitySequencingTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
   dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal
@@ -1222,7 +1222,7 @@ Before closing Final Pedagogical E2E, Evaluation Harness & Release Closure:
 - Confirm frontend smoke covers compact Tutor/Wiki/Copilot/Notebook Studio metadata surfaces and no raw JSON/source/debug rendering.
 - Run:
   ```powershell
-  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests|TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityTests|PlanQualitySequencingTests|AssessmentBlueprintTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
+  dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter "BackendLifeTests|PedagogicalReleaseClosureTests|TutorPedagogyPolicyTests|QuizLearningPipelineTests|AssessmentQualityMisconceptionTests|QuizAttemptSafetyTests|LearningSnapshotTests|ChatParityTests|PlanQualityGuardTests|PlanQualitySequencingTests|AgenticSecurityTrustTests|WikiGraphContractTests|LearningNotebookStudioTests|SourceEvidenceLifecycleTests" --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --filter RegressionGateScriptTests --no-restore --verbosity minimal
   dotnet test .\Orka.API.Tests\Orka.API.Tests.csproj --no-restore --verbosity minimal
   dotnet test .\Orka.Infrastructure.UnitTests\Orka.Infrastructure.UnitTests.csproj --no-restore --verbosity minimal

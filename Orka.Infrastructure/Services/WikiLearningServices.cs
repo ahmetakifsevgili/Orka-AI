@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.Entities;
@@ -360,7 +361,7 @@ public sealed class WikiAnswerPolicyEngine : IWikiAnswerPolicyEngine
             {
                 CanAnswer = true,
                 RequiresCitation = true,
-                GroundingStatus = "wiki_grounded",
+                GroundingStatus = "wiki_backed",
                 PromptBlock = BuildPromptBlock(evidence, "Wiki blokları ana dayanak. Her olgusal iddianın sonuna [wiki:page:block] etiketi ekle.")
             };
         }
@@ -539,6 +540,7 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
     private readonly IWikiCitationGuard _citationGuard;
     private readonly IWikiArtifactService _artifacts;
     private readonly IAIAgentFactory _factory;
+    private readonly ILearningSignalService _signals;
     private readonly ILearningEventNormalizer _events;
     private readonly ILogger<WikiLearningAssistant> _logger;
 
@@ -549,6 +551,7 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         IWikiCitationGuard citationGuard,
         IWikiArtifactService artifacts,
         IAIAgentFactory factory,
+        ILearningSignalService signals,
         ILearningEventNormalizer events,
         ILogger<WikiLearningAssistant> logger)
     {
@@ -558,6 +561,7 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         _citationGuard = citationGuard;
         _artifacts = artifacts;
         _factory = factory;
+        _signals = signals;
         _events = events;
         _logger = logger;
     }
@@ -674,31 +678,55 @@ public sealed class WikiLearningAssistant : IWikiLearningAssistant
         IReadOnlyList<TeachingArtifactDto> artifacts,
         CancellationToken ct)
     {
+        var payloadJson = JsonSerializer.Serialize(new
+        {
+            schemaVersion = "orka.wiki-question-signal.v1",
+            request.Mode,
+            request.SourceId,
+            request.ActivePageId,
+            groundingStatus = guarded.Metadata.GroundingStatus,
+            citationCount = guarded.Metadata.Citations.Count,
+            artifactIds = artifacts.Select(a => a.Id).ToArray(),
+            citationCoverageStatus = guarded.CitationCoverageStatus
+        }, JsonOptions);
+
         try
         {
-            await _events.RecordSignalEventAsync(
+            await _signals.RecordSignalAsync(
                 request.UserId,
                 request.TopicId,
                 request.SessionId,
-                "WikiQuestionAsked",
+                LearningSignalTypes.WikiQuestionAsked,
                 skillTag: guarded.Metadata.ActiveConceptKey,
-                payloadJson: JsonSerializer.Serialize(new
-                {
-                    request.Mode,
-                    request.SourceId,
-                    request.ActivePageId,
-                    groundingStatus = guarded.Metadata.GroundingStatus,
-                    citationCount = guarded.Metadata.Citations.Count,
-                    artifactIds = artifacts.Select(a => a.Id).ToArray(),
-                    citationCoverageStatus = guarded.CitationCoverageStatus
-                }, JsonOptions),
+                topicPath: request.Mode,
+                score: null,
+                isPositive: null,
+                payloadJson: payloadJson,
                 ct: ct);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug("[WikiV2] Learning event skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
+            _logger.LogDebug("[WikiV2] Learning signal skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
                 LogPrivacyGuard.SafeId(request.TopicId, "topic"),
                 LogPrivacyGuard.SafeExceptionType(ex));
+            try
+            {
+                await _events.RecordSignalEventAsync(
+                    request.UserId,
+                    request.TopicId,
+                    request.SessionId,
+                    LearningSignalTypes.WikiQuestionAsked,
+                    skillTag: guarded.Metadata.ActiveConceptKey,
+                    topicPath: request.Mode,
+                    payloadJson: payloadJson,
+                    ct: ct);
+            }
+            catch (Exception fallbackEx)
+            {
+                _logger.LogDebug("[WikiV2] Learning event fallback skipped. TopicRef={TopicRef} ErrorType={ErrorType}",
+                    LogPrivacyGuard.SafeId(request.TopicId, "topic"),
+                    LogPrivacyGuard.SafeExceptionType(fallbackEx));
+            }
         }
     }
 

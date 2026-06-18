@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+﻿import { expect, test, type Page, type Route } from "@playwright/test";
 
 const topicId = "topic-contract-1";
 const sourceId = "source-contract-1";
@@ -151,8 +151,8 @@ function wikiArtifactJson(extra: Record<string, unknown>) {
     wikiPageId: "wiki-page-1",
     sourceId: null,
     sourceSurface: null,
-    evidenceStatus: "wiki_grounded",
-    sourceReadiness: "wiki_grounded",
+    evidenceStatus: "wiki_backed",
+    sourceReadiness: "wiki_backed",
     phaseScope,
     audioDeferred: false,
     audioPhase: "phase_7_active",
@@ -218,7 +218,6 @@ const slideArtifact = baseArtifact({
     ],
   }),
 });
-
 const propertiesArtifact = baseArtifact({
   id: "artifact-properties",
   artifactType: "properties_panel",
@@ -265,7 +264,7 @@ const wikiStudyGuideArtifact = baseArtifact({
   artifactType: "study_guide",
   title: "Wiki Study Guide",
   safeContent: "Wiki study guide stays in lesson scope.",
-  sourceBasis: "wiki_grounded",
+  sourceBasis: "wiki_backed",
   contentJson: wikiArtifactJson({
     title: "Wiki Study Guide",
   }),
@@ -277,7 +276,7 @@ const wikiPropertiesArtifact = baseArtifact({
   artifactType: "properties_panel",
   title: "Wiki property and graph map",
   safeContent: "Properties, tags, backlinks and graph stay scoped to Wiki.",
-  sourceBasis: "wiki_grounded",
+  sourceBasis: "wiki_backed",
   contentJson: wikiArtifactJson({
     title: "Wiki property and graph map",
   }),
@@ -289,7 +288,7 @@ const wikiSlideArtifact = baseArtifact({
   artifactType: "slide_deck_outline",
   title: "Wiki slide outline",
   safeContent: "## Wiki slide outline\n\n- Lesson-scoped slide draft",
-  sourceBasis: "wiki_grounded",
+  sourceBasis: "wiki_backed",
   contentJson: wikiArtifactJson({
     title: "Wiki slide outline",
     slides: [
@@ -313,7 +312,7 @@ const wikiUmlArtifact = baseArtifact({
   title: "Wiki lesson UML",
   renderFormat: "mermaid",
   safeContent: "flowchart TD\n  WikiPage --> Tutor\n  WikiPage --> QuestionBank",
-  sourceBasis: "wiki_grounded",
+  sourceBasis: "wiki_backed",
   contentJson: wikiArtifactJson({
     title: "Wiki lesson UML",
     diagramType: "flowchart",
@@ -429,8 +428,8 @@ const wikiNotebookPack = {
   packStatus: "ready",
   title: "Wiki Page Review Pack",
   summary: "Mock-backed Wiki pack proving lesson context without Notebook Studio source upload.",
-  sourceReadiness: "wiki_grounded",
-  evidenceStatus: "wiki_grounded",
+  sourceReadiness: "wiki_backed",
+  evidenceStatus: "wiki_backed",
   completedConceptKeys: ["wiki_scope"],
   weakConceptKeys: [],
   misconceptionKeys: [],
@@ -458,8 +457,8 @@ const wikiPage = {
   parentConceptKey: null,
   parentWikiPageId: null,
   status: "ready",
-  sourceReadiness: "wiki_grounded",
-  evidenceStatus: "wiki_grounded",
+  sourceReadiness: "wiki_backed",
+  evidenceStatus: "wiki_backed",
   safeSummary: "Wiki-only contract page.",
   contentReadiness: "ready",
   hasLearningContent: true,
@@ -479,7 +478,7 @@ const wikiPage = {
       title: "Wiki Contract Summary",
       content: "Wiki lesson content remains separate from Notebook Studio source artifacts.",
       source: null,
-      sourceBasis: "wiki_grounded",
+      sourceBasis: "wiki_backed",
       conceptKey: "wiki_contract",
       misconceptionKey: null,
       quizAttemptId: null,
@@ -503,8 +502,8 @@ const wikiGraphPage = {
   parentConceptKey: null,
   title: "Wiki Contract Page",
   status: "ready",
-  sourceReadiness: "wiki_grounded",
-  evidenceStatus: "wiki_grounded",
+  sourceReadiness: "wiki_backed",
+  evidenceStatus: "wiki_backed",
   safeSummary: "Wiki-only contract page.",
   contentReadiness: "ready",
   hasLearningContent: true,
@@ -604,6 +603,10 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
       return fulfillJson(route, { token: "contract-token", user });
     }
 
+    if (path === "/user/me") {
+      return fulfillJson(route, user);
+    }
+
     if (path === "/topics" && request.method() === "GET") {
       return fulfillJson(route, [
         {
@@ -644,7 +647,7 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
       return fulfillJson(route, {
         topicId,
         graphStatus: "ready",
-        evidenceStatus: mode === "orkalm" ? "source_not_used" : "wiki_grounded",
+        evidenceStatus: mode === "orkalm" ? "source_not_used" : "wiki_backed",
         pages: mode === "orkalm" ? [] : [wikiGraphPage],
         links: [],
         warnings: [],
@@ -664,8 +667,8 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
         pageTitle: "Wiki Contract Page",
         pageType: "concept",
         curationStatus: "ready",
-        sourceReadiness: "wiki_grounded",
-        evidenceStatus: "wiki_grounded",
+        sourceReadiness: "wiki_backed",
+        evidenceStatus: "wiki_backed",
         masteryStatus: "unknown",
         weakConcepts: [],
         repairState: "ready",
@@ -700,8 +703,8 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
         sourceId: null,
         wikiPageId: "wiki-page-1",
         title: "Wiki page source links",
-        sourceReadiness: "wiki_grounded",
-        evidenceStatus: "wiki_grounded",
+        sourceReadiness: "wiki_backed",
+        evidenceStatus: "wiki_backed",
         confirmedLinkCount: 0,
         suggestedLinkCount: 0,
         links: [],
@@ -714,7 +717,7 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
       return fulfillJson(route, {
         topicId,
         title: "Wiki notebook",
-        evidenceStatus: "wiki_grounded",
+        evidenceStatus: "wiki_backed",
         sourceCoverage: mode === "orkalm" ? "source_grounded" : "wiki_only",
         conceptCoverage: "contract",
         sections: [],
@@ -964,8 +967,8 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
         deckTitle: "Wiki Page Review Pack",
         slideCount: 0,
         exportReadiness: "wiki_preview_ready",
-        sourceBasis: "wiki_grounded",
-        sourceReadiness: "wiki_grounded",
+        sourceBasis: "wiki_backed",
+        sourceReadiness: "wiki_backed",
         accessibilitySummary: "Wiki preview is scoped to the active lesson page.",
         warnings: [],
         slides: [],
@@ -1119,7 +1122,7 @@ async function installApiMocks(page: Page, mode: SurfaceMode) {
     if (path === "/tutor/next-actions") return fulfillJson(route, []);
     if (path.startsWith("/tutor/policy/")) {
       return fulfillJson(route, {
-        sourceReadiness: mode === "orkalm" ? "source_grounded" : "wiki_grounded",
+        sourceReadiness: mode === "orkalm" ? "source_grounded" : "wiki_backed",
         nextActions: [],
       });
     }

@@ -647,17 +647,17 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     // Click Koç (Tutor)
     await page.locator("#tour-nav-learning").click();
     await expect(page).toHaveURL(/\/app\/tutor$/);
-    await expect(page.locator("body")).toContainText("bugün ne çalışacağız");
+    await expect(page.locator("body")).toContainText(/bugün ne çalışacağız/i);
 
     // Click Wiki
     await page.locator("#tour-nav-wiki").click();
     await expect(page).toHaveURL(/\/app\/sources$/);
-    await expect(page.locator("body")).toContainText("Görselleştir");
+    await expect(page.locator("body")).toContainText("Kaynaklar & Wiki");
 
     // Click OrkaLM
     await page.locator("#tour-nav-ide").click();
     await expect(page).toHaveURL(/\/app\/notebook$/);
-    await expect(page.locator("body")).toContainText("Bilgi Kartları");
+    await expect(page.locator("body")).toContainText("Notebook Studio is loaded");
 
     // Click Planlar
     await page.locator("#tour-nav-dashboard").click();
@@ -713,18 +713,8 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     const starterButton = page.getByRole("button", { name: "Konu öğren" });
     await expect(starterButton).toBeVisible();
 
-    // Click starter button
+    // Click starter button; starter CTAs send their prompt directly.
     await starterButton.click();
-
-    // Input should be populated with starter prompt
-    const chatInput = page.locator("#tour-chat-input");
-    const inputValue = await chatInput.inputValue();
-    expect(inputValue).toContain("çalışma yolu aç");
-
-    // Click Send
-    const sendButton = page.locator("button:has(svg.lucide-arrow-up)");
-    await expect(sendButton).toBeEnabled();
-    await sendButton.click();
 
     // Message list should contain user prompt and streaming response
     const messageContainer = page.locator("body");

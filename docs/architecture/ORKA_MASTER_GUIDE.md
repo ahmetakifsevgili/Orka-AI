@@ -29,7 +29,7 @@ Konfigürasyon kaynağı: `appsettings.json > AI:AgentRouting:{Role}`. Eski form
 | `Tutor` | GitHubModels | `gpt-4o` | Ders anlatımı, sınıf içi diyalog |
 | `DeepPlan` | GitHubModels | `Meta-Llama-3.1-405B-Instruct` | Standart müfredat üretimi |
 | `TieredPlanner` | GitHubModels | `gpt-4o` | KPSS/YKS gibi devasa konular için 4-katmanlı plan |
-| `Korteks` | OpenRouter | `anthropic/claude-opus-4-7` | Derin web + akademik araştırma |
+| `Korteks` | OpenRouter | `anthropic/claude-opus-4.7` | Derin web + akademik araştırma |
 | `IntentClassifier` | Cerebras | `llama3.1-8b` | Niyet & duygu tespiti (≤200ms TTFT) |
 | `Supervisor` | GitHubModels | `gpt-4o-mini` | Action route kararı |
 | `Analyzer` | GitHubModels | `gpt-4o-mini` | IsComplete tespiti |

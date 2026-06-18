@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.DTOs.Chat;
 using Orka.Core.DTOs.Korteks;
@@ -1391,6 +1392,51 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task TutorTurnState_ContinueAfterWrongDiagnosticPrioritizesLatestRemediationConcept()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var sessionId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        db.LearningSignals.AddRange(
+            RemediationSignal(userId, topicId, sessionId, "indexes", "Indexes", now.AddMinutes(-15)),
+            RemediationSignal(userId, topicId, sessionId, "joins", "Joins", now.AddMinutes(-1)));
+        await db.SaveChangesAsync();
+
+        var workingMemory = new TestTutorWorkingMemoryService();
+        var learnerProfile = new LearnerProfileService(
+            db,
+            new LearningStyleSignalService(db),
+            new AffectiveSignalService(db),
+            new CognitiveLoadService(db));
+        var assembler = new TutorTurnStateAssembler(db, learnerProfile, workingMemory);
+
+        var turnState = await assembler.BuildAsync(
+            userId,
+            topicId,
+            sessionId,
+            "Devam edelim.",
+            conversationContext: "",
+            notebookContext: "",
+            wikiContext: "",
+            learningSignalContext: "",
+            ideContext: "",
+            new TutorPolicyContextDto
+            {
+                ActiveConceptKey = "indexes",
+                ActiveConceptLabel = "Indexes",
+                GroundingStatus = "source_grounded",
+                SourceEvidenceCount = 1,
+                EvidenceQuality = new EvidenceQualityDto { Status = "strong" }
+            });
+
+        Assert.Equal("joins", turnState.ActiveConceptKey);
+        Assert.Equal("remediation_ready", turnState.LearningLoopStatus);
+        Assert.Equal("needs_remediation", turnState.LearnerState);
+        Assert.Equal("Joins", turnState.RemediationSeed?.Label);
+    }
+
+    [Fact]
     public async Task LearningMemoryService_ReturnsSafeEmptyStateWithoutSignals()
     {
         await using var db = CreateDb();
@@ -1960,6 +2006,59 @@ public sealed class LearningArchitectureTests
         new(new DbContextOptionsBuilder<OrkaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options);
+
+    private static LearningSignal RemediationSignal(
+        Guid userId,
+        Guid topicId,
+        Guid sessionId,
+        string conceptKey,
+        string label,
+        DateTime createdAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        TopicId = topicId,
+        SessionId = sessionId,
+        SignalType = LearningSignalTypes.MisconceptionDetected,
+        SkillTag = conceptKey,
+        IsPositive = false,
+        PayloadJson = JsonSerializer.Serialize(new
+        {
+            misconceptionSignal = new
+            {
+                category = "wrong_concept",
+                userSafeLabel = $"{label} icin telafi sinyali",
+                confidence = 0.82m,
+                confidenceStatus = "usable",
+                topicId,
+                conceptKey,
+                label,
+                safeHint = $"{label} icin mikro telafi uygula.",
+                evidenceBasis = new[] { "wrong_quiz_attempt" }
+            },
+            learningSignalConfidence = new
+            {
+                status = "usable",
+                confidence = 0.82m,
+                reasons = new[] { "server_verified_attempt" }
+            },
+            remediationSeed = new
+            {
+                conceptKey,
+                label,
+                topicId,
+                reason = $"{label} icin son yanlis cevap telafi istiyor.",
+                confidence = 0.82m,
+                confidenceStatus = "usable",
+                misconceptionCategory = "wrong_concept",
+                userSafeMisconceptionLabel = $"{label} takilma sinyali",
+                firstAction = "practice_quiz",
+                secondaryActions = new[] { "micro_reteach" },
+                evidenceBasis = new[] { "wrong_quiz_attempt" }
+            }
+        }),
+        CreatedAt = createdAt
+    };
 
     private static async Task<(Guid UserId, Guid TopicId)> SeedAsync(OrkaDbContext db)
     {

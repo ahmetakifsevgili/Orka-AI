@@ -12,6 +12,7 @@ public static class LearningSignalTypes
     public const string SourceOpened = "SourceOpened";
     public const string SourceAsked = "SourceAsked";
     public const string WikiUpdated = "WikiUpdated";
+    public const string WikiQuestionAsked = "WikiQuestionAsked";
     public const string WikiActionClicked = "WikiActionClicked";
     public const string ClassroomStarted = "ClassroomStarted";
     public const string ClassroomQuestionAsked = "ClassroomQuestionAsked";
@@ -48,6 +49,7 @@ public static class LearningSignalTypes
         SourceOpened,
         SourceAsked,
         WikiUpdated,
+        WikiQuestionAsked,
         WikiActionClicked,
         ClassroomStarted,
         ClassroomQuestionAsked,

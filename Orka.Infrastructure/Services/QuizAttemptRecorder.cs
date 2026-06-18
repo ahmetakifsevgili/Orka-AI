@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using Orka.Core.Constants;
 using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
@@ -191,6 +192,10 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         if (isVerified)
         {
             await _learningSignals.RecordQuizAnsweredAsync(attempt, ct);
+            if (isCorrect && request.TopicId.HasValue)
+            {
+                await RecordRemediationCompletedIfNeededAsync(userId, request, attempt, reviewIdentity, ct);
+            }
         }
 
         MistakeClassificationResult? mistake = null;
@@ -312,6 +317,78 @@ public sealed class QuizAttemptRecorder : IQuizAttemptRecorder
         }
 
         return null;
+    }
+
+    private async Task RecordRemediationCompletedIfNeededAsync(
+        Guid userId,
+        RecordQuizAttemptRequest request,
+        QuizAttempt attempt,
+        string reviewIdentity,
+        CancellationToken ct)
+    {
+        if (!request.TopicId.HasValue)
+        {
+            return;
+        }
+
+        var topicId = request.TopicId.Value;
+        var skill = Clean(reviewIdentity) ?? Clean(attempt.SkillTag) ?? Clean(request.ConceptKey) ?? Clean(request.ConceptTag);
+        var startedQuery = _db.LearningSignals.AsNoTracking()
+            .Where(s =>
+                s.UserId == userId &&
+                s.TopicId == topicId &&
+                s.SignalType == LearningSignalTypes.RemediationStarted);
+
+        if (!string.IsNullOrWhiteSpace(skill))
+        {
+            startedQuery = startedQuery.Where(s =>
+                s.SkillTag == skill ||
+                s.TopicPath == skill ||
+                (s.PayloadJson != null && s.PayloadJson.Contains(skill)));
+        }
+
+        var started = await startedQuery
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (started == null)
+        {
+            return;
+        }
+
+        var completionExists = await _db.LearningSignals.AsNoTracking().AnyAsync(s =>
+            s.UserId == userId &&
+            s.TopicId == topicId &&
+            s.SignalType == LearningSignalTypes.RemediationCompleted &&
+            s.CreatedAt >= started.CreatedAt &&
+            (string.IsNullOrWhiteSpace(skill) || s.SkillTag == skill || s.TopicPath == skill),
+            ct);
+        if (completionExists)
+        {
+            return;
+        }
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            schemaVersion = "orka.remediation-lifecycle.v1",
+            quizAttemptId = attempt.Id,
+            startedSignalId = started.Id,
+            conceptKey = skill,
+            assessmentMode = request.AssessmentMode,
+            completedBy = "verified_correct_attempt",
+            recordedAt = DateTimeOffset.UtcNow
+        });
+
+        await _learningSignals.RecordSignalAsync(
+            userId,
+            request.TopicId,
+            request.SessionId,
+            LearningSignalTypes.RemediationCompleted,
+            skillTag: skill,
+            topicPath: attempt.TopicPath,
+            score: 100,
+            isPositive: true,
+            payloadJson: payload,
+            ct: ct);
     }
 
     private static string? BuildQuestionHash(RecordQuizAttemptRequest request)
