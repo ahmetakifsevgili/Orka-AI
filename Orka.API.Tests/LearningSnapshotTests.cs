@@ -279,6 +279,8 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.Equal(2_000, trace.GetProperty("tokenBudget").GetInt32());
         Assert.True(trace.GetProperty("initialEstimatedTokenCount").GetInt32() >= trace.GetProperty("estimatedTokenCount").GetInt32());
         Assert.Equal(root.GetProperty("estimatedTokenCount").GetInt32(), trace.GetProperty("estimatedTokenCount").GetInt32());
+        var serializedPayloadTokenEstimate = Math.Max(1, (int)Math.Ceiling(root.GetRawText().Length / 4m));
+        Assert.Equal(serializedPayloadTokenEstimate, root.GetProperty("estimatedTokenCount").GetInt32());
         Assert.Contains(trace.GetProperty("selectedBlocks").EnumerateArray(), b => b.GetProperty("blockType").GetString() == "orka_state");
         Assert.True(trace.GetProperty("droppedBlocks").ValueKind == JsonValueKind.Array);
         Assert.True(trace.GetProperty("droppedWarnings").ValueKind == JsonValueKind.Array);

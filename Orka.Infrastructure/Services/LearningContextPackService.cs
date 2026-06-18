@@ -2,6 +2,7 @@ using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace Orka.Infrastructure.Services;
 
@@ -12,6 +13,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
     private const int MaxSummaryChars = 320;
     private const int MaxMetadataValueChars = 180;
     private const int MaxWarningChars = 180;
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IOrkaLearningStateService _orkaLearningState;
     private readonly IActiveLessonSnapshotService _snapshots;
@@ -52,7 +54,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
         var blocks = BuildBlocks(state, activeSnapshot, studentSnapshot, sourceBundle);
         var warnings = BuildWarnings(state, activeSnapshot, studentSnapshot, sourceBundle);
         var bounded = BoundPack(blocks, warnings);
-        return new LearningContextPackDto
+        var pack = new LearningContextPackDto
         {
             SchemaVersion = SchemaVersion,
             TopicId = resolvedTopicId,
@@ -65,6 +67,10 @@ public sealed class LearningContextPackService : ILearningContextPackService
             EstimatedTokenCount = bounded.Trace.EstimatedTokenCount,
             GeneratedAt = DateTimeOffset.UtcNow
         };
+        pack = EnforceSerializedPayloadBudget(pack);
+        pack.ContextWatermark = BuildWatermark(state, activeSnapshot, studentSnapshot, sourceBundle, pack.Blocks);
+        RefreshSerializedTokenCounts(pack, pack.Trace.InitialEstimatedTokenCount);
+        return pack;
     }
 
     private static IReadOnlyList<LearningContextPackBlockDto> BuildBlocks(
@@ -263,12 +269,89 @@ public sealed class LearningContextPackService : ILearningContextPackService
         }
 
         var finalEstimate = EstimateTokens(boundedBlocks, boundedWarnings);
-        var trace = new LearningContextPackTraceDto
+        var trace = BuildTrace(boundedBlocks, initialEstimate, finalEstimate, droppedBlocks, droppedWarnings);
+
+        return new BoundPackResult(boundedBlocks, boundedWarnings, trace);
+    }
+
+    private static LearningContextPackDto EnforceSerializedPayloadBudget(LearningContextPackDto pack)
+    {
+        var blocks = pack.Blocks.OrderByDescending(b => b.Priority).ToList();
+        var warnings = pack.Warnings.ToList();
+        var droppedBlocks = pack.Trace.DroppedBlocks.ToList();
+        var droppedWarnings = pack.Trace.DroppedWarnings.ToList();
+        var initialSerializedEstimate = EstimateSerializedTokens(pack);
+
+        while (true)
+        {
+            pack.Blocks = blocks.ToArray();
+            pack.Warnings = warnings.ToArray();
+            pack.Trace = BuildTrace(pack.Blocks, initialSerializedEstimate, 0, droppedBlocks, droppedWarnings);
+            RefreshSerializedTokenCounts(pack, initialSerializedEstimate);
+
+            if (pack.EstimatedTokenCount <= MaxEstimatedTokens)
+            {
+                return pack;
+            }
+
+            if (warnings.Count > 0)
+            {
+                droppedWarnings.Add(new LearningContextPackDroppedWarningDto
+                {
+                    Warning = warnings[^1],
+                    Reason = "serialized_payload_budget"
+                });
+                warnings.RemoveAt(warnings.Count - 1);
+                continue;
+            }
+
+            if (blocks.Count > 1)
+            {
+                var dropped = blocks[^1];
+                droppedBlocks.Add(new LearningContextPackDroppedBlockDto
+                {
+                    BlockType = dropped.BlockType,
+                    Priority = dropped.Priority,
+                    Reason = "serialized_payload_budget",
+                    EstimatedTokenCount = EstimateSerializedTokens(new LearningContextPackDto
+                    {
+                        SchemaVersion = pack.SchemaVersion,
+                        TopicId = pack.TopicId,
+                        SessionId = pack.SessionId,
+                        ScopeStatus = pack.ScopeStatus,
+                        ContextWatermark = pack.ContextWatermark,
+                        Blocks = new[] { dropped },
+                        Warnings = Array.Empty<string>(),
+                        Trace = new LearningContextPackTraceDto(),
+                        GeneratedAt = pack.GeneratedAt
+                    })
+                });
+                blocks.RemoveAt(blocks.Count - 1);
+                continue;
+            }
+
+            if (droppedWarnings.Count > 0 || droppedBlocks.Count > 0)
+            {
+                droppedWarnings.Clear();
+                droppedBlocks.Clear();
+                continue;
+            }
+
+            return pack;
+        }
+    }
+
+    private static LearningContextPackTraceDto BuildTrace(
+        IReadOnlyList<LearningContextPackBlockDto> selectedBlocks,
+        int initialEstimatedTokenCount,
+        int estimatedTokenCount,
+        IReadOnlyList<LearningContextPackDroppedBlockDto> droppedBlocks,
+        IReadOnlyList<LearningContextPackDroppedWarningDto> droppedWarnings) => new()
         {
             TokenBudget = MaxEstimatedTokens,
-            InitialEstimatedTokenCount = initialEstimate,
-            EstimatedTokenCount = finalEstimate,
-            SelectedBlocks = boundedBlocks.Select(b => new LearningContextPackTraceBlockDto
+            InitialEstimatedTokenCount = initialEstimatedTokenCount,
+            EstimatedTokenCount = estimatedTokenCount,
+            SelectedBlocks = selectedBlocks.Select(b => new LearningContextPackTraceBlockDto
             {
                 BlockType = b.BlockType,
                 Status = b.Status,
@@ -278,11 +361,27 @@ public sealed class LearningContextPackService : ILearningContextPackService
                 RefId = b.SnapshotRef?.Id ?? b.SourceRef?.Id,
                 RefVersion = b.SnapshotRef?.Version ?? b.SourceRef?.Version
             }).ToArray(),
-            DroppedBlocks = droppedBlocks,
-            DroppedWarnings = droppedWarnings
+            DroppedBlocks = droppedBlocks.ToArray(),
+            DroppedWarnings = droppedWarnings.ToArray()
         };
 
-        return new BoundPackResult(boundedBlocks, boundedWarnings, trace);
+    private static void RefreshSerializedTokenCounts(LearningContextPackDto pack, int initialEstimatedTokenCount)
+    {
+        var estimate = EstimateSerializedTokens(pack);
+        pack.EstimatedTokenCount = estimate;
+        pack.Trace.EstimatedTokenCount = estimate;
+        pack.Trace.InitialEstimatedTokenCount = Math.Max(initialEstimatedTokenCount, estimate);
+
+        var stableEstimate = EstimateSerializedTokens(pack);
+        pack.EstimatedTokenCount = stableEstimate;
+        pack.Trace.EstimatedTokenCount = stableEstimate;
+        pack.Trace.InitialEstimatedTokenCount = Math.Max(initialEstimatedTokenCount, stableEstimate);
+    }
+
+    private static int EstimateSerializedTokens(LearningContextPackDto pack)
+    {
+        var json = JsonSerializer.Serialize(pack, PayloadJsonOptions);
+        return Math.Max(1, (int)Math.Ceiling(json.Length / 4m));
     }
 
     private static string BuildWatermark(

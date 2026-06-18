@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildLearningWorkspaceState, isLatestWorkspaceRequest } from "./useLearningWorkspaceState";
+import { hasUsableCentralProjection } from "@/components/ProductCoherencePanels";
 import type {
   LearningArtifactDto,
   OrkaLearningStateDto,
@@ -246,5 +247,17 @@ describe("buildLearningWorkspaceState", () => {
   it("only lets the latest workspace request update projection state", () => {
     expect(isLatestWorkspaceRequest(3, 3)).toBe(true);
     expect(isLatestWorkspaceRequest(4, 3)).toBe(false);
+  });
+
+  it("does not let an empty scoped workspace projection suppress fallback loading", () => {
+    expect(hasUsableCentralProjection(buildLearningWorkspaceState({ topicId: "topic-projection" }))).toBe(false);
+    expect(hasUsableCentralProjection({
+      ...buildLearningWorkspaceState({ topicId: "topic-projection" }),
+      isLoading: true,
+    })).toBe(true);
+    expect(hasUsableCentralProjection(buildLearningWorkspaceState({
+      topicId: "topic-projection",
+      missionControl: mission,
+    }))).toBe(true);
   });
 });

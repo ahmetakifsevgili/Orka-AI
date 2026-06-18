@@ -104,6 +104,15 @@ type LoadState<T> = {
 
 const EMPTY_STATE = "Orka bu yüzeyi kişiselleştirmek için biraz daha gerçek çalışma sinyaline ihtiyaç duyuyor.";
 
+export function hasUsableCentralProjection(workspaceState?: LearningWorkspaceState | null): boolean {
+  return Boolean(
+    workspaceState?.isLoading ||
+    workspaceState?.missionControl ||
+    workspaceState?.orkaLearningState ||
+    workspaceState?.studyCoach,
+  );
+}
+
 function safeList<T>(items?: T[] | null): T[] {
   return Array.isArray(items) ? items : [];
 }
@@ -543,16 +552,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
   }>({ loading: true, today: null, mission: null, coach: null, learningState: null, error: false });
 
   const params = useMemo(() => compactParams(activeTopic, sessionId), [activeTopic, sessionId]);
-  const hasCentralProjection = Boolean(
-    workspaceState && (
-      workspaceState.topicId ||
-      workspaceState.sessionId ||
-      workspaceState.isLoading ||
-      workspaceState.missionControl ||
-      workspaceState.orkaLearningState ||
-      workspaceState.studyCoach
-    ),
-  );
+  const hasCentralProjection = hasUsableCentralProjection(workspaceState);
 
   useEffect(() => {
     if (hasCentralProjection) {
@@ -595,8 +595,6 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
   }, [
     params,
     hasCentralProjection,
-    workspaceState?.topicId,
-    workspaceState?.sessionId,
     workspaceState?.isLoading,
     workspaceState?.missionControl,
     workspaceState?.orkaLearningState,

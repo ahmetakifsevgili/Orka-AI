@@ -290,7 +290,10 @@ export function useLearningWorkspaceState({
     ],
   );
 
-  const [state, setState] = useState<LearningWorkspaceState>(() => emptyState(topicId, sessionId));
+  const [state, setState] = useState<LearningWorkspaceState>(() => ({
+    ...emptyState(topicId, sessionId),
+    isLoading: Boolean(topicId || sessionId),
+  }));
   const latestRequestIdRef = useRef(0);
 
   const load = useCallback(async (requestId: number) => {
