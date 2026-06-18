@@ -90,6 +90,7 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
                 ["JWT:Secret"] = "ORKA_TEST_JWT_SECRET_64_CHARS_2026_01",
                 ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01",
                 ["Database:Provider"] = "SqlServer",
+                ["Database:EncryptionKey"] = "ORKA_TEST_DATABASE_ENCRYPTION_KEY_64_CHARS_2026_01",
                 ["Database:AutoMigrateOnStartup"] = "false",
                 ["ConnectionStrings:DefaultConnection"] = "Server=sql.example.invalid;Database=OrkaSmoke;User Id=orka;Password=SmokePass123!;TrustServerCertificate=True;",
                 ["ConnectionStrings:Redis"] = IsProtectedEnvironment(_environmentName) ? "redis.example.invalid:6379,abortConnect=false" : "127.0.0.1:6399,abortConnect=false",
@@ -109,6 +110,7 @@ public sealed class ApiSmokeFactory : WebApplicationFactory<Program>
                 ["AI:OpenRouter:ApiKey"] = "test-openrouter-key",
                 ["AI:Cerebras:ApiKey"] = "test-cerebras-key",
                 ["AI:Mistral:ApiKey"] = "test-mistral-key",
+                ["AI:Cohere:ApiKey"] = "test-cohere-key",
                 ["AI:SambaNova:ApiKey"] = "test-sambanova-key"
             };
 

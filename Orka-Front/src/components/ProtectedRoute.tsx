@@ -53,7 +53,17 @@ export default function ProtectedRoute({
     return <Redirect to="/login" />;
   }
 
-  void allowOnboardingOnly;
+  if (allowOnboardingOnly) {
+    if (user.isOnboardingCompleted === true) {
+      return <Redirect to="/app" />;
+    }
+
+    return <>{children}</>;
+  }
+
+  if (user.isOnboardingCompleted === false) {
+    return <Redirect to="/onboarding" />;
+  }
 
   return <>{children}</>;
 }

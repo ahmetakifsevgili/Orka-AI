@@ -498,7 +498,7 @@ public class AIAgentFactory : IAIAgentFactory
         var configured = _configuration.GetSection("AI:Reliability:StrictExternalFallbackProviders").Get<string[]>();
         return configured is { Length: > 0 }
             ? configured
-            : new[] { "GitHubModels", "Groq" };
+            : new[] { "GitHubModels", "Cohere", "Groq" };
     }
 
     private string[] FallbackProviders()

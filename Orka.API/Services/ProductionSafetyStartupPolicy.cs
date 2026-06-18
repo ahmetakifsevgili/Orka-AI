@@ -60,6 +60,8 @@ public static class ProductionSafetyStartupPolicy
 
     private static void ValidateDatabase(IConfiguration configuration, bool useInMemoryDatabase, List<string> errors)
     {
+        ValidateSecret(configuration, "Database:EncryptionKey", errors);
+
         if (useInMemoryDatabase)
             errors.Add("Database:Provider=InMemory is not allowed in Staging/Production");
 

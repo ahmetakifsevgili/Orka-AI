@@ -8,12 +8,18 @@ namespace Orka.API.Services;
 public class TenantService : ITenantService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAiRequestContextAccessor _aiRequestContext;
 
-    public bool BypassTenantFilters => false;
+    public bool BypassTenantFilters =>
+        _httpContextAccessor.HttpContext == null &&
+        _aiRequestContext.Current.UserId == null;
 
-    public TenantService(IHttpContextAccessor httpContextAccessor)
+    public TenantService(
+        IHttpContextAccessor httpContextAccessor,
+        IAiRequestContextAccessor aiRequestContext)
     {
         _httpContextAccessor = httpContextAccessor;
+        _aiRequestContext = aiRequestContext;
     }
 
     public string GetCurrentTenantId()
@@ -21,7 +27,9 @@ public class TenantService : ITenantService
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext == null)
         {
-            return string.Empty;
+            return _aiRequestContext.Current.UserId is { } backgroundUserId
+                ? $"user:{backgroundUserId}"
+                : string.Empty;
         }
 
         // Keep tenant identity stable even when older tokens do not carry tenant claims.
@@ -40,6 +48,11 @@ public class TenantService : ITenantService
         if (!string.IsNullOrWhiteSpace(userId))
         {
             return $"user:{userId.Trim()}";
+        }
+
+        if (_aiRequestContext.Current.UserId is { } scopedUserId)
+        {
+            return $"user:{scopedUserId}";
         }
 
         return string.Empty;

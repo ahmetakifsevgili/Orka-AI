@@ -15,17 +15,31 @@ namespace Orka.Infrastructure.Data;
 
 public static class AesEncryptionHelper
 {
-    private static readonly byte[] DefaultKey = Encoding.UTF8.GetBytes("ORKA_DEFAULT_DB_ENCRYPTION_KEY_S"); // Exactly 32 bytes for AES-256
+    private static byte[]? _encryptionKey;
 
-    public static byte[] EncryptionKey { get; set; } = DefaultKey;
+    public static bool IsConfigured => _encryptionKey is { Length: 32 };
+
+    public static void ConfigureKey(string? keyMaterial)
+    {
+        if (string.IsNullOrWhiteSpace(keyMaterial))
+        {
+            _encryptionKey = null;
+            return;
+        }
+
+        _encryptionKey = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
+    }
 
     public static string Encrypt(string? plainText)
     {
         if (string.IsNullOrEmpty(plainText))
             return plainText ?? string.Empty;
 
+        if (!IsConfigured)
+            return plainText;
+
         using var aes = Aes.Create();
-        aes.Key = EncryptionKey;
+        aes.Key = _encryptionKey!;
         aes.GenerateIV();
         var iv = aes.IV;
 
@@ -49,12 +63,15 @@ public static class AesEncryptionHelper
         if (string.IsNullOrEmpty(cipherText))
             return cipherText ?? string.Empty;
 
+        if (!IsConfigured)
+            return cipherText;
+
         try
         {
             var fullCipher = Convert.FromBase64String(cipherText);
 
             using var aes = Aes.Create();
-            aes.Key = EncryptionKey;
+            aes.Key = _encryptionKey!;
 
             var iv = new byte[aes.BlockSize / 8]; // 16 bytes for AES
             if (fullCipher.Length < iv.Length)
@@ -93,14 +110,7 @@ public class OrkaDbContext : DbContext
         _hasTenantId = !string.IsNullOrWhiteSpace(_tenantId);
         _tenantFilterBypassed = tenantService == null || tenantService.BypassTenantFilters;
 
-        if (configuration != null)
-        {
-            var keyStr = configuration["Database:EncryptionKey"];
-            if (!string.IsNullOrEmpty(keyStr))
-            {
-                AesEncryptionHelper.EncryptionKey = Encoding.UTF8.GetBytes(keyStr.PadRight(32).Substring(0, 32));
-            }
-        }
+        AesEncryptionHelper.ConfigureKey(configuration?["Database:EncryptionKey"]);
     }
 
     public DbSet<User> Users { get; set; } = null!;
@@ -5336,12 +5346,22 @@ public class OrkaDbContext : DbContext
 
     private void SetTenantId()
     {
-        if (_tenantFilterBypassed) return;
-
         foreach (var entry in ChangeTracker.Entries<IMustHaveTenant>())
         {
             if (entry.State is EntityState.Unchanged or EntityState.Detached)
             {
+                continue;
+            }
+
+            if (_tenantFilterBypassed)
+            {
+                if (entry.State == EntityState.Added &&
+                    string.IsNullOrEmpty(entry.Entity.TenantId) &&
+                    TryResolveTenantIdFromUserId(entry.Entity, out var inferredTenantId))
+                {
+                    entry.Entity.TenantId = inferredTenantId;
+                }
+
                 continue;
             }
 
@@ -5381,5 +5401,23 @@ public class OrkaDbContext : DbContext
                 throw new InvalidOperationException("Cannot delete tenant-scoped data for a different tenant.");
             }
         }
+    }
+
+    private static bool TryResolveTenantIdFromUserId(object entity, out string tenantId)
+    {
+        tenantId = string.Empty;
+        var property = entity.GetType().GetProperty("UserId");
+        if (property?.PropertyType != typeof(Guid))
+        {
+            return false;
+        }
+
+        if (property.GetValue(entity) is not Guid userId || userId == Guid.Empty)
+        {
+            return false;
+        }
+
+        tenantId = $"user:{userId}";
+        return true;
     }
 }

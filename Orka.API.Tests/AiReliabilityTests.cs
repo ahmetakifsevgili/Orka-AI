@@ -226,6 +226,46 @@ public sealed class AiReliabilityTests
     }
 
     [Fact]
+    public async Task CompleteChat_StrictGitHubPrimaryFailure_FallsBackToCohere()
+    {
+        var providers = new FakeProviders();
+        providers.GitHubHandler = () => throw new AiProviderCallException(
+            "GitHubModels",
+            "openai/gpt-4o",
+            "Quiz",
+            AiProviderFailureKind.RateLimited,
+            "rate limited",
+            HttpStatusCode.TooManyRequests,
+            isRetryable: true,
+            isFallbackable: true);
+        var cohere = new FakeCohereService
+        {
+            Handler = () => Task.FromResult("""[{"assessmentItemId":"00000000-0000-0000-0000-000000000001"}]""")
+        };
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            cohere: cohere,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Quiz:Provider"] = "GitHubModels",
+                ["AI:AgentRouting:Quiz:Model"] = "openai/gpt-4o",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768",
+                ["AI:Reliability:SameProviderRateLimitRetries"] = "0"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz");
+
+        Assert.Contains("assessmentItemId", result);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Equal(1, cohere.Calls);
+        Assert.Equal(0, providers.GroqCalls);
+        Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
     public async Task CompleteChat_QuizProviderFailures_DoNotUseInMemoryFallback()
     {
         var providers = new FakeProviders();
@@ -539,6 +579,9 @@ public sealed class AiReliabilityTests
                 ["AI:Cohere:MaxOutputTokens"] = "4096",
                 ["AI:Reliability:MaxAttemptsPerRequest"] = "2",
                 ["AI:Reliability:FallbackEnabled"] = "true",
+                ["AI:Reliability:StrictExternalFallbackProviders:0"] = "GitHubModels",
+                ["AI:Reliability:StrictExternalFallbackProviders:1"] = "Cohere",
+                ["AI:Reliability:StrictExternalFallbackProviders:2"] = "Groq",
                 ["AI:Reliability:ProviderCooldownSeconds"] = "60",
                 ["AI:Reliability:StrictRoleCircuitFailureThreshold"] = "2",
                 ["AI:Cost:RoleBudgets:Tutor:MaxOutputTokens"] = "256",

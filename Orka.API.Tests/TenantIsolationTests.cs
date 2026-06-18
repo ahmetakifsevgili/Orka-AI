@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orka.API.Services;
+using Orka.Core.DTOs;
 using Orka.Core.Entities;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
+using Orka.Infrastructure.Services;
 using Xunit;
 
 namespace Orka.API.Tests;
@@ -80,6 +83,72 @@ public sealed class TenantIsolationTests
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => scoped.SaveChangesAsync());
             Assert.Contains("different tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void TenantService_UsesBackgroundUserContextWhenHttpContextIsMissing()
+    {
+        var context = new AsyncLocalAiRequestContextAccessor();
+        var userId = Guid.NewGuid();
+
+        using var _ = context.Push(new AiRequestContext(UserId: userId, IsBackground: true));
+        var tenant = new TenantService(new HttpContextAccessor(), context);
+
+        Assert.False(tenant.BypassTenantFilters);
+        Assert.Equal($"user:{userId}", tenant.GetCurrentTenantId());
+    }
+
+    [Fact]
+    public void TenantService_BypassesTenantFiltersOnlyForRootScope()
+    {
+        var tenant = new TenantService(new HttpContextAccessor(), new AsyncLocalAiRequestContextAccessor());
+
+        Assert.True(tenant.BypassTenantFilters);
+        Assert.Equal(string.Empty, tenant.GetCurrentTenantId());
+    }
+
+    [Fact]
+    public async Task RequestlessRootScope_BackfillsTenantFromUserIdWhenWritingTenantEntity()
+    {
+        var options = CreateOptions();
+        var user = CreateUser("root-writer@example.test");
+
+        await using var db = new OrkaDbContext(options);
+        db.Users.Add(user);
+        db.Topics.Add(CreateTopic(user.Id, string.Empty, "Root backfilled"));
+        await db.SaveChangesAsync();
+
+        var saved = Assert.Single(await db.Topics.ToListAsync());
+        Assert.Equal($"user:{user.Id}", saved.TenantId);
+    }
+
+    [Fact]
+    public void AesEncryptionHelper_KeylessModeDoesNotPretendToEncrypt()
+    {
+        AesEncryptionHelper.ConfigureKey(null);
+
+        Assert.False(AesEncryptionHelper.IsConfigured);
+        Assert.Equal("plain text", AesEncryptionHelper.Encrypt("plain text"));
+        Assert.Equal("plain text", AesEncryptionHelper.Decrypt("plain text"));
+    }
+
+    [Fact]
+    public void AesEncryptionHelper_ConfiguredKeyEncryptsAndDecrypts()
+    {
+        try
+        {
+            AesEncryptionHelper.ConfigureKey("ORKA_TEST_DATABASE_ENCRYPTION_KEY_64_CHARS_2026_01");
+
+            var encrypted = AesEncryptionHelper.Encrypt("secret lesson content");
+
+            Assert.True(AesEncryptionHelper.IsConfigured);
+            Assert.NotEqual("secret lesson content", encrypted);
+            Assert.Equal("secret lesson content", AesEncryptionHelper.Decrypt(encrypted));
+        }
+        finally
+        {
+            AesEncryptionHelper.ConfigureKey(null);
         }
     }
 

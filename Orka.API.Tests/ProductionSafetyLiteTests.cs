@@ -98,6 +98,7 @@ public sealed class ProductionSafetyLiteTests
     [InlineData("AllowedHosts")]
     [InlineData("ConnectionStrings:DefaultConnection")]
     [InlineData("ConnectionStrings:Redis")]
+    [InlineData("Database:EncryptionKey")]
     [InlineData("AI:Cost:GlobalDailyUsdLimit")]
     [InlineData("AI:Cost:UserDailyUsdLimit")]
     [InlineData("AI:GitHubModels:Token")]
@@ -125,6 +126,19 @@ public sealed class ProductionSafetyLiteTests
 
         Assert.Contains("Auth:RefreshCookie:Secure", exception.Message);
         Assert.DoesNotContain("test-github-token", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionSafetyPolicy_FailsClosedWhenDatabaseEncryptionKeyIsShort()
+    {
+        var values = ValidProtectedConfiguration();
+        values["Database:EncryptionKey"] = "short";
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ProductionSafetyStartupPolicy.Validate(Configuration(values), new TestEnvironment("Production"), useInMemoryDatabase: false));
+
+        Assert.Contains("Database:EncryptionKey", exception.Message);
+        Assert.DoesNotContain("ORKA_TEST", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -372,6 +386,7 @@ public sealed class ProductionSafetyLiteTests
         ["AllowedHosts"] = "app.example.com",
         ["JWT:Secret"] = "ORKA_TEST_JWT_SECRET_64_CHARS_2026_01",
         ["JWT:RefreshTokenHashSecret"] = "ORKA_TEST_REFRESH_HASH_SECRET_64_CHARS_2026_01",
+        ["Database:EncryptionKey"] = "ORKA_TEST_DATABASE_ENCRYPTION_KEY_64_CHARS_2026_01",
         ["ConnectionStrings:DefaultConnection"] = "Server=sql.example.com;Database=Orka;User Id=orka;Password=Secret123!;TrustServerCertificate=True;",
         ["ConnectionStrings:Redis"] = "redis.example.com:6379,abortConnect=false",
         ["Cors:AllowedOrigins:0"] = "https://app.example.com",
