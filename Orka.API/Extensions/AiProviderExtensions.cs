@@ -77,6 +77,12 @@ namespace Orka.API.Extensions
                     PooledConnectionLifetime = TimeSpan.FromMinutes(2)
                 });
 
+            services.AddHttpClient("Cohere", c => c.Timeout = TimeSpan.FromSeconds(30))
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+                });
+
             services.AddHttpClient("Groq", c => c.Timeout = TimeSpan.FromSeconds(15))
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {
@@ -271,6 +277,7 @@ namespace Orka.API.Extensions
             services.AddScoped<IOpenRouterService, OpenRouterService>();
             services.AddScoped<ICerebrasService, CerebrasService>();
             services.AddScoped<ISambaNovaService, SambaNovaService>();
+            services.AddScoped<ICohereService, CohereService>();
 
             // ── SEMANTIC KERNEL SETUP ──────────────────────────────────────────────────
             services.AddScoped<Kernel>(sp =>

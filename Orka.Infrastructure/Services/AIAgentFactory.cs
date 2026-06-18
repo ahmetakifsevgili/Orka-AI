@@ -22,6 +22,7 @@ public class AIAgentFactory : IAIAgentFactory
     private readonly ICerebrasService _cerebras;
     private readonly IMistralService _mistral;
     private readonly ISambaNovaService _sambaNova;
+    private readonly ICohereService _cohere;
     private readonly IRedisMemoryService _redis;
     private readonly IBackgroundTaskQueue _backgroundQueue;
     private readonly IRuntimeTelemetryService _runtimeTelemetry;
@@ -47,6 +48,7 @@ public class AIAgentFactory : IAIAgentFactory
         ICerebrasService cerebras,
         IMistralService mistral,
         ISambaNovaService sambaNova,
+        ICohereService cohere,
         IRedisMemoryService redis,
         IBackgroundTaskQueue backgroundQueue,
         IRuntimeTelemetryService runtimeTelemetry,
@@ -64,6 +66,7 @@ public class AIAgentFactory : IAIAgentFactory
         _cerebras = cerebras;
         _mistral = mistral;
         _sambaNova = sambaNova;
+        _cohere = cohere;
         _redis = redis;
         _backgroundQueue = backgroundQueue;
         _runtimeTelemetry = runtimeTelemetry;
@@ -470,7 +473,7 @@ public class AIAgentFactory : IAIAgentFactory
         if (!_configuration.GetValue("AI:Reliability:FallbackEnabled", true))
             yield break;
 
-        var fallbackProviders = new[] { "GitHubModels", "OpenRouter", "Groq", "Mistral" };
+        var fallbackProviders = FallbackProviders();
         if (AllowsStrictExternalFallback(role, stream))
         {
             fallbackProviders = StrictExternalFallbackProviders();
@@ -496,6 +499,14 @@ public class AIAgentFactory : IAIAgentFactory
         return configured is { Length: > 0 }
             ? configured
             : new[] { "GitHubModels", "Groq" };
+    }
+
+    private string[] FallbackProviders()
+    {
+        var configured = _configuration.GetSection("AI:Reliability:FallbackProviders").Get<string[]>();
+        return configured is { Length: > 0 }
+            ? configured
+            : new[] { "GitHubModels", "OpenRouter", "Groq", "Mistral", "Cohere" };
     }
 
     private string ResolveFallbackModel(string provider, AgentRole role) =>
@@ -580,6 +591,7 @@ public class AIAgentFactory : IAIAgentFactory
             "cerebras" => _cerebras.GenerateResponseAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
             "mistral" => _mistral.GenerateResponseAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
             "sambanova" => _sambaNova.GenerateResponseAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
+            "cohere" => _cohere.GenerateResponseAsync(systemPrompt, userMessage, ct, providerMaxOutputTokens),
             _ => _github.ChatAsync(systemPrompt, userMessage, attempt.Model, ct, providerMaxOutputTokens)
         };
     }
@@ -599,6 +611,11 @@ public class AIAgentFactory : IAIAgentFactory
             return Math.Min(requestedMaxOutputTokens, _configuration.GetValue("AI:Gemini:MaxQuizOutputTokens", 8192));
         }
 
+        if (string.Equals(attempt.Provider, "Cohere", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Min(requestedMaxOutputTokens, _configuration.GetValue("AI:Cohere:MaxOutputTokens", 4096));
+        }
+
         return requestedMaxOutputTokens;
     }
 
@@ -612,6 +629,7 @@ public class AIAgentFactory : IAIAgentFactory
             "cerebras" => _cerebras.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
             "mistral" => _mistral.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
             "sambanova" => _sambaNova.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
+            "cohere" => _cohere.GenerateResponseStreamAsync(systemPrompt, userMessage, ct, maxOutputTokens),
             _ => _github.ChatStreamAsync(systemPrompt, userMessage, attempt.Model, ct, maxOutputTokens)
         };
 
@@ -686,6 +704,7 @@ public class AIAgentFactory : IAIAgentFactory
             "cerebras" => "AI:Cerebras:ApiKey",
             "mistral" => "AI:Mistral:ApiKey",
             "sambanova" => "AI:SambaNova:ApiKey",
+            "cohere" => "AI:Cohere:ApiKey",
             _ => null
         };
 

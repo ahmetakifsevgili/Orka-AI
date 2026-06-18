@@ -173,6 +173,59 @@ public sealed class AiReliabilityTests
     }
 
     [Fact]
+    public async Task CompleteChat_CohereRoute_CallsCohereProvider()
+    {
+        var providers = new FakeProviders();
+        var cohere = new FakeCohereService { Handler = () => Task.FromResult("cohere-ok") };
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            cohere: cohere,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:AgentRouting:Tutor:Provider"] = "Cohere",
+                ["AI:AgentRouting:Tutor:Model"] = "command-a-03-2025",
+                ["AI:Cost:RoleBudgets:Tutor:MaxOutputTokens"] = "8192",
+                ["AI:Cohere:MaxOutputTokens"] = "4096"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Tutor, "system", "hello");
+
+        Assert.Equal("cohere-ok", result);
+        Assert.Equal(0, providers.GitHubCalls);
+        Assert.Equal(1, cohere.Calls);
+        Assert.Equal(4096, cohere.LastMaxOutputTokens);
+        Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success);
+    }
+
+    [Fact]
+    public async Task CompleteChat_ConfiguredFallbackCanUseCohere()
+    {
+        var providers = new FakeProviders();
+        providers.GitHubHandler = () => throw ServerError("GitHubModels");
+        var cohere = new FakeCohereService { Handler = () => Task.FromResult("cohere-fallback-ok") };
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            cohere: cohere,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:Reliability:FallbackProviders:0"] = "Cohere"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Tutor, "system", "hello");
+
+        Assert.Equal("cohere-fallback-ok", result);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Equal(1, cohere.Calls);
+        Assert.Contains(telemetry.Events, e => e.Provider == "Cohere" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
     public async Task CompleteChat_QuizProviderFailures_DoNotUseInMemoryFallback()
     {
         var providers = new FakeProviders();
@@ -379,6 +432,22 @@ public sealed class AiReliabilityTests
         AssertNoUnsafeProviderDiagnosticContent(exception.RedactedDiagnostic);
     }
 
+    [Fact]
+    public async Task CohereService_ParsesCompatibilityChatCompletion()
+    {
+        var service = new CohereService(
+            new StaticHttpClientFactory(HttpStatusCode.OK, """{"choices":[{"message":{"content":"cohere-ok"}}]}"""),
+            ProviderConfig(
+                "AI:Cohere:ApiKey", "test-key",
+                "AI:Cohere:Model", "command-a-03-2025",
+                "AI:Cohere:BaseUrl", "https://api.cohere.com/compatibility/v1"),
+            NullLogger<CohereService>.Instance);
+
+        var result = await service.GenerateResponseAsync("system", "hello", maxOutputTokens: 32);
+
+        Assert.Equal("cohere-ok", result);
+    }
+
     private static AiProviderCallException ServerError(string provider, string role = "Tutor") =>
         new(provider, "model", role, AiProviderFailureKind.ServerError, "server error", HttpStatusCode.InternalServerError, isRetryable: true, isFallbackable: true);
 
@@ -448,6 +517,7 @@ public sealed class AiReliabilityTests
         IAiProviderTelemetryService? telemetry = null,
         IRuntimeTelemetryService? runtime = null,
         IAiRequestContextAccessor? context = null,
+        FakeCohereService? cohere = null,
         IReadOnlyDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>
@@ -464,6 +534,9 @@ public sealed class AiReliabilityTests
                 ["AI:OpenRouter:ApiKey"] = "test-openrouter-key",
                 ["AI:Cerebras:ApiKey"] = "test-cerebras-key",
                 ["AI:SambaNova:ApiKey"] = "test-sambanova-key",
+                ["AI:Cohere:ApiKey"] = "test-cohere-key",
+                ["AI:Cohere:Model"] = "command-a-03-2025",
+                ["AI:Cohere:MaxOutputTokens"] = "4096",
                 ["AI:Reliability:MaxAttemptsPerRequest"] = "2",
                 ["AI:Reliability:FallbackEnabled"] = "true",
                 ["AI:Reliability:ProviderCooldownSeconds"] = "60",
@@ -496,6 +569,7 @@ public sealed class AiReliabilityTests
             providers,
             providers,
             providers,
+            cohere ?? new FakeCohereService(),
             activeRedis,
             syncQueue,
             activeRuntime,
@@ -607,6 +681,28 @@ public sealed class AiReliabilityTests
         public Task<string> GeneratePlanAsync(string topicTitle, string intent = "genel", string level = "orta") => GenerateResponseAsync(string.Empty, topicTitle);
         public Task<string> ExtractWikiBlocksAsync(string conversation, string topicTitle) => GenerateResponseAsync(string.Empty, conversation);
         public Task<string> GenerateReinforcementQuestionsAsync(string content) { MistralCalls++; return GenerateResponseAsync(string.Empty, content); }
+    }
+
+    private sealed class FakeCohereService : ICohereService
+    {
+        public int Calls;
+        public int StreamCalls;
+        public int? LastMaxOutputTokens;
+        public Func<Task<string>> Handler { get; set; } = () => Task.FromResult("cohere-ok");
+
+        public Task<string> GenerateResponseAsync(string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
+        {
+            Calls++;
+            LastMaxOutputTokens = maxOutputTokens;
+            return Handler();
+        }
+
+        public async IAsyncEnumerable<string> GenerateResponseStreamAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
+        {
+            StreamCalls++;
+            LastMaxOutputTokens = maxOutputTokens;
+            yield return await Handler();
+        }
     }
 
     private sealed class StaticHttpClientFactory : IHttpClientFactory

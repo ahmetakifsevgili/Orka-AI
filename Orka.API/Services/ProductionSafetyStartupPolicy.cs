@@ -13,7 +13,8 @@ public static class ProductionSafetyStartupPolicy
             ["OpenRouter"] = "AI:OpenRouter:ApiKey",
             ["Cerebras"] = "AI:Cerebras:ApiKey",
             ["Mistral"] = "AI:Mistral:ApiKey",
-            ["SambaNova"] = "AI:SambaNova:ApiKey"
+            ["SambaNova"] = "AI:SambaNova:ApiKey",
+            ["Cohere"] = "AI:Cohere:ApiKey"
         };
 
     public static void Validate(
