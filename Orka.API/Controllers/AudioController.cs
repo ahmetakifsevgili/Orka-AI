@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
 
 namespace Orka.API.Controllers;
@@ -40,16 +41,24 @@ public class AudioController : ControllerBase
             return BadRequest(new { message = "Audio Overview icin topicId, sessionId, wikiPageId veya sourceId zorunlu." });
         }
 
-        var job = await _audio.CreateOverviewAsync(
-            GetUserId(),
-            request.TopicId,
-            request.SessionId,
-            surface,
-            request.WikiPageId,
-            request.SourceId,
-            request.AudioMode,
-            request.TtsQuality,
-            HttpContext.RequestAborted);
+        AudioOverviewJobDto job;
+        try
+        {
+            job = await _audio.CreateOverviewAsync(
+                GetUserId(),
+                request.TopicId,
+                request.SessionId,
+                surface,
+                request.WikiPageId,
+                request.SourceId,
+                request.AudioMode,
+                request.TtsQuality,
+                HttpContext.RequestAborted);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
         return Accepted(job);
     }

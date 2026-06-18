@@ -1103,9 +1103,20 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
 
                 return validatedQuiz;
             }
-            catch (Exception ex) when ((ex is not OperationCanceledException || !ct.IsCancellationRequested) && attempt < maxAttempts && !IsProviderInfrastructureFailure(ex))
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 lastFailure = ex;
+                if (attempt >= maxAttempts || IsProviderInfrastructureFailure(ex))
+                {
+                    _logger.LogWarning(
+                        "[PlanDiagnostic] Diagnostic quiz provider unavailable; falling back to deterministic assessment blueprint. TopicRef={TopicRef} Attempt={Attempt}/{MaxAttempts} ErrorType={ErrorType}",
+                        LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
+                        attempt,
+                        maxAttempts,
+                        LogPrivacyGuard.SafeExceptionType(ex));
+                    break;
+                }
+
                 _logger.LogWarning(
                     "[PlanDiagnostic] Diagnostic quiz contract attempt failed; retrying with strict regeneration. TopicRef={TopicRef} Attempt={Attempt}/{MaxAttempts} ErrorType={ErrorType} Error={Error}",
                     LogPrivacyGuard.SafeTextRef(topicTitle, "topic"),
@@ -1116,24 +1127,20 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
             }
         }
 
-        if (IsDuplicateQualityFailure(lastFailure))
+        if (lastFailure != null)
         {
             _logger.LogWarning(
-                "[PlanDiagnostic] Diagnostic quiz duplicate repair fallback activated. TopicRef={TopicRef}",
+                IsDuplicateQualityFailure(lastFailure)
+                    ? "[PlanDiagnostic] Diagnostic quiz duplicate repair fallback activated. TopicRef={TopicRef}"
+                    : "[PlanDiagnostic] Diagnostic quiz deterministic fallback activated. TopicRef={TopicRef}",
                 LogPrivacyGuard.SafeTextRef(topicTitle, "topic"));
 
-            var repairedQuiz = NormalizeDiagnosticQuizForDelivery(
-                DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar));
-            repairedQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(
-                repairedQuiz,
+            return await BuildFallbackDiagnosticQuizAsync(
                 topicTitle,
+                assessmentGrammar,
                 requestedQuestionCount,
-                out _,
-                learningBlueprint);
-            repairedQuiz = NormalizeDiagnosticQuizForDelivery(
-                await _assessmentGrammar.AttachQuestionMetadataAsync(repairedQuiz, assessmentGrammar, ct));
-            DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(repairedQuiz, requestedQuestionCount);
-            return repairedQuiz;
+                learningBlueprint,
+                ct);
         }
 
         try
@@ -1280,6 +1287,27 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         }
 
         throw lastBatchFailure ?? new InvalidOperationException("Diagnostic quiz batch provider returned no usable output.");
+    }
+
+    private async Task<string> BuildFallbackDiagnosticQuizAsync(
+        string topicTitle,
+        AssessmentGrammarDto assessmentGrammar,
+        int requestedQuestionCount,
+        LearningBlueprintDto learningBlueprint,
+        CancellationToken ct)
+    {
+        var fallbackQuiz = NormalizeDiagnosticQuizForDelivery(
+            DiagnosticQuizQualityGate.BuildFallbackDiagnosticBlueprint(topicTitle, assessmentGrammar));
+        fallbackQuiz = DiagnosticQuizQualityGate.EnsureQualityOrThrow(
+            fallbackQuiz,
+            topicTitle,
+            requestedQuestionCount,
+            out _,
+            learningBlueprint);
+        fallbackQuiz = NormalizeDiagnosticQuizForDelivery(
+            await _assessmentGrammar.AttachQuestionMetadataAsync(fallbackQuiz, assessmentGrammar, ct));
+        DiagnosticQuizQualityGate.EnsureAssessmentMetadataOrThrow(fallbackQuiz, requestedQuestionCount);
+        return fallbackQuiz;
     }
 
     private static bool IsProviderInfrastructureFailure(Exception ex)
@@ -2073,10 +2101,17 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
                         t.ParentTopicId.HasValue &&
                         moduleIds.Contains(t.ParentTopicId.Value) &&
                         !t.IsArchived)
-            .OrderBy(t => t.ParentTopicId)
-            .ThenBy(t => t.Order)
+            .OrderBy(t => t.Order)
             .ThenBy(t => t.CreatedAt)
             .ToListAsync(ct);
+        var moduleOrder = modules
+            .Select((module, index) => new { module.Id, Index = index })
+            .ToDictionary(x => x.Id, x => x.Index);
+        lessons = lessons
+            .OrderBy(t => moduleOrder.GetValueOrDefault(t.ParentTopicId!.Value, int.MaxValue))
+            .ThenBy(t => t.Order)
+            .ThenBy(t => t.CreatedAt)
+            .ToList();
 
         var hasEmptyModule = modules.Any(module => lessons.All(lesson => lesson.ParentTopicId != module.Id));
         var isValid = modules.Count >= MinimumPlanModules &&
@@ -2414,7 +2449,6 @@ public sealed class PlanDiagnosticService : IPlanDiagnosticService
         PlanDiagnosticStateDto state)
     {
         return generatedTopics
-            .OrderBy(t => t.Order)
             .Select((topic, index) =>
             {
                 var metadata = LessonContractMetadata.FromJson(topic.MetadataJson);

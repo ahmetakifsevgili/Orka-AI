@@ -80,17 +80,25 @@ public class ClassroomController : ControllerBase
             return BadRequest(new { message = "OrkaLM classroom wikiPageId ile baslatilamaz; Wiki ders sinifi Wiki yuzeyinde calisir." });
         }
 
-        var session = await _classroom.StartSessionAsync(
-            GetUserId(),
-            request.TopicId,
-            request.SessionId,
-            request.AudioOverviewJobId,
-            request.Transcript ?? string.Empty,
-            surface,
-            request.WikiPageId,
-            request.SourceId,
-            request.AudioMode,
-            HttpContext.RequestAborted);
+        ClassroomSessionDto session;
+        try
+        {
+            session = await _classroom.StartSessionAsync(
+                GetUserId(),
+                request.TopicId,
+                request.SessionId,
+                request.AudioOverviewJobId,
+                request.Transcript ?? string.Empty,
+                surface,
+                request.WikiPageId,
+                request.SourceId,
+                request.AudioMode,
+                HttpContext.RequestAborted);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
         return Ok(session);
     }

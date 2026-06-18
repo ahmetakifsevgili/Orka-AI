@@ -78,6 +78,8 @@ public class ClassroomService : IClassroomService
                 context = MergeClassroomContext(context, jobContext);
             }
 
+            EnsureTopicMatches(topicId, audioOverviewJob.TopicId, "Classroom topic audio overview job ile eslesmiyor.");
+            EnsureSessionMatches(sessionId, audioOverviewJob.SessionId, "Classroom session audio overview job ile eslesmiyor.");
             topicId ??= audioOverviewJob.TopicId;
             sessionId ??= audioOverviewJob.SessionId;
         }
@@ -88,6 +90,8 @@ public class ClassroomService : IClassroomService
                 .FirstOrDefaultAsync(p => p.Id == context.WikiPageId.Value && p.UserId == userId && !p.IsDeleted, ct);
             if (page == null)
                 throw new NotFoundException("Classroom wiki sayfasi bulunamadi.");
+            EnsureTopicMatches(topicId, page.TopicId, "Classroom topic wiki sayfasi ile eslesmiyor.");
+            EnsureSessionMatches(sessionId, page.SessionId, "Classroom session wiki sayfasi ile eslesmiyor.");
             topicId ??= page.TopicId;
             sessionId ??= page.SessionId;
         }
@@ -98,6 +102,8 @@ public class ClassroomService : IClassroomService
                 .FirstOrDefaultAsync(s => s.Id == context.SourceId.Value && s.UserId == userId && !s.IsDeleted, ct);
             if (source == null)
                 throw new NotFoundException("Classroom kaynagi bulunamadi.");
+            EnsureTopicMatches(topicId, source.TopicId, "Classroom topic kaynak ile eslesmiyor.");
+            EnsureSessionMatches(sessionId, source.SessionId, "Classroom session kaynak ile eslesmiyor.");
             topicId ??= source.TopicId;
             sessionId ??= source.SessionId;
         }
@@ -127,6 +133,17 @@ public class ClassroomService : IClassroomService
                 .AnyAsync(j => j.Id == audioOverviewJobId.Value && j.UserId == userId, ct);
             if (!jobExists)
                 throw new NotFoundException("Classroom audio overview job bulunamadı.");
+        }
+
+        if (sessionId.HasValue)
+        {
+            var sessionTopicId = await _db.Sessions
+                .AsNoTracking()
+                .Where(s => s.Id == sessionId.Value && s.UserId == userId)
+                .Select(s => s.TopicId)
+                .FirstOrDefaultAsync(ct);
+            EnsureTopicMatches(topicId, sessionTopicId, "Classroom topic session ile eslesmiyor.");
+            topicId ??= sessionTopicId;
         }
 
         var preparedTranscript = await BuildClassroomContextAsync(
@@ -462,6 +479,26 @@ public class ClassroomService : IClassroomService
         return parts.Count == 0
             ? "Henuz classroom icin yeterli baglam yok."
             : Trim(string.Join("\n\n", parts), 9000);
+    }
+
+    private static void EnsureTopicMatches(Guid? requestedTopicId, Guid? contextTopicId, string message)
+    {
+        if (requestedTopicId.HasValue &&
+            contextTopicId.HasValue &&
+            requestedTopicId.Value != contextTopicId.Value)
+        {
+            throw new ArgumentException(message);
+        }
+    }
+
+    private static void EnsureSessionMatches(Guid? requestedSessionId, Guid? contextSessionId, string message)
+    {
+        if (requestedSessionId.HasValue &&
+            contextSessionId.HasValue &&
+            requestedSessionId.Value != contextSessionId.Value)
+        {
+            throw new ArgumentException(message);
+        }
     }
 
     private static ClassroomContext NormalizeClassroomContext(string? surface, Guid? wikiPageId, Guid? sourceId, string? audioMode)

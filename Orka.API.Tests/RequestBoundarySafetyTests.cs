@@ -92,6 +92,39 @@ public sealed class RequestBoundarySafetyTests
     }
 
     [Fact]
+    public async Task AudioAndClassroom_WithSameUserCrossTopicSourceContext_ReturnBadRequestAndDoNotCreateRecords()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await RegisterAuthenticatedClientAsync(factory);
+        var (topicA, sessionA) = await CreateTopicSessionAsync(factory, user.UserId);
+        var (_, _, sourceB) = await CreateTopicSessionSourceAsync(factory, user.UserId);
+
+        var audio = await user.Client.PostAsJsonAsync("/api/audio/overview", new
+        {
+            topicId = topicA,
+            sessionId = sessionA,
+            surface = "orkalm",
+            sourceId = sourceB
+        });
+        var classroom = await user.Client.PostAsJsonAsync("/api/classroom/session", new
+        {
+            topicId = topicA,
+            sessionId = sessionA,
+            surface = "orkalm",
+            sourceId = sourceB,
+            transcript = ""
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, audio.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, classroom.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+        Assert.False(await db.AudioOverviewJobs.AnyAsync(j => j.UserId == user.UserId));
+        Assert.False(await db.ClassroomSessions.AnyAsync(c => c.UserId == user.UserId));
+    }
+
+    [Fact]
     public async Task Chat_WithCrossUserSessionOrFocusTopic_ReturnsNotFound()
     {
         using var factory = new ApiSmokeFactory();

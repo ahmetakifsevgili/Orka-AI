@@ -71,6 +71,8 @@ public class AudioOverviewService : IAudioOverviewService
             if (page == null)
                 throw new NotFoundException("Audio overview wiki sayfasi bulunamadi.");
 
+            EnsureTopicMatches(topicId, page.TopicId, "Audio overview topic wiki sayfasi ile eslesmiyor.");
+            EnsureSessionMatches(sessionId, page.SessionId, "Audio overview session wiki sayfasi ile eslesmiyor.");
             topicId ??= page.TopicId;
             sessionId ??= page.SessionId;
             normalizedSurface = "wiki";
@@ -86,6 +88,8 @@ public class AudioOverviewService : IAudioOverviewService
             if (source == null)
                 throw new NotFoundException("Audio overview kaynagi bulunamadi.");
 
+            EnsureTopicMatches(topicId, source.TopicId, "Audio overview topic kaynak ile eslesmiyor.");
+            EnsureSessionMatches(sessionId, source.SessionId, "Audio overview session kaynak ile eslesmiyor.");
             topicId ??= source.TopicId;
             sessionId ??= source.SessionId;
             normalizedSurface = "orkalm";
@@ -110,6 +114,17 @@ public class AudioOverviewService : IAudioOverviewService
                 .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
             if (!sessionExists)
                 throw new NotFoundException("Audio overview session bulunamadı.");
+        }
+
+        if (sessionId.HasValue)
+        {
+            var sessionTopicId = await _db.Sessions
+                .AsNoTracking()
+                .Where(s => s.Id == sessionId.Value && s.UserId == userId)
+                .Select(s => s.TopicId)
+                .FirstOrDefaultAsync(ct);
+            EnsureTopicMatches(topicId, sessionTopicId, "Audio overview topic session ile eslesmiyor.");
+            topicId ??= sessionTopicId;
         }
 
         var metadata = new AudioOverviewJobMetadata
@@ -236,6 +251,26 @@ public class AudioOverviewService : IAudioOverviewService
             job.SpeakersJson = SerializeAudioMetadata(metadata);
             job.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(CancellationToken.None);
+        }
+    }
+
+    private static void EnsureTopicMatches(Guid? requestedTopicId, Guid? contextTopicId, string message)
+    {
+        if (requestedTopicId.HasValue &&
+            contextTopicId.HasValue &&
+            requestedTopicId.Value != contextTopicId.Value)
+        {
+            throw new ArgumentException(message);
+        }
+    }
+
+    private static void EnsureSessionMatches(Guid? requestedSessionId, Guid? contextSessionId, string message)
+    {
+        if (requestedSessionId.HasValue &&
+            contextSessionId.HasValue &&
+            requestedSessionId.Value != contextSessionId.Value)
+        {
+            throw new ArgumentException(message);
         }
     }
 

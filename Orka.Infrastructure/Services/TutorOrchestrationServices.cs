@@ -551,7 +551,7 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
             AffectiveState = profile.AffectiveState,
             CognitiveLoad = profile.CognitiveLoad,
             GroundingStatus = policyContext.GroundingStatus,
-            SourceEvidenceCount = policyContext.SourceEvidenceCount + CountContextEvidence(notebookContext, wikiContext),
+            SourceEvidenceCount = Math.Max(policyContext.SourceEvidenceCount, CountContextEvidence(notebookContext, wikiContext)),
             EvidenceQuality = policyContext.EvidenceQuality,
             MisconceptionSignal = learningLoopSignal?.Misconception,
             LearningSignalConfidence = learningLoopSignal?.Confidence,
@@ -2206,6 +2206,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
     private readonly IVisualArtifactProvider _visuals;
     private readonly IRealWorldEvidenceService? _realWorldEvidence;
     private readonly IUnifiedToolRuntimeService? _toolRuntime;
+    private readonly ILogger<TutorToolOrchestrator>? _logger;
 
     public TutorToolOrchestrator(
         OrkaDbContext db,
@@ -2217,7 +2218,8 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         IMarketDataProvider marketData,
         IVisualArtifactProvider visuals,
         IRealWorldEvidenceService? realWorldEvidence = null,
-        IUnifiedToolRuntimeService? toolRuntime = null)
+        IUnifiedToolRuntimeService? toolRuntime = null,
+        ILogger<TutorToolOrchestrator>? logger = null)
     {
         _db = db;
         _workingMemory = workingMemory;
@@ -2229,6 +2231,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         _visuals = visuals;
         _realWorldEvidence = realWorldEvidence;
         _toolRuntime = toolRuntime;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<TutorToolCallDto>> RunAsync(
@@ -2252,35 +2255,56 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
 
             var sw = Stopwatch.StartNew();
             ToolRuntimeDecisionDto? runtimeDecision = null;
-            if (_toolRuntime != null)
+            ToolExecutionOutcome outcome;
+            try
             {
-                runtimeDecision = await _toolRuntime.DecideAsync(turnState.UserId, new ToolRuntimeRequestDto
+                if (_toolRuntime != null)
                 {
-                    ToolId = plan.ToolId,
-                    Caller = "tutor",
-                    TopicId = turnState.TopicId,
-                    SessionId = turnState.SessionId,
-                    ActiveLessonSnapshotId = turnState.ActiveLessonSnapshotId,
-                    StudentContextSnapshotId = turnState.StudentContextSnapshotId,
-                    TutorTurnStateId = turnState.Id,
-                    TutorActionTraceId = actionPlan.Id,
-                    Purpose = plan.Reason,
-                    RiskLevel = plan.RiskLevel,
-                    InputSummary = BuildRuntimeInputSummary(plan, turnState)
-                }, ct);
-            }
+                    runtimeDecision = await _toolRuntime.DecideAsync(turnState.UserId, new ToolRuntimeRequestDto
+                    {
+                        ToolId = plan.ToolId,
+                        Caller = "tutor",
+                        TopicId = turnState.TopicId,
+                        SessionId = turnState.SessionId,
+                        ActiveLessonSnapshotId = turnState.ActiveLessonSnapshotId,
+                        StudentContextSnapshotId = turnState.StudentContextSnapshotId,
+                        TutorTurnStateId = turnState.Id,
+                        TutorActionTraceId = actionPlan.Id,
+                        Purpose = plan.Reason,
+                        RiskLevel = plan.RiskLevel,
+                        InputSummary = BuildRuntimeInputSummary(plan, turnState)
+                    }, ct);
+                }
 
-            var outcome = runtimeDecision is { Allowed: false }
-                ? ToolExecutionOutcome.Local(
-                    runtimeDecision.Decision == "degrade" ? "degraded" : "blocked",
+                outcome = runtimeDecision is { Allowed: false }
+                    ? ToolExecutionOutcome.Local(
+                        runtimeDecision.Decision == "degrade" ? "degraded" : "blocked",
+                        false,
+                        "orka_runtime",
+                        null,
+                        runtimeDecision.ReasonCode,
+                        runtimeDecision.UserSafeReason,
+                        null,
+                        0)
+                    : await ExecuteAsync(plan, turnState, actionPlan.Id, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                _logger?.LogWarning(
+                    "[TutorTool] Tool execution degraded. ToolId={ToolId} TutorActionRef={TutorActionRef} ErrorType={ErrorType}",
+                    plan.ToolId,
+                    LogPrivacyGuard.SafeId(actionPlan.Id, "tutor_action"),
+                    LogPrivacyGuard.SafeExceptionType(ex));
+                outcome = ToolExecutionOutcome.Local(
+                    "degraded",
                     false,
-                    "orka_runtime",
+                    "orka_tool_runtime",
                     null,
-                    runtimeDecision.ReasonCode,
-                    runtimeDecision.UserSafeReason,
+                    "tool_provider_exception",
+                    "Tool provider failed; continue without inventing tool-backed facts.",
                     null,
-                    0)
-                : await ExecuteAsync(plan, turnState, actionPlan.Id, ct);
+                    0);
+            }
             sw.Stop();
             var finishedAt = DateTime.UtcNow;
 
@@ -2414,7 +2438,7 @@ public sealed class TutorToolOrchestrator : ITutorToolOrchestrator
         return results;
     }
 
-    private static bool ShouldExecutePlannedTool(TutorToolPlanDto plan, TutorToolDecisionDto? decision)
+    public static bool ShouldExecutePlannedTool(TutorToolPlanDto plan, TutorToolDecisionDto? decision)
     {
         if (string.IsNullOrWhiteSpace(plan.ToolId) ||
             string.Equals(plan.ToolId, "write_wiki_trace", StringComparison.OrdinalIgnoreCase))

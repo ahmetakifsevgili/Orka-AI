@@ -8,6 +8,7 @@ using Orka.Core.DTOs.Korteks;
 using Orka.Core.DTOs.PlanDiagnostic;
 using Orka.Core.Entities;
 using Orka.Core.Enums;
+using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
@@ -98,7 +99,7 @@ public sealed class PlanDiagnosticTests
         var harness = await CreateHarnessAsync();
         harness.Factory.ReturnInvalidQuiz = true;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Service.StartAsync(
+        var response = await harness.Service.StartAsync(
             harness.UserId,
             new StartPlanDiagnosticRequest
             {
@@ -109,7 +110,11 @@ public sealed class PlanDiagnosticTests
                 ApprovedFocusArea = "algoritmalar",
                 ApprovedStudyGoal = "ogrenme ve pratik",
                 ApprovedResearchIntent = "Java programming algorithms learning path"
-            }));
+            });
+
+        Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
+        Assert.Contains("assessmentItemId", response.QuestionsJson);
+        Assert.DoesNotContain("correctAnswer", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -144,8 +149,11 @@ public sealed class PlanDiagnosticTests
         var harness = await CreateHarnessAsync();
         harness.Factory.ThrowOnQuiz = true;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId)));
+        var response = await harness.Service.StartAsync(harness.UserId, StartRequest(harness.TopicId));
+
+        Assert.Equal(response.QuizQuestionCount, DiagnosticQuizQualityGate.CountQuestions(response.QuestionsJson));
+        Assert.Contains("assessmentItemId", response.QuestionsJson);
+        Assert.DoesNotContain("correctAnswer", response.QuestionsJson, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -167,6 +175,46 @@ public sealed class PlanDiagnosticTests
         var count = (int)method!.Invoke(null, [mainTopic, focusArea, researchIntent])!;
 
         Assert.Equal(expectedQuestionCount, count);
+    }
+
+    [Fact]
+    public void BuildPlanStepsFromGeneratedTopics_PreservesMaterializedModuleOrder()
+    {
+        var method = typeof(PlanDiagnosticService).GetMethod(
+            "BuildPlanStepsFromGeneratedTopics",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(method);
+
+        var firstModuleFirstLesson = new Topic
+        {
+            Id = Guid.NewGuid(),
+            Title = "Module A first lesson",
+            Order = 2,
+            PlanIntent = "Lesson",
+            MetadataJson = "{}"
+        };
+        var secondModuleFirstLesson = new Topic
+        {
+            Id = Guid.NewGuid(),
+            Title = "Module B first lesson",
+            Order = 1,
+            PlanIntent = "Lesson",
+            MetadataJson = "{}"
+        };
+        var state = new PlanDiagnosticStateDto
+        {
+            PlanRequestId = Guid.NewGuid(),
+            TopicId = Guid.NewGuid(),
+            TopicTitle = "Module order"
+        };
+
+        var steps = (IReadOnlyList<PlanStepContractDto>)method!.Invoke(
+            null,
+            [new[] { firstModuleFirstLesson, secondModuleFirstLesson }, state])!;
+
+        Assert.Equal("Module A first lesson", steps[0].Title);
+        Assert.Equal("Module B first lesson", steps[1].Title);
     }
 
 
@@ -764,7 +812,14 @@ public sealed class PlanDiagnosticTests
             LastSystemPrompt = systemPrompt;
             if (ThrowOnQuiz && systemPrompt.Contains("Egitim Tanilama Uzmani", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Diagnostic quiz provider unavailable.");
+                throw new AiProviderCallException(
+                    "fake",
+                    "fake-quiz",
+                    AgentRole.Quiz.ToString(),
+                    AiProviderFailureKind.TransientNetwork,
+                    "Diagnostic quiz provider unavailable.",
+                    isRetryable: true,
+                    isFallbackable: true);
             }
 
             if (ReturnInvalidQuiz)

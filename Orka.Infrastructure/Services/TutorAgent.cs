@@ -204,8 +204,18 @@ public class TutorAgent : ITutorAgent
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
             content: question,
+            activeTopicContext: activeTopicContext,
+            memoryContext: memoryContext,
+            performanceHint: performanceHint,
+            wikiContext: wikiContext,
+            pistonContext: pistonContext,
+            goldExamples: goldExamples,
+            lowQualityHint: lowQualityHint,
+            notebookContext: notebookContext,
+            learningSignalContext: learningSignalContext,
             educatorCoreContext: teacherContext.PromptBlock,
-            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
+            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock,
+            reviewPressureContext: reviewPressureContext);
         var userMessage = BuildContextSummary(contextMessages);
 
         var answer = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt, userMessage);
@@ -485,7 +495,10 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             pistonContext,
             tutorPolicy,
             ct);
-        var startedToolIds = orchestrationState.ActionPlan.ToolPlans.Select(p => p.ToolId).ToArray();
+        var startedToolIds = orchestrationState.ActionPlan.ToolPlans
+            .Where(p => TutorToolOrchestrator.ShouldExecutePlannedTool(p, orchestrationState.ActionPlan.ToolDecision))
+            .Select(p => p.ToolId)
+            .ToArray();
         foreach (var toolId in startedToolIds)
         {
             yield return BuildStreamEvent("tool_started", new
@@ -531,8 +544,18 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         var systemPrompt = BuildTutorSystemPrompt(
             isQuizPending,
             content: question,
+            activeTopicContext: activeTopicContext,
+            memoryContext: memoryContext,
+            performanceHint: performanceHint,
+            wikiContext: wikiContext,
+            pistonContext: pistonContext,
+            goldExamples: goldExamples,
+            lowQualityHint: lowQualityHint,
+            notebookContext: notebookContext,
+            learningSignalContext: learningSignalContext,
             educatorCoreContext: teacherContext.PromptBlock,
-            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock);
+            tutorPolicyContext: tutorPolicy.PromptBlock + orchestration.PromptBlock,
+            reviewPressureContext: reviewPressureContext);
         var userMessage = BuildContextSummary(contextMessages);
 
         // AIAgentFactory: Primary → Gemini → Mistral (stream failover zinciri)
@@ -540,20 +563,13 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         await foreach (var chunk in _factory.StreamChatAsync(AgentRole.Tutor, systemPrompt, userMessage, ct))
         {
             answerBuffer.Append(chunk);
-            yield return chunk;
         }
 
-        await _educatorCore.RecordAnswerQualitySignalsAsync(
-            userId,
-            session.TopicId,
-            session.Id,
-            answerBuffer.ToString(),
-            teacherContext,
-            CancellationToken.None);
+        var finalAnswer = answerBuffer.ToString();
         var reflection = await _tutorReflection.ReflectAsync(
             orchestration.TurnState,
             orchestration.ActionPlan,
-            answerBuffer.ToString(),
+            finalAnswer,
             orchestration.Artifacts,
             CancellationToken.None);
         var pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
@@ -563,9 +579,52 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
             Reflection = reflection,
             ToolCalls = orchestration.ToolCalls,
             Artifacts = orchestration.Artifacts,
-            AssistantAnswer = answerBuffer.ToString(),
+            AssistantAnswer = finalAnswer,
             AllowLlmJudge = false
         }, CancellationToken.None);
+        if (_tutorPedagogyQualityGate.RequiresRepair(pedagogyEval))
+        {
+            var repairPrompt = _tutorPedagogyQualityGate.BuildRepairPrompt(
+                pedagogyEval,
+                orchestration.TurnState,
+                orchestration.ActionPlan,
+                finalAnswer);
+            var repaired = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt + "\n\n" + repairPrompt, userMessage);
+            if (!string.IsNullOrWhiteSpace(repaired))
+            {
+                finalAnswer = repaired;
+                reflection = await _tutorReflection.ReflectAsync(
+                    orchestration.TurnState,
+                    orchestration.ActionPlan,
+                    finalAnswer,
+                    orchestration.Artifacts,
+                    CancellationToken.None);
+                pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+                {
+                    TurnState = orchestration.TurnState,
+                    ActionPlan = orchestration.ActionPlan,
+                    Reflection = reflection,
+                    ToolCalls = orchestration.ToolCalls,
+                    Artifacts = orchestration.Artifacts,
+                    AssistantAnswer = finalAnswer,
+                    AllowLlmJudge = false
+                }, CancellationToken.None);
+                yield return BuildStreamEvent("pedagogy_repaired", new
+                {
+                    tutorPedagogyEvaluationRunId = pedagogyEval.Id,
+                    tutorPedagogyStatus = pedagogyEval.Status
+                });
+            }
+        }
+
+        await _educatorCore.RecordAnswerQualitySignalsAsync(
+            userId,
+            session.TopicId,
+            session.Id,
+            finalAnswer,
+            teacherContext,
+            CancellationToken.None);
+        yield return finalAnswer;
         yield return BuildStreamEvent("final", new
         {
             tutorTurnStateId = orchestration.TurnState.Id,
