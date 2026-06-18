@@ -640,6 +640,73 @@ public sealed class LearningArchitectureTests
     }
 
     [Fact]
+    public async Task TutorPolicyEngine_TreatsWikiOnlyContextAsWikiBackedNotSourceGrounded()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        var engine = new TutorPolicyEngine(
+            db,
+            new ConceptMasteryService(db, NullLogger<ConceptMasteryService>.Instance),
+            NullLogger<TutorPolicyEngine>.Instance);
+
+        var context = await engine.BuildAsync(
+            userId,
+            topicId,
+            sessionId: null,
+            userMessage: "Kaynak gostererek anlatir misin?",
+            notebookContext: "",
+            wikiContext: "Personal wiki summary without document citations.",
+            learningSignalContext: "");
+
+        Assert.Equal("wiki_backed", context.GroundingStatus);
+        Assert.Equal(0, context.SourceEvidenceCount);
+        Assert.Contains("source_claim_without_source_risk", context.PolicyViolations);
+        Assert.Contains(context.SourceEvidence, evidence => evidence.Contains("Personal Wiki", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task TutorPolicyEngine_SourceLifecycleBundleRemainsSourceGrounded()
+    {
+        await using var db = CreateDb();
+        var (userId, topicId) = await SeedAsync(db);
+        db.SourceEvidenceBundles.Add(new SourceEvidenceBundle
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TopicId = topicId,
+            BundleHash = "bundle-source-grounded",
+            EvidenceStatus = "source_grounded",
+            SourceCount = 1,
+            ReadySourceCount = 1,
+            ChunkCount = 2,
+            CitationCoverage = 1m,
+            EvidenceJson = "{}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await db.SaveChangesAsync();
+
+        var engine = new TutorPolicyEngine(
+            db,
+            new ConceptMasteryService(db, NullLogger<ConceptMasteryService>.Instance),
+            NullLogger<TutorPolicyEngine>.Instance);
+
+        var context = await engine.BuildAsync(
+            userId,
+            topicId,
+            sessionId: null,
+            userMessage: "Kaynakla anlat.",
+            notebookContext: "",
+            wikiContext: "",
+            learningSignalContext: "");
+
+        Assert.Equal("source_grounded", context.GroundingStatus);
+        Assert.True(context.SourceEvidenceCount >= 2);
+        Assert.DoesNotContain("source_claim_without_source_risk", context.PolicyViolations);
+    }
+
+    [Fact]
     public async Task LearnerProfileService_UsesSessionStyleSignalWithoutOverclaimingLowEvidence()
     {
         await using var db = CreateDb();

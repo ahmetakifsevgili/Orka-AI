@@ -28,6 +28,7 @@ public class LearningController : ControllerBase
     private readonly ITopicScopeResolver _topicScopeResolver;
     private readonly ILongTermAdaptiveLearningService _longTermAdaptiveLearning;
     private readonly IOrkaLearningStateService _orkaLearningState;
+    private readonly ILearningContextPackService _contextPack;
     private readonly IOrkaMissionControlService _missionControl;
     private readonly IOrkaStudyCoachService _studyCoach;
 
@@ -39,6 +40,7 @@ public class LearningController : ControllerBase
         ITopicScopeResolver topicScopeResolver,
         ILongTermAdaptiveLearningService longTermAdaptiveLearning,
         IOrkaLearningStateService orkaLearningState,
+        ILearningContextPackService contextPack,
         IOrkaMissionControlService missionControl,
         IOrkaStudyCoachService studyCoach)
     {
@@ -49,6 +51,7 @@ public class LearningController : ControllerBase
         _topicScopeResolver = topicScopeResolver;
         _longTermAdaptiveLearning = longTermAdaptiveLearning;
         _orkaLearningState = orkaLearningState;
+        _contextPack = contextPack;
         _missionControl = missionControl;
         _studyCoach = studyCoach;
     }
@@ -120,6 +123,27 @@ public class LearningController : ControllerBase
         return state == null
             ? NotFound(new { message = "Ogrenme durumu bulunamadi." })
             : Ok(state);
+    }
+
+    [HttpGet("context-pack")]
+    public async Task<ActionResult<LearningContextPackDto>> GetContextPack(
+        [FromQuery] Guid? topicId = null,
+        [FromQuery] Guid? sessionId = null,
+        [FromQuery] string? examCode = "KPSS",
+        [FromQuery] string? variantCode = null)
+    {
+        var userId = GetUserId();
+        var pack = await _contextPack.BuildPackAsync(
+            userId,
+            topicId,
+            sessionId,
+            examCode,
+            variantCode,
+            HttpContext.RequestAborted);
+
+        return pack == null
+            ? NotFound(new { message = "Ogrenme context paketi bulunamadi." })
+            : Ok(pack);
     }
 
     [HttpGet("mission-control")]
@@ -233,8 +257,8 @@ public class LearningController : ControllerBase
         if (request.Score is < 0 or > 100)
             return BadRequest(new { message = "Score 0 ile 100 arasinda olmalidir." });
 
-        if (!IsValidPayloadJson(request.PayloadJson))
-            return BadRequest(new { message = "PayloadJson gecersiz." });
+        if (!IsValidPayloadJson(request.SignalType, request.PayloadJson, out var payloadError))
+            return BadRequest(new { message = payloadError });
 
         var userId = GetUserId();
         if (!await _ownership.OptionalTopicBelongsToUserAsync(userId, request.TopicId, HttpContext.RequestAborted) ||
@@ -260,17 +284,33 @@ public class LearningController : ControllerBase
         return Ok(new { recorded = true, signalType });
     }
 
-    private static bool IsValidPayloadJson(string? payloadJson)
+    private static bool IsValidPayloadJson(string signalType, string? payloadJson, out string message)
     {
+        message = "PayloadJson gecersiz.";
         if (string.IsNullOrWhiteSpace(payloadJson))
             return true;
 
         if (payloadJson.Length > MaxPayloadJsonLength)
+        {
+            message = "PayloadJson cok uzun.";
             return false;
+        }
 
         try
         {
-            using var _ = JsonDocument.Parse(payloadJson);
+            using var doc = JsonDocument.Parse(payloadJson);
+            if (!LearningSignalTypes.IsKnown(signalType))
+            {
+                if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                    !doc.RootElement.TryGetProperty("schemaVersion", out var schemaVersion) ||
+                    schemaVersion.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(schemaVersion.GetString()))
+                {
+                    message = "Custom signal PayloadJson schemaVersion icermelidir.";
+                    return false;
+                }
+            }
+
             return true;
         }
         catch (JsonException)

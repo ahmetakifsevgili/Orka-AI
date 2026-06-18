@@ -159,6 +159,134 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.NotEmpty(body.RootElement.GetProperty("weakConcepts").EnumerateArray());
     }
 
+    [Fact]
+    public async Task SnapshotReads_IgnoreExpiredRowsAndRejectTopicSessionMismatch()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "snapshot-scope");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Snapshot Scope A");
+        var otherTopicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Snapshot Scope B");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, user.UserId, topicId, DateTime.UtcNow);
+
+        var active = await user.Client.PostAsJsonAsync("/api/learning-snapshots/active-lesson/refresh", new
+        {
+            topicId,
+            sessionId,
+            approvedIntent = "learn",
+            approvedMainTopic = "Scope",
+            approvedFocusArea = "TTL"
+        });
+        active.EnsureSuccessStatusCode();
+
+        var student = await user.Client.PostAsJsonAsync("/api/learning-snapshots/student-context/refresh", new
+        {
+            topicId,
+            sessionId
+        });
+        student.EnsureSuccessStatusCode();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<OrkaDbContext>();
+            var expiredAt = DateTime.UtcNow.AddMinutes(-1);
+            var activeRows = await db.ActiveLessonSnapshots
+                .Where(s => s.UserId == user.UserId && s.TopicId == topicId && s.SessionId == sessionId)
+                .ToListAsync();
+            var studentRows = await db.StudentContextSnapshots
+                .Where(s => s.UserId == user.UserId && s.TopicId == topicId && s.SessionId == sessionId)
+                .ToListAsync();
+
+            foreach (var snapshot in activeRows)
+            {
+                snapshot.ExpiresAt = expiredAt;
+            }
+
+            foreach (var snapshot in studentRows)
+            {
+                snapshot.ExpiresAt = expiredAt;
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        var expiredActive = await user.Client.GetAsync($"/api/learning-snapshots/active-lesson?topicId={topicId}&sessionId={sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, expiredActive.StatusCode);
+
+        var expiredStudent = await user.Client.GetAsync($"/api/learning-snapshots/student-context?topicId={topicId}&sessionId={sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, expiredStudent.StatusCode);
+
+        var mismatch = await user.Client.PostAsJsonAsync("/api/learning-snapshots/active-lesson/refresh", new
+        {
+            topicId = otherTopicId,
+            sessionId
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, mismatch.StatusCode);
+    }
+
+    [Fact]
+    public async Task LearningContextPack_ProvidesBoundedCrossSurfaceContext()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "context-pack");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Context Pack");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, user.UserId, topicId, DateTime.UtcNow);
+
+        await user.Client.PostAsJsonAsync("/api/learning-snapshots/active-lesson/refresh", new
+        {
+            topicId,
+            sessionId,
+            approvedIntent = "learn",
+            approvedMainTopic = "Context",
+            approvedFocusArea = "Pack"
+        });
+        await user.Client.PostAsJsonAsync("/api/learning-snapshots/student-context/refresh", new
+        {
+            topicId,
+            sessionId
+        });
+
+        var response = await user.Client.GetAsync($"/api/learning/context-pack?topicId={topicId}&sessionId={sessionId}");
+
+        response.EnsureSuccessStatusCode();
+        using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        var root = body.RootElement;
+
+        Assert.Equal(topicId.ToString(), root.GetProperty("topicId").GetString(), ignoreCase: true);
+        Assert.Equal(sessionId.ToString(), root.GetProperty("sessionId").GetString(), ignoreCase: true);
+        Assert.True(root.GetProperty("estimatedTokenCount").GetInt32() > 0);
+        Assert.True(root.GetProperty("estimatedTokenCount").GetInt32() <= 2_000);
+        var blockTypes = root.GetProperty("blocks").EnumerateArray()
+            .Select(b => b.GetProperty("blockType").GetString())
+            .ToArray();
+        Assert.Contains("orka_state", blockTypes);
+        Assert.Contains("active_lesson_snapshot", blockTypes);
+        Assert.Contains("student_context_snapshot", blockTypes);
+        Assert.DoesNotContain(user.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("payloadJson", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RecordSignal_RejectsCustomPayloadWithoutSchemaVersion()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "signal-schema");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Signal Schema");
+
+        var rejected = await user.Client.PostAsJsonAsync("/api/learning/signal", new
+        {
+            topicId,
+            signalType = "CustomExternalSignal",
+            payloadJson = """{"value":1}"""
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+
+        var accepted = await user.Client.PostAsJsonAsync("/api/learning/signal", new
+        {
+            topicId,
+            signalType = "CustomExternalSignal",
+            payloadJson = """{"schemaVersion":"orka.custom-signal.v1","value":1}"""
+        });
+        accepted.EnsureSuccessStatusCode();
+    }
+
     private async Task SeedWeakConceptAsync(Guid userId, Guid topicId, string conceptKey, string label)
     {
         using var scope = _factory.Services.CreateScope();

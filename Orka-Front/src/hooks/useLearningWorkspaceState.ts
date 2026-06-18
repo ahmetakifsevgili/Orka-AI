@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LearningArtifactsAPI,
+  LearningAPI,
   LearningSnapshotsAPI,
   LearningRuntimeAPI,
   NotebookStudioAPI,
@@ -30,6 +31,7 @@ type WorkspaceStateOptions = {
 const emptyState = (topicId?: string | null, sessionId?: string | null): LearningWorkspaceState => ({
   topicId: topicId ?? null,
   sessionId: sessionId ?? null,
+  contextPack: null,
   activeLessonSnapshot: null,
   studentContextSnapshot: null,
   currentPlanStep: null,
@@ -179,6 +181,7 @@ export function useLearningWorkspaceState({
       notebookPacks,
       toolGovernanceSummary,
       runtimeHealth,
+      contextPack,
     ] = await Promise.all([
       quiet(LearningSnapshotsAPI.getActiveLesson(snapshotParams)),
       quiet(LearningSnapshotsAPI.getStudentContext(snapshotParams)),
@@ -192,6 +195,7 @@ export function useLearningWorkspaceState({
       topicId ? quiet(NotebookStudioAPI.listPacks(topicId, sessionId ?? undefined)) : Promise.resolve(null),
       quiet(ToolsAPI.getGovernanceSummary(snapshotParams)),
       quiet(LearningRuntimeAPI.getHealth(snapshotParams)),
+      quiet(LearningAPI.getContextPack(snapshotParams)),
     ]);
 
     const recentArtifacts = artifacts?.items?.slice(0, 6) ?? [];
@@ -210,6 +214,7 @@ export function useLearningWorkspaceState({
     setState({
       topicId: topicId ?? null,
       sessionId: sessionId ?? null,
+      contextPack,
       activeLessonSnapshot,
       studentContextSnapshot,
       currentPlanStep,

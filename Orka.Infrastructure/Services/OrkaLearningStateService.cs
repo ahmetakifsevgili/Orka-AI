@@ -129,6 +129,10 @@ public sealed class OrkaLearningStateService : IOrkaLearningStateService
             {
                 topicId = session.TopicId;
             }
+            else if (session.TopicId != topicId.Value)
+            {
+                return null;
+            }
         }
 
         if (topicId.HasValue)

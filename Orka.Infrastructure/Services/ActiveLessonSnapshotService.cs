@@ -264,6 +264,7 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
         Guid? sessionId = null,
         CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var entity = await _db.ActiveLessonSnapshots
             .AsNoTracking()
             .Where(s =>
@@ -271,6 +272,7 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
                 !s.IsDeleted &&
                 s.TopicId == topicId &&
                 s.Status == "active" &&
+                (!s.ExpiresAt.HasValue || s.ExpiresAt > now) &&
                 (!sessionId.HasValue || s.SessionId == sessionId))
             .OrderByDescending(s => s.UpdatedAt)
             .FirstOrDefaultAsync(ct);
@@ -284,12 +286,14 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
         Guid? sessionId = null,
         CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var entity = await _db.StudentContextSnapshots
             .AsNoTracking()
             .Where(s =>
                 s.UserId == userId &&
                 !s.IsDeleted &&
                 s.TopicId == topicId &&
+                (!s.ExpiresAt.HasValue || s.ExpiresAt > now) &&
                 (!sessionId.HasValue || s.SessionId == sessionId))
             .OrderByDescending(s => s.UpdatedAt)
             .FirstOrDefaultAsync(ct);
@@ -344,12 +348,19 @@ public sealed class ActiveLessonSnapshotService : IActiveLessonSnapshotService
 
         if (sessionId.HasValue)
         {
-            var sessionExists = await _db.Sessions
+            var session = await _db.Sessions
                 .AsNoTracking()
-                .AnyAsync(s => s.Id == sessionId.Value && s.UserId == userId, ct);
-            if (!sessionExists)
+                .Where(s => s.Id == sessionId.Value && s.UserId == userId)
+                .Select(s => new { s.TopicId })
+                .FirstOrDefaultAsync(ct);
+            if (session == null)
             {
                 throw new InvalidOperationException("Session not found for learning snapshot.");
+            }
+
+            if (topicId.HasValue && session.TopicId != topicId.Value)
+            {
+                throw new InvalidOperationException("Session does not belong to the requested topic.");
             }
         }
     }

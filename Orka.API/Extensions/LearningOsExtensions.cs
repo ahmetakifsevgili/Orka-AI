@@ -62,6 +62,7 @@ namespace Orka.API.Extensions
             services.AddScoped<IAdaptiveStudyPlannerService, AdaptiveStudyPlannerService>();
             services.AddScoped<ILongTermAdaptiveLearningService, LongTermAdaptiveLearningService>();
             services.AddScoped<IOrkaLearningStateService, OrkaLearningStateService>();
+            services.AddScoped<ILearningContextPackService, LearningContextPackService>();
             services.AddScoped<IOrkaMissionControlService, OrkaMissionControlService>();
             services.AddScoped<IOrkaStudyCoachService, OrkaStudyCoachService>();
             services.AddScoped<IOrkaExamWarRoomService, OrkaExamWarRoomService>();

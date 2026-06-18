@@ -68,11 +68,12 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
             var recentMistakes = await LoadRecentMistakesAsync(userId, topicId, ct);
             var sourceBundle = await LoadLatestSourceBundleAsync(userId, topicId, sessionId, ct);
             var sourceEvidence = BuildSourceEvidence(snapshot?.SourceConfidence, notebookContext, wikiContext, graph, sourceBundle);
+            var hasWikiContext = !string.IsNullOrWhiteSpace(wikiContext) || sourceBundle?.EvidenceStatus == "wiki_backed";
             var sourceEvidenceCount = sourceBundle is { EvidenceStatus: "source_grounded" or "mixed" }
                 ? Math.Max(sourceBundle.ChunkCount, CountReliableEvidence(sourceEvidence))
                 : CountReliableEvidence(sourceEvidence);
             var evidenceQuality = await LoadEvidenceQualityAsync(userId, topicId, sourceEvidenceCount, snapshot?.SourceConfidence, ct);
-            var groundingStatus = ResolveGroundingStatus(sourceBundle?.EvidenceStatus, sourceEvidenceCount, snapshot?.SourceConfidence);
+            var groundingStatus = ResolveGroundingStatus(sourceBundle?.EvidenceStatus, sourceEvidenceCount, hasWikiContext, snapshot?.SourceConfidence);
             var directAnswerRisk = IsDirectAnswerRequest(userMessage) &&
                                    (weakMastery == null ||
                                     weakMastery.RemediationNeed == "high" ||
@@ -297,14 +298,14 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
         return evidence;
     }
 
-    private static string ResolveGroundingStatus(string? bundleStatus, int sourceEvidenceCount, string? sourceConfidence)
+    private static string ResolveGroundingStatus(string? bundleStatus, int sourceEvidenceCount, bool hasWikiContext, string? sourceConfidence)
     {
         if (bundleStatus is "source_grounded" or "mixed") return "source_grounded";
         if (bundleStatus == "wiki_backed") return "wiki_backed";
         if (bundleStatus is "stale" or "degraded") return bundleStatus;
-        return sourceEvidenceCount > 0
-            ? "source_grounded"
-            : string.Equals(sourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_source" : "model_only";
+        if (sourceEvidenceCount > 0) return "source_grounded";
+        if (hasWikiContext) return "wiki_backed";
+        return string.Equals(sourceConfidence, "low", StringComparison.OrdinalIgnoreCase) ? "low_source" : "model_only";
     }
 
     private static int CountReliableEvidence(IReadOnlyList<string> sourceEvidence) =>
@@ -312,7 +313,10 @@ public sealed class TutorPolicyEngine : ITutorPolicyEngine
             !e.Contains("source confidence is low", StringComparison.OrdinalIgnoreCase) &&
             !e.Contains("avoid current-source claims", StringComparison.OrdinalIgnoreCase) &&
             !e.Contains("avoid source-backed certainty", StringComparison.OrdinalIgnoreCase) &&
-            !e.Contains("degraded/stale", StringComparison.OrdinalIgnoreCase));
+            !e.Contains("degraded/stale", StringComparison.OrdinalIgnoreCase) &&
+            !e.Contains("Personal Wiki", StringComparison.OrdinalIgnoreCase) &&
+            !e.Contains("Wiki notebook", StringComparison.OrdinalIgnoreCase) &&
+            !e.Contains("wiki-grounded", StringComparison.OrdinalIgnoreCase));
 
     private static bool UserAsksForSource(string message) =>
         message.Contains("kaynak", StringComparison.OrdinalIgnoreCase) ||

@@ -84,4 +84,12 @@ public static class LearningSignalTypes
         var trimmed = value.Trim();
         return All.FirstOrDefault(x => string.Equals(x, trimmed, StringComparison.OrdinalIgnoreCase)) ?? trimmed;
     }
+
+    public static bool IsKnown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        var trimmed = value.Trim();
+        return All.Any(x => string.Equals(x, trimmed, StringComparison.OrdinalIgnoreCase));
+    }
 }

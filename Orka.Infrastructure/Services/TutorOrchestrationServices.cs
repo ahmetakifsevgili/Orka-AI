@@ -1028,10 +1028,8 @@ public sealed class TutorTurnStateAssembler : ITutorTurnStateAssembler
 
     private static int CountContextEvidence(string notebookContext, string wikiContext)
     {
-        var count = 0;
-        if (!string.IsNullOrWhiteSpace(notebookContext)) count += 2;
-        if (!string.IsNullOrWhiteSpace(wikiContext)) count += 1;
-        return count;
+        _ = wikiContext;
+        return string.IsNullOrWhiteSpace(notebookContext) ? 0 : 1;
     }
 
     private static string BuildLearnerState(string policyState, decimal? mastery, decimal? confidence, string affective, string load)
@@ -1976,10 +1974,14 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
 
     private static bool HasReadySourceEvidence(TutorTurnStateDto state)
     {
-        if (state.SourceEvidenceCount > 0) return true;
         if (state.EvidenceQuality is { ReadySourceCount: > 0 }) return true;
-        return FirstNonEmptyLocal(state.SourceReadiness, state.PlanSourceReadiness, state.GroundingStatus, state.EvidenceQuality?.Status) is
-            "source_grounded" or "mixed" or "ready" or "strong";
+        var readiness = FirstNonEmptyLocal(state.SourceReadiness, state.PlanSourceReadiness, state.GroundingStatus, state.EvidenceQuality?.Status);
+        if (readiness is "source_grounded" or "mixed" or "ready" or "strong")
+        {
+            return true;
+        }
+
+        return state.SourceEvidenceCount > 0 && readiness is "source_grounded" or "mixed";
     }
 
     private static string? FirstNonEmptyLocal(params string?[] values) =>
@@ -2012,7 +2014,7 @@ public sealed class TutorActionPlanner : ITutorActionPlanner
         if (responsePolicy.TutorResponseMode == "evidence_limited" && sourceIntent) return "explain";
         if (state.AffectiveState is "confused" or "frustrated" || state.LearnerState.Contains("remediation", StringComparison.OrdinalIgnoreCase)) return "remediate";
         if (codeIntent || state.HasIdeContext) return "code_lab";
-        if (sourceIntent && state.SourceEvidenceCount > 0) return "source_grounded_answer";
+        if (sourceIntent && HasReadySourceEvidence(state)) return "source_grounded_answer";
         if (reviewIntent) return "review";
         if (wantsVisual) return "visualize";
         if (lowMastery) return "guided_practice";

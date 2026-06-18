@@ -1758,9 +1758,34 @@ export interface LearningWorkspaceCurrentPlanStep {
   fallbackIfEvidenceWeak?: string | null;
 }
 
+export interface LearningContextPackBlockDto {
+  blockType: string;
+  status: string;
+  summary: string;
+  priority: number;
+  snapshotId?: string | null;
+  expiresAt?: string | null;
+  metadata: Record<string, string>;
+}
+
+export interface LearningContextPackDto {
+  topicId?: string | null;
+  sessionId?: string | null;
+  scopeStatus: string;
+  estimatedTokenCount: number;
+  orkaState?: OrkaLearningStateDto | null;
+  activeLessonSnapshot?: ActiveLessonSnapshotDto | null;
+  studentContextSnapshot?: StudentContextSnapshotDto | null;
+  sourceEvidenceBundle?: SourceEvidenceBundleDto | null;
+  blocks: LearningContextPackBlockDto[];
+  warnings: string[];
+  generatedAt: string;
+}
+
 export interface LearningWorkspaceState {
   topicId?: string | null;
   sessionId?: string | null;
+  contextPack?: LearningContextPackDto | null;
   activeLessonSnapshot?: ActiveLessonSnapshotDto | null;
   studentContextSnapshot?: StudentContextSnapshotDto | null;
   currentPlanStep?: LearningWorkspaceCurrentPlanStep | null;

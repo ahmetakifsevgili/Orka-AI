@@ -334,6 +334,17 @@ public interface IOrkaLearningStateService
         CancellationToken ct = default);
 }
 
+public interface ILearningContextPackService
+{
+    Task<LearningContextPackDto?> BuildPackAsync(
+        Guid userId,
+        Guid? topicId = null,
+        Guid? sessionId = null,
+        string? examCode = "KPSS",
+        string? variantCode = null,
+        CancellationToken ct = default);
+}
+
 public interface IOrkaMissionControlService
 {
     Task<OrkaMissionControlDto?> BuildMissionControlAsync(
