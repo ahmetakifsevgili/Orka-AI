@@ -52,6 +52,7 @@ interface ChatMessageProps {
   onOpenWiki?: (topicId: string) => void;
   /** IDE'yi quiz sorusuyla açma tetikleyicisi */
   onOpenIDE?: (question?: string) => void;
+  onLearningProjectionChanged?: () => void;
 }
 
 function formatTime(date: Date): string {
@@ -994,7 +995,7 @@ function ChatLearningTrace({ metadata = {}, sessionId }: { metadata?: NonNullabl
   );
 }
 
-function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userName = "Sen", onOpenWiki, onOpenIDE }: ChatMessageProps) {
+function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userName = "Sen", onOpenWiki, onOpenIDE, onLearningProjectionChanged }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isTopicComplete = message.type === "topic_complete";
 
@@ -1203,6 +1204,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                 onPlanComplete={onPlanComplete}
                 onOpenWiki={onOpenWiki}
                 onOpenIDE={onOpenIDE}
+                onLearningProjectionChanged={onLearningProjectionChanged}
                 isBaseline={
                     message.content.includes("akademik") ||
                     message.content.includes("Sıfır Noktası") ||

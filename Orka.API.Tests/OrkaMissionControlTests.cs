@@ -15,6 +15,116 @@ namespace Orka.API.Tests;
 public sealed class OrkaMissionControlTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> AllowedActionTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start_diagnostic",
+        "repair_concept",
+        "repair_prerequisite",
+        "review_due_concept",
+        "create_flashcards",
+        "practice_exam_outcome",
+        "review_deneme_mistakes",
+        "source_review",
+        "citation_review",
+        "update_wiki_note",
+        "open_study_room",
+        "open_notebook_pack",
+        "take_checkpoint_quiz",
+        "continue_plan"
+    };
+
+    private static readonly HashSet<string> AllowedEntryPoints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ask_tutor",
+        "open_study_room",
+        "review_due_concept",
+        "practice_exam_outcome",
+        "review_deneme_mistakes",
+        "source_review",
+        "citation_review",
+        "update_wiki_note",
+        "open_notebook_pack",
+        "create_flashcards",
+        "take_checkpoint_quiz",
+        "continue_plan"
+    };
+
+    private static readonly HashSet<string> AllowedRoutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chat",
+        "classroom",
+        "learning",
+        "central-exams",
+        "sources",
+        "wiki",
+        "notebook-studio",
+        "dashboard"
+    };
+
+    private static readonly HashSet<string> AllowedPriorities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "urgent",
+        "high",
+        "medium",
+        "normal",
+        "low"
+    };
+
+    private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ready",
+        "available",
+        "limited",
+        "blocked",
+        "empty"
+    };
+
+    private static readonly HashSet<string> AllowedLoads = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "none",
+        "medium",
+        "high"
+    };
+
+    private static readonly HashSet<string> AllowedEvidenceConfidence = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "limited_evidence",
+        "thin_evidence",
+        "enough_evidence"
+    };
+
+    private static readonly HashSet<string> AllowedWarningSeverities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "info",
+        "warning",
+        "critical"
+    };
+
+    private static readonly HashSet<string> AllowedModuleKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "tutor",
+        "study_room",
+        "review",
+        "exam",
+        "sources",
+        "wiki",
+        "notebook_studio",
+        "quiz_checkpoint",
+        "progress"
+    };
+
+    private static readonly HashSet<string> AllowedSectionKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start_here",
+        "repair_today",
+        "review_due",
+        "exam_focus",
+        "source_wiki_attention",
+        "continue_learning",
+        "study_room",
+        "notebook_artifacts",
+        "progress_snapshot"
+    };
 
     [Fact]
     public async Task MissionControl_NewLearnerDegradesSafelyWithoutMasteryClaim()
@@ -141,7 +251,98 @@ public sealed class OrkaMissionControlTests
         Assert.NotNull(dashboard.OrkaLearningState);
         Assert.Equal(dashboard.MissionControl!.PrimaryMission.ActionType, dashboard.OrkaLearningState!.PrimaryNextAction.ActionType);
         Assert.Equal(mission.PrimaryMission.ActionType, dashboard.MissionControl.PrimaryMission.ActionType);
+        Assert.Equal(mission.ScopeStatus, dashboard.MissionControl.ScopeStatus);
+        Assert.Equal(mission.PrimaryMission.EntryPoint, dashboard.MissionControl.PrimaryMission.EntryPoint);
+        Assert.Equal(mission.PrimaryMission.TargetRoute, dashboard.MissionControl.PrimaryMission.TargetRoute);
+        Assert.Equal(mission.PrimaryEntryPoint, dashboard.MissionControl.PrimaryEntryPoint);
+        Assert.Equal(mission.EvidenceConfidence, dashboard.MissionControl.EvidenceConfidence);
+        Assert.True(mission.ModuleCards.Select(c => c.ModuleKey).Order().SequenceEqual(
+            dashboard.MissionControl.ModuleCards.Select(c => c.ModuleKey).Order()));
+        Assert.True(mission.Sections.Select(s => s.SectionKey).Order().SequenceEqual(
+            dashboard.MissionControl.Sections.Select(s => s.SectionKey).Order()));
         AssertSafePayload(JsonSerializer.Serialize(new { dashboard.MissionControl, dashboard.OrkaLearningState }, JsonOptions), user.UserId);
+    }
+
+    [Fact]
+    public async Task MissionControl_ProjectionContract_EmitsStableShapeAndAllowedValues()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "mission-contract");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Mission Projection Contract");
+        await SeedRepairSignalsAsync(factory, user.UserId, topicId, includeStudyRoom: true);
+        await SeedSourceWikiWarningAsync(factory, user.UserId, topicId);
+
+        var mission = await GetMissionAsync(user, topicId);
+        var json = JsonSerializer.Serialize(mission, JsonOptions);
+
+        Assert.Equal(topicId, mission.TopicId);
+        Assert.Equal("topic", mission.ScopeStatus);
+        Assert.NotNull(mission.PrimaryMission);
+        Assert.False(string.IsNullOrWhiteSpace(mission.PrimaryMission.MissionKey));
+        Assert.Contains(mission.EvidenceConfidence, AllowedEvidenceConfidence);
+        Assert.Equal(mission.PrimaryEntryPoint, mission.PrimaryMission.EntryPoint);
+        Assert.Contains(mission.PrimaryMission.ActionType, AllowedActionTypes);
+        Assert.Contains(mission.PrimaryMission.EntryPoint, AllowedEntryPoints);
+        Assert.Contains(mission.PrimaryMission.TargetRoute, AllowedRoutes);
+        Assert.Contains(mission.PrimaryMission.Priority, AllowedPriorities);
+        Assert.Contains(mission.ReviewLoad, AllowedLoads);
+        Assert.Contains(mission.RepairLoad, AllowedLoads);
+        Assert.Contains(mission.ExamLoad, AllowedLoads);
+        Assert.Contains(mission.SourceWikiLoad, AllowedLoads);
+        Assert.NotEmpty(mission.ModuleCards);
+        Assert.NotEmpty(mission.Sections);
+
+        Assert.Contains(mission.PrimaryMission.ActionType, AllowedActionTypes);
+        Assert.Contains(mission.PrimaryMission.EntryPoint, AllowedEntryPoints);
+        Assert.Contains(mission.PrimaryMission.TargetRoute, AllowedRoutes);
+        Assert.Contains(mission.PrimaryMission.Priority, AllowedPriorities);
+        foreach (var action in mission.SecondaryActions)
+        {
+            Assert.Contains(action.ActionType, AllowedActionTypes);
+            Assert.Contains(action.EntryPoint, AllowedEntryPoints);
+            Assert.Contains(action.TargetRoute, AllowedRoutes);
+            Assert.Contains(action.Priority, AllowedPriorities);
+        }
+
+        foreach (var warning in mission.UrgentWarnings)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(warning.WarningCode));
+            Assert.Contains(warning.Severity, AllowedWarningSeverities);
+            Assert.Contains(warning.TargetRoute, AllowedRoutes);
+        }
+
+        foreach (var card in mission.ModuleCards)
+        {
+            Assert.Contains(card.ModuleKey, AllowedModuleKeys);
+            Assert.Contains(card.Status, AllowedStatuses);
+            Assert.Contains(card.EntryPoint, AllowedEntryPoints);
+            Assert.Contains(card.TargetRoute, AllowedRoutes);
+            Assert.Contains(card.Priority, AllowedPriorities);
+            Assert.False(string.IsNullOrWhiteSpace(card.UserSafeSummary));
+        }
+
+        foreach (var section in mission.Sections)
+        {
+            Assert.Contains(section.SectionKey, AllowedSectionKeys);
+            Assert.Contains(section.Status, AllowedStatuses);
+            Assert.Contains(section.TargetRoute, AllowedRoutes);
+            foreach (var action in section.Actions)
+            {
+                Assert.Contains(action.ActionType, AllowedActionTypes);
+                Assert.Contains(action.EntryPoint, AllowedEntryPoints);
+                Assert.Contains(action.TargetRoute, AllowedRoutes);
+                Assert.Contains(action.Priority, AllowedPriorities);
+            }
+
+            foreach (var warning in section.Warnings)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(warning.WarningCode));
+                Assert.Contains(warning.Severity, AllowedWarningSeverities);
+                Assert.Contains(warning.TargetRoute, AllowedRoutes);
+            }
+        }
+
+        AssertSafePayload(json, user.UserId);
     }
 
     [Fact]

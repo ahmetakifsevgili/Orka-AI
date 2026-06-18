@@ -1782,6 +1782,9 @@ export interface LearningWorkspaceState {
   topicId?: string | null;
   sessionId?: string | null;
   contextPack?: LearningContextPackDto | null;
+  orkaLearningState?: OrkaLearningStateDto | null;
+  missionControl?: OrkaMissionControlDto | null;
+  studyCoach?: OrkaStudyCoachDto | null;
   activeLessonSnapshot?: ActiveLessonSnapshotDto | null;
   studentContextSnapshot?: StudentContextSnapshotDto | null;
   currentPlanStep?: LearningWorkspaceCurrentPlanStep | null;

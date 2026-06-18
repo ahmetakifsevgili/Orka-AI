@@ -15,6 +15,10 @@ import type {
   ChatResponseMetadata,
   LearningWorkspaceCurrentPlanStep,
   LearningWorkspaceState,
+  LearningContextPackDto,
+  OrkaLearningStateDto,
+  OrkaMissionControlDto,
+  OrkaStudyCoachDto,
   PlanQualityEvaluationDto,
   PlanStepContractDto,
   SourceEvidenceBundleDto,
@@ -27,12 +31,38 @@ type WorkspaceStateOptions = {
   sessionId?: string | null;
   metadata?: ChatResponseMetadata | null;
   includeContextPack?: boolean;
+  refreshKey?: string | number | null;
+};
+
+export type BuildLearningWorkspaceStateInput = {
+  topicId?: string | null;
+  sessionId?: string | null;
+  metadata?: ChatResponseMetadata | null;
+  activeLessonSnapshot?: LearningWorkspaceState["activeLessonSnapshot"];
+  studentContextSnapshot?: LearningWorkspaceState["studentContextSnapshot"];
+  planReadiness?: LearningWorkspaceState["planReadiness"];
+  planQuality?: LearningWorkspaceState["planQuality"];
+  tutorPolicy?: LearningWorkspaceState["tutorPolicy"];
+  nextActions?: TutorNextLearningActionDto[] | null;
+  sourceEvidenceBundle?: SourceEvidenceBundleDto | null;
+  wikiNotebookStatus?: WikiKnowledgeNotebookDto | null;
+  artifacts?: { items?: LearningWorkspaceState["recentArtifacts"] | null } | null;
+  notebookPacks?: { items?: LearningWorkspaceState["notebookPacks"] | null } | null;
+  toolGovernanceSummary?: LearningWorkspaceState["toolGovernanceSummary"];
+  runtimeHealth?: LearningWorkspaceState["runtimeHealth"];
+  contextPack?: LearningContextPackDto | null;
+  orkaLearningState?: OrkaLearningStateDto | null;
+  missionControl?: OrkaMissionControlDto | null;
+  studyCoach?: OrkaStudyCoachDto | null;
 };
 
 const emptyState = (topicId?: string | null, sessionId?: string | null): LearningWorkspaceState => ({
   topicId: topicId ?? null,
   sessionId: sessionId ?? null,
   contextPack: null,
+  orkaLearningState: null,
+  missionControl: null,
+  studyCoach: null,
   activeLessonSnapshot: null,
   studentContextSnapshot: null,
   currentPlanStep: null,
@@ -130,11 +160,104 @@ function nextActionsFromMetadata(metadata?: ChatResponseMetadata | null): TutorN
   }));
 }
 
+function nextActionsFromProjection(
+  missionControl?: OrkaMissionControlDto | null,
+  orkaLearningState?: OrkaLearningStateDto | null,
+): TutorNextLearningActionDto[] {
+  const projected: TutorNextLearningActionDto[] = [];
+  const push = (action?: {
+    actionType?: string | null;
+    label?: string | null;
+    priority?: string | null;
+    conceptKey?: string | null;
+  } | null) => {
+    if (!action?.label && !action?.actionType) return;
+    projected.push({
+      actionType: action.actionType ?? "projection_next_action",
+      userSafeLabel: action.label ?? action.actionType ?? "Next learning step",
+      targetConceptKey: action.conceptKey ?? null,
+      priority: action.priority ?? "normal",
+    });
+  };
+
+  push(missionControl?.primaryMission);
+  (missionControl?.secondaryActions ?? []).forEach(push);
+  push(orkaLearningState?.primaryNextAction);
+  (orkaLearningState?.secondaryNextActions ?? []).forEach(push);
+
+  const seen = new Set<string>();
+  return projected.filter((action) => {
+    const key = `${action.actionType}|${action.userSafeLabel}|${action.targetConceptKey ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function buildLearningWorkspaceState(input: BuildLearningWorkspaceStateInput): LearningWorkspaceState {
+  const recentArtifacts = input.artifacts?.items?.slice(0, 6) ?? [];
+  const currentPlanStep = normalizePlanStep(firstPlanStep(input.planQuality), input.metadata);
+  const sourceReadiness =
+    input.sourceEvidenceBundle?.evidenceStatus ??
+    input.wikiNotebookStatus?.evidenceStatus ??
+    input.orkaLearningState?.sourceHealth?.status ??
+    input.studentContextSnapshot?.sourceReadiness ??
+    input.planReadiness?.sourceReadiness ??
+    input.tutorPolicy?.sourceReadiness ??
+    input.metadata?.sourceReadiness ??
+    input.metadata?.planSourceReadiness ??
+    null;
+  const projectedNextActions = nextActionsFromProjection(input.missionControl, input.orkaLearningState);
+  const safeNextActions = (
+    input.nextActions?.length
+      ? input.nextActions
+      : input.tutorPolicy?.nextActions?.length
+        ? input.tutorPolicy.nextActions
+        : projectedNextActions.length
+          ? projectedNextActions
+          : nextActionsFromMetadata(input.metadata)
+  ).slice(0, 5);
+
+  return {
+    topicId: input.topicId ?? input.orkaLearningState?.topicId ?? input.missionControl?.topicId ?? input.studyCoach?.topicId ?? null,
+    sessionId: input.sessionId ?? input.orkaLearningState?.sessionId ?? input.missionControl?.sessionId ?? input.studyCoach?.sessionId ?? null,
+    contextPack: input.contextPack ?? null,
+    orkaLearningState: input.orkaLearningState ?? null,
+    missionControl: input.missionControl ?? null,
+    studyCoach: input.studyCoach ?? null,
+    activeLessonSnapshot: input.activeLessonSnapshot ?? null,
+    studentContextSnapshot: input.studentContextSnapshot ?? null,
+    currentPlanStep,
+    planQuality: input.planQuality ?? null,
+    planReadiness: input.planReadiness ?? null,
+    tutorPolicy: input.tutorPolicy ?? null,
+    latestAssessmentImpact: null,
+    sourceReadiness,
+    sourceEvidenceBundle: input.sourceEvidenceBundle ?? null,
+    wikiNotebookStatus: input.wikiNotebookStatus ?? null,
+    toolGovernanceSummary: input.toolGovernanceSummary ?? null,
+    runtimeHealth: input.runtimeHealth ?? null,
+    notebookPacks: input.notebookPacks?.items?.slice(0, 6) ?? [],
+    recentArtifacts,
+    nextActions: safeNextActions,
+    staleWarnings: [
+      ...collectSourceWarnings(input.sourceEvidenceBundle, input.wikiNotebookStatus),
+      ...(input.contextPack?.warnings ?? []),
+      ...(input.orkaLearningState?.safetyWarnings ?? []),
+      ...(input.orkaLearningState?.conflictWarnings ?? []).map((warning) => warning.userSafeSummary),
+    ].filter(Boolean).slice(0, 8),
+    safetyWarnings: collectArtifactWarnings(recentArtifacts),
+    isLoading: false,
+    lastSyncedAt: new Date().toISOString(),
+  };
+}
+
 export function useLearningWorkspaceState({
   topicId,
   sessionId,
   metadata,
   includeContextPack = false,
+  refreshKey = null,
 }: WorkspaceStateOptions): LearningWorkspaceState {
   const metadataKey = useMemo(
     () => [
@@ -146,6 +269,7 @@ export function useLearningWorkspaceState({
       metadata?.currentPlanStepId,
       metadata?.latestAssessmentMode,
       includeContextPack,
+      refreshKey,
     ].filter(Boolean).join("|"),
     [
       topicId,
@@ -158,6 +282,7 @@ export function useLearningWorkspaceState({
       metadata?.sourceReadiness,
       metadata?.currentPlanStepId,
       metadata?.latestAssessmentMode,
+      refreshKey,
     ],
   );
 
@@ -185,6 +310,9 @@ export function useLearningWorkspaceState({
       notebookPacks,
       toolGovernanceSummary,
       runtimeHealth,
+      orkaLearningState,
+      missionControl,
+      studyCoach,
       contextPack,
     ] = await Promise.all([
       quiet(LearningSnapshotsAPI.getActiveLesson(snapshotParams)),
@@ -199,47 +327,34 @@ export function useLearningWorkspaceState({
       topicId ? quiet(NotebookStudioAPI.listPacks(topicId, sessionId ?? undefined)) : Promise.resolve(null),
       quiet(ToolsAPI.getGovernanceSummary(snapshotParams)),
       quiet(LearningRuntimeAPI.getHealth(snapshotParams)),
+      quiet(LearningAPI.getOrkaState(snapshotParams)),
+      quiet(LearningAPI.getMissionControl(snapshotParams)),
+      quiet(LearningAPI.getStudyCoach(snapshotParams)),
       includeContextPack ? quiet(LearningAPI.getContextPack(snapshotParams)) : Promise.resolve(null),
     ]);
 
-    const recentArtifacts = artifacts?.items?.slice(0, 6) ?? [];
-    const currentPlanStep = normalizePlanStep(firstPlanStep(planQuality), metadata);
-    const sourceReadiness =
-      sourceEvidenceBundle?.evidenceStatus ??
-      wikiNotebookStatus?.evidenceStatus ??
-      studentContextSnapshot?.sourceReadiness ??
-      planReadiness?.sourceReadiness ??
-      tutorPolicy?.sourceReadiness ??
-      metadata?.sourceReadiness ??
-      metadata?.planSourceReadiness ??
-      null;
-    const safeNextActions = (nextActions?.length ? nextActions : tutorPolicy?.nextActions ?? nextActionsFromMetadata(metadata)).slice(0, 5);
-
-    setState({
+    setState(buildLearningWorkspaceState({
       topicId: topicId ?? null,
       sessionId: sessionId ?? null,
       contextPack,
+      orkaLearningState,
+      missionControl,
+      studyCoach,
       activeLessonSnapshot,
       studentContextSnapshot,
-      currentPlanStep,
       planQuality,
       planReadiness,
       tutorPolicy,
-      latestAssessmentImpact: null,
-      sourceReadiness,
+      nextActions,
       sourceEvidenceBundle,
       wikiNotebookStatus,
       toolGovernanceSummary,
       runtimeHealth,
-      notebookPacks: notebookPacks?.items?.slice(0, 6) ?? [],
-      recentArtifacts,
-      nextActions: safeNextActions,
-      staleWarnings: collectSourceWarnings(sourceEvidenceBundle, wikiNotebookStatus),
-      safetyWarnings: collectArtifactWarnings(recentArtifacts),
-      isLoading: false,
-      lastSyncedAt: new Date().toISOString(),
-    });
-  }, [topicId, sessionId, metadata, includeContextPack]);
+      artifacts,
+      notebookPacks,
+      metadata,
+    }));
+  }, [topicId, sessionId, metadataKey, includeContextPack, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,7 +364,7 @@ export function useLearningWorkspaceState({
     return () => {
       cancelled = true;
     };
-  }, [load, metadataKey]);
+  }, [load]);
 
   return state;
 }

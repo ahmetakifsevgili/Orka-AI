@@ -26,6 +26,7 @@ interface QuizCardProps {
   isBaseline?: boolean;
   onOpenWiki?: (topicId: string) => void;
   onOpenIDE?: (question?: string) => void;
+  onLearningProjectionChanged?: () => void;
   adaptiveAssessment?: {
     sessionId: string;
     decisionId: string;
@@ -100,6 +101,7 @@ export default function QuizCard({
   onPlanComplete,
   onOpenWiki,
   onOpenIDE,
+  onLearningProjectionChanged,
   adaptiveAssessment,
   isBaseline = false,
 }: QuizCardProps) {
@@ -281,6 +283,7 @@ export default function QuizCard({
       const nextAnswers = [...answers, submitted];
       setAnswers(nextAnswers);
       setSubmitState("done");
+      onLearningProjectionChanged?.();
       if (attemptResult && "isComplete" in attemptResult && adaptiveAssessment?.onResult) {
         adaptiveAssessment.onResult(attemptResult);
         if (attemptResult.isComplete) {
@@ -288,6 +291,7 @@ export default function QuizCard({
         }
       }
       await finalizePlanIfNeeded(nextAnswers);
+      onLearningProjectionChanged?.();
     } catch {
       setSubmitState("done");
       const nextAnswers = [...answers, { isCorrect: false, isVerified: false, result: "unverified", skill: attempt.skillTag }];
@@ -324,6 +328,7 @@ export default function QuizCard({
       setSubmitState("done");
       setCompletionNote("Seviye testi atlandı. Orka bunu sahte yanlış cevap gibi kaydetmedi.");
       onPlanComplete?.({ ...result, skipped: true, score: 0, total: totalQuestions });
+      onLearningProjectionChanged?.();
     } catch {
       setSubmitState("idle");
       setRecordError("Seviye testini atlama isteği backend'e ulaşamadı; istersen normal cevaplayarak devam et.");

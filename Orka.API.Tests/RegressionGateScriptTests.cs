@@ -71,7 +71,8 @@ public sealed class RegressionGateScriptTests
         "OrkaExamWarRoomTests",
         "OrkaStudyCoachTests",
         "OrkaMissionControlTests",
-        "OrkaLearningStateCoherenceTests"
+        "OrkaLearningStateCoherenceTests",
+        "LearningSnapshotTests"
     ];
 
     [Fact]

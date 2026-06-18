@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bookmark, CheckCircle2, ClipboardCheck, CreditCard, Loader2, Plus, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import type { AdaptiveAssessmentNextItem, ApiTopic, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto } from "@/lib/types";
+import type { AdaptiveAssessmentNextItem, ApiTopic, LearningWorkspaceState, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto } from "@/lib/types";
 import { BookmarksAPI, DailyChallengeAPI, FlashcardsAPI, QuestionPracticeAPI, QuizAPI, ReviewAPI } from "@/services/api";
 import QuizCard from "./QuizCard";
 import { NextActionCard, WorkspaceHeader, WorkspaceMetric } from "./AgenticWorkspace";
@@ -12,9 +12,11 @@ type PanelProps = {
   onOpenChat: () => void;
   onOpenIDE?: () => void;
   mode?: "practice" | "review";
+  workspaceState?: LearningWorkspaceState | null;
+  onLearningProjectionChanged?: () => void;
 };
 
-export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE, mode = "review" }: PanelProps) {
+export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE, mode = "review", workspaceState, onLearningProjectionChanged }: PanelProps) {
   const [loading, setLoading] = useState(false);
   const [flashcards, setFlashcards] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -35,6 +37,16 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
   const topicId = topic?.id;
   const title = topic?.title ?? "Genel çalışma alanı";
   const isPractice = mode === "practice";
+  const projectedAction = workspaceState?.missionControl?.primaryMission ?? workspaceState?.orkaLearningState?.primaryNextAction ?? null;
+  const projectedTitle = projectedAction?.label ?? (isPractice ? "Start a quiz loop and collect evidence" : reviews.length > 0 ? "Clear due review" : "Add a memory card");
+  const projectedReason =
+    projectedAction?.reason ??
+    (isPractice
+      ? "Orka selects questions from weak or uncertain concepts; answers become mastery evidence."
+      : reviews.length > 0
+        ? "Due review lowers forgetting risk and improves the next Tutor explanation."
+        : "There is no due review yet; saving a flashcard or bookmark gives memory something real to use.");
+  const projectedPrimaryLabel = projectedAction?.label ?? (isPractice ? "Start quiz loop" : reviews.length > 0 ? "Show due review" : "Add flashcard");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -174,6 +186,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       });
       setQuestionPracticeResult(result);
       toast.success("Quiz evidence kaydedildi.");
+      onLearningProjectionChanged?.();
       await refresh();
     } catch {
       toast.error("Quiz result kaydedilemedi.");
@@ -211,15 +224,9 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <section className="mb-5">
           <NextActionCard
-            title={isPractice ? "Start a quiz loop and collect evidence" : reviews.length > 0 ? "Clear due review" : "Add a memory card"}
-            reason={
-              isPractice
-                ? "Orka selects questions from weak or uncertain concepts; answers become mastery evidence."
-                : reviews.length > 0
-                  ? "Due review lowers forgetting risk and improves the next Tutor explanation."
-                  : "There is no due review yet; saving a flashcard or bookmark gives memory something real to use."
-            }
-            primaryLabel={isPractice ? "Start quiz loop" : reviews.length > 0 ? "Show due review" : "Add flashcard"}
+            title={projectedTitle}
+            reason={projectedReason}
+            primaryLabel={projectedPrimaryLabel}
             onPrimary={isPractice ? () => void startQuestionBankPractice() : () => undefined}
             secondary={
               <button
@@ -347,11 +354,12 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                 messageId={`adaptive-${adaptiveNext.decision.id}`}
                 topicId={topicId}
                 sessionId={sessionId}
-                adaptiveAssessment={{
+              adaptiveAssessment={{
                   sessionId: adaptiveSessionId,
                   decisionId: adaptiveNext.decision.id,
                   onResult: setAdaptiveNext,
                 }}
+                onLearningProjectionChanged={onLearningProjectionChanged}
               />
             </div>
           )}
@@ -419,7 +427,7 @@ export default function LearningPanel({ topic, sessionId, onOpenChat, onOpenIDE,
                   <p key={i} className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs text-[#344054]">{typeof q === "string" ? q : q.question ?? JSON.stringify(q)}</p>
                 ))}
                 {challenge.id && (
-                  <button onClick={async () => { await DailyChallengeAPI.submit(challenge.id, "Frontend quick submit", 3, topicId); await refresh(); }} className="mt-3 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white">
+                  <button onClick={async () => { await DailyChallengeAPI.submit(challenge.id, "Frontend quick submit", 3, topicId); onLearningProjectionChanged?.(); await refresh(); }} className="mt-3 rounded-xl bg-[#172033] px-3 py-2 text-xs font-bold text-white">
                     Deneme gönder
                   </button>
                 )}

@@ -37,7 +37,7 @@ import toast from "react-hot-toast";
 import { AudioOverviewAPI, LearningAPI, QuestionPracticeAPI, SourcesAPI, TutorAPI, WikiAPI, authenticatedFetch, storage } from "@/services/api";
 import { useLearningWorkspaceState } from "@/hooks/useLearningWorkspaceState";
 import { tryParseQuiz } from "@/lib/quizParser";
-import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, MultiSourceCompareResultDto, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto, WikiPageQuestionSetDto } from "@/lib/types";
+import type { ChatResponseMetadata, CitationDto, CitationReviewResultDto, LearningWorkspaceState, MultiSourceCompareResultDto, QuestionPracticeSessionDto, QuestionPracticeSubmitResponseDto, SourceConceptGraphDto, SourceConceptLinkSummaryDto, SourceNotebookDto, SourceQualityReportDto, SourceQuestionResponseDto, SourceQuestionThreadDto, SourceStudySummaryDto, TeachingArtifact, WikiCopilotContextDto, WikiGraphDto, WikiGraphPageDto, WikiPageQuestionSetDto } from "@/lib/types";
 import { citationDisplayTitle, citationPrimaryLabel, citationScopeSummary, evidenceQualityDetail, evidenceQualityLabel, evidenceQualityTone } from "@/lib/citationDisplay";
 import { userSafeStatus } from "@/lib/userSafeStatus";
 import QuizCard from "./QuizCard";
@@ -82,6 +82,9 @@ interface WikiMainPanelProps {
   topicId: string;
   onClose: () => void;
   mode?: "wiki" | "orkalm";
+  sessionId?: string | null;
+  workspaceState?: LearningWorkspaceState | null;
+  onLearningProjectionChanged?: () => void;
 }
 
 /*
@@ -526,7 +529,7 @@ function WikiLearningTraceSummary({ metadata }: { metadata?: ChatResponseMetadat
   );
 }
 
-export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiMainPanelProps) {
+export default function WikiMainPanel({ topicId, onClose, mode = "wiki", sessionId, workspaceState: workspaceStateFromParent, onLearningProjectionChanged }: WikiMainPanelProps) {
   const [pages, setPages] = useState<WikiPage[]>([]);
   const [activePage, setActivePage] = useState<WikiPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1697,7 +1700,12 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
     return wikiGraph.pages.filter((page) => relatedIds.has(page.id)).slice(0, 8);
   }, [activePage, wikiGraph]);
   const wikiGraphWarnings = wikiGraph?.warnings ?? [];
-  const workspaceState = useLearningWorkspaceState({ topicId });
+  const fallbackWorkspaceState = useLearningWorkspaceState({
+    topicId: workspaceStateFromParent ? null : topicId,
+    sessionId: workspaceStateFromParent ? null : sessionId,
+    includeContextPack: !workspaceStateFromParent,
+  });
+  const workspaceState = workspaceStateFromParent ?? fallbackWorkspaceState;
   const hasSourceQualityConcern =
     sourceCoverageCoach.tone === "watch" ||
     sourceQuality?.retrievalHealthStatus === "degraded" ||
@@ -1747,6 +1755,7 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki" }: WikiM
         }),
       });
       setWikiPagePracticeResult(result);
+      onLearningProjectionChanged?.();
       toast.success("Wiki pratiği kaydedildi.");
     } catch {
       toast.error("Wiki pratiği kaydedilemedi.");

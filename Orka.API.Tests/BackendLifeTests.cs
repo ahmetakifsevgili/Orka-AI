@@ -182,7 +182,59 @@ public sealed class BackendLifeTests
 
         var dashboardResponse = await user.Client.GetAsync("/api/dashboard/today");
         dashboardResponse.EnsureSuccessStatusCode();
-        AssertNoPublicLeak(await dashboardResponse.Content.ReadAsStringAsync(), allowUserId: true);
+        var dashboardJson = await dashboardResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(dashboardJson, allowUserId: true);
+        var dashboard = JsonSerializer.Deserialize<DashboardTodayDto>(dashboardJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Dashboard payload missing.");
+
+        var stateResponse = await user.Client.GetAsync($"/api/learning/orka-state?topicId={tree.RootId}&sessionId={sessionId}");
+        stateResponse.EnsureSuccessStatusCode();
+        var stateJson = await stateResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(stateJson);
+        var state = JsonSerializer.Deserialize<OrkaLearningStateDto>(stateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Learning state payload missing.");
+
+        var missionResponse = await user.Client.GetAsync($"/api/learning/mission-control?topicId={tree.RootId}&sessionId={sessionId}");
+        missionResponse.EnsureSuccessStatusCode();
+        var missionJson = await missionResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(missionJson);
+        var mission = JsonSerializer.Deserialize<OrkaMissionControlDto>(missionJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Mission control payload missing.");
+
+        var topicStateResponse = await user.Client.GetAsync($"/api/learning/orka-state?topicId={tree.RootId}");
+        topicStateResponse.EnsureSuccessStatusCode();
+        var topicStateJson = await topicStateResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(topicStateJson);
+        var topicState = JsonSerializer.Deserialize<OrkaLearningStateDto>(topicStateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Topic learning state payload missing.");
+
+        var topicMissionResponse = await user.Client.GetAsync($"/api/learning/mission-control?topicId={tree.RootId}");
+        topicMissionResponse.EnsureSuccessStatusCode();
+        var topicMissionJson = await topicMissionResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(topicMissionJson);
+        var topicMission = JsonSerializer.Deserialize<OrkaMissionControlDto>(topicMissionJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Topic mission payload missing.");
+
+        var contextPackResponse = await user.Client.GetAsync($"/api/learning/context-pack?topicId={tree.RootId}&sessionId={sessionId}");
+        contextPackResponse.EnsureSuccessStatusCode();
+        var contextPackJson = await contextPackResponse.Content.ReadAsStringAsync();
+        AssertNoPublicLeak(contextPackJson);
+        var contextPack = JsonSerializer.Deserialize<LearningContextPackDto>(contextPackJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Context pack payload missing.");
+
+        Assert.Equal(tree.RootId, state.TopicId);
+        Assert.Equal(sessionId, state.SessionId);
+        Assert.Equal("session", state.ScopeStatus);
+        Assert.Equal(state.PrimaryNextAction.ActionType, mission.PrimaryMission.ActionType);
+        Assert.Equal(topicState.PrimaryNextAction.ActionType, dashboard.OrkaLearningState?.PrimaryNextAction.ActionType);
+        Assert.Equal(topicMission.PrimaryMission.ActionType, dashboard.MissionControl?.PrimaryMission.ActionType);
+        Assert.Equal(tree.RootId, dashboard.OrkaLearningState?.TopicId);
+        Assert.Equal(tree.RootId, dashboard.MissionControl?.TopicId);
+        Assert.Equal(state.ScopeStatus, mission.ScopeStatus);
+        Assert.Equal(state.ScopeStatus, contextPack.ScopeStatus);
+        Assert.Contains(contextPack.Blocks, b => b.BlockType == "orka_state");
+        Assert.Contains(contextPack.Blocks, b => b.BlockType == "active_lesson_snapshot");
+        Assert.True(contextPack.EstimatedTokenCount is > 0 and <= 2_000);
     }
 
     [Fact]

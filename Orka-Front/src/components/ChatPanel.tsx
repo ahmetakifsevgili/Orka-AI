@@ -11,6 +11,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -18,7 +19,7 @@ import { ArrowUp, Sparkles, BookOpen, Bell, Globe, CheckCircle2, Edit3, RotateCc
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
-import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview, ChatResponseMetadata, TeachingArtifact } from "@/lib/types";
+import type { ChatMessage, ApiTopic, QuizData, StudyIntentPreview, ChatResponseMetadata, TeachingArtifact, LearningWorkspaceState } from "@/lib/types";
 import { ChatAPI, UserAPI, KorteksAPI, TopicsAPI, QuizAPI, TutorAPI, storage } from "@/services/api";
 import { tryParseQuiz } from "@/lib/quizParser";
 import { THINKING_STATES, PLANNING_THINKING_STATES } from "@/lib/mockData";
@@ -26,6 +27,7 @@ import ChatMessageComponent from "./ChatMessage";
 import ThinkingIndicator from "./ThinkingIndicator";
 import OrcaLogo from "./OrcaLogo";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { AgentStatusRail } from "./AgenticWorkspace";
 
 type PlanFlowStage = "idle" | "intent" | "topic" | "research" | "quiz" | "plan" | "done" | "error";
 
@@ -99,6 +101,8 @@ interface ChatPanelProps {
   onPendingMessageConsumed?: () => void;
   /** IDE sayfasının otomatik veya manuel split view modunda açılmasını sağlar; quiz sorusu opsiyonel iletilir */
   onOpenIDE?: (question?: string) => void;
+  workspaceState?: LearningWorkspaceState | null;
+  onLearningProjectionChanged?: () => void;
 }
 
 export default function ChatPanel({
@@ -116,6 +120,8 @@ export default function ChatPanel({
   pendingMessage,
   onPendingMessageConsumed,
   onOpenIDE,
+  workspaceState,
+  onLearningProjectionChanged,
 }: ChatPanelProps) {
   const [, navigate] = useLocation();
   const [input, setInput] = useState("");
@@ -163,6 +169,13 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // IDE → Chat mesaj tetikleyici için sendMessage ref'i
   const sendMessageRef = useRef<((content: string) => void) | null>(null);
+  const latestAssistantMetadata = useMemo<ChatResponseMetadata | null>(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "ai" && message.metadata) return message.metadata;
+    }
+    return null;
+  }, [messages]);
 
   // Fetch user info
   useEffect(() => {
@@ -304,6 +317,7 @@ export default function ChatPanel({
           topicTitle = created.data.title;
           onTopicAutoCreated?.(topicId!);
           onTopicsRefresh();
+          onLearningProjectionChanged?.();
         }
 
         if (!topicId) {
@@ -366,6 +380,7 @@ export default function ChatPanel({
           },
         ]);
         onTopicsRefresh();
+        onLearningProjectionChanged?.();
       } catch (err) {
         console.error("Plan diagnostic start error:", err);
         setPlanFlowStage("error");
@@ -380,6 +395,7 @@ export default function ChatPanel({
       isThinking,
       onTopicAutoCreated,
       onTopicsRefresh,
+      onLearningProjectionChanged,
       pendingPlanRawRequest,
       sessionId,
       setMessages,
@@ -782,6 +798,7 @@ export default function ChatPanel({
         // Force sidebar refresh to reflect potential hierarchy changes (Deep Plan, new topics)
         if (!isUnmountedRef.current) {
           onTopicsRefresh();
+          onLearningProjectionChanged?.();
         }
 
         // If it was a null-topic start, the header will also have the new SessionId & TopicId
@@ -794,6 +811,7 @@ export default function ChatPanel({
               if (finalTopicId && onTopicAutoCreated) {
                   onTopicAutoCreated(finalTopicId);
               }
+              onLearningProjectionChanged?.();
               // Re-fetch all topics to ensure the auto-created one is there
               setTimeout(() => {
                 if (!isUnmountedRef.current) {
@@ -849,6 +867,7 @@ export default function ChatPanel({
       setMessages,
       onTopicsRefresh,
       onTopicAutoCreated,
+      onLearningProjectionChanged,
       onOpenIDE,
       abortActiveStream,
     ]
@@ -1037,6 +1056,7 @@ export default function ChatPanel({
       setPlanFlowStage("done");
       setPlanFlowDetail("Plan hazır. Sol menüdeki öğrenme yolundan ilk derse geçebilirsin.");
       onTopicsRefresh();
+      onLearningProjectionChanged?.();
 
       const scoreLine = completion.skipped
         ? "Seviye testi atlandı; Orka sıfırdan başlayan güvenli bir plan üretti."
@@ -1056,7 +1076,7 @@ export default function ChatPanel({
         },
       ]);
     },
-    [onTopicsRefresh, setMessages]
+    [onTopicsRefresh, onLearningProjectionChanged, setMessages]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1193,6 +1213,7 @@ export default function ChatPanel({
                       onPlanComplete={handleQuizFlowComplete}
                       onOpenWiki={onOpenWiki}
                       onOpenIDE={onOpenIDE}
+                      onLearningProjectionChanged={onLearningProjectionChanged}
                     />
                   ))}
                   {pendingPlanIntent && (
@@ -1377,7 +1398,13 @@ export default function ChatPanel({
             </div>
           </div>
         </div>
-
+        <AgentStatusRail
+          metadata={latestAssistantMetadata}
+          sessionId={sessionId}
+          topicTitle={activeTopic?.title}
+          isThinking={isThinking || isStreaming}
+          workspaceState={workspaceState}
+        />
       </div>
     </div>
   );

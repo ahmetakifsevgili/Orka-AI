@@ -531,6 +531,10 @@ async function installShellMocks(page: Page) {
       return fulfillJson(route, {});
     }
 
+    if (path === `/quiz/history/${topicId}`) {
+      return fulfillJson(route, []);
+    }
+
     if (path === "/user/gamification") {
       return fulfillJson(route, {});
     }
@@ -545,6 +549,74 @@ async function installShellMocks(page: Page) {
 
     if (path === "/learning/orka-state") {
       return fulfillJson(route, learningState);
+    }
+
+    if (path === "/learning/context-pack") {
+      return fulfillJson(route, {
+        topicId,
+        sessionId: "session-shell",
+        scopeStatus: "session",
+        estimatedTokenCount: 800,
+        blocks: [
+          { blockType: "orka_state", status: "ready", summary: "Projection is bounded.", priority: 1, metadata: {} },
+          { blockType: "active_lesson_snapshot", status: "ready", summary: "Active lesson snapshot is available.", priority: 2, metadata: {} },
+        ],
+        warnings: [],
+        generatedAt: now,
+      });
+    }
+
+    if (path === "/learning-snapshots/active-lesson") {
+      return fulfillJson(route, {
+        id: "active-lesson-shell",
+        topicId,
+        sessionId: "session-shell",
+        activeConceptKey: "projection",
+        activeConceptLabel: "Projection binding",
+        status: "ready",
+        sourceReadiness: "wiki_backed",
+        generatedAt: now,
+        expiresAt: "2026-06-05T09:20:00.000Z",
+      });
+    }
+
+    if (path === "/learning-snapshots/student-context") {
+      return fulfillJson(route, {
+        id: "student-context-shell",
+        topicId,
+        sessionId: "session-shell",
+        sourceReadiness: "wiki_backed",
+        confidenceStatus: "thin_evidence",
+        generatedAt: now,
+        expiresAt: "2026-06-05T09:20:00.000Z",
+      });
+    }
+
+    if (path === `/plan-quality/topic/${topicId}/readiness`) {
+      return fulfillJson(route, { topicId, sessionId: "session-shell", status: "ready", sourceReadiness: "wiki_backed", warnings: [] });
+    }
+
+    if (path === `/plan-quality/topic/${topicId}/latest`) {
+      return fulfillJson(route, {
+        id: "plan-quality-shell",
+        topicId,
+        sessionId: "session-shell",
+        status: "ready",
+        planContract: {
+          steps: [
+            {
+              stepId: "step-projection",
+              title: "Projection-bound next step",
+              objective: "Keep Home, Tutor, Wiki, and Review on the same state.",
+              conceptKey: "projection",
+              conceptLabel: "Projection binding",
+              tutorHook: { tutorMove: "repair" },
+              quizHook: { hookType: "checkpoint" },
+              evidence: { sourceReadiness: "wiki_backed" },
+            },
+          ],
+        },
+      });
     }
 
     if (path === "/classroom/study-room" || path === "/classroom/study-room/start" || path === "/classroom/study-room/checkpoint") {
@@ -569,6 +641,14 @@ async function installShellMocks(page: Page) {
 
     if (path === "/tutor/response-quality/latest" || path.startsWith("/tutor/policy/")) {
       return fulfillJson(route, null);
+    }
+
+    if (path === "/learning-artifacts") {
+      return fulfillJson(route, { items: [], totalCount: 0 });
+    }
+
+    if (path === `/notebook-studio/topic/${topicId}/packs`) {
+      return fulfillJson(route, { items: [] });
     }
 
     if (path === "/topics" && request.method() === "GET") {
@@ -661,6 +741,69 @@ async function installShellMocks(page: Page) {
       return fulfillJson(route, {});
     }
 
+    if (path === "/flashcards") {
+      return fulfillJson(route, []);
+    }
+
+    if (path === "/review/due") {
+      return fulfillJson(route, []);
+    }
+
+    if (path === "/daily-challenge") {
+      return fulfillJson(route, null);
+    }
+
+    if (path === "/bookmarks") {
+      return fulfillJson(route, []);
+    }
+
+    if (path === "/question-practice/start" && request.method() === "POST") {
+      return fulfillJson(route, {
+        practiceSetId: "practice-projection",
+        topicId,
+        mode: "weak_concept_drill",
+        status: "ready",
+        totalQuestions: 1,
+        questions: [
+          {
+            questionItemId: "question-projection",
+            stem: "Projection binding should update after submit.",
+            conceptKey: "projection",
+            difficulty: "medium",
+            visualReadinessStatus: "ready",
+            options: [
+              { optionKey: "A", text: "Update projection" },
+              { optionKey: "B", text: "Keep stale state" },
+            ],
+          },
+        ],
+      });
+    }
+
+    if (path === "/question-practice/submit" && request.method() === "POST") {
+      return fulfillJson(route, {
+        practiceSetId: "practice-projection",
+        topicId,
+        mode: "weak_concept_drill",
+        totalQuestions: 1,
+        correctCount: 1,
+        wrongCount: 0,
+        blankCount: 0,
+        results: [
+          {
+            questionItemId: "question-projection",
+            selectedOptionKey: "A",
+            isCorrect: true,
+            isBlank: false,
+            learningImpact: {
+              result: "correct",
+              nextTutorMove: "continue_plan",
+            },
+          },
+        ],
+      });
+    }
+
     return fulfillJson(route, { message: "Shell mock fallback" }, 404);
   });
 
@@ -699,6 +842,64 @@ async function clickNav(page: Page, label: string, expectedPath: RegExp) {
 }
 
 test.describe("Learning OS Shell Professional Navigation", () => {
+  test("keeps learning projection bound across Home, Tutor, Wiki, and Review @projection", async ({ page }) => {
+    const apiCalls: Array<{ method: string; path: string; search: string; postData?: string | null }> = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (!url.pathname.startsWith("/api/")) return;
+      apiCalls.push({
+        method: request.method(),
+        path: url.pathname.replace(/^\/api/, ""),
+        search: url.search,
+        postData: request.postData(),
+      });
+    });
+
+    const consoleErrors = await installShellMocks(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/app");
+    await expect(page).toHaveURL(/\/app/);
+
+    const body = page.locator("body");
+    await expect(body).toContainText("Ana Kokpit");
+    await expect(body).toContainText("Canonical Learning OS Topic");
+    await page.getByRole("button", { name: /Canonical Learning OS Topic/ }).click();
+    await expect(page).toHaveURL(/\/app\/tutor$/);
+    await clickNav(page, "Ana Kokpit", /\/app$/);
+    for (const path of ["/learning/orka-state", "/learning/mission-control", "/learning/study-coach"]) {
+      expect(apiCalls.some((call) => call.method === "GET" && call.path === path)).toBeTruthy();
+    }
+
+    await clickNav(page, "Tutor", /\/app\/tutor$/);
+    await expect(body).toContainText("Orka AI");
+    await expect(page.getByText("Bu turda Orka")).toBeVisible();
+
+    await clickNav(page, "Sources / Wiki", /\/app\/sources$/);
+    for (const path of ["/learning/context-pack", `/wiki/${topicId}`, "/sources/wiki-pro"]) {
+      await expect
+        .poll(() => apiCalls.some((call) => call.method === "GET" && call.path === path), {
+          message: `missing ${path}; calls=${apiCalls.map((call) => `${call.method} ${call.path}`).join(", ")}`,
+        })
+        .toBeTruthy();
+    }
+
+    await clickNav(page, "Review / Quiz", /\/app\/review$/);
+    const orkaStateCountBeforeSubmit = apiCalls.filter((call) => call.path === "/learning/orka-state").length;
+    await page.getByRole("button", { name: "Start quiz loop" }).last().click();
+    await expect(body).toContainText("Projection binding should update after submit.");
+    await page.getByRole("button", { name: /A\s*Update projection/ }).click();
+    await page.getByRole("button", { name: "Cevaplari kaydet" }).click();
+    await expect(body).toContainText("1/1 dogru");
+    await expect.poll(() => apiCalls.filter((call) => call.path === "/learning/orka-state").length).toBeGreaterThan(orkaStateCountBeforeSubmit);
+    expect(apiCalls.some((call) => call.method === "POST" && call.path === "/question-practice/submit")).toBeTruthy();
+
+    await clickNav(page, "Ana Kokpit", /\/app$/);
+    for (const marker of ["__RAW_PROMPT_CANARY__", "__PROVIDER_PAYLOAD_CANARY__", "__SOURCE_CHUNK_TEXT_CANARY__", "__ANSWER_KEY_CANARY__"]) {
+      await expect(body).not.toContainText(marker);
+    }
+    expect(consoleErrors.filter((message) => !message.includes("favicon"))).toEqual([]);
+  });
+
   test("renders every canonical mode on desktop without legacy IA leakage", async ({ page }) => {
     const consoleErrors = await installShellMocks(page);
     await page.setViewportSize({ width: 1440, height: 900 });

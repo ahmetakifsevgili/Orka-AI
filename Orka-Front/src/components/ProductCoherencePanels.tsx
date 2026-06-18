@@ -46,6 +46,7 @@ import type {
   OrkaStudyRoomActionDto,
   OrkaStudyRoomDto,
   OrkaStudyRoomWarningDto,
+  LearningWorkspaceState,
   SourceWikiProActionDto,
   SourceWikiProWarningDto,
 } from "@/lib/types";
@@ -73,6 +74,7 @@ type BasePanelProps = {
 
 type HomePanelProps = BasePanelProps & {
   topics: ApiTopic[];
+  workspaceState?: LearningWorkspaceState | null;
 };
 
 type ActionLike = {
@@ -529,7 +531,7 @@ function SectionList({ mission, onViewChange }: { mission: OrkaMissionControlDto
   );
 }
 
-export function MissionControlHome({ activeTopic, sessionId, topics, onViewChange }: HomePanelProps) {
+export function MissionControlHome({ activeTopic, sessionId, topics, onViewChange, workspaceState }: HomePanelProps) {
   const { t } = useLanguage();
   const [state, setState] = useState<{
     loading: boolean;
@@ -541,8 +543,21 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
   }>({ loading: true, today: null, mission: null, coach: null, learningState: null, error: false });
 
   const params = useMemo(() => compactParams(activeTopic, sessionId), [activeTopic, sessionId]);
+  const hasCentralProjection = Boolean(workspaceState?.missionControl || workspaceState?.orkaLearningState || workspaceState?.studyCoach);
 
   useEffect(() => {
+    if (hasCentralProjection) {
+      setState({
+        loading: false,
+        today: null,
+        mission: workspaceState?.missionControl ?? null,
+        coach: workspaceState?.studyCoach ?? null,
+        learningState: workspaceState?.orkaLearningState ?? null,
+        error: false,
+      });
+      return;
+    }
+
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true, error: false }));
     Promise.allSettled([
@@ -568,11 +583,14 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, hasCentralProjection, workspaceState?.missionControl, workspaceState?.orkaLearningState, workspaceState?.studyCoach]);
 
-  const mission = state.mission ?? state.today?.missionControl ?? null;
-  const coach = state.coach ?? state.today?.studyCoach ?? null;
+  const mission = workspaceState?.missionControl ?? state.mission ?? state.today?.missionControl ?? null;
+  const coach = workspaceState?.studyCoach ?? state.coach ?? state.today?.studyCoach ?? null;
+  const learningState = workspaceState?.orkaLearningState ?? state.learningState ?? state.today?.orkaLearningState ?? null;
   const primary = mission?.primaryMission;
+  const loading = hasCentralProjection ? Boolean(workspaceState?.isLoading && !mission && !learningState) : state.loading;
+  const error = hasCentralProjection ? false : state.error;
 
   /* Human-readable readiness label */
   function readinessLabel(load?: string | null) {
@@ -583,17 +601,6 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
     return t("readiness_inspecting");
   }
 
-  const moduleGrid = [
-    { key: "tutor",        label: t("mission_tutor_label"),      desc: t("mod_tutor_desc"),              icon: MessageSquare,  accent: "#6ed7ce" },
-    { key: "study-room",   label: t("mod_study_room_label"), desc: t("mod_study_room_desc"),               icon: GraduationCap,  accent: "#a7e879" },
-    { key: "review",       label: t("mod_review_label"), desc: t("mod_review_desc"),            icon: ClipboardCheck, accent: "#b4a0f0" },
-    { key: "exams",        label: t("mod_exams_label"), desc: t("mod_exams_desc"),               icon: GraduationCap,  accent: "#dac17a" },
-    { key: "sources-wiki", label: t("mod_sources_wiki_label"),  desc: t("mod_sources_wiki_desc"),          icon: BookOpen,       accent: "#6ed7ce" },
-    { key: "notebook",     label: t("mod_notebook_label"),     desc: t("mod_notebook_desc"),       icon: FileText,       accent: "#a7e879" },
-    { key: "code",         label: t("mod_code_label"),         desc: t("mod_code_desc"),        icon: Code2,          accent: "#b4a0f0" },
-    { key: "progress",     label: t("mod_progress_label"),   desc: t("mod_progress_desc"),               icon: BrainCircuit,   accent: "#a7e879" },
-  ] as const;
-
   return (
     <PanelScaffold
       moduleKey="home"
@@ -602,11 +609,11 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
       icon={Sparkles}
       summary={undefined}
     >
-      {state.loading && <LoadingBlock />}
-      {!state.loading && state.error && (
+      {loading && <LoadingBlock />}
+      {!loading && error && (
         <EmptyBlock title={t("home_loading_title")} detail={t("home_loading_detail")} />
       )}
-      {!state.loading && !state.error && (
+      {!loading && !error && (
         <>
           {/* ── Bugünün odak kartı ── */}
           <section
@@ -686,39 +693,7 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
           {/* ── Modül grid ── */}
           <section>
             <p className="mb-3 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "#3a403d" }}>{t("home_modules")}</p>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {moduleGrid.map((mod) => {
-                const Icon = mod.icon;
-                return (
-                  <button
-                    key={mod.key}
-                    type="button"
-                    onClick={() => onViewChange(mod.key)}
-                    className="group relative rounded-xl border p-4 text-left transition hover:-translate-y-0.5"
-                    style={{
-                      borderColor: "rgba(255,255,255,0.07)",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <div
-                      className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg"
-                      style={{
-                        background: `${mod.accent}14`,
-                        border: `1px solid ${mod.accent}28`,
-                      }}
-                    >
-                      <Icon className="h-4 w-4" style={{ color: mod.accent }} />
-                    </div>
-                    <p className="text-[13px] font-semibold text-white">{mod.label}</p>
-                    <p className="mt-1 text-[11px] leading-5" style={{ color: "#5a6360" }}>{mod.desc}</p>
-                    <ArrowRight
-                      className="absolute right-3 top-3 h-3.5 w-3.5 opacity-0 transition group-hover:opacity-100"
-                      style={{ color: mod.accent }}
-                    />
-                  </button>
-                );
-              })}
-            </div>
+            <ModuleCardGrid cards={mission?.moduleCards ?? []} onViewChange={onViewChange} />
           </section>
         </>
       )}

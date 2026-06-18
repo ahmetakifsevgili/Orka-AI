@@ -104,7 +104,9 @@ public sealed class OrkaUnifiedEvaluationHarnessTests
         Assert.Contains("OrkaStudyCoachTests", quickBackend);
         Assert.Contains("OrkaMissionControlTests", quickBackend);
         Assert.Contains("OrkaLearningStateCoherenceTests", quickBackend);
+        Assert.Contains("LearningSnapshotTests", quickBackend);
         Assert.Contains("MandatoryProductCoherenceTests", regressionTests);
+        Assert.Contains("LearningSnapshotTests", regressionTests);
         Assert.Contains("Phase 9 - Unified Evaluation / CI / Release Harness", checklist);
     }
 

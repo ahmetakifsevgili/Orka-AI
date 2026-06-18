@@ -15,6 +15,54 @@ namespace Orka.API.Tests;
 public sealed class OrkaLearningStateCoherenceTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> AllowedActionTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start_diagnostic",
+        "repair_concept",
+        "repair_prerequisite",
+        "review_due_concept",
+        "create_flashcards",
+        "practice_exam_outcome",
+        "review_deneme_mistakes",
+        "source_review",
+        "citation_review",
+        "update_wiki_note",
+        "open_study_room",
+        "open_notebook_pack",
+        "take_checkpoint_quiz",
+        "continue_plan"
+    };
+
+    private static readonly HashSet<string> AllowedPriorities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "urgent",
+        "high",
+        "medium",
+        "normal",
+        "low"
+    };
+
+    private static readonly HashSet<string> AllowedFeatureStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ready",
+        "available",
+        "limited",
+        "not_available"
+    };
+
+    private static readonly HashSet<string> AllowedScopeStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "global",
+        "topic",
+        "session"
+    };
+
+    private static readonly HashSet<string> AllowedConflictSeverities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "info",
+        "warning",
+        "blocker"
+    };
 
     [Fact]
     public async Task UnifiedState_RepeatedWrongAndBlankAnswersChooseRepairWithoutFakeMisconception()
@@ -97,6 +145,41 @@ public sealed class OrkaLearningStateCoherenceTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task UnifiedState_ProjectionContract_EmitsStableShapeNullabilityAndAllowedValues()
+    {
+        using var factory = new ApiSmokeFactory();
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(factory, "orka-state-contract");
+
+        var globalBefore = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var global = await GetStateAsync(user, topicId: null);
+        var globalAfter = DateTimeOffset.UtcNow.AddSeconds(1);
+        Assert.Contains(global.ScopeStatus, AllowedScopeStatuses);
+        Assert.Equal("global", global.ScopeStatus);
+        Assert.Null(global.TopicId);
+        Assert.Null(global.SessionId);
+        AssertStateProjectionContract(global, user.UserId, globalBefore, globalAfter);
+
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(factory, user.UserId, "Unified Projection Contract");
+        var topicBefore = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var topic = await GetStateAsync(user, topicId);
+        var topicAfter = DateTimeOffset.UtcNow.AddSeconds(1);
+        Assert.Equal(topicId, topic.TopicId);
+        Assert.Equal("topic", topic.ScopeStatus);
+        Assert.Null(topic.SessionId);
+        AssertStateProjectionContract(topic, user.UserId, topicBefore, topicAfter);
+
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(factory, user.UserId, topicId, DateTime.UtcNow);
+        var sessionBefore = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var session = await user.Client.GetFromJsonAsync<OrkaLearningStateDto>($"/api/learning/orka-state?topicId={topicId}&sessionId={sessionId}")
+            ?? throw new InvalidOperationException("Session-scoped projection missing.");
+        var sessionAfter = DateTimeOffset.UtcNow.AddSeconds(1);
+        Assert.Equal(topicId, session.TopicId);
+        Assert.Equal(sessionId, session.SessionId);
+        Assert.Equal("session", session.ScopeStatus);
+        AssertStateProjectionContract(session, user.UserId, sessionBefore, sessionAfter);
+    }
+
     private static async Task<OrkaLearningStateDto> GetStateAsync(CoordinationTestUser user, Guid? topicId)
     {
         var path = topicId.HasValue
@@ -105,6 +188,47 @@ public sealed class OrkaLearningStateCoherenceTests
         var response = await user.Client.GetAsync(path);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<OrkaLearningStateDto>())!;
+    }
+
+    private static void AssertStateProjectionContract(
+        OrkaLearningStateDto state,
+        Guid userId,
+        DateTimeOffset? requestStartedAt = null,
+        DateTimeOffset? requestEndedAt = null)
+    {
+        Assert.Contains(state.ScopeStatus, AllowedScopeStatuses);
+        Assert.NotNull(state.PrimaryNextAction);
+        Assert.Contains(state.PrimaryNextAction.ActionType, AllowedActionTypes);
+        Assert.Contains(state.PrimaryNextAction.Priority, AllowedPriorities);
+        Assert.False(string.IsNullOrWhiteSpace(state.PrimaryNextAction.Label));
+        Assert.False(string.IsNullOrWhiteSpace(state.PrimaryNextAction.Reason));
+
+        foreach (var action in state.SecondaryNextActions)
+        {
+            Assert.Contains(action.ActionType, AllowedActionTypes);
+            Assert.Contains(action.Priority, AllowedPriorities);
+            Assert.False(string.IsNullOrWhiteSpace(action.Label));
+            Assert.False(string.IsNullOrWhiteSpace(action.Reason));
+        }
+
+        Assert.NotEmpty(state.FeatureReadiness);
+        foreach (var feature in state.FeatureReadiness)
+        {
+            Assert.Contains(feature.Status, AllowedFeatureStatuses);
+            Assert.False(string.IsNullOrWhiteSpace(feature.FeatureKey));
+            Assert.False(string.IsNullOrWhiteSpace(feature.UserSafeSummary));
+        }
+
+        foreach (var conflict in state.ConflictWarnings)
+        {
+            Assert.Contains(conflict.Severity, AllowedConflictSeverities);
+            Assert.False(string.IsNullOrWhiteSpace(conflict.ConflictCode));
+            Assert.False(string.IsNullOrWhiteSpace(conflict.UserSafeSummary));
+        }
+
+        Assert.True(state.GeneratedAt >= (requestStartedAt ?? DateTimeOffset.UtcNow.AddMinutes(-5)));
+        Assert.True(state.GeneratedAt <= (requestEndedAt ?? DateTimeOffset.UtcNow.AddMinutes(1)));
+        AssertSafePayload(JsonSerializer.Serialize(state, JsonOptions), userId);
     }
 
     private static async Task SeedRepairSignalsAsync(ApiSmokeFactory factory, Guid userId, Guid topicId)

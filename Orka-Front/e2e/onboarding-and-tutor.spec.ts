@@ -493,6 +493,25 @@ async function installMocks(page: Page) {
     if (path === "/learning/orka-state") {
       return fulfillJson(route, learningState);
     }
+    if (path === "/learning/context-pack") {
+      return fulfillJson(route, {
+        topicId,
+        sessionId: "session-test",
+        scopeStatus: "session",
+        estimatedTokenCount: 640,
+        blocks: [
+          {
+            blockType: "orka_state",
+            status: "ready",
+            summary: "Tutor projection is available.",
+            priority: 1,
+            metadata: {},
+          },
+        ],
+        warnings: [],
+        generatedAt: now,
+      });
+    }
     if (path === "/classroom/study-room" || path === "/classroom/study-room/start") {
       return fulfillJson(route, studyRoom);
     }
@@ -529,6 +548,20 @@ async function installMocks(page: Page) {
     }
     if (path === `/topics/${topicId}/sessions/latest`) {
       return fulfillJson(route, { sessionId: "session-test", topicId, messages: [] });
+    }
+    if (path === "/quiz/plan-diagnostic/intent" && request.method() === "POST") {
+      return fulfillJson(route, {
+        intentRequestId: "intent-test",
+        rawRequest: "Bugun yeni bir konuya baslamak istiyorum. Bana 20 dakikalik sade bir calisma yolu ac.",
+        mainTopic: "Onboarding ve Tutor",
+        focusArea: "Plan-first giris",
+        studyGoal: "Kisa tanilama ile calisma yolu acmak",
+        researchIntent: "onboarding tutor plan-first smoke",
+        confirmationText: "Once calisma niyetini netlestirdim; onay verirsen arastirma ve seviye testi baslar.",
+        language: "tr",
+        clarifyingNotes: ["Smoke testi Korteks baslamadan niyet kapisini dogrular."],
+        requiresUserConfirmation: true,
+      });
     }
     if (path === `/wiki/${topicId}`) {
       return fulfillJson(route, []);
@@ -667,11 +700,30 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
 
   test("runs an interactive tutoring session and receives streamed responses", async ({ page }) => {
     await installMocks(page);
+    let intentRequests = 0;
+    let streamRequests = 0;
+
+    await page.route("**/api/quiz/plan-diagnostic/intent", async (route) => {
+      intentRequests += 1;
+      await fulfillJson(route, {
+        intentRequestId: "intent-test",
+        rawRequest: "Bugun yeni bir konuya baslamak istiyorum. Bana 20 dakikalik sade bir calisma yolu ac.",
+        mainTopic: "Onboarding ve Tutor",
+        focusArea: "Plan-first giris",
+        studyGoal: "Kisa tanilama ile calisma yolu acmak",
+        researchIntent: "onboarding tutor plan-first smoke",
+        confirmationText: "Once calisma niyetini netlestirdim; onay verirsen arastirma ve seviye testi baslar.",
+        language: "tr",
+        clarifyingNotes: ["Smoke testi Korteks baslamadan niyet kapisini dogrular."],
+        requiresUserConfirmation: true,
+      });
+    });
 
     // Mock the streaming response of chat API
     await page.route("**/api/chat/stream", async (route) => {
       const request = route.request();
       expect(request.method()).toBe("POST");
+      streamRequests += 1;
 
       await route.fulfill({
         status: 200,
@@ -713,13 +765,21 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     const starterButton = page.getByRole("button", { name: "Konu öğren" });
     await expect(starterButton).toBeVisible();
 
-    // Click starter button; starter CTAs send their prompt directly.
+    // Click starter button; starter CTAs now stop at the plan intent gate.
     await starterButton.click();
+    await expect(page.locator("body")).toContainText("Niyet analizi", { timeout: 15000 });
+    expect(intentRequests).toBe(1);
+
+    // Normal tutor chat still streams after the plan-first gate is visible.
+    const chatInput = page.locator("#tour-chat-input");
+    await chatInput.fill("Bana kisa bir basari mesaji ver.");
+    await chatInput.press("Enter");
 
     // Message list should contain user prompt and streaming response
     const messageContainer = page.locator("body");
     await expect(messageContainer).toContainText("tamamladın", { timeout: 15000 });
     await expect(messageContainer).toContainText("Tebrikler!");
     await expect(messageContainer).toContainText("Onboarding ve Tutor");
+    expect(streamRequests).toBe(1);
   });
 });

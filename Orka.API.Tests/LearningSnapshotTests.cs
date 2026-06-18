@@ -269,6 +269,22 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
     }
 
     [Fact]
+    public async Task LearningContextPack_BlocksForeignTopicAndTopicSessionMismatch()
+    {
+        var owner = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "context-pack-owner");
+        var other = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "context-pack-foreign");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, owner.UserId, "Context Scope A");
+        var otherTopicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, owner.UserId, "Context Scope B");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, owner.UserId, topicId, DateTime.UtcNow);
+
+        var mismatch = await owner.Client.GetAsync($"/api/learning/context-pack?topicId={otherTopicId}&sessionId={sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, mismatch.StatusCode);
+
+        var foreign = await other.Client.GetAsync($"/api/learning/context-pack?topicId={topicId}");
+        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+    }
+
+    [Fact]
     public async Task RecordSignal_RejectsCustomPayloadWithoutSchemaVersion()
     {
         var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "signal-schema");
