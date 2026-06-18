@@ -251,14 +251,37 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
 
         Assert.Equal(topicId.ToString(), root.GetProperty("topicId").GetString(), ignoreCase: true);
         Assert.Equal(sessionId.ToString(), root.GetProperty("sessionId").GetString(), ignoreCase: true);
+        Assert.Equal("orka.learning-context-pack.v1.1", root.GetProperty("schemaVersion").GetString());
+        var watermark = root.GetProperty("contextWatermark").GetString();
+        Assert.StartsWith("ctx_", watermark);
         Assert.True(root.GetProperty("estimatedTokenCount").GetInt32() > 0);
         Assert.True(root.GetProperty("estimatedTokenCount").GetInt32() <= 2_000);
-        var blockTypes = root.GetProperty("blocks").EnumerateArray()
+        var blocks = root.GetProperty("blocks").EnumerateArray().ToArray();
+        var blockTypes = blocks
             .Select(b => b.GetProperty("blockType").GetString())
             .ToArray();
         Assert.Contains("orka_state", blockTypes);
         Assert.Contains("active_lesson_snapshot", blockTypes);
         Assert.Contains("student_context_snapshot", blockTypes);
+        Assert.Contains(blocks, b =>
+            b.GetProperty("blockType").GetString() == "active_lesson_snapshot" &&
+            b.TryGetProperty("snapshotRef", out var snapshotRef) &&
+            snapshotRef.ValueKind == JsonValueKind.Object &&
+            snapshotRef.GetProperty("kind").GetString() == "active_lesson_snapshot" &&
+            !string.IsNullOrWhiteSpace(snapshotRef.GetProperty("version").GetString()));
+        Assert.Contains(blocks, b =>
+            b.GetProperty("blockType").GetString() == "student_context_snapshot" &&
+            b.TryGetProperty("snapshotRef", out var snapshotRef) &&
+            snapshotRef.ValueKind == JsonValueKind.Object &&
+            snapshotRef.GetProperty("kind").GetString() == "student_context_snapshot");
+        var trace = root.GetProperty("trace");
+        Assert.Equal("orka.learning-context-pack.trace.v1", trace.GetProperty("schemaVersion").GetString());
+        Assert.Equal(2_000, trace.GetProperty("tokenBudget").GetInt32());
+        Assert.True(trace.GetProperty("initialEstimatedTokenCount").GetInt32() >= trace.GetProperty("estimatedTokenCount").GetInt32());
+        Assert.Equal(root.GetProperty("estimatedTokenCount").GetInt32(), trace.GetProperty("estimatedTokenCount").GetInt32());
+        Assert.Contains(trace.GetProperty("selectedBlocks").EnumerateArray(), b => b.GetProperty("blockType").GetString() == "orka_state");
+        Assert.True(trace.GetProperty("droppedBlocks").ValueKind == JsonValueKind.Array);
+        Assert.True(trace.GetProperty("droppedWarnings").ValueKind == JsonValueKind.Array);
         Assert.DoesNotContain(user.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("orkaState", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("activeLessonSnapshot", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
@@ -266,6 +289,11 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.DoesNotContain("sourceEvidenceBundle", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("payloadJson", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+
+        var secondResponse = await user.Client.GetAsync($"/api/learning/context-pack?topicId={topicId}&sessionId={sessionId}");
+        secondResponse.EnsureSuccessStatusCode();
+        using var secondBody = await JsonDocument.ParseAsync(await secondResponse.Content.ReadAsStreamAsync());
+        Assert.Equal(watermark, secondBody.RootElement.GetProperty("contextWatermark").GetString());
     }
 
     [Fact]

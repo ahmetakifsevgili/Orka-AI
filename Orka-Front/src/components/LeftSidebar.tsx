@@ -164,7 +164,7 @@ export default function LeftSidebar({
           <button
             id="tour-new-topic"
             type="button"
-            onClick={() => onTopicClick(null, "chat")}
+            onClick={() => onTopicClick(null, "plan")}
             className="flex h-9 w-full items-center gap-2.5 rounded-xl border px-3 text-[13px] font-medium transition"
             style={{
               border: "1px solid rgba(110,215,206,0.2)",

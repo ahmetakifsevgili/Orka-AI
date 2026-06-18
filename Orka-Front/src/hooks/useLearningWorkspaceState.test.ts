@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLearningWorkspaceState } from "./useLearningWorkspaceState";
+import { buildLearningWorkspaceState, isLatestWorkspaceRequest } from "./useLearningWorkspaceState";
 import type {
   LearningArtifactDto,
   OrkaLearningStateDto,
@@ -174,9 +174,11 @@ describe("buildLearningWorkspaceState", () => {
       orkaLearningState: learningState,
       studyCoach,
       contextPack: {
+        schemaVersion: "orka.learning-context-pack.v1.1",
         topicId: "topic-projection",
         sessionId: "session-projection",
         scopeStatus: "session",
+        contextWatermark: "ctx_projection",
         estimatedTokenCount: 1200,
         blocks: [
           {
@@ -188,6 +190,22 @@ describe("buildLearningWorkspaceState", () => {
           },
         ],
         warnings: ["context_pack_bounded"],
+        trace: {
+          schemaVersion: "orka.learning-context-pack.trace.v1",
+          tokenBudget: 2000,
+          initialEstimatedTokenCount: 1200,
+          estimatedTokenCount: 1200,
+          selectedBlocks: [
+            {
+              blockType: "orka_state",
+              status: "ready",
+              priority: 1,
+              estimatedTokenCount: 25,
+            },
+          ],
+          droppedBlocks: [],
+          droppedWarnings: [],
+        },
         generatedAt: now,
       },
       artifacts: {
@@ -223,5 +241,10 @@ describe("buildLearningWorkspaceState", () => {
     expect(state.staleWarnings).toContain("context_pack_bounded");
     expect(state.staleWarnings).toContain("Wiki repair trace is still catching up.");
     expect(state.safetyWarnings).toHaveLength(0);
+  });
+
+  it("only lets the latest workspace request update projection state", () => {
+    expect(isLatestWorkspaceRequest(3, 3)).toBe(true);
+    expect(isLatestWorkspaceRequest(4, 3)).toBe(false);
   });
 });

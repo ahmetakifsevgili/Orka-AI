@@ -842,7 +842,7 @@ async function clickNav(page: Page, label: string, expectedPath: RegExp) {
 }
 
 test.describe("Learning OS Shell Professional Navigation", () => {
-  test("keeps learning projection bound across Home, Tutor, Wiki, and Review @projection", async ({ page }) => {
+  test("keeps learning projection bound across Home, Tutor, Wiki, and Review @projection", async ({ page }, testInfo) => {
     const apiCalls: Array<{ method: string; path: string; search: string; postData?: string | null }> = [];
     page.on("request", (request) => {
       const url = new URL(request.url());
@@ -897,6 +897,10 @@ test.describe("Learning OS Shell Professional Navigation", () => {
     for (const marker of ["__RAW_PROMPT_CANARY__", "__PROVIDER_PAYLOAD_CANARY__", "__SOURCE_CHUNK_TEXT_CANARY__", "__ANSWER_KEY_CANARY__"]) {
       await expect(body).not.toContainText(marker);
     }
+    await testInfo.attach("projection-api-calls.json", {
+      body: JSON.stringify(apiCalls, null, 2),
+      contentType: "application/json",
+    });
     expect(consoleErrors.filter((message) => !message.includes("favicon"))).toEqual([]);
   });
 

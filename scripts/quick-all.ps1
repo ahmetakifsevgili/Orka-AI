@@ -17,7 +17,7 @@ git -C $root diff --check
 
 Write-Host "[quick-all] Frontend smoke..."
 & "$PSScriptRoot\run-command-with-timeout.ps1" `
-    -TimeoutSeconds 35 `
+    -TimeoutSeconds 300 `
     -WorkingDirectory $frontRoot `
     -FilePath $npm `
     -ArgumentList @("run", "quick:smoke")

@@ -163,6 +163,7 @@ export default function Home({ initialView }: { initialView?: string }) {
   const [creating, setCreating] = useState(false);
   const ignoreTopicChangeRef = useRef(false);
   const sessionRequestRef = useRef(0);
+  const projectionRefreshTimerRef = useRef<number | null>(null);
 
   // ── Load session when active topic changes ─────────────────────────────
   useEffect(() => {
@@ -275,13 +276,24 @@ export default function Home({ initialView }: { initialView?: string }) {
   }, []);
 
   const handleLearningProjectionChanged = useCallback(() => {
-    setWorkspaceRefreshKey((n) => n + 1);
+    if (projectionRefreshTimerRef.current !== null) return;
+    projectionRefreshTimerRef.current = window.setTimeout(() => {
+      projectionRefreshTimerRef.current = null;
+      setWorkspaceRefreshKey((n) => n + 1);
+    }, 0);
+  }, []);
+
+  useEffect(() => () => {
+    if (projectionRefreshTimerRef.current !== null) {
+      window.clearTimeout(projectionRefreshTimerRef.current);
+      projectionRefreshTimerRef.current = null;
+    }
   }, []);
 
   // ── Backend yeni topic oluşturduysa (null-topic modu) sidebar'ı kur ───
   const handleTopicAutoCreated = useCallback((newTopicId: string) => {
     setRefreshTrigger((n) => n + 1);
-    setWorkspaceRefreshKey((n) => n + 1);
+    handleLearningProjectionChanged();
     TopicsAPI.getAll()
       .then((r) => {
         const loaded: ApiTopic[] = r.data ?? [];
@@ -305,7 +317,7 @@ export default function Home({ initialView }: { initialView?: string }) {
       .catch(() => {
         ignoreTopicChangeRef.current = false;
       });
-  }, []);
+  }, [handleLearningProjectionChanged]);
 
   // ── Wiki panel ────────────────────────────────────────────────────────
   const handleOpenWiki = useCallback((topicId: string) => {

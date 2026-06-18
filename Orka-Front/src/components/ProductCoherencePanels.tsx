@@ -543,7 +543,16 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
   }>({ loading: true, today: null, mission: null, coach: null, learningState: null, error: false });
 
   const params = useMemo(() => compactParams(activeTopic, sessionId), [activeTopic, sessionId]);
-  const hasCentralProjection = Boolean(workspaceState?.missionControl || workspaceState?.orkaLearningState || workspaceState?.studyCoach);
+  const hasCentralProjection = Boolean(
+    workspaceState && (
+      workspaceState.topicId ||
+      workspaceState.sessionId ||
+      workspaceState.isLoading ||
+      workspaceState.missionControl ||
+      workspaceState.orkaLearningState ||
+      workspaceState.studyCoach
+    ),
+  );
 
   useEffect(() => {
     if (hasCentralProjection) {
@@ -583,7 +592,16 @@ export function MissionControlHome({ activeTopic, sessionId, topics, onViewChang
     return () => {
       cancelled = true;
     };
-  }, [params, hasCentralProjection, workspaceState?.missionControl, workspaceState?.orkaLearningState, workspaceState?.studyCoach]);
+  }, [
+    params,
+    hasCentralProjection,
+    workspaceState?.topicId,
+    workspaceState?.sessionId,
+    workspaceState?.isLoading,
+    workspaceState?.missionControl,
+    workspaceState?.orkaLearningState,
+    workspaceState?.studyCoach,
+  ]);
 
   const mission = workspaceState?.missionControl ?? state.mission ?? state.today?.missionControl ?? null;
   const coach = workspaceState?.studyCoach ?? state.coach ?? state.today?.studyCoach ?? null;

@@ -25,6 +25,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using Orka.API.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 var databaseProvider = builder.Configuration["Database:Provider"] ?? "SqlServer";
 var useInMemoryDatabase = databaseProvider.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
 

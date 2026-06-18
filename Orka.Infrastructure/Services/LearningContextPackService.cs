@@ -1,10 +1,13 @@
 using Orka.Core.DTOs;
 using Orka.Core.Interfaces;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Orka.Infrastructure.Services;
 
 public sealed class LearningContextPackService : ILearningContextPackService
 {
+    private const string SchemaVersion = "orka.learning-context-pack.v1.1";
     private const int MaxEstimatedTokens = 2_000;
     private const int MaxSummaryChars = 320;
     private const int MaxMetadataValueChars = 180;
@@ -48,15 +51,18 @@ public sealed class LearningContextPackService : ILearningContextPackService
 
         var blocks = BuildBlocks(state, activeSnapshot, studentSnapshot, sourceBundle);
         var warnings = BuildWarnings(state, activeSnapshot, studentSnapshot, sourceBundle);
-        (blocks, warnings) = BoundPack(blocks, warnings);
+        var bounded = BoundPack(blocks, warnings);
         return new LearningContextPackDto
         {
+            SchemaVersion = SchemaVersion,
             TopicId = resolvedTopicId,
             SessionId = resolvedSessionId,
             ScopeStatus = state.ScopeStatus,
-            Blocks = blocks,
-            Warnings = warnings,
-            EstimatedTokenCount = EstimateTokens(blocks, warnings),
+            ContextWatermark = BuildWatermark(state, activeSnapshot, studentSnapshot, sourceBundle, bounded.Blocks),
+            Blocks = bounded.Blocks,
+            Warnings = bounded.Warnings,
+            Trace = bounded.Trace,
+            EstimatedTokenCount = bounded.Trace.EstimatedTokenCount,
             GeneratedAt = DateTimeOffset.UtcNow
         };
     }
@@ -78,18 +84,30 @@ public sealed class LearningContextPackService : ILearningContextPackService
                 {
                     ["scopeStatus"] = state.ScopeStatus,
                     ["nextActionType"] = state.PrimaryNextAction.ActionType,
+                    ["nextActionPriority"] = state.PrimaryNextAction.Priority,
                     ["sourceHealth"] = state.SourceHealth.Status
                 })
         };
 
         if (activeSnapshot != null)
         {
+            var snapshotRef = new LearningContextPackRefDto
+            {
+                Kind = "active_lesson_snapshot",
+                Id = activeSnapshot.Id.ToString("N"),
+                Version = activeSnapshot.SnapshotVersion.ToString(),
+                Status = activeSnapshot.Status,
+                EvidenceStatus = activeSnapshot.EvidenceSummary.EvidenceStatus,
+                UpdatedAt = activeSnapshot.UpdatedAt,
+                ExpiresAt = activeSnapshot.ExpiresAt
+            };
             blocks.Add(Block(
                 "active_lesson_snapshot",
                 activeSnapshot.Status,
                 $"Active concept: {Fallback(activeSnapshot.ActiveConceptLabel, activeSnapshot.ActiveConceptKey, "unknown")}; learner state: {activeSnapshot.LearnerState}; remediation: {activeSnapshot.RemediationNeed}.",
                 priority: 90,
                 snapshotId: activeSnapshot.Id,
+                snapshotRef: snapshotRef,
                 expiresAt: activeSnapshot.ExpiresAt,
                 metadata: new Dictionary<string, string>
                 {
@@ -101,12 +119,23 @@ public sealed class LearningContextPackService : ILearningContextPackService
 
         if (studentSnapshot != null)
         {
+            var snapshotRef = new LearningContextPackRefDto
+            {
+                Kind = "student_context_snapshot",
+                Id = studentSnapshot.Id.ToString("N"),
+                Version = studentSnapshot.SnapshotVersion.ToString(),
+                Status = studentSnapshot.ConfidenceStatus,
+                EvidenceStatus = studentSnapshot.SourceReadiness,
+                UpdatedAt = studentSnapshot.UpdatedAt,
+                ExpiresAt = studentSnapshot.ExpiresAt
+            };
             blocks.Add(Block(
                 "student_context_snapshot",
                 studentSnapshot.ConfidenceStatus,
                 $"Weak concepts: {studentSnapshot.WeakConcepts.Count}; remediation ready: {studentSnapshot.RemediationReady.Count}; source readiness: {studentSnapshot.SourceReadiness}.",
                 priority: 80,
                 snapshotId: studentSnapshot.Id,
+                snapshotRef: snapshotRef,
                 expiresAt: studentSnapshot.ExpiresAt,
                 metadata: new Dictionary<string, string>
                 {
@@ -117,12 +146,23 @@ public sealed class LearningContextPackService : ILearningContextPackService
 
         if (sourceBundle != null)
         {
+            var sourceRef = new LearningContextPackRefDto
+            {
+                Kind = "source_evidence_bundle",
+                Id = sourceBundle.Id.ToString("N"),
+                Version = sourceBundle.BundleHash,
+                Status = sourceBundle.EvidenceStatus,
+                EvidenceStatus = sourceBundle.EvidenceStatus,
+                UpdatedAt = sourceBundle.UpdatedAt,
+                ExpiresAt = sourceBundle.ExpiresAt
+            };
             blocks.Add(Block(
                 "source_evidence_bundle",
                 sourceBundle.EvidenceStatus,
                 $"Ready sources: {sourceBundle.ReadySourceCount}/{sourceBundle.SourceCount}; chunks: {sourceBundle.ChunkCount}; citation coverage: {sourceBundle.CitationCoverage:0.##}.",
                 priority: 70,
                 snapshotId: sourceBundle.Id,
+                sourceRef: sourceRef,
                 expiresAt: sourceBundle.ExpiresAt,
                 metadata: new Dictionary<string, string>
                 {
@@ -162,6 +202,8 @@ public sealed class LearningContextPackService : ILearningContextPackService
         string summary,
         int priority,
         Guid? snapshotId = null,
+        LearningContextPackRefDto? snapshotRef = null,
+        LearningContextPackRefDto? sourceRef = null,
         DateTime? expiresAt = null,
         IReadOnlyDictionary<string, string>? metadata = null) => new()
         {
@@ -170,6 +212,8 @@ public sealed class LearningContextPackService : ILearningContextPackService
             Summary = Trim(summary, MaxSummaryChars),
             Priority = priority,
             SnapshotId = snapshotId,
+            SnapshotRef = snapshotRef,
+            SourceRef = sourceRef,
             ExpiresAt = expiresAt,
             Metadata = NormalizeMetadata(metadata)
         };
@@ -185,25 +229,105 @@ public sealed class LearningContextPackService : ILearningContextPackService
         return Math.Max(1, (int)Math.Ceiling(chars / 4m));
     }
 
-    private static (IReadOnlyList<LearningContextPackBlockDto> Blocks, IReadOnlyList<string> Warnings) BoundPack(
+    private static BoundPackResult BoundPack(
         IReadOnlyList<LearningContextPackBlockDto> blocks,
         IReadOnlyList<string> warnings)
     {
         var boundedBlocks = blocks.OrderByDescending(b => b.Priority).ToList();
         var boundedWarnings = warnings.ToList();
+        var droppedBlocks = new List<LearningContextPackDroppedBlockDto>();
+        var droppedWarnings = new List<LearningContextPackDroppedWarningDto>();
+        var initialEstimate = EstimateTokens(boundedBlocks, boundedWarnings);
 
         while (EstimateTokens(boundedBlocks, boundedWarnings) > MaxEstimatedTokens && boundedWarnings.Count > 0)
         {
+            droppedWarnings.Add(new LearningContextPackDroppedWarningDto
+            {
+                Warning = boundedWarnings[^1],
+                Reason = "token_budget"
+            });
             boundedWarnings.RemoveAt(boundedWarnings.Count - 1);
         }
 
         while (EstimateTokens(boundedBlocks, boundedWarnings) > MaxEstimatedTokens && boundedBlocks.Count > 1)
         {
+            var dropped = boundedBlocks[^1];
+            droppedBlocks.Add(new LearningContextPackDroppedBlockDto
+            {
+                BlockType = dropped.BlockType,
+                Priority = dropped.Priority,
+                Reason = "token_budget",
+                EstimatedTokenCount = EstimateTokens(new[] { dropped }, Array.Empty<string>())
+            });
             boundedBlocks.RemoveAt(boundedBlocks.Count - 1);
         }
 
-        return (boundedBlocks, boundedWarnings);
+        var finalEstimate = EstimateTokens(boundedBlocks, boundedWarnings);
+        var trace = new LearningContextPackTraceDto
+        {
+            TokenBudget = MaxEstimatedTokens,
+            InitialEstimatedTokenCount = initialEstimate,
+            EstimatedTokenCount = finalEstimate,
+            SelectedBlocks = boundedBlocks.Select(b => new LearningContextPackTraceBlockDto
+            {
+                BlockType = b.BlockType,
+                Status = b.Status,
+                Priority = b.Priority,
+                EstimatedTokenCount = EstimateTokens(new[] { b }, Array.Empty<string>()),
+                RefKind = b.SnapshotRef?.Kind ?? b.SourceRef?.Kind,
+                RefId = b.SnapshotRef?.Id ?? b.SourceRef?.Id,
+                RefVersion = b.SnapshotRef?.Version ?? b.SourceRef?.Version
+            }).ToArray(),
+            DroppedBlocks = droppedBlocks,
+            DroppedWarnings = droppedWarnings
+        };
+
+        return new BoundPackResult(boundedBlocks, boundedWarnings, trace);
     }
+
+    private static string BuildWatermark(
+        OrkaLearningStateDto state,
+        ActiveLessonSnapshotDto? activeSnapshot,
+        StudentContextSnapshotDto? studentSnapshot,
+        SourceEvidenceBundleDto? sourceBundle,
+        IReadOnlyList<LearningContextPackBlockDto> selectedBlocks)
+    {
+        var material = string.Join('\n', new[]
+        {
+            SchemaVersion,
+            $"scope:{state.ScopeStatus}",
+            $"topic:{state.TopicId?.ToString("N") ?? "global"}",
+            $"session:{state.SessionId?.ToString("N") ?? "none"}",
+            $"next:{state.PrimaryNextAction.ActionType}|{state.PrimaryNextAction.Priority}|{state.PrimaryNextAction.TopicId?.ToString("N") ?? string.Empty}|{state.PrimaryNextAction.ConceptKey ?? string.Empty}|{string.Join(',', state.PrimaryNextAction.ReasonCodes.OrderBy(static r => r, StringComparer.Ordinal))}",
+            $"source:{state.SourceHealth.Status}|{state.SignalSummary.SourceCount}|{state.SignalSummary.ReadySourceCount}|{state.SignalSummary.WikiPageCount}",
+            $"signals:{state.SignalSummary.EvidenceCount}|{state.SignalSummary.QuizAttemptCount}|{state.SignalSummary.CorrectAttemptCount}|{state.SignalSummary.WrongAttemptCount}|{state.SignalSummary.BlankOrSkippedAttemptCount}|{state.SignalSummary.LearningSignalCount}|{state.SignalSummary.HasRealLearningData}",
+            $"active:{RefWatermark(activeSnapshot)}",
+            $"student:{RefWatermark(studentSnapshot)}",
+            $"bundle:{RefWatermark(sourceBundle)}",
+            $"blocks:{string.Join('|', selectedBlocks.Select(BlockWatermark))}"
+        });
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        return $"ctx_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+    }
+
+    private static string RefWatermark(ActiveLessonSnapshotDto? snapshot) =>
+        snapshot == null
+            ? "missing"
+            : $"{snapshot.Id:N}|{snapshot.SnapshotVersion}|{snapshot.Status}|{snapshot.EvidenceSummary.EvidenceStatus}|{snapshot.EvidenceSummary.SourceEvidenceCount}|{snapshot.EvidenceSummary.WikiEvidenceCount}|{snapshot.EvidenceSummary.RecentAttemptCount}|{snapshot.ActiveConceptKey ?? string.Empty}|{snapshot.RemediationNeed}|{snapshot.UpdatedAt:O}|{snapshot.ExpiresAt:O}";
+
+    private static string RefWatermark(StudentContextSnapshotDto? snapshot) =>
+        snapshot == null
+            ? "missing"
+            : $"{snapshot.Id:N}|{snapshot.SnapshotVersion}|{snapshot.ConfidenceStatus}|{snapshot.SourceReadiness}|{snapshot.WeakConcepts.Count}|{snapshot.RemediationReady.Count}|{snapshot.ReviewPressure.Count}|{snapshot.UpdatedAt:O}|{snapshot.ExpiresAt:O}";
+
+    private static string RefWatermark(SourceEvidenceBundleDto? bundle) =>
+        bundle == null
+            ? "missing"
+            : $"{bundle.Id:N}|{bundle.BundleHash}|{bundle.EvidenceStatus}|{bundle.SourceCount}|{bundle.ReadySourceCount}|{bundle.ChunkCount}|{bundle.CitationCoverage}|{bundle.UnsupportedCitationCount}|{bundle.StaleEvidenceCount}|{bundle.DeletedEvidenceCount}|{bundle.UpdatedAt:O}|{bundle.ExpiresAt:O}";
+
+    private static string BlockWatermark(LearningContextPackBlockDto block) =>
+        $"{block.BlockType}|{block.Status}|{block.Priority}|{block.SnapshotRef?.Kind ?? block.SourceRef?.Kind ?? string.Empty}|{block.SnapshotRef?.Id ?? block.SourceRef?.Id ?? string.Empty}|{block.SnapshotRef?.Version ?? block.SourceRef?.Version ?? string.Empty}";
 
     private static IReadOnlyDictionary<string, string> NormalizeMetadata(IReadOnlyDictionary<string, string>? metadata)
     {
@@ -238,4 +362,9 @@ public sealed class LearningContextPackService : ILearningContextPackService
 
     private static string Fallback(params string?[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
+
+    private sealed record BoundPackResult(
+        IReadOnlyList<LearningContextPackBlockDto> Blocks,
+        IReadOnlyList<string> Warnings,
+        LearningContextPackTraceDto Trace);
 }

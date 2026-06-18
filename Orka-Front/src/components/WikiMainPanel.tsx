@@ -4016,7 +4016,13 @@ export default function WikiMainPanel({ topicId, onClose, mode = "wiki", session
                                 </div>
                                 {parsedQuiz && (
                                   <div className="mt-6">
-                                    <QuizCard quiz={parsedQuiz} messageId={block.id} topicId={topicId} />
+                                    <QuizCard
+                                      quiz={parsedQuiz}
+                                      messageId={block.id}
+                                      topicId={topicId}
+                                      sessionId={sessionId ?? undefined}
+                                      onLearningProjectionChanged={onLearningProjectionChanged}
+                                    />
                                   </div>
                                 )}
                               </div>

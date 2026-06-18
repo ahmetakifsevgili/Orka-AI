@@ -283,7 +283,6 @@ export default function QuizCard({
       const nextAnswers = [...answers, submitted];
       setAnswers(nextAnswers);
       setSubmitState("done");
-      onLearningProjectionChanged?.();
       if (attemptResult && "isComplete" in attemptResult && adaptiveAssessment?.onResult) {
         adaptiveAssessment.onResult(attemptResult);
         if (attemptResult.isComplete) {

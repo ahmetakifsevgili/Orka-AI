@@ -1764,17 +1764,64 @@ export interface LearningContextPackBlockDto {
   summary: string;
   priority: number;
   snapshotId?: string | null;
+  snapshotRef?: LearningContextPackRefDto | null;
+  sourceRef?: LearningContextPackRefDto | null;
   expiresAt?: string | null;
   metadata: Record<string, string>;
 }
 
+export interface LearningContextPackRefDto {
+  kind: string;
+  id: string;
+  version: string;
+  status: string;
+  evidenceStatus: string;
+  updatedAt?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface LearningContextPackTraceBlockDto {
+  blockType: string;
+  status: string;
+  priority: number;
+  estimatedTokenCount: number;
+  refKind?: string | null;
+  refId?: string | null;
+  refVersion?: string | null;
+}
+
+export interface LearningContextPackDroppedBlockDto {
+  blockType: string;
+  reason: string;
+  priority: number;
+  estimatedTokenCount: number;
+}
+
+export interface LearningContextPackDroppedWarningDto {
+  warning: string;
+  reason: string;
+}
+
+export interface LearningContextPackTraceDto {
+  schemaVersion: string;
+  tokenBudget: number;
+  initialEstimatedTokenCount: number;
+  estimatedTokenCount: number;
+  selectedBlocks: LearningContextPackTraceBlockDto[];
+  droppedBlocks: LearningContextPackDroppedBlockDto[];
+  droppedWarnings: LearningContextPackDroppedWarningDto[];
+}
+
 export interface LearningContextPackDto {
+  schemaVersion?: string;
   topicId?: string | null;
   sessionId?: string | null;
   scopeStatus: string;
+  contextWatermark?: string;
   estimatedTokenCount: number;
   blocks: LearningContextPackBlockDto[];
   warnings: string[];
+  trace?: LearningContextPackTraceDto | null;
   generatedAt: string;
 }
 

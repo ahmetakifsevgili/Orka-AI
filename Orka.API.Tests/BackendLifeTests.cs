@@ -234,6 +234,16 @@ public sealed class BackendLifeTests
         Assert.Equal(state.ScopeStatus, contextPack.ScopeStatus);
         Assert.Contains(contextPack.Blocks, b => b.BlockType == "orka_state");
         Assert.Contains(contextPack.Blocks, b => b.BlockType == "active_lesson_snapshot");
+        Assert.Equal("orka.learning-context-pack.v1.1", contextPack.SchemaVersion);
+        Assert.StartsWith("ctx_", contextPack.ContextWatermark);
+        Assert.Equal(2_000, contextPack.Trace.TokenBudget);
+        Assert.Equal(contextPack.EstimatedTokenCount, contextPack.Trace.EstimatedTokenCount);
+        Assert.Contains(contextPack.Trace.SelectedBlocks, b => b.BlockType == "orka_state");
+        Assert.Contains(contextPack.Blocks, b =>
+            b.BlockType == "orka_state" &&
+            b.Metadata.TryGetValue("nextActionType", out var actionType) &&
+            actionType == state.PrimaryNextAction.ActionType);
+        Assert.Contains(contextPack.Blocks, b => b.BlockType == "active_lesson_snapshot" && b.SnapshotRef?.Kind == "active_lesson_snapshot");
         Assert.True(contextPack.EstimatedTokenCount is > 0 and <= 2_000);
     }
 

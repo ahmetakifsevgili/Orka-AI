@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LearningArtifactsAPI,
   LearningAPI,
@@ -160,6 +160,10 @@ function nextActionsFromMetadata(metadata?: ChatResponseMetadata | null): TutorN
   }));
 }
 
+export function isLatestWorkspaceRequest(latestRequestId: number, requestId: number): boolean {
+  return latestRequestId === requestId;
+}
+
 function nextActionsFromProjection(
   missionControl?: OrkaMissionControlDto | null,
   orkaLearningState?: OrkaLearningStateDto | null,
@@ -287,14 +291,19 @@ export function useLearningWorkspaceState({
   );
 
   const [state, setState] = useState<LearningWorkspaceState>(() => emptyState(topicId, sessionId));
+  const latestRequestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (requestId: number) => {
     if (!topicId && !sessionId) {
-      setState(emptyState(topicId, sessionId));
+      if (isLatestWorkspaceRequest(latestRequestIdRef.current, requestId)) {
+        setState(emptyState(topicId, sessionId));
+      }
       return;
     }
 
-    setState((prev) => ({ ...prev, topicId: topicId ?? null, sessionId: sessionId ?? null, isLoading: true }));
+    if (isLatestWorkspaceRequest(latestRequestIdRef.current, requestId)) {
+      setState((prev) => ({ ...prev, topicId: topicId ?? null, sessionId: sessionId ?? null, isLoading: true }));
+    }
 
     const snapshotParams = { topicId: topicId ?? undefined, sessionId: sessionId ?? undefined };
     const [
@@ -333,6 +342,10 @@ export function useLearningWorkspaceState({
       includeContextPack ? quiet(LearningAPI.getContextPack(snapshotParams)) : Promise.resolve(null),
     ]);
 
+    if (!isLatestWorkspaceRequest(latestRequestIdRef.current, requestId)) {
+      return;
+    }
+
     setState(buildLearningWorkspaceState({
       topicId: topicId ?? null,
       sessionId: sessionId ?? null,
@@ -357,14 +370,22 @@ export function useLearningWorkspaceState({
   }, [topicId, sessionId, metadataKey, includeContextPack, refreshKey]);
 
   useEffect(() => {
-    let cancelled = false;
-    void load().then(() => {
-      if (cancelled) return;
-    });
+    const requestId = latestRequestIdRef.current + 1;
+    latestRequestIdRef.current = requestId;
+    void load(requestId);
     return () => {
-      cancelled = true;
+      if (isLatestWorkspaceRequest(latestRequestIdRef.current, requestId)) {
+        latestRequestIdRef.current += 1;
+      }
     };
   }, [load]);
+
+  if ((state.topicId ?? null) !== (topicId ?? null) || (state.sessionId ?? null) !== (sessionId ?? null)) {
+    return {
+      ...emptyState(topicId, sessionId),
+      isLoading: Boolean(topicId || sessionId),
+    };
+  }
 
   return state;
 }

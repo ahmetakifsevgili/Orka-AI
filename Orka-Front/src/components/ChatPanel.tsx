@@ -489,9 +489,11 @@ export default function ChatPanel({
       let streamProducedContent = false;
 
       try {
+        const effectiveTopicId = activeTopic?.id ?? workspaceState?.topicId ?? undefined;
+        const effectiveSessionId = sessionId ?? workspaceState?.sessionId ?? undefined;
         const response = await ChatAPI.streamMessage({
-          topicId: activeTopic?.id ?? undefined,
-          sessionId: sessionId ?? undefined,
+          topicId: effectiveTopicId,
+          sessionId: effectiveSessionId,
           content,
           isPlanMode: isPlanMode,
         }, controller.signal);
@@ -863,6 +865,8 @@ export default function ChatPanel({
       isPlanMode,
       activeTopic,
       sessionId,
+      workspaceState?.topicId,
+      workspaceState?.sessionId,
       onSessionStart,
       setMessages,
       onTopicsRefresh,

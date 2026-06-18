@@ -702,6 +702,8 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     await installMocks(page);
     let intentRequests = 0;
     let streamRequests = 0;
+    let chatMessageRequests = 0;
+    const streamBodies: string[] = [];
 
     await page.route("**/api/quiz/plan-diagnostic/intent", async (route) => {
       intentRequests += 1;
@@ -719,10 +721,20 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
       });
     });
 
+    await page.route("**/api/chat/message", async (route) => {
+      chatMessageRequests += 1;
+      await fulfillJson(route, { error: "legacy_chat_message_route_should_not_be_used" }, 500);
+    });
+
     // Mock the streaming response of chat API
     await page.route("**/api/chat/stream", async (route) => {
       const request = route.request();
       expect(request.method()).toBe("POST");
+      const body = request.postData() ?? "";
+      streamBodies.push(body);
+      expect(body).toContain("Bana kisa bir basari mesaji ver.");
+      expect(body).toContain(topicId);
+      expect(body).toContain("session-test");
       streamRequests += 1;
 
       await route.fulfill({
@@ -769,6 +781,17 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     await starterButton.click();
     await expect(page.locator("body")).toContainText("Niyet analizi", { timeout: 15000 });
     expect(intentRequests).toBe(1);
+    expect(streamRequests).toBe(0);
+    expect(chatMessageRequests).toBe(0);
+
+    const sessionLoad = page
+      .waitForResponse(
+        (response) => response.url().includes(`/api/topics/${topicId}/sessions/latest`) && response.status() === 200,
+        { timeout: 5000 },
+      )
+      .catch(() => null);
+    await page.getByRole("button", { name: /Canonical Test Topic/ }).first().click();
+    await sessionLoad;
 
     // Normal tutor chat still streams after the plan-first gate is visible.
     const chatInput = page.locator("#tour-chat-input");
@@ -781,5 +804,7 @@ test.describe("Orka Premium Onboarding & Tutor Validation", () => {
     await expect(messageContainer).toContainText("Tebrikler!");
     await expect(messageContainer).toContainText("Onboarding ve Tutor");
     expect(streamRequests).toBe(1);
+    expect(streamBodies).toHaveLength(1);
+    expect(chatMessageRequests).toBe(0);
   });
 });
