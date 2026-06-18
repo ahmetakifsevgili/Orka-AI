@@ -566,73 +566,98 @@ Lütfen "1" veya "2" yazarak tercihini belirt, hemen başlayalım!
         }
 
         var finalAnswer = answerBuffer.ToString();
-        var reflection = await _tutorReflection.ReflectAsync(
-            orchestration.TurnState,
-            orchestration.ActionPlan,
-            finalAnswer,
-            orchestration.Artifacts,
-            CancellationToken.None);
-        var pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+        TutorPedagogyEvaluationRunDto? pedagogyEval = null;
+        var pedagogyPostProcessingDegraded = false;
+        string? pedagogyDegradedReason = null;
+        string? pedagogyRepairEvent = null;
+        try
         {
-            TurnState = orchestration.TurnState,
-            ActionPlan = orchestration.ActionPlan,
-            Reflection = reflection,
-            ToolCalls = orchestration.ToolCalls,
-            Artifacts = orchestration.Artifacts,
-            AssistantAnswer = finalAnswer,
-            AllowLlmJudge = false
-        }, CancellationToken.None);
-        if (_tutorPedagogyQualityGate.RequiresRepair(pedagogyEval))
-        {
-            var repairPrompt = _tutorPedagogyQualityGate.BuildRepairPrompt(
-                pedagogyEval,
+            var reflection = await _tutorReflection.ReflectAsync(
                 orchestration.TurnState,
                 orchestration.ActionPlan,
-                finalAnswer);
-            var repaired = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt + "\n\n" + repairPrompt, userMessage);
-            if (!string.IsNullOrWhiteSpace(repaired))
+                finalAnswer,
+                orchestration.Artifacts,
+                ct);
+            pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
             {
-                finalAnswer = repaired;
-                reflection = await _tutorReflection.ReflectAsync(
+                TurnState = orchestration.TurnState,
+                ActionPlan = orchestration.ActionPlan,
+                Reflection = reflection,
+                ToolCalls = orchestration.ToolCalls,
+                Artifacts = orchestration.Artifacts,
+                AssistantAnswer = finalAnswer,
+                AllowLlmJudge = false
+            }, ct);
+            if (_tutorPedagogyQualityGate.RequiresRepair(pedagogyEval))
+            {
+                var repairPrompt = _tutorPedagogyQualityGate.BuildRepairPrompt(
+                    pedagogyEval,
                     orchestration.TurnState,
                     orchestration.ActionPlan,
-                    finalAnswer,
-                    orchestration.Artifacts,
-                    CancellationToken.None);
-                pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+                    finalAnswer);
+                var repaired = await _factory.CompleteChatAsync(AgentRole.Tutor, systemPrompt + "\n\n" + repairPrompt, userMessage, ct);
+                if (!string.IsNullOrWhiteSpace(repaired))
                 {
-                    TurnState = orchestration.TurnState,
-                    ActionPlan = orchestration.ActionPlan,
-                    Reflection = reflection,
-                    ToolCalls = orchestration.ToolCalls,
-                    Artifacts = orchestration.Artifacts,
-                    AssistantAnswer = finalAnswer,
-                    AllowLlmJudge = false
-                }, CancellationToken.None);
-                yield return BuildStreamEvent("pedagogy_repaired", new
-                {
-                    tutorPedagogyEvaluationRunId = pedagogyEval.Id,
-                    tutorPedagogyStatus = pedagogyEval.Status
-                });
+                    finalAnswer = repaired;
+                    reflection = await _tutorReflection.ReflectAsync(
+                        orchestration.TurnState,
+                        orchestration.ActionPlan,
+                        finalAnswer,
+                        orchestration.Artifacts,
+                        ct);
+                    pedagogyEval = await _tutorPedagogyEvaluation.EvaluateAsync(new TutorPedagogyEvaluationRequestDto
+                    {
+                        TurnState = orchestration.TurnState,
+                        ActionPlan = orchestration.ActionPlan,
+                        Reflection = reflection,
+                        ToolCalls = orchestration.ToolCalls,
+                        Artifacts = orchestration.Artifacts,
+                        AssistantAnswer = finalAnswer,
+                        AllowLlmJudge = false
+                    }, ct);
+                    pedagogyRepairEvent = BuildStreamEvent("pedagogy_repaired", new
+                    {
+                        tutorPedagogyEvaluationRunId = pedagogyEval.Id,
+                        tutorPedagogyStatus = pedagogyEval.Status
+                    });
+                }
             }
+
+            await _educatorCore.RecordAnswerQualitySignalsAsync(
+                userId,
+                session.TopicId,
+                session.Id,
+                finalAnswer,
+                teacherContext,
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            pedagogyPostProcessingDegraded = true;
+            pedagogyDegradedReason = LogPrivacyGuard.SafeExceptionType(ex);
+            _logger.LogWarning(
+                "[TutorStream] Pedagogy post-processing degraded; returning buffered answer. UserRef={UserRef} SessionRef={SessionRef} ErrorType={ErrorType}",
+                LogPrivacyGuard.SafeId(userId, "usr"),
+                LogPrivacyGuard.SafeId(session.Id, "session"),
+                pedagogyDegradedReason);
         }
 
-        await _educatorCore.RecordAnswerQualitySignalsAsync(
-            userId,
-            session.TopicId,
-            session.Id,
-            finalAnswer,
-            teacherContext,
-            CancellationToken.None);
+        if (!string.IsNullOrWhiteSpace(pedagogyRepairEvent))
+        {
+            yield return pedagogyRepairEvent;
+        }
+
         yield return finalAnswer;
         yield return BuildStreamEvent("final", new
         {
             tutorTurnStateId = orchestration.TurnState.Id,
             tutorActionTraceId = orchestration.ActionPlan.Id,
             artifactIds = orchestration.Artifacts.Select(a => a.Id).ToArray(),
-            tutorPedagogyEvaluationRunId = pedagogyEval.Id,
-            tutorPedagogyStatus = pedagogyEval.Status,
-            tutorPedagogyScore = pedagogyEval.OverallScore
+            tutorPedagogyEvaluationRunId = pedagogyEval?.Id,
+            tutorPedagogyStatus = pedagogyEval?.Status ?? "degraded",
+            tutorPedagogyScore = pedagogyEval?.OverallScore,
+            pedagogyPostProcessingDegraded,
+            pedagogyDegradedReason
         });
     }
 
