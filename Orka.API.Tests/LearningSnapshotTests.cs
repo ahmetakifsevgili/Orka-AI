@@ -260,6 +260,10 @@ public sealed class LearningSnapshotTests : IClassFixture<ApiSmokeFactory>
         Assert.Contains("active_lesson_snapshot", blockTypes);
         Assert.Contains("student_context_snapshot", blockTypes);
         Assert.DoesNotContain(user.UserId.ToString(), root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("orkaState", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("activeLessonSnapshot", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("studentContextSnapshot", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sourceEvidenceBundle", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("payloadJson", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("rawPrompt", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }

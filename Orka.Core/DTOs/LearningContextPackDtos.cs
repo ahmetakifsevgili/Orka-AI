@@ -6,10 +6,6 @@ public sealed class LearningContextPackDto
     public Guid? SessionId { get; set; }
     public string ScopeStatus { get; set; } = "unknown";
     public int EstimatedTokenCount { get; set; }
-    public OrkaLearningStateDto? OrkaState { get; set; }
-    public ActiveLessonSnapshotDto? ActiveLessonSnapshot { get; set; }
-    public StudentContextSnapshotDto? StudentContextSnapshot { get; set; }
-    public SourceEvidenceBundleDto? SourceEvidenceBundle { get; set; }
     public IReadOnlyList<LearningContextPackBlockDto> Blocks { get; set; } = Array.Empty<LearningContextPackBlockDto>();
     public IReadOnlyList<string> Warnings { get; set; } = Array.Empty<string>();
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;

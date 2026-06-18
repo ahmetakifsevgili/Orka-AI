@@ -26,6 +26,7 @@ type WorkspaceStateOptions = {
   topicId?: string | null;
   sessionId?: string | null;
   metadata?: ChatResponseMetadata | null;
+  includeContextPack?: boolean;
 };
 
 const emptyState = (topicId?: string | null, sessionId?: string | null): LearningWorkspaceState => ({
@@ -133,6 +134,7 @@ export function useLearningWorkspaceState({
   topicId,
   sessionId,
   metadata,
+  includeContextPack = false,
 }: WorkspaceStateOptions): LearningWorkspaceState {
   const metadataKey = useMemo(
     () => [
@@ -143,10 +145,12 @@ export function useLearningWorkspaceState({
       metadata?.sourceReadiness,
       metadata?.currentPlanStepId,
       metadata?.latestAssessmentMode,
+      includeContextPack,
     ].filter(Boolean).join("|"),
     [
       topicId,
       sessionId,
+      includeContextPack,
       metadata?.activeLessonSnapshotId,
       metadata?.studentContextSnapshotId,
       metadata?.planQualitySnapshotId,
@@ -195,7 +199,7 @@ export function useLearningWorkspaceState({
       topicId ? quiet(NotebookStudioAPI.listPacks(topicId, sessionId ?? undefined)) : Promise.resolve(null),
       quiet(ToolsAPI.getGovernanceSummary(snapshotParams)),
       quiet(LearningRuntimeAPI.getHealth(snapshotParams)),
-      quiet(LearningAPI.getContextPack(snapshotParams)),
+      includeContextPack ? quiet(LearningAPI.getContextPack(snapshotParams)) : Promise.resolve(null),
     ]);
 
     const recentArtifacts = artifacts?.items?.slice(0, 6) ?? [];
@@ -235,7 +239,7 @@ export function useLearningWorkspaceState({
       isLoading: false,
       lastSyncedAt: new Date().toISOString(),
     });
-  }, [topicId, sessionId, metadata]);
+  }, [topicId, sessionId, metadata, includeContextPack]);
 
   useEffect(() => {
     let cancelled = false;

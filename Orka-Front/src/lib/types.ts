@@ -1773,10 +1773,6 @@ export interface LearningContextPackDto {
   sessionId?: string | null;
   scopeStatus: string;
   estimatedTokenCount: number;
-  orkaState?: OrkaLearningStateDto | null;
-  activeLessonSnapshot?: ActiveLessonSnapshotDto | null;
-  studentContextSnapshot?: StudentContextSnapshotDto | null;
-  sourceEvidenceBundle?: SourceEvidenceBundleDto | null;
   blocks: LearningContextPackBlockDto[];
   warnings: string[];
   generatedAt: string;

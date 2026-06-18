@@ -6,6 +6,9 @@ namespace Orka.Infrastructure.Services;
 public sealed class LearningContextPackService : ILearningContextPackService
 {
     private const int MaxEstimatedTokens = 2_000;
+    private const int MaxSummaryChars = 320;
+    private const int MaxMetadataValueChars = 180;
+    private const int MaxWarningChars = 180;
 
     private readonly IOrkaLearningStateService _orkaLearningState;
     private readonly IActiveLessonSnapshotService _snapshots;
@@ -45,18 +48,15 @@ public sealed class LearningContextPackService : ILearningContextPackService
 
         var blocks = BuildBlocks(state, activeSnapshot, studentSnapshot, sourceBundle);
         var warnings = BuildWarnings(state, activeSnapshot, studentSnapshot, sourceBundle);
+        (blocks, warnings) = BoundPack(blocks, warnings);
         return new LearningContextPackDto
         {
             TopicId = resolvedTopicId,
             SessionId = resolvedSessionId,
             ScopeStatus = state.ScopeStatus,
-            OrkaState = state,
-            ActiveLessonSnapshot = activeSnapshot,
-            StudentContextSnapshot = studentSnapshot,
-            SourceEvidenceBundle = sourceBundle,
             Blocks = blocks,
             Warnings = warnings,
-            EstimatedTokenCount = Math.Min(MaxEstimatedTokens, EstimateTokens(blocks, warnings)),
+            EstimatedTokenCount = EstimateTokens(blocks, warnings),
             GeneratedAt = DateTimeOffset.UtcNow
         };
     }
@@ -150,6 +150,7 @@ public sealed class LearningContextPackService : ILearningContextPackService
         if (sourceBundle == null && state.SignalSummary.SourceCount > 0) warnings.Add("source_bundle_missing");
         return warnings
             .Where(w => !string.IsNullOrWhiteSpace(w))
+            .Select(w => Trim(w, MaxWarningChars))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(12)
             .ToArray();
@@ -166,11 +167,11 @@ public sealed class LearningContextPackService : ILearningContextPackService
         {
             BlockType = type,
             Status = string.IsNullOrWhiteSpace(status) ? "unknown" : status,
-            Summary = summary,
+            Summary = Trim(summary, MaxSummaryChars),
             Priority = priority,
             SnapshotId = snapshotId,
             ExpiresAt = expiresAt,
-            Metadata = metadata ?? new Dictionary<string, string>()
+            Metadata = NormalizeMetadata(metadata)
         };
 
     private static int EstimateTokens(IReadOnlyList<LearningContextPackBlockDto> blocks, IReadOnlyList<string> warnings)
@@ -182,6 +183,57 @@ public sealed class LearningContextPackService : ILearningContextPackService
             b.Metadata.Sum(kvp => kvp.Key.Length + kvp.Value.Length)) +
             warnings.Sum(w => w.Length);
         return Math.Max(1, (int)Math.Ceiling(chars / 4m));
+    }
+
+    private static (IReadOnlyList<LearningContextPackBlockDto> Blocks, IReadOnlyList<string> Warnings) BoundPack(
+        IReadOnlyList<LearningContextPackBlockDto> blocks,
+        IReadOnlyList<string> warnings)
+    {
+        var boundedBlocks = blocks.OrderByDescending(b => b.Priority).ToList();
+        var boundedWarnings = warnings.ToList();
+
+        while (EstimateTokens(boundedBlocks, boundedWarnings) > MaxEstimatedTokens && boundedWarnings.Count > 0)
+        {
+            boundedWarnings.RemoveAt(boundedWarnings.Count - 1);
+        }
+
+        while (EstimateTokens(boundedBlocks, boundedWarnings) > MaxEstimatedTokens && boundedBlocks.Count > 1)
+        {
+            boundedBlocks.RemoveAt(boundedBlocks.Count - 1);
+        }
+
+        return (boundedBlocks, boundedWarnings);
+    }
+
+    private static IReadOnlyDictionary<string, string> NormalizeMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata == null || metadata.Count == 0)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in metadata.Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value)).Take(8))
+        {
+            var key = Trim(kvp.Key, 80);
+            if (!result.ContainsKey(key))
+            {
+                result[key] = Trim(kvp.Value, MaxMetadataValueChars);
+            }
+        }
+
+        return result;
+    }
+
+    private static string Trim(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
     private static string Fallback(params string?[] values) =>
