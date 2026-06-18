@@ -22,8 +22,12 @@ export interface AuthUser {
   plan?: string;
   isAdmin?: boolean;
   isOnboardingCompleted?: boolean;
+  storageUsedMB?: number;
+  storageLimitMB?: number;
   dailyMessageCount?: number;
   dailyLimit?: number;
+  dailyResetAt?: string;
+  createdAt?: string;
   settings?: {
     theme: string;
     language: string;
@@ -349,7 +353,8 @@ export const UserAPI = {
     measuredLevel: string;
     learningStyle: string;
     pathPreference: string;
-  }) => api.post("/user/onboarding", data),
+    theme?: "Dark" | "Light" | "System";
+  }) => api.post<AuthUser>("/user/onboarding", data),
 };
 
 export const TopicsAPI = {

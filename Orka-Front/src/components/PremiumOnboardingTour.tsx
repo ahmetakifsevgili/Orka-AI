@@ -2,14 +2,14 @@ import { useEffect } from "react";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import "./PremiumOnboardingTour.css";
-import { storage } from "@/services/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export function usePremiumOnboarding() {
   const { t, language } = useLanguage();
+  const { user } = useAuth();
 
   useEffect(() => {
-    const user = storage.getUser();
     if (!user) return;
     if (user.isOnboardingCompleted !== false) return;
 
@@ -87,5 +87,5 @@ export function usePremiumOnboarding() {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [language, t]);
+  }, [language, t, user?.id, user?.isOnboardingCompleted]);
 }

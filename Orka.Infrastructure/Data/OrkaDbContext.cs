@@ -80,14 +80,18 @@ public static class AesEncryptionHelper
 
 public class OrkaDbContext : DbContext
 {
-    private readonly string? _tenantId;
+    private readonly string _tenantId;
+    private readonly bool _hasTenantId;
+    private readonly bool _tenantFilterBypassed;
 
     public OrkaDbContext(
         DbContextOptions<OrkaDbContext> options,
         ITenantService? tenantService = null,
         IConfiguration? configuration = null) : base(options)
     {
-        _tenantId = tenantService?.GetCurrentTenantId();
+        _tenantId = tenantService?.GetCurrentTenantId() ?? string.Empty;
+        _hasTenantId = !string.IsNullOrWhiteSpace(_tenantId);
+        _tenantFilterBypassed = tenantService == null || tenantService.BypassTenantFilters;
 
         if (configuration != null)
         {
@@ -5189,13 +5193,64 @@ public class OrkaDbContext : DbContext
         modelBuilder.Entity<CentralExamDenemeAnswer>()
             .HasIndex(a => new { a.ExamSectionId, a.ExamSubjectId, a.ExamTopicId, a.ExamOutcomeId });
 
+        // Tenant-scoped query filters prevent cross-tenant reads by default.
+        ConfigureTenantEntity<Topic>(modelBuilder);
+        ConfigureTenantEntity<Session>(modelBuilder);
+        ConfigureTenantEntity<Message>(modelBuilder);
+        ConfigureTenantEntity<WikiPage>(modelBuilder);
+        ConfigureTenantEntity<QuizRun>(modelBuilder);
+        ConfigureTenantEntity<QuizAttempt>(modelBuilder);
+        ConfigureTenantEntity<AssessmentItem>(modelBuilder);
+
+        modelBuilder.Entity<Topic>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<Session>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<Message>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<QuizRun>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<QuizAttempt>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<AssessmentItem>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId));
+
+        modelBuilder.Entity<AgentEvaluation>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.Message.TenantId == _tenantId));
+
+        modelBuilder.Entity<AdaptiveAssessmentDecision>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.AssessmentItem.TenantId == _tenantId));
+
+        modelBuilder.Entity<AssessmentCalibrationItem>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.AssessmentItem.TenantId == _tenantId));
+
+        modelBuilder.Entity<AssessmentItemStat>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.AssessmentItem.TenantId == _tenantId));
+
+        modelBuilder.Entity<RemediationPlan>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.Topic.TenantId == _tenantId));
+
+        modelBuilder.Entity<SkillMastery>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.Topic.TenantId == _tenantId));
+
+        modelBuilder.Entity<StudyRecommendation>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.Topic.TenantId == _tenantId));
+
+        modelBuilder.Entity<TutorTraceProjection>()
+            .HasQueryFilter(e => _tenantFilterBypassed || (_hasTenantId && e.Session.TenantId == _tenantId));
+
         // ── Global Soft-Delete Query Filters ──
         // Prevents accidental queries returning deleted rows.
         // Use .IgnoreQueryFilters() in queries that explicitly need deleted records.
         modelBuilder.Entity<LearningSource>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<SourceRetrievalItem>().HasQueryFilter(e => !e.Source.IsDeleted);
         modelBuilder.Entity<SourceChunk>().HasQueryFilter(e => !e.IsDeleted);
-        modelBuilder.Entity<WikiPage>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<WikiPage>().HasQueryFilter(e => !e.IsDeleted && (_tenantFilterBypassed || (_hasTenantId && e.TenantId == _tenantId)));
         modelBuilder.Entity<Source>().HasQueryFilter(e => !e.WikiPage.IsDeleted);
         modelBuilder.Entity<WikiBlock>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<WikiLink>().HasQueryFilter(e => !e.IsDeleted);
@@ -5256,6 +5311,17 @@ public class OrkaDbContext : DbContext
 
     }
 
+    private static void ConfigureTenantEntity<TEntity>(ModelBuilder modelBuilder)
+        where TEntity : class, IMustHaveTenant
+    {
+        modelBuilder.Entity<TEntity>()
+            .Property(e => e.TenantId)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TEntity>()
+            .HasIndex(e => e.TenantId);
+    }
+
     public override int SaveChanges()
     {
         SetTenantId();
@@ -5270,23 +5336,49 @@ public class OrkaDbContext : DbContext
 
     private void SetTenantId()
     {
-        if (string.IsNullOrEmpty(_tenantId)) return;
+        if (_tenantFilterBypassed) return;
 
         foreach (var entry in ChangeTracker.Entries<IMustHaveTenant>())
         {
+            if (entry.State is EntityState.Unchanged or EntityState.Detached)
+            {
+                continue;
+            }
+
+            if (!_hasTenantId)
+            {
+                throw new InvalidOperationException("Tenant context is required to write tenant-scoped data.");
+            }
+
             if (entry.State == EntityState.Added)
             {
                 if (string.IsNullOrEmpty(entry.Entity.TenantId))
                 {
                     entry.Entity.TenantId = _tenantId;
+                    continue;
+                }
+
+                if (!string.Equals(entry.Entity.TenantId, _tenantId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Cannot write tenant-scoped data for a different tenant.");
                 }
             }
             else if (entry.State == EntityState.Modified)
             {
                 if (entry.Property(p => p.TenantId).IsModified)
                 {
-                    entry.Property(p => p.TenantId).CurrentValue = _tenantId;
+                    throw new InvalidOperationException("TenantId cannot be changed once tenant-scoped data exists.");
                 }
+
+                if (!string.Equals(entry.Entity.TenantId, _tenantId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Cannot write tenant-scoped data for a different tenant.");
+                }
+            }
+            else if (entry.State == EntityState.Deleted &&
+                     !string.Equals(entry.Entity.TenantId, _tenantId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Cannot delete tenant-scoped data for a different tenant.");
             }
         }
     }

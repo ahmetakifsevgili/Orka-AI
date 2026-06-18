@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json.Serialization;
 
 namespace Orka.Core.DTOs.Auth;
@@ -30,8 +31,13 @@ public class UserDto
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Plan { get; set; } = string.Empty;
+    public bool IsOnboardingCompleted { get; set; }
+    public double StorageUsedMB { get; set; }
+    public double StorageLimitMB { get; set; }
     public int DailyMessageCount { get; set; }
     public int DailyLimit { get; set; }
+    public DateTime DailyResetAt { get; set; }
+    public DateTime CreatedAt { get; set; }
     public bool IsAdmin { get; set; }
     public UserSettingsDto Settings { get; set; } = new();
 }

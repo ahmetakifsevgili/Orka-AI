@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 using Orka.API.Services;
 using Orka.Core.DTOs.Auth;
 using Orka.Core.Entities;
-using Orka.Core.Enums;
 using Orka.Core.Exceptions;
 using Orka.Core.Interfaces;
+using Orka.Infrastructure.Data;
 using Orka.Infrastructure.Services;
 
 namespace Orka.API.Controllers;
@@ -26,19 +26,22 @@ public class AuthController : ControllerBase
     private readonly IHostEnvironment _environment;
     private readonly ILogger<AuthController> _logger;
     private readonly IAuthAttemptLimiter _rateLimiter;
+    private readonly OrkaDbContext _dbContext;
 
     public AuthController(
         IAuthService authService,
         IConfiguration configuration,
         IHostEnvironment environment,
         ILogger<AuthController> logger,
-        IAuthAttemptLimiter rateLimiter)
+        IAuthAttemptLimiter rateLimiter,
+        OrkaDbContext dbContext)
     {
         _authService = authService;
         _configuration = configuration;
         _environment = environment;
         _logger = logger;
         _rateLimiter = rateLimiter;
+        _dbContext = dbContext;
     }
 
     [HttpPost("register")]
@@ -88,7 +91,7 @@ public class AuthController : ControllerBase
         {
             Token = result.Token,
             UserId = result.User.Id.ToString(),
-            User = ToUserDto(result.User)
+            User = await CurrentUserDtoFactory.CreateAsync(result.User, _dbContext, _configuration, HttpContext.RequestAborted)
         });
     }
 
@@ -131,7 +134,7 @@ public class AuthController : ControllerBase
         {
             Token = result.Token,
             UserId = result.User.Id.ToString(),
-            User = ToUserDto(result.User)
+            User = await CurrentUserDtoFactory.CreateAsync(result.User, _dbContext, _configuration, HttpContext.RequestAborted)
         });
     }
 
@@ -206,35 +209,6 @@ public class AuthController : ControllerBase
 
     private void ClearRefreshCookie() =>
         RefreshTokenCookie.Clear(Response, _configuration, _environment);
-
-    private UserDto ToUserDto(User user) => new()
-    {
-        Id = user.Id.ToString(),
-        FirstName = user.FirstName,
-        LastName = user.LastName,
-        Email = user.Email,
-        Plan = user.Plan.ToString(),
-        DailyMessageCount = user.DailyMessageCount,
-        DailyLimit = GetDailyLimit(user.Plan),
-        IsAdmin = user.IsAdmin,
-        Settings = new UserSettingsDto
-        {
-            Theme = user.Theme,
-            Language = user.Language,
-            FontSize = user.FontSize,
-            QuizReminders = user.QuizReminders,
-            WeeklyReport = user.WeeklyReport,
-            NewContentAlerts = user.NewContentAlerts,
-            SoundsEnabled = user.SoundsEnabled
-        }
-    };
-
-    private int GetDailyLimit(UserPlan plan)
-    {
-        return plan == UserPlan.Pro
-            ? _configuration.GetValue("Limits:ProUserDailyMessages", 500)
-            : _configuration.GetValue("Limits:FreeUserDailyMessages", 50);
-    }
 
     private async Task<IActionResult?> EnforceAuthAttemptAsync(string purpose, string partition, string configName)
     {

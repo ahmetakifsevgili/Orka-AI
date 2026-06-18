@@ -82,11 +82,12 @@ export default function Onboarding() {
             measuredLevel,
             learningStyle: learningStyle || "theoretical",
             pathPreference: pathPref || "standard",
+            theme: learningStyle === "practical" ? "Light" as const : "Dark" as const,
           };
 
-          await UserAPI.saveOnboarding(payload);
+          const { data: updatedUser } = await UserAPI.saveOnboarding(payload);
           toast.success("Profiliniz başarıyla oluşturuldu!");
-          syncOnboardingCompleted();
+          syncOnboardingCompleted(updatedUser);
           setLocation("/app");
         } catch (err) {
           console.error(err);

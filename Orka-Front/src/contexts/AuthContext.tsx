@@ -7,6 +7,7 @@ import {
   type LoginRequest,
   type RegisterRequest,
 } from "../services/api";
+import { useTheme, type Theme } from "./ThemeContext";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -15,7 +16,7 @@ interface AuthContextType {
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
-  syncOnboardingCompleted: () => void;
+  syncOnboardingCompleted: (updatedUser?: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +24,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => storage.getUser());
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const { setTheme } = useTheme();
+
+  const persistUser = (nextUser: AuthUser) => {
+    setUser(nextUser);
+    localStorage.setItem("orka_user", JSON.stringify(nextUser));
+
+    const serverTheme = nextUser.settings?.theme;
+    if (serverTheme === "Dark" || serverTheme === "Light" || serverTheme === "System") {
+      setTheme(serverTheme as Theme);
+    }
+  };
 
   useEffect(() => {
     async function bootstrap() {
@@ -31,8 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (token) {
           // If we already have a token, fetch user profile to verify and sync
           const userRes = await UserAPI.getMe();
-          setUser(userRes.data);
-          localStorage.setItem("orka_user", JSON.stringify(userRes.data));
+          persistUser(userRes.data);
         } else {
           // No token found, try silent refresh
           const refreshRes = await AuthAPI.refresh();
@@ -40,8 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           storage.saveToken(newToken);
 
           const userRes = await UserAPI.getMe();
-          setUser(userRes.data);
-          localStorage.setItem("orka_user", JSON.stringify(userRes.data));
+          persistUser(userRes.data);
         }
       } catch (err) {
         // Clear storage if refresh/bootstrap fails
@@ -57,13 +67,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (data: LoginRequest) => {
     const res = await AuthAPI.login(data);
     storage.save(res.data);
-    setUser(res.data.user);
+    persistUser(res.data.user);
   };
 
   const register = async (data: RegisterRequest) => {
     const res = await AuthAPI.register(data);
     storage.save(res.data);
-    setUser(res.data.user);
+    persistUser(res.data.user);
   };
 
   const logout = async () => {
@@ -77,11 +87,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const syncOnboardingCompleted = () => {
+  const syncOnboardingCompleted = (updatedUser?: AuthUser) => {
+    if (updatedUser) {
+      persistUser(updatedUser);
+      return;
+    }
+
     if (user) {
-      const updatedUser = { ...user, isOnboardingCompleted: true };
-      setUser(updatedUser);
-      localStorage.setItem("orka_user", JSON.stringify(updatedUser));
+      persistUser({ ...user, isOnboardingCompleted: true });
     }
   };
 

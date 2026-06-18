@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Orka.Core.Enums;
+using Orka.API.Services;
 using Orka.Core.Interfaces;
 using Orka.Infrastructure.Data;
 using System.Linq;
@@ -36,6 +36,7 @@ public class UserOnboardingRequest
     public string MeasuredLevel { get; set; } = "beginner";
     public string LearningStyle { get; set; } = "theoretical";
     public string PathPreference { get; set; } = "standard";
+    public string? Theme { get; set; }
 }
 
 [Authorize]
@@ -63,38 +64,7 @@ public class UserController : ControllerBase
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
-        var dailyLimit = user.Plan == UserPlan.Pro
-            ? _configuration.GetValue<int>("Limits:ProUserDailyMessages", 500)
-            : _configuration.GetValue<int>("Limits:FreeUserDailyMessages", 50);
-
-        var isOnboardingCompleted = await _dbContext.DiagnosticProfiles.AnyAsync(p => p.UserId == userId, ct);
-
-        return Ok(new
-        {
-            id = user.Id,
-            firstName = user.FirstName,
-            lastName = user.LastName,
-            email = user.Email,
-            plan = user.Plan.ToString(),
-            isAdmin = user.IsAdmin,
-            isOnboardingCompleted,
-            storageUsedMB = user.StorageUsedMB,
-            storageLimitMB = user.StorageLimitMB,
-            dailyMessageCount = user.DailyMessageCount,
-            dailyLimit,
-            dailyResetAt = user.DailyMessageResetAt,
-            createdAt = user.CreatedAt,
-            settings = new
-            {
-                theme = user.Theme,
-                language = user.Language,
-                fontSize = user.FontSize,
-                quizReminders = user.QuizReminders,
-                weeklyReport = user.WeeklyReport,
-                newContentAlerts = user.NewContentAlerts,
-                soundsEnabled = user.SoundsEnabled
-            }
-        });
+        return Ok(await CurrentUserDtoFactory.CreateAsync(user, _dbContext, _configuration, ct));
     }
 
     [HttpPatch("profile")]
@@ -145,6 +115,13 @@ public class UserController : ControllerBase
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user == null) return NotFound();
 
+        var hasExplicitTheme = !string.IsNullOrWhiteSpace(req.Theme);
+        var normalizedTheme = NormalizeTheme(req.Theme);
+        if (hasExplicitTheme && normalizedTheme == null)
+        {
+            return BadRequest(new { message = "Theme must be Dark, Light, or System." });
+        }
+
         // 1. Delete existing diagnostic records if a user re-initiates onboarding
         var existingProfiles = await _dbContext.DiagnosticProfiles
             .Where(p => p.UserId == userId)
@@ -160,7 +137,8 @@ public class UserController : ControllerBase
         var profileJsonObj = new
         {
             learningStyle = req.LearningStyle,
-            pathPreference = req.PathPreference
+            pathPreference = req.PathPreference,
+            theme = normalizedTheme
         };
         var profileJson = System.Text.Json.JsonSerializer.Serialize(profileJsonObj);
 
@@ -178,14 +156,40 @@ public class UserController : ControllerBase
         };
         _dbContext.DiagnosticProfiles.Add(profile);
 
-        // 3. Update user settings (Theme = "Dark" if practical mode is chosen)
-        if (string.Equals(req.LearningStyle, "practical", StringComparison.OrdinalIgnoreCase))
+        // 3. Apply only an explicit client theme. Existing users keep their preference otherwise.
+        if (normalizedTheme != null)
         {
-            user.Theme = "Dark";
+            user.Theme = normalizedTheme;
         }
 
         await _dbContext.SaveChangesAsync(ct);
-        return Ok(new { Message = "Onboarding completed successfully." });
+        return Ok(await CurrentUserDtoFactory.CreateAsync(user, _dbContext, _configuration, ct));
+    }
+
+    private static string? NormalizeTheme(string? theme)
+    {
+        if (string.IsNullOrWhiteSpace(theme))
+        {
+            return null;
+        }
+
+        var trimmed = theme.Trim();
+        if (string.Equals(trimmed, "Dark", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Dark";
+        }
+
+        if (string.Equals(trimmed, "Light", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Light";
+        }
+
+        if (string.Equals(trimmed, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            return "System";
+        }
+
+        return null;
     }
 
     /// <summary>

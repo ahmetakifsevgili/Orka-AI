@@ -9,6 +9,8 @@ public class TenantService : ITenantService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
 
+    public bool BypassTenantFilters => false;
+
     public TenantService(IHttpContextAccessor httpContextAccessor)
     {
         _httpContextAccessor = httpContextAccessor;

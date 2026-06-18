@@ -3,7 +3,8 @@ import { useLocation, Link } from "wouter";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ArrowRight, BookOpenCheck, ClipboardList, Eye, EyeOff, Lock, Mail, ShieldCheck, User } from "lucide-react";
 import OrcaLogo from "@/components/OrcaLogo";
-import { API_ORIGIN, AuthAPI, storage } from "../services/api";
+import { API_ORIGIN } from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
 
 type AuthTab = "signin" | "signup";
 
@@ -45,6 +46,7 @@ const previewRows = [
 export default function Login() {
   const [tab, setTab] = useState<AuthTab>("signin");
   const [, navigate] = useLocation();
+  const { login, register } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -68,13 +70,11 @@ export default function Login() {
     setIsLoading(true);
     try {
       if (tab === "signin") {
-        const { data } = await AuthAPI.login({ email, password });
-        storage.save(data);
+        await login({ email, password });
       } else {
         const [firstName = "Yeni", ...lastParts] = name.trim().split(/\s+/);
         const lastName = lastParts.join(" ");
-        const { data } = await AuthAPI.register({ firstName, lastName, email, password });
-        storage.save(data);
+        await register({ firstName, lastName, email, password });
       }
       navigate("/app");
     } catch (err: unknown) {
