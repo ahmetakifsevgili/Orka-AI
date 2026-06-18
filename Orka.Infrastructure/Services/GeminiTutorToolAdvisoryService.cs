@@ -35,7 +35,8 @@ public sealed class GeminiTutorToolAdvisoryService : IGeminiTutorToolAdvisorySer
         GeminiTutorToolAdvisoryRequest request,
         CancellationToken ct = default)
     {
-        if (!_configuration.GetValue("AI:Gemini:ToolAdvisory:Enabled", true))
+        if (!_configuration.GetValue("AI:Gemini:Enabled", true) ||
+            !_configuration.GetValue("AI:Gemini:ToolAdvisory:Enabled", true))
         {
             return new GeminiTutorToolAdvisoryResult { Enabled = false, SafeMessage = "Gemini tool advisory is disabled." };
         }

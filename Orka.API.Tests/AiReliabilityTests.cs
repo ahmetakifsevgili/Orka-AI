@@ -142,6 +142,37 @@ public sealed class AiReliabilityTests
     }
 
     [Fact]
+    public async Task CompleteChat_GeminiDisabled_FallsBackWithoutCallingGemini()
+    {
+        var providers = new FakeProviders();
+        providers.GitHubHandler = () => Task.FromResult("""[{"assessmentItemId":"00000000-0000-0000-0000-000000000001"}]""");
+
+        var telemetry = new RecordingAiTelemetry();
+        var factory = CreateFactory(
+            providers,
+            telemetry: telemetry,
+            overrides: new Dictionary<string, string?>
+            {
+                ["AI:Gemini:Enabled"] = "false",
+                ["AI:AgentRouting:Quiz:Provider"] = "Gemini",
+                ["AI:AgentRouting:Quiz:Model"] = "gemini-3.1-pro-preview",
+                ["AI:GitHubModels:Agents:Quiz:Model"] = "openai/gpt-4o",
+                ["AI:Cost:RoleBudgets:Quiz:MaxOutputTokens"] = "32768"
+            });
+
+        var result = await factory.CompleteChatAsync(AgentRole.Quiz, "quiz contract", "make quiz");
+
+        Assert.Contains("assessmentItemId", result);
+        Assert.Equal(0, providers.GeminiCalls);
+        Assert.Equal(1, providers.GitHubCalls);
+        Assert.Contains(telemetry.Events, e =>
+            e.Provider == "Gemini" &&
+            !e.Success &&
+            e.FailureKind == AiProviderFailureKind.Configuration);
+        Assert.Contains(telemetry.Events, e => e.Provider == "GitHubModels" && e.Success && e.FallbackUsed);
+    }
+
+    [Fact]
     public async Task CompleteChat_QuizProviderFailures_DoNotUseInMemoryFallback()
     {
         var providers = new FakeProviders();

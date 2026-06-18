@@ -19,6 +19,7 @@ public class GeminiToolCallingService : IGeminiToolCallingService
     private readonly bool _useVertexAi;
     private readonly string? _apiKey;
     private readonly string _baseUrl;
+    private readonly bool _enabled;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -34,15 +35,24 @@ public class GeminiToolCallingService : IGeminiToolCallingService
         _configuration = configuration;
         _logger = logger;
         _baseUrl = configuration["AI:Gemini:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/models";
+        _enabled = configuration.GetValue("AI:Gemini:Enabled", true);
         _useVertexAi = configuration.GetValue<bool>("AI:Gemini:UseVertexAi") ||
                        _baseUrl.Contains("aiplatform.googleapis.com", StringComparison.OrdinalIgnoreCase);
         _apiKey = configuration["AI:Gemini:ApiKey"];
+    }
+
+    private void EnsureEnabled()
+    {
+        if (!_enabled)
+            throw new ProviderConfigurationException("Gemini", "AI:Gemini:Enabled");
     }
 
     public async Task<GeminiToolChatResponse> GenerateToolChatAsync(
         GeminiToolChatRequest request,
         CancellationToken ct = default)
     {
+        EnsureEnabled();
+
         if (request.FunctionDeclarations.Count == 0)
             throw new InvalidOperationException("Gemini tool calling requires at least one function declaration.");
 

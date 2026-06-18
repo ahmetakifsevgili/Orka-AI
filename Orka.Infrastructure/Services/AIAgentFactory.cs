@@ -668,6 +668,9 @@ public class AIAgentFactory : IAIAgentFactory
     {
         if (string.Equals(provider, "gemini", StringComparison.OrdinalIgnoreCase))
         {
+            if (!_configuration.GetValue("AI:Gemini:Enabled", true))
+                throw new ProviderConfigurationException(provider, "AI:Gemini:Enabled");
+
             var useVertexAi = _configuration.GetValue<bool>("AI:Gemini:UseVertexAi") ||
                               (_configuration["AI:Gemini:BaseUrl"]?.Contains("aiplatform.googleapis.com") ?? false);
             if (useVertexAi)

@@ -27,6 +27,7 @@ public class GeminiService : IGeminiService
     private readonly string? _apiKey;
     private readonly string _baseUrl;
     private readonly bool _useVertexAi;
+    private readonly bool _enabled;
 
     // Görev-model eşleştirmeleri (appsettings'ten okunur, aynı model bile olsa config'den gelir)
     private readonly string _modelDeepPlan;
@@ -49,11 +50,12 @@ public class GeminiService : IGeminiService
         ILogger<GeminiService> logger)
     {
         _httpClient     = httpClientFactory.CreateClient("Gemini");
+        _enabled        = configuration.GetValue("AI:Gemini:Enabled", true);
         _useVertexAi    = configuration.GetValue<bool>("AI:Gemini:UseVertexAi") ||
                            (configuration["AI:Gemini:BaseUrl"]?.Contains("aiplatform.googleapis.com") ?? false);
 
         _apiKey         = configuration["AI:Gemini:ApiKey"];
-        if (string.IsNullOrEmpty(_apiKey) && !_useVertexAi)
+        if (_enabled && string.IsNullOrEmpty(_apiKey) && !_useVertexAi)
         {
             throw new ArgumentException("Gemini API Key veya Vertex AI yapılandırması eksik.");
         }
@@ -68,6 +70,12 @@ public class GeminiService : IGeminiService
         _logger         = logger;
     }
 
+    private void EnsureEnabled()
+    {
+        if (!_enabled)
+            throw new ProviderConfigurationException("Gemini", "AI:Gemini:Enabled");
+    }
+
     private async Task<string> GetAccessTokenAsync(CancellationToken ct)
     {
         var credential = await Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefaultAsync();
@@ -80,6 +88,7 @@ public class GeminiService : IGeminiService
 
     public Task<string> GenerateSmartAsync(string systemPrompt, string userMessage, CancellationToken ct = default)
     {
+        EnsureEnabled();
         systemPrompt = PublicTextNormalizer.RepairMojibake(systemPrompt);
         userMessage = PublicTextNormalizer.RepairMojibake(userMessage);
         var (taskType, model, temperature, maxTokens, topP, topK, stopSequences) = DetectTask(systemPrompt);
@@ -92,6 +101,7 @@ public class GeminiService : IGeminiService
 
     public Task<string> GenerateWithModelAsync(string model, string systemPrompt, string userMessage, CancellationToken ct = default, int? maxOutputTokens = null)
     {
+        EnsureEnabled();
         systemPrompt = PublicTextNormalizer.RepairMojibake(systemPrompt);
         userMessage = PublicTextNormalizer.RepairMojibake(userMessage);
         _logger.LogInformation("[GEMINI DIRECT MODEL] Görev → Model={Model}", model);
@@ -319,6 +329,7 @@ public class GeminiService : IGeminiService
 
     public async IAsyncEnumerable<string> StreamSmartAsync(string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        EnsureEnabled();
         systemPrompt = PublicTextNormalizer.RepairMojibake(systemPrompt);
         userMessage = PublicTextNormalizer.RepairMojibake(userMessage);
         var (taskType, model, temperature, maxTokens, topP, topK, stopSequences) = DetectTask(systemPrompt);
@@ -406,6 +417,7 @@ public class GeminiService : IGeminiService
 
     public async IAsyncEnumerable<string> StreamWithModelAsync(string model, string systemPrompt, string userMessage, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default, int? maxOutputTokens = null)
     {
+        EnsureEnabled();
         systemPrompt = PublicTextNormalizer.RepairMojibake(systemPrompt);
         userMessage = PublicTextNormalizer.RepairMojibake(userMessage);
         var (taskType, _, temperature, maxTokens, topP, topK, stopSequences) = DetectTask(systemPrompt);

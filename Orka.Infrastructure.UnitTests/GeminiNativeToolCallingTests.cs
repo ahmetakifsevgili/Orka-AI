@@ -139,6 +139,35 @@ public sealed class GeminiNativeToolCallingTests
     }
 
     [Fact]
+    public async Task GenerateToolChatAsync_WhenGeminiDisabled_DoesNotSendRequest()
+    {
+        var factory = new CapturingHttpClientFactory("{}");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AI:Gemini:Enabled"] = "false",
+            ["AI:Gemini:ApiKey"] = "test-key",
+            ["AI:Gemini:UseVertexAi"] = "false",
+            ["AI:Gemini:BaseUrl"] = "https://generativelanguage.googleapis.com/v1beta/models"
+        }).Build();
+        var service = new TestableGeminiToolCallingService(factory, config);
+
+        var exception = await Assert.ThrowsAsync<ProviderConfigurationException>(() =>
+            service.GenerateToolChatAsync(new GeminiToolChatRequest
+            {
+                Model = "gemini-3.5-flash",
+                Contents =
+                [
+                    new GeminiContent { Role = "user", Parts = [new GeminiPart { Text = "Need tool?" }] }
+                ],
+                FunctionDeclarations = new GeminiFunctionDeclarationCatalog().GetTutorSafeDeclarations()
+            }));
+
+        Assert.Equal("Gemini", exception.Provider);
+        Assert.Equal("AI:Gemini:Enabled", exception.KeyPath);
+        Assert.Equal(string.Empty, factory.LastRequestBody);
+    }
+
+    [Fact]
     public async Task Advisory_AcceptsAllowedSuggestionAndRejectsDeniedSuggestion()
     {
         var catalog = new GeminiFunctionDeclarationCatalog();
