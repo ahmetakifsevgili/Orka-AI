@@ -69,6 +69,59 @@ public sealed class LearningRuntimeTelemetryTests : IClassFixture<ApiSmokeFactor
     }
 
     [Fact]
+    public async Task RuntimeTrace_DegradedProviderFallbackKeepsOnlySafeMetadata()
+    {
+        var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "learning-runtime-provider-fallback");
+        var topicId = await CoordinationTestHelpers.SeedTopicAsync(_factory, user.UserId, "Runtime Provider Fallback");
+        var sessionId = await CoordinationTestHelpers.SeedSessionAsync(_factory, user.UserId, topicId, DateTime.UtcNow);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<ILearningRuntimeTelemetryService>();
+            await runtime.RecordEventAsync(user.UserId, new LearningRuntimeEventRequestDto
+            {
+                TopicId = topicId,
+                SessionId = sessionId,
+                CorrelationId = "corr-provider-fallback",
+                Category = "provider_call",
+                Operation = "tutor_completion",
+                Status = "degraded",
+                Severity = "warning",
+                SafeMessage = "Tutor provider degraded and used a safe fallback.",
+                Provider = "GitHubModels",
+                Model = "smoke-model",
+                FallbackReason = "rate_limited",
+                ErrorCode = "provider_rate_limited",
+                SafeMetadata = new Dictionary<string, string>
+                {
+                    ["module"] = "tutor",
+                    ["fallbackProvider"] = "Cohere",
+                    ["degradeReason"] = "rate_limited",
+                    ["rawProviderPayload"] = "must not survive",
+                    ["apiKey"] = "secret"
+                }
+            });
+        }
+
+        var correlation = await user.Client.GetAsync("/api/learning-runtime/correlation/corr-provider-fallback");
+        correlation.EnsureSuccessStatusCode();
+        var correlationJson = await correlation.Content.ReadAsStringAsync();
+        Assert.Contains("provider_call", correlationJson);
+        Assert.Contains("rate_limited", correlationJson);
+        Assert.Contains("Cohere", correlationJson);
+        Assert.DoesNotContain("rawProviderPayload", correlationJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("must not survive", correlationJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("apiKey", correlationJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", correlationJson, StringComparison.OrdinalIgnoreCase);
+
+        var health = await user.Client.GetAsync($"/api/learning-runtime/health?topicId={topicId}&sessionId={sessionId}");
+        health.EnsureSuccessStatusCode();
+        using var healthJson = await JsonDocument.ParseAsync(await health.Content.ReadAsStreamAsync());
+        Assert.Equal("ready_with_warnings", healthJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal(1, healthJson.RootElement.GetProperty("fallbackCount").GetInt32());
+    }
+
+    [Fact]
     public async Task RuntimeHealth_NormalizesToolCostAndFallbackSignals()
     {
         var user = await CoordinationTestHelpers.RegisterAuthenticatedClientAsync(_factory, "learning-runtime-health");

@@ -252,6 +252,7 @@ build outputs are ignored and should not be committed.
 
 - `CODEX.md` - Codex workflow and repository rules.
 - `docs/project-state/current-roadmap.md` - current delivery order and closure notes.
+- `docs/project-state/remaining-risk-register.md` - remaining live/operational risk closure register.
 - `docs/architecture/ORKA_SYSTEM_ARCHITECTURE.md` - detailed architecture UML.
 - `docs/architecture/orka-learning-os-contract-map.md` - Learning OS contract map.
 - `docs/dev-contract.md` - provider-free development and test contract.

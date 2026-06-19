@@ -638,11 +638,11 @@ Feature prompt/report:
 - Default regression'a dahil degildir; sadece env gate ile calisir.
 - Calistirma:
   ```powershell
-  $env:ORKA_RUN_EXTERNAL_PROVIDER_TESTS="true"
-  $env:ORKA_EXTERNAL_GITHUB_MODELS_TOKEN="<token>"
-  dotnet test Orka.API.Tests\Orka.API.Tests.csproj --filter ExternalProviderIntegrationTests --no-restore --verbosity minimal
+  powershell -ExecutionPolicy Bypass -File scripts\provider-live-smoke.ps1 -Enable
   ```
 - Env gate veya token yoksa test acik skip nedeni yazar ve provider cagrisi yapmaz.
+- Script yalnizca configured true/false yazar; secret degeri veya user-secrets listesi basmaz.
+- GitHubModels, OpenRouter, Cohere, Groq ve Mistral default live smoke adayidir; Gemini kota/auth dogrulanmadan default smoke'a eklenmez.
 
 ## Paket 3 Dev Contract
 

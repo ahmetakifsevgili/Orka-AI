@@ -74,6 +74,10 @@ const rawLeakMarkers = [
   "__PROVIDER_PAYLOAD_CANARY__",
   "__SOURCE_CHUNK_TEXT_CANARY__",
   "__ANSWER_KEY_CANARY__",
+  "__LOCAL_PATH_CANARY__",
+  "__STACK_TRACE_CANARY__",
+  "__TOKEN_CANARY__",
+  "__OWNER_ID_CANARY__",
 ] as const;
 
 function learningAction(label: string, targetRoute: string, actionType = targetRoute) {
@@ -414,6 +418,8 @@ function buildContextPack(version: number) {
         metadata: {
           rawSourceChunk: rawLeakMarkers[2],
           answerKey: rawLeakMarkers[3],
+          localPath: rawLeakMarkers[4],
+          stackTrace: rawLeakMarkers[5],
         },
       },
     ],
@@ -422,12 +428,15 @@ function buildContextPack(version: number) {
         sourceId: "source-canary",
         label: "Source canary",
         rawSourceChunk: rawLeakMarkers[2],
+        ownerId: rawLeakMarkers[7],
       },
     ],
     trace: {
       rawPrompt: rawLeakMarkers[0],
       rawProviderPayload: rawLeakMarkers[1],
       answerKey: rawLeakMarkers[3],
+      token: rawLeakMarkers[6],
+      ownerId: rawLeakMarkers[7],
     },
     warnings: [],
     generatedAt: now,
@@ -985,7 +994,7 @@ async function clickNav(page: Page, label: string, expectedPath: RegExp) {
 }
 
 test.describe("Learning OS Shell Professional Navigation", () => {
-  test("keeps learning projection bound across Home, Tutor, Wiki, and Review @projection", async ({ page }, testInfo) => {
+  test("keeps learning projection bound across Home, Tutor, Wiki, and Review @projection @risk-privacy", async ({ page }, testInfo) => {
     const apiCalls: Array<{ method: string; path: string; search: string; postData?: string | null }> = [];
     page.on("request", (request) => {
       const url = new URL(request.url());

@@ -148,9 +148,7 @@ Real provider checks are opt-in and must not be part of the deterministic
 quick baseline:
 
 ```powershell
-$env:ORKA_RUN_EXTERNAL_PROVIDER_TESTS="true"
-$env:ORKA_EXTERNAL_GITHUB_MODELS_TOKEN="<token>"
-dotnet test Orka.API.Tests\Orka.API.Tests.csproj --filter ExternalProviderIntegrationTests --no-restore --verbosity minimal
+powershell -ExecutionPolicy Bypass -File scripts\provider-live-smoke.ps1 -Enable
 ```
 
 If the gate or token is missing, the tests write an explicit skip reason and
@@ -160,6 +158,9 @@ Provider staging proof rules:
 
 - Do not print provider secrets or `dotnet user-secrets list` values. Report
   configured true/false only.
+- Keep GitHubModels, OpenRouter, Cohere, Groq, and Mistral as the default live
+  smoke providers. Gemini stays outside the default smoke unless quota and auth
+  are explicitly verified.
 - A real completion/embedding success smoke requires an explicit token and an
   explicit call plan. Without a token, mark success proof blocked rather than
   pretending it passed.

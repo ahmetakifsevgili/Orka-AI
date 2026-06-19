@@ -1033,6 +1033,88 @@ public sealed class SourceRegressionGuardTests
         Assert.Contains("eyJ[A-Za-z0-9_-]+\\.", privacy);
     }
 
+    [Fact]
+    public void RemainingRiskRegister_DocumentsOperationalRisksWithoutPrivateInternals()
+    {
+        var register = ReadRepoText("docs/project-state/remaining-risk-register.md");
+        var readme = ReadRepoText("README.md");
+
+        Assert.Contains("Live provider quality", register);
+        Assert.Contains("Gemini availability", register);
+        Assert.Contains("Redis runtime degradation", register);
+        Assert.Contains("Runtime telemetry", register);
+        Assert.Contains("Browser visual confidence", register);
+        Assert.Contains("Production operations", register);
+        Assert.Contains("Beta learning usefulness", register);
+        Assert.Contains("docs/project-state/remaining-risk-register.md", readme);
+
+        string[] forbidden =
+        [
+            "CREATE TABLE",
+            "SELECT *",
+            "INSERT INTO",
+            "ConnectionStrings:",
+            "dotnet user-secrets list",
+            "raw provider body",
+            "raw prompt payload",
+            "provider payload dump",
+            "10/10",
+            "puanlama"
+        ];
+
+        foreach (var value in forbidden)
+        {
+            Assert.DoesNotContain(value, register, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void OptionalProviderLiveSmoke_IsOptInAndKeptOutOfQuickGates()
+    {
+        var script = ReadRepoText("scripts/provider-live-smoke.ps1");
+        var quickBackend = ReadRepoText("scripts/quick-backend.ps1");
+        var quickCoordination = ReadRepoText("scripts/quick-coordination.ps1");
+        var devContract = ReadRepoText("docs/dev-contract.md");
+        var checklist = ReadRepoText("scripts/CHECKLIST.md");
+
+        Assert.Contains("param(", script);
+        Assert.Contains("[switch]$Enable", script);
+        Assert.Contains("ORKA_RUN_EXTERNAL_PROVIDER_TESTS", script);
+        Assert.Contains("ExternalProviderIntegrationTests", script);
+        Assert.Contains("configured={1}", script);
+        Assert.Contains("Gemini is intentionally excluded", script);
+        Assert.DoesNotContain("user-secrets", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Get-Content env:", script, StringComparison.OrdinalIgnoreCase);
+
+        Assert.DoesNotContain("provider-live-smoke.ps1", quickBackend, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("provider-live-smoke.ps1", quickCoordination, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ORKA_RUN_EXTERNAL_PROVIDER_TESTS", quickBackend, StringComparison.Ordinal);
+        Assert.DoesNotContain("ORKA_RUN_EXTERNAL_PROVIDER_TESTS", quickCoordination, StringComparison.Ordinal);
+
+        Assert.Contains("scripts\\provider-live-smoke.ps1 -Enable", devContract);
+        Assert.Contains("scripts\\provider-live-smoke.ps1 -Enable", checklist);
+    }
+
+    [Fact]
+    public void BrowserRiskPrivacySmoke_IsAddressableAndBackedByProjectionCanaries()
+    {
+        var packageJson = ReadRepoText("Orka-Front/package.json");
+        var shellSpec = ReadRepoText("Orka-Front/e2e/learning-os-shell.spec.ts");
+
+        Assert.Contains("smoke:browser:risk", packageJson);
+        Assert.Contains("--grep @risk-privacy", packageJson);
+        Assert.Contains("@projection @risk-privacy", shellSpec);
+        Assert.Contains("__RAW_PROMPT_CANARY__", shellSpec);
+        Assert.Contains("__PROVIDER_PAYLOAD_CANARY__", shellSpec);
+        Assert.Contains("__SOURCE_CHUNK_TEXT_CANARY__", shellSpec);
+        Assert.Contains("__ANSWER_KEY_CANARY__", shellSpec);
+        Assert.Contains("__LOCAL_PATH_CANARY__", shellSpec);
+        Assert.Contains("__STACK_TRACE_CANARY__", shellSpec);
+        Assert.Contains("__TOKEN_CANARY__", shellSpec);
+        Assert.Contains("__OWNER_ID_CANARY__", shellSpec);
+        Assert.Contains("expectNoHorizontalOverflow", shellSpec);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;
