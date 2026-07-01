@@ -735,7 +735,7 @@ export default function ChatPanel({
     onPendingMessageConsumed?.();
   }, [pendingMessage]);
 
-  // ── Korteks stream send ────────────────────────────────────────────────
+  // ── Korteks stream send ──────���─────────────────────────────────────────
   const sendKorteksMessage = useCallback(
     async (content: string) => {
       if (!content || isThinking) return;
@@ -1399,9 +1399,14 @@ function PlanIntentConfirmationCard({
         <button
           onClick={onReset}
           disabled={isBusy}
-          className="inline-flex items-center gap-2 rounded-full border border-[#526d82]/10 bg-white px-4 py-2 text-xs font-black text-[#667085] transition hover:text-[#172033] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-[12.5px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            background: "var(--orka-surface-3)",
+            border: "1px solid var(--orka-border)",
+            color: "var(--orka-text-3)",
+          }}
         >
-          <RotateCcw className="h-4 w-4" />
+          <RotateCcw className="h-3.5 w-3.5" />
           Yeniden yaz
         </button>
       </div>
@@ -1411,27 +1416,41 @@ function PlanIntentConfirmationCard({
 
 function IntentField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-2xl border border-[#526d82]/10 bg-[#f7f9fa]/75 px-4 py-3">
-      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-[#667085]">{label}</div>
-      <div className={`mt-1 text-sm font-bold text-[#172033] ${mono ? "font-mono text-[12px]" : ""}`}>
+    <div
+      className="rounded-xl px-4 py-3"
+      style={{
+        background: "var(--orka-surface-2)",
+        border: "1px solid var(--orka-border)",
+      }}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] mb-1" style={{ color: "var(--orka-text-4)" }}>{label}</div>
+      <div className={`text-[13px] font-medium ${mono ? "font-mono text-[12px]" : ""}`} style={{ color: "var(--orka-text-2)" }}>
         {value || "-"}
       </div>
     </div>
   );
 }
+
 function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: string | null }) {
   const steps: Array<{ id: PlanFlowStage; label: string; body: string }> = [
-    { id: "intent", label: "Niyet ayrılıyor", body: "Ham istek konu, odak ve araştırma niyetine çevrilir; onay olmadan Korteks çalışmaz." },
+    { id: "intent", label: "Niyet ayriliyor", body: "Ham istek konu, odak ve arastirma niyetine cevrilir; onay olmadan Korteks calismaz." },
     { id: "topic", label: "Hedef okunuyor", body: "Konu, hedef ve baslangic niyeti ayriliyor." },
-    { id: "research", label: "Bağlam taranıyor", body: "Kaynak, wiki, YouTube pedagojisi ve güvenli araç sinyalleri kontrol ediliyor." },
-    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yüzeyinde açılır; chat'e sistem komutu düşmez." },
-    { id: "plan", label: "Öğrenme yolu üretiliyor", body: "Cevaplar, zayıf kavramlar, IDE pratikleri ve tekrar baskısı plana çevrilir." },
+    { id: "research", label: "Bagiam taranıyor", body: "Kaynak, wiki, YouTube pedagojisi ve guvenli arac sinyalleri kontrol ediliyor." },
+    { id: "quiz", label: "Seviye testi kuruluyor", body: "Sorular tek quiz yuzeyinde acilir; chate sistem komutu dusmez." },
+    { id: "plan", label: "Ogrenme yolu uretiliyor", body: "Cevaplar, zayif kavramlar, IDE pratikleri ve tekrar baskisi plana cevrilir." },
   ];
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === stage));
 
   return (
-    <div className="rounded-2xl border border-[#9ec7d9]/35 bg-white/76 px-4 py-3 shadow-[0_14px_36px_rgba(66,91,112,0.12)] backdrop-blur-xl">
-      <div className="mb-2 text-xs font-black text-[#172033]">Plan motoru calisiyor</div>
+    <div
+      className="rounded-xl px-4 py-3"
+      style={{
+        background: "var(--orka-surface)",
+        border: "1px solid var(--orka-border)",
+        boxShadow: "var(--orka-shadow-sm)",
+      }}
+    >
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--orka-teal)" }}>Plan motoru calisiyor</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {steps.map((step, index) => {
           const done = index < currentIndex || stage === "done";
@@ -1439,21 +1458,28 @@ function PlanFlowIndicator({ stage, detail }: { stage: PlanFlowStage; detail?: s
           return (
             <div
               key={step.id}
-              className={`rounded-xl border px-3 py-2 text-[11px] ${
-                active
-                  ? "border-[#9ec7d9] bg-[#dcecf3]/72 text-[#172033]"
+              className="rounded-lg px-3 py-2 text-[11px]"
+              style={{
+                background: active
+                  ? "rgba(110,215,206,0.07)"
                   : done
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-[#526d82]/10 bg-[#f7f9fa]/72 text-[#667085]"
-              }`}
+                    ? "rgba(74,222,128,0.06)"
+                    : "var(--orka-surface-2)",
+                border: active
+                  ? "1px solid rgba(110,215,206,0.22)"
+                  : done
+                    ? "1px solid rgba(74,222,128,0.18)"
+                    : "1px solid var(--orka-border-3)",
+                color: active ? "var(--orka-teal)" : done ? "var(--orka-green)" : "var(--orka-text-4)",
+              }}
             >
-              <div className="font-black">{done ? "✓ " : active ? "• " : ""}{step.label}</div>
-              <div className="mt-0.5 leading-4 opacity-80">{step.body}</div>
+              <div className="font-semibold">{done ? "✓ " : active ? "• " : ""}{step.label}</div>
+              <div className="mt-0.5 leading-4 opacity-70 text-[10px]">{step.body}</div>
             </div>
           );
         })}
       </div>
-      {detail && <p className="mt-2 text-[11px] font-medium leading-5 text-[#667085]">{detail}</p>}
+      {detail && <p className="mt-3 text-[11px] leading-5" style={{ color: "var(--orka-text-4)" }}>{detail}</p>}
     </div>
   );
 }
@@ -1477,45 +1503,68 @@ function WelcomeState({ onPromptClick }: { onPromptClick: (p: string) => void })
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[40vh]">
+    <div className="flex flex-col items-center justify-center min-h-[40vh] py-8">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="text-center"
+        className="text-center w-full max-w-[560px]"
       >
+        {/* Logo mark */}
         <div className="flex items-center justify-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-[#eef1f3] border border-[#526d82]/10 flex items-center justify-center shadow-2xl shadow-sm">
-            <OrcaLogo className="w-6 h-6 text-[#172033]" />
+          <div
+            className="w-11 h-11 rounded-2xl flex items-center justify-center"
+            style={{
+              background: "rgba(110,215,206,0.10)",
+              border: "1px solid rgba(110,215,206,0.22)",
+            }}
+          >
+            <OrcaLogo className="w-5.5 h-5.5" style={{ color: "#6ed7ce" }} />
           </div>
         </div>
-        <h1 className="text-2xl font-bold text-[#172033] mb-3 tracking-tight">
+
+        <h1 className="text-[22px] font-semibold mb-2 tracking-tight" style={{ color: "var(--orka-text)" }}>
           {t("tutor_welcome_title")}
         </h1>
-        <p className="text-[13px] text-[#344054] mb-6 max-w-[480px] mx-auto leading-relaxed">
+        <p className="text-[13px] mb-8 max-w-[420px] mx-auto leading-relaxed" style={{ color: "var(--orka-text-4)" }}>
           {t("tutor_welcome_body")}
-          <br/><br/>
-          Istersen <strong>Plan Modu</strong> ile mufredat ac, <strong>Korteks</strong> ile kaynakli arastirma yap veya IDE sonucunu Tutor'a gonder.
         </p>
 
-        <div className="mx-auto mb-6 grid max-w-[560px] grid-cols-1 gap-2 sm:grid-cols-2">
+        {/* Starter prompt grid */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 mb-6">
           {starterPrompts.map((item) => (
             <button
               key={item.label}
               onClick={() => onPromptClick(item.prompt)}
-              className="rounded-2xl border border-[#526d82]/12 bg-white/62 px-4 py-3 text-left text-xs font-bold text-[#344054] shadow-sm transition hover:bg-[#f7f4ec] hover:text-[#172033] focus:outline-none focus:ring-2 focus:ring-[#9ec7d9]"
+              className="rounded-xl px-4 py-3 text-left text-[12.5px] font-medium transition-all"
+              style={{
+                background: "var(--orka-surface-2)",
+                border: "1px solid var(--orka-border)",
+                color: "var(--orka-text-2)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(110,215,206,0.22)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--orka-border)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--orka-text-2)";
+              }}
             >
               {item.label}
-              <span className="mt-1 block text-[10px] font-medium leading-5 text-[#667085]">
+              <span className="mt-1 block text-[11px] font-normal leading-4" style={{ color: "var(--orka-text-5)" }}>
                 {item.hint}
               </span>
             </button>
           ))}
         </div>
 
-        <div className="flex items-center justify-center gap-2 mt-4 py-2 px-4 rounded-full border border-[#526d82]/10/50 bg-[#f7f9fa]/30 w-fit mx-auto">
-          <Bell className="w-3 h-3 text-[#344054]" />
-          <span className="text-[10px] font-medium text-[#667085] tracking-wide uppercase">
+        <div
+          className="flex items-center justify-center gap-2 py-1.5 px-3 rounded-full w-fit mx-auto"
+          style={{ border: "1px solid var(--orka-border-3)" }}
+        >
+          <Bell className="w-3 h-3" style={{ color: "var(--orka-text-5)" }} />
+          <span className="text-[10px] font-medium tracking-wide uppercase" style={{ color: "var(--orka-text-5)" }}>
             {t("small_step_first")}
           </span>
         </div>

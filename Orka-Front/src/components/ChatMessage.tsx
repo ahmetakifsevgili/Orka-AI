@@ -183,10 +183,10 @@ function looksLikeMermaidFailure(svg: string) {
 
 function MermaidFallback({ code }: { code: string }) {
   return (
-    <div className="my-4 rounded-xl border border-[#dcecf3] bg-white/75 p-4 text-xs text-[#667085]">
-      <div className="mb-2 font-bold text-[#344054]">Diyagram metin olarak gösteriliyor</div>
-      <div className="mb-3 leading-5">Mermaid bu çıktıyı güvenli şekilde çizemedi. İçerik kaybolmadı; kod bloğu olarak bırakıldı.</div>
-      <pre className="max-h-80 overflow-auto rounded-lg bg-[#f7f9fa] p-3 text-[11px] leading-5 text-[#344054]">{code}</pre>
+    <div className="my-4 rounded-xl p-4 text-xs" style={{ background: "var(--orka-surface)", border: "1px solid var(--orka-border)", color: "var(--orka-text-3)" }}>
+      <div className="mb-2 font-semibold" style={{ color: "var(--orka-text-2)" }}>Diyagram metin olarak gosteriliyor</div>
+      <div className="mb-3 leading-5">Mermaid bu ciktiyi guvenli sekilde cizemedi. Icerik kaybolmadi; kod blogu olarak birakildi.</div>
+      <pre className="max-h-80 overflow-auto rounded-lg p-3 text-[11px] leading-5" style={{ background: "var(--orka-surface-2)", color: "var(--orka-text-2)" }}>{code}</pre>
     </div>
   );
 }
@@ -241,7 +241,8 @@ function MermaidBlock({ code }: { code: string }) {
   ) : (
     <div
       ref={ref}
-      className="my-4 p-4 rounded-xl bg-[#f7f9fa] border border-[#dcecf3] overflow-x-auto shadow-sm"
+      className="my-4 p-4 rounded-xl overflow-x-auto"
+      style={{ background: "var(--orka-surface-2)", border: "1px solid var(--orka-border)" }}
     />
   );
 }
@@ -375,14 +376,15 @@ function TeachingArtifactRenderer({ artifacts }: { artifacts?: TeachingArtifact[
       {artifacts.map((artifact) => (
         <div
           key={artifact.id}
-          className="overflow-hidden rounded-xl border border-[#9ec7d9]/35 bg-white/72 text-[#172033]"
+          className="overflow-hidden rounded-xl"
+          style={{ background: "var(--orka-surface)", border: "1px solid var(--orka-border)", color: "var(--orka-text-2)" }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#526d82]/10 px-3 py-2">
-            <div className="flex items-center gap-2 text-xs font-black">
-              <ImageIcon className="h-3.5 w-3.5 text-[#2d5870]" />
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--orka-border-3)" }}>
+            <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--orka-text-2)" }}>
+              <ImageIcon className="h-3.5 w-3.5" style={{ color: "var(--orka-teal)" }} />
               <span>{artifact.title || artifact.artifactType}</span>
             </div>
-            <span className="rounded-full bg-[#eef1f3] px-2 py-0.5 text-[10px] font-bold text-[#667085]">
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: "var(--orka-surface-3)", color: "var(--orka-text-4)" }}>
               {artifact.artifactType}
             </span>
           </div>
@@ -1022,7 +1024,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
     setDisplayedContent(sanitizeVisibleChatContent(message.content));
   }, [message.content, message.isStreaming]);
 
-  // ── Konu Tamamlama Kartı ───────────────────────────────────────────────
+  // ── Konu Tamamlama Kartı ─────────────────────────────���─────────────────
   if (isTopicComplete && message.completedTopicId) {
     return (
       <motion.div
@@ -1144,7 +1146,7 @@ function ChatMessageInner({ message, topicId, sessionId, onPlanComplete, userNam
                           const langMatch = /language-(\w+)/.exec(className || "");
                           const lang = langMatch?.[1];
 
-                          // V4: mermaid bloğu özel render
+                          // V4: mermaid blo��u özel render
                           if (lang === "mermaid") {
                             return <MermaidBlock code={String(children)} />;
                           }
